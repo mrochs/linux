@@ -90,6 +90,7 @@
 /* This works a little different than the p1/p2 register accesses to make it
  * easier to pull out individual fields */
 #define AFUD_READ(afu, off)		in_be64(afu->afu_desc_mmio + off)
+#define AFUD_READ_LE(afu, off)		in_le64(afu->afu_desc_mmio + off)
 #define EXTRACT_PPC_BIT(val, bit)	(!!(val & PPC_BIT(bit)))
 #define EXTRACT_PPC_BITS(val, bs, be)	((val & PPC_BITMASK(bs, be)) >> PPC_BITLSHIFT(be))
 
@@ -131,6 +132,7 @@ u8 cxl_afu_cr_read8(struct cxl_afu *afu, int cr, u64 off)
 	val = cxl_afu_cr_read32(afu, cr, aligned_off);
 	return (val >> ((off & 0x3) * 8)) & 0xff;
 }
+#define AFUD_CR_READ(afu, off)		AFUD_READ_LE(afu, afu->crs_offset + off)
 
 static DEFINE_PCI_DEVICE_TABLE(cxl_pci_tbl) = {
 	{ PCI_DEVICE(PCI_VENDOR_ID_IBM, 0x0477), },
@@ -286,7 +288,8 @@ static void dump_cxl_config_space(struct pci_dev *dev)
 
 static void dump_afu_descriptor(struct cxl_afu *afu)
 {
-	u64 val;
+	u64 val, afu_cr_num, afu_cr_off, afu_cr_len;
+	int i;
 
 #define show_reg(name, what) \
 	dev_info(&afu->dev, "afu desc: %30s: %#llx\n", name, what)
@@ -296,6 +299,7 @@ static void dump_afu_descriptor(struct cxl_afu *afu)
 	show_reg("num_of_processes", AFUD_NUM_PROCS(val));
 	show_reg("num_of_afu_CRs", AFUD_NUM_CRS(val));
 	show_reg("req_prog_mode", val & 0xffffULL);
+	afu_cr_num = AFUD_NUM_CRS(val);
 
 	val = AFUD_READ(afu, 0x8);
 	show_reg("Reserved", val);
@@ -307,8 +311,10 @@ static void dump_afu_descriptor(struct cxl_afu *afu)
 	val = AFUD_READ_CR(afu);
 	show_reg("Reserved", (val >> (63-7)) & 0xff);
 	show_reg("AFU_CR_len", AFUD_CR_LEN(val));
+	afu_cr_len = AFUD_CR_LEN(val);
 
 	val = AFUD_READ_CR_OFF(afu);
+	afu_cr_off = val;
 	show_reg("AFU_CR_offset", val);
 
 	val = AFUD_READ_PPPSA(afu);
@@ -325,6 +331,11 @@ static void dump_afu_descriptor(struct cxl_afu *afu)
 	val = AFUD_READ_EB_OFF(afu);
 	show_reg("AFU_EB_offset", val);
 
+	for (i = 0; i < afu_cr_num; i++) {
+		val = AFUD_READ_LE(afu, afu_cr_off + i*256);
+		show_reg("CR Vendor", val & 0xffff);
+		show_reg("CR Device", (val >> 16) & 0xffff);
+	}
 #undef show_reg
 }
 
@@ -593,6 +604,14 @@ static int cxl_read_afu_descriptor(struct cxl_afu *afu)
 	afu->crs_len = AFUD_CR_LEN(val) * 256;
 	afu->crs_offset = AFUD_READ_CR_OFF(afu);
 
+	if ((afu->crs_num > 0) && (AFUD_CR_READ(afu, 0) == 0)) {
+		dev_err(&afu->adapter->dev, "ABORTING: AFU has invalid configuration record\n");
+		return -EINVAL;
+	}
+
+	/* We have a valid configuration record, lets make a virtual PHB */
+	cxl_pci_phb_probe(afu);
+
 	return 0;
 }
 
@@ -857,13 +876,13 @@ static int cxl_read_vsec(struct cxl *adapter, struct pci_dev *dev)
 	u8 image_state;
 
 	if (!(vsec = find_cxl_vsec(dev))) {
-		dev_err(&adapter->dev, "ABORTING: CXL VSEC not found!\n");
+		dev_err(&dev->dev, "ABORTING: CXL VSEC not found!\n");
 		return -ENODEV;
 	}
 
 	CXL_READ_VSEC_LENGTH(dev, vsec, &vseclen);
 	if (vseclen < CXL_VSEC_MIN_SIZE) {
-		pr_err("ABORTING: CXL VSEC too short\n");
+		dev_err(&dev->dev, "ABORTING: CXL VSEC too short\n");
 		return -EINVAL;
 	}
 
@@ -902,24 +921,24 @@ static int cxl_vsec_looks_ok(struct cxl *adapter, struct pci_dev *dev)
 		return -EBUSY;
 
 	if (adapter->vsec_status & CXL_UNSUPPORTED_FEATURES) {
-		dev_err(&adapter->dev, "ABORTING: CXL requires unsupported features\n");
+		dev_err(&dev->dev, "ABORTING: CXL requires unsupported features\n");
 		return -EINVAL;
 	}
 
 	if (!adapter->slices) {
 		/* Once we support dynamic reprogramming we can use the card if
 		 * it supports loadable AFUs */
-		dev_err(&adapter->dev, "ABORTING: Device has no AFUs\n");
+		dev_err(&dev->dev, "ABORTING: Device has no AFUs\n");
 		return -EINVAL;
 	}
 
 	if (!adapter->afu_desc_off || !adapter->afu_desc_size) {
-		dev_err(&adapter->dev, "ABORTING: VSEC shows no AFU descriptors\n");
+		dev_err(&dev->dev, "ABORTING: VSEC shows no AFU descriptors\n");
 		return -EINVAL;
 	}
 
 	if (adapter->ps_size > p2_size(dev) - adapter->ps_off) {
-		dev_err(&adapter->dev, "ABORTING: Problem state size larger than "
+		dev_err(&dev->dev, "ABORTING: Problem state size larger than "
 				   "available in BAR2: 0x%llx > 0x%llx\n",
 			 adapter->ps_size, p2_size(dev) - adapter->ps_off);
 		return -EINVAL;
@@ -967,6 +986,15 @@ static struct cxl *cxl_init_adapter(struct pci_dev *dev)
 
 	if (!(adapter = cxl_alloc_adapter(dev)))
 		return ERR_PTR(-ENOMEM);
+
+	if ((rc = cxl_read_vsec(adapter, dev)))
+		goto err1;
+
+	if ((rc = cxl_vsec_looks_ok(adapter, dev)))
+		goto err1;
+
+	if ((rc = setup_cxl_bars(dev)))
+		goto err1;
 
 	if ((rc = switch_card_to_cxl(dev)))
 		goto err1;
@@ -1066,9 +1094,6 @@ static int cxl_probe(struct pci_dev *dev, const struct pci_device_id *id)
 
 	if (cxl_verbose)
 		dump_cxl_config_space(dev);
-
-	if ((rc = setup_cxl_bars(dev)))
-		return rc;
 
 	if ((rc = pci_enable_device(dev))) {
 		dev_err(&dev->dev, "pci_enable_device failed: %i\n", rc);
