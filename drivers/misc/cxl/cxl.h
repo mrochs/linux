@@ -383,8 +383,8 @@ struct cxl_afu {
 	int modes_supported;
 	int current_mode;
 	int crs_num;
-	u64 crs_len;
-	u64 crs_offset;
+	int crs_len;
+	int crs_offset;
 	struct list_head crs;
 	enum prefault_modes prefault_mode;
 	bool psa;
@@ -606,7 +606,7 @@ void cxl_release_psl_err_irq(struct cxl *adapter);
 int cxl_register_serr_irq(struct cxl_afu *afu);
 void cxl_release_serr_irq(struct cxl_afu *afu);
 int afu_register_irqs(struct cxl_context *ctx, u32 count);
-void afu_release_irqs(struct cxl_context *ctx);
+void afu_release_irqs(struct cxl_context *ctx, void *cookie);
 irqreturn_t cxl_slice_irq_err(int irq, void *data);
 
 int cxl_debugfs_init(void);
@@ -629,6 +629,10 @@ int cxl_context_init(struct cxl_context *ctx, struct cxl_afu *afu, bool master,
 		     struct address_space *mapping);
 void cxl_context_free(struct cxl_context *ctx);
 int cxl_context_iomap(struct cxl_context *ctx, struct vm_area_struct *vma);
+unsigned int cxl_map_irq(struct cxl *adapter, irq_hw_number_t hwirq,
+			 irq_handler_t handler, void *cookie, const char *name);
+void cxl_unmap_irq(unsigned int virq, void *cookie);
+int ___detach_context(struct cxl_context *ctx);
 
 /* This matches the layout of the H_COLLECT_CA_INT_INFO retbuf */
 struct cxl_irq_info {
@@ -654,10 +658,13 @@ int cxl_afu_slbia(struct cxl_afu *afu);
 int cxl_tlb_slb_invalidate(struct cxl *adapter);
 int cxl_afu_disable(struct cxl_afu *afu);
 int cxl_afu_reset(struct cxl_afu *afu);
+int afu_check_and_enable(struct cxl_afu *afu);
 int cxl_psl_purge(struct cxl_afu *afu);
 
 void cxl_stop_trace(struct cxl *cxl);
+int cxl_pci_phb_probe(struct cxl_afu *afu);
 
 extern struct pci_driver cxl_pci_driver;
+int afu_allocate_irqs(struct cxl_context *ctx, u32 count);
 
 #endif
