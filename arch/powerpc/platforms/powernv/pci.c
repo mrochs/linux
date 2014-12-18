@@ -34,6 +34,7 @@
 #include <asm/firmware.h>
 #include <asm/eeh_event.h>
 #include <asm/eeh.h>
+#include <misc/cxl.h>
 
 #include "powernv.h"
 #include "pci.h"
@@ -57,6 +58,9 @@ static int pnv_setup_msi_irqs(struct pci_dev *pdev, int nvec, int type)
 
 	if (WARN_ON(!phb) || !phb->msi_bmp.bitmap)
 		return -ENODEV;
+
+	if (hose->type == PCI_CXL)
+		return cxl_setup_msi_irqs(pdev, nvec, type);
 
 	if (pdev->no_64bit_msi && !phb->msi32_support)
 		return -ENODEV;
@@ -99,6 +103,11 @@ static void pnv_teardown_msi_irqs(struct pci_dev *pdev)
 	struct pci_controller *hose = pci_bus_to_host(pdev->bus);
 	struct pnv_phb *phb = hose->private_data;
 	struct msi_desc *entry;
+
+	if (hose->type == PCI_CXL) {
+		cxl_teardown_msi_irqs(pdev);
+		return;
+	}
 
 	if (WARN_ON(!phb))
 		return;
@@ -732,6 +741,11 @@ static void pnv_pci_dma_dev_setup(struct pci_dev *pdev)
 	struct pci_controller *hose = pci_bus_to_host(pdev->bus);
 	struct pnv_phb *phb = hose->private_data;
 
+	if (hose->type == PCI_CXL) {
+		cxl_pci_dma_dev_setup(pdev);
+		return;
+	}
+
 	/* If we have no phb structure, try to setup a fallback based on
 	 * the device-tree (RTAS PCI for example)
 	 */
@@ -780,6 +794,37 @@ static void pnv_p7ioc_rc_quirk(struct pci_dev *dev)
 	dev->class = PCI_CLASS_BRIDGE_PCI << 8;
 }
 DECLARE_PCI_FIXUP_EARLY(PCI_VENDOR_ID_IBM, 0x3b9, pnv_p7ioc_rc_quirk);
+
+static int __maybe_unused pnv_pci_probe_mode(struct pci_bus *bus)
+{
+	struct pci_controller *hose = pci_bus_to_host(bus);
+	const __be64 *tstamp;
+	u64 now, target;
+
+	if (hose->type == PCI_CXL)
+		return cxl_pci_probe_mode(bus);
+
+	/* We hijack this as a way to ensure we have waited long
+	 * enough since the reset was lifted on the PCI bus
+	 */
+	if (bus != hose->bus)
+		return PCI_PROBE_NORMAL;
+	tstamp = of_get_property(hose->dn, "reset-clear-timestamp", NULL);
+	if (!tstamp || !*tstamp)
+		return PCI_PROBE_NORMAL;
+
+	now = mftb() / tb_ticks_per_usec;
+	target = (be64_to_cpup(tstamp) / tb_ticks_per_usec)
+		+ PCI_RESET_DELAY_US;
+
+	pr_devel("pci %04d: Reset target: 0x%llx now: 0x%llx\n",
+		 hose->global_number, target, now);
+
+	if (now < target)
+		msleep((target - now + 999) / 1000);
+
+	return PCI_PROBE_NORMAL;
+}
 
 void __init pnv_pci_init(void)
 {
