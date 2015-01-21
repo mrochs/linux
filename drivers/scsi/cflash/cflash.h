@@ -32,12 +32,22 @@
 #define CFLASH_DRIVER_VERSION           "1.0.0"
 #define CFLASH_DRIVER_DATE              "(January 16, 2015)"
 
+#define PCI_DEVICE_ID_IBM_CORSA		0x04cf
+#define CFLASH_SUBS_DEV_ID		0x04dd
 
 #define CFLASH_MAX_REQUESTS_DEFAULT     100
 #define CFLASH_MAX_CMDS_PER_LUN         64
 #define CFLASH_MAX_SECTORS              0xffffu
 
 #define CFLASH_DBG_CMD(CMD) if (cflash_debug) { CMD; }
+
+/*
+ * Error logging macros
+ */
+#define cflash_err(...) printk(KERN_ERR CFLASH_NAME ": "__VA_ARGS__)
+#define cflash_info(...) printk(KERN_INFO CFLASH_NAME ": "__VA_ARGS__)
+#define cflash_dbg(...) CFLASH_DBG_CMD(printk(KERN_INFO CFLASH_NAME ": "__VA_ARGS__))
+
 
 #define ENTER CFLASH_DBG_CMD(printk(KERN_INFO CFLASH_NAME": Entering %s\n", __func__))
 #define LEAVE CFLASH_DBG_CMD(printk(KERN_INFO CFLASH_NAME": Leaving %s\n", __func__))

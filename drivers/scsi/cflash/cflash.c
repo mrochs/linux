@@ -13,6 +13,7 @@
 #include <linux/semaphore.h>
 #include <linux/fs.h>
 #include <linux/cdev.h>
+#include <linux/reboot.h>
 
 #include <scsi/scsi.h>
 #include <scsi/scsi_host.h>
@@ -30,17 +31,6 @@ MODULE_AUTHOR("Manoj Kumar <kumarmn@us.ibm.com>");
 MODULE_AUTHOR("Paul Prahl <prahl@us.ibm.com>");
 MODULE_AUTHOR("Matthew Ochs <mrochs@us.ibm.com>");
 MODULE_LICENSE("GPL");
-
-
-static int __init init_cflash(void)
-{
-	int rc = 0;
-	return rc;
-}
-
-static void exit_cflash(void)
-{
-}
 
 
 /**
@@ -379,6 +369,161 @@ static struct scsi_host_template driver_template = {
         .use_clustering = ENABLE_CLUSTERING,
         .shost_attrs = cflash_attrs,
 };
+
+static struct pci_device_id cflash_pci_table[] = {
+        { PCI_VENDOR_ID_IBM, PCI_DEVICE_ID_IBM_CORSA,
+                PCI_VENDOR_ID_IBM, CFLASH_SUBS_DEV_ID, 0, 0, 0 },
+        {}
+};
+
+/**
+ * cflash_probe - Adapter hot plug add entry point
+ *
+ * Return value:
+ *      0 on success / non-zero on failure
+ **/
+static int cflash_probe(struct pci_dev *pdev, const struct pci_device_id *dev_id)
+{
+	/* XXX: Dummy */
+
+	return 0;
+}
+
+/**
+ * cflash_remove - IOA hot plug remove entry point
+ * @pdev:       pci device struct
+ *
+ * Adapter hot plug remove entry point.
+ *
+ * Return value:
+ *      none
+ **/
+static void cflash_remove(struct pci_dev *pdev)
+{
+        ENTER;
+
+	/* XXX: Dummy */
+
+        LEAVE;
+}
+
+/**
+ * cflash_shutdown - Shutdown handler.
+ * @pdev:       pci device struct
+ *
+ * This function is invoked upon system shutdown/reboot. It will issue
+ * an adapter shutdown to the adapter to flush the write cache.
+ *
+ * Return value:
+ *      none
+ **/
+static void cflash_shutdown(struct pci_dev *pdev)
+{
+	/* XXX: Dummy */
+}
+
+
+/**
+ * cflash_pci_error_detected - Called when a PCI error is detected.
+ * @pdev:       PCI device struct
+ * @state:      PCI channel state
+ *
+ * Description: Called when a PCI error is detected.
+ *
+ * Return value:
+ *      PCI_ERS_RESULT_NEED_RESET or PCI_ERS_RESULT_DISCONNECT
+ */
+static pci_ers_result_t cflash_pci_error_detected(struct pci_dev *pdev,
+                                               pci_channel_state_t state)
+{
+        switch (state) {
+        case pci_channel_io_frozen:
+		/* XXX: Dummy */
+                return PCI_ERS_RESULT_CAN_RECOVER;
+        case pci_channel_io_perm_failure:
+		/* XXX: Dummy */
+                return PCI_ERS_RESULT_DISCONNECT;
+                break;
+        default:
+                break;
+        }
+        return PCI_ERS_RESULT_NEED_RESET;
+}
+
+
+/**
+ * cflash_pci_mmio_enabled - Called when MMIO has been re-enabled
+ * @pdev:       PCI device struct
+ *
+ * Description: This routine is called to tell us that the MMIO
+ * access to the IOA has been restored
+ */
+static pci_ers_result_t cflash_pci_mmio_enabled(struct pci_dev *pdev)
+{
+	/* XXX: Dummy */
+        return PCI_ERS_RESULT_NEED_RESET;
+}
+
+/**
+ * cflash_pci_slot_reset - Called when PCI slot has been reset.
+ * @pdev:       PCI device struct
+ *
+ * Description: This routine is called by the pci error recovery
+ * code after the PCI slot has been reset, just before we
+ * should resume normal operations.
+ */
+static pci_ers_result_t cflash_pci_slot_reset(struct pci_dev *pdev)
+{
+	/* XXX: Dummy */
+        return PCI_ERS_RESULT_RECOVERED;
+}
+
+static const struct pci_error_handlers cflash_err_handler = {
+        .error_detected = cflash_pci_error_detected,
+        .mmio_enabled = cflash_pci_mmio_enabled,
+        .slot_reset = cflash_pci_slot_reset,
+};
+
+static struct pci_driver cflash_driver = {
+        .name = CFLASH_NAME,
+        .id_table = cflash_pci_table,
+        .probe = cflash_probe,
+        .remove = cflash_remove,
+        .shutdown = cflash_shutdown,
+        .err_handler = &cflash_err_handler,
+};
+
+
+/**
+ * cflash_halt - Issue shutdown prepare to all adapters
+ *
+ * Return value:
+ *      NOTIFY_OK on success / NOTIFY_DONE on failure
+ **/
+static int cflash_halt(struct notifier_block *nb, ulong event, void *buf)
+{
+	/* XXX: Dummy */
+	return NOTIFY_OK;
+}
+
+static struct notifier_block cflash_notifier = {
+        cflash_halt, NULL, 0
+};
+
+static int __init init_cflash(void)
+{
+        cflash_info("IBM Power CAPI Flash Adapter version: %s %s\n",
+                 CFLASH_DRIVER_VERSION, CFLASH_DRIVER_DATE);
+
+        register_reboot_notifier(&cflash_notifier);
+        return pci_register_driver(&cflash_driver);
+}
+
+static void exit_cflash(void)
+{
+        unregister_reboot_notifier(&cflash_notifier);
+        pci_unregister_driver(&cflash_driver);
+}
 
 module_init(init_cflash);
 module_exit(exit_cflash);
