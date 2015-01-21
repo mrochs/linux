@@ -1,1 +1,2 @@
-obj-$(CONFIG_CFLASH) += cflash.o
+obj-$(CONFIG_CFLSH) += cflsh.o
+cflsh-y += cflash.o cflash_mc.o
