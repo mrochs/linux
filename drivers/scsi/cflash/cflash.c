@@ -13,6 +13,7 @@
 #include <linux/semaphore.h>
 #include <linux/fs.h>
 #include <linux/cdev.h>
+#include <linux/libata.h>
 #include <linux/reboot.h>
 
 #include <scsi/scsi.h>
@@ -241,52 +242,58 @@ static int cflash_change_queue_type(struct scsi_device *sdev, int tag_type)
 
 
 static ssize_t cflash_show_host_partition_name(struct device *dev,
-                                                 struct device_attribute *attr, char *buf)
+					       struct device_attribute *attr,
+					       char *buf)
 {
 
 	/* XXX: Dummy */
- 
+
         return 0;
 }
 
 static ssize_t cflash_show_host_device_name(struct device *dev,
-                                            struct device_attribute *attr, char *buf)
+                                            struct device_attribute *attr,
+					    char *buf)
 {
 
 	/* XXX: Dummy */
- 
+
         return 0;
 }
 
 static ssize_t cflash_show_host_loc_code(struct device *dev,
-                                         struct device_attribute *attr, char *buf)
+                                         struct device_attribute *attr,
+					 char *buf)
 {
 	/* XXX: Dummy */
- 
+
         return 0;
 }
 
 static ssize_t cflash_show_host_drc_name(struct device *dev,
-                                         struct device_attribute *attr, char *buf)
+                                         struct device_attribute *attr,
+					 char *buf)
 {
 	/* XXX: Dummy */
- 
+
         return 0;
 }
 
 static ssize_t cflash_show_host_npiv_version(struct device *dev,
-                                             struct device_attribute *attr, char *buf)
+                                             struct device_attribute *attr,
+					     char *buf)
 {
 	/* XXX: Dummy */
- 
+
         return 0;
 }
 
 static ssize_t cflash_show_host_capabilities(struct device *dev,
-                                             struct device_attribute *attr, char *buf)
+                                             struct device_attribute *attr,
+					     char *buf)
 {
 	/* XXX: Dummy */
- 
+
         return 0;
 }
 
@@ -302,7 +309,7 @@ static ssize_t cflash_show_log_level(struct device *dev,
                                      struct device_attribute *attr, char *buf)
 {
 	/* XXX: Dummy */
- 
+
         return 0;
 }
 
@@ -319,11 +326,66 @@ static ssize_t cflash_store_log_level(struct device *dev,
                                       const char *buf, size_t count)
 {
 	/* XXX: Dummy */
- 
+
         return 0;
 }
 
+/**
+ * cflash_ioctl - IOCTL handler
+ * @sdev:       scsi device struct
+ * @cmd:        IOCTL cmd
+ * @arg:        IOCTL arg
+ *
+ * Return value:
+ *      0 on success / other on failure
+ **/
+static int cflash_ioctl(struct scsi_device *sdev, int cmd, void __user *arg)
+{
+	/* XXX - TODO: MRO - these are for example scaffolding */
+	/* Brings up the question, how do we get to headers in surelock-sw? */
+	#define CXL_MAGIC 0xCA
+	#define DISK_ATTACH	_IOW(CXL_MAGIC, 0xA0, struct scsi_device)
+	typedef	void	cflash_t;
 
+
+	int	  rc;
+	cflash_t *p_cflash;
+
+	/* XXX - TODO: MRO - an example of how we can pull out 'our' handle */
+	p_cflash = (cflash_t *)sdev->hostdata;
+
+	switch (cmd) {
+	/* XXX - TODO: MRO - regardless of if we do ioctl/sysfs, do we want a
+	 * front-end handler for everything MC-related or do we want to dispatch
+	 * inline with other command genres?
+	 */
+	case DISK_ATTACH:
+		rc = cflash_disk_attach(sdev, arg);
+		if (rc) {
+			/* XXX - TODO: trace here */
+			goto cflash_ioctl_exit;
+		}
+
+		break;
+	default:
+		/* XXX - TODO: MRO - do we pass along to another handler (ie:
+		 * ata_sas_scsi_ioctl() a la ipr.c) ?
+		 */
+		rc = -EINVAL;
+		break;
+	}
+
+cflash_ioctl_exit:
+	/* XXX - TODO: trace here */
+	return rc;
+}
+
+/* XXX - These are examples of attributes that will be pushed/populated in
+ * sysfs, the last argument is the callback. We can use cflash_store_log_level
+ * as an example. There is also a 'sdev_attrs' member of the scsi_host_template
+ * structure. I'm thinking that might be more appropriate for us, at least for
+ * the MC communications path.
+ */
 static DEVICE_ATTR(partition_name, S_IRUGO, cflash_show_host_partition_name, NULL);
 static DEVICE_ATTR(device_name, S_IRUGO, cflash_show_host_device_name, NULL);
 static DEVICE_ATTR(port_loc_code, S_IRUGO, cflash_show_host_loc_code, NULL);
@@ -349,6 +411,7 @@ static struct scsi_host_template driver_template = {
         .module = THIS_MODULE,
         .name = "IBM POWER CAPI Flash Adapter",
         .info = cflash_ioa_info,
+	.ioctl = cflash_ioctl,
         .proc_name = CFLASH_NAME,
         .queuecommand = cflash_queuecommand,
         .eh_abort_handler = cflash_eh_abort_handler,
@@ -384,7 +447,13 @@ static struct pci_device_id cflash_pci_table[] = {
  **/
 static int cflash_probe(struct pci_dev *pdev, const struct pci_device_id *dev_id)
 {
-	/* XXX: Dummy */
+	struct Scsi_Host *host;
+
+	/* XXX - TODO: MRO - just added this temporarily to get rid of the unused
+	 * compile warning for the driver_template struct.
+	 */
+	dev_info(&pdev->dev, "Found IOA with IRQ: %d\n", pdev->irq);
+	host = scsi_host_alloc(&driver_template, sizeof(int));
 
 	return 0;
 }

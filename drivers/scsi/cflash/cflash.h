@@ -27,6 +27,7 @@
 
 #include <linux/list.h>
 #include <linux/types.h>
+#include <scsi/scsi.h>
 
 #define CFLASH_NAME                      "cflash"
 #define CFLASH_DRIVER_VERSION           "1.0.0"
@@ -52,5 +53,10 @@
 #define ENTER CFLASH_DBG_CMD(printk(KERN_INFO CFLASH_NAME": Entering %s\n", __func__))
 #define LEAVE CFLASH_DBG_CMD(printk(KERN_INFO CFLASH_NAME": Leaving %s\n", __func__))
 
+
+/*
+ * Prototypes
+ */
+extern int cflash_disk_attach(struct scsi_device *sdev, void __user *arg);
 
 #endif

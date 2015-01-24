@@ -23,7 +23,7 @@
 
 #include "cflash.h"
 
-int cflash_mc(void)
+int cflash_disk_attach(struct scsi_device *sdev, void __user *arg)
 {
 	int rc = 0;
 	return rc;
