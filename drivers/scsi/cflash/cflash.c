@@ -16,6 +16,9 @@
 #include <linux/libata.h>
 #include <linux/reboot.h>
 
+#include <misc/cxl.h>
+#include <uapi/misc/cxl.h>
+
 #include <scsi/scsi.h>
 #include <scsi/scsi_host.h>
 #include <scsi/scsi_device.h>
@@ -26,10 +29,14 @@
 static unsigned int cflash_debug = 0;
 
 #include "cflash.h"
+#include "cflash.h"
+#include "sislite.h"
+#include "cflash_mc.h"
+#include "block_alloc.h"
+#include "mserv.h"
 
 MODULE_DESCRIPTION("IBM CAPI Flash Adapter Driver");
 MODULE_AUTHOR("Manoj Kumar <kumarmn@us.ibm.com>");
-MODULE_AUTHOR("Paul Prahl <prahl@us.ibm.com>");
 MODULE_AUTHOR("Matthew Ochs <mrochs@us.ibm.com>");
 MODULE_LICENSE("GPL");
 
@@ -439,23 +446,98 @@ static struct pci_device_id cflash_pci_table[] = {
         {}
 };
 
+
+static int cflash_gb_alloc(global_t *gbp)
+{
+    int nafu = CFLASH_NAFU;
+    int nbytes;
+    struct capikv_ini *p_ini;
+    struct capikv_ini_elm *p_elm;
+    int i=0;
+    int rc=0;
+
+    nbytes = sizeof(*p_ini) +
+            ((nafu > 1) ? (nafu - 1)*sizeof(*p_elm) : 0);
+
+    gbp->p_ini = p_ini = (struct capikv_ini *) kzalloc(nbytes, GFP_KERNEL);
+    if (p_ini == NULL) {
+            cflash_dbg("cannot allocate %d bytes\n", nbytes);
+            rc = ENOMEM;
+	    goto out;
+    }
+
+    p_ini->sini_marker = 0x53494e49;
+    p_ini->nelm = nafu;
+    p_ini->size = sizeof(*p_elm);
+
+    for (i = 0; i < nafu; i++) {
+            p_elm = &p_ini->elm[i];
+            // for this mode, the user enters the master dev path.
+            // also assume wwpns are already programmed off-line and
+            // master should leave them alone
+            //
+            p_elm->elmd_marker = 0x454c4d44;
+            // XXX strcpy(&p_elm->afu_dev_pathm[0], argv[i + optind]);
+            // XXX p_elm->lun_id = lun_id;
+    }
+
+    nbytes =  sizeof(struct afu_alloc) * p_ini->nelm;
+    gbp->p_afu_a = (struct afu_alloc *) kzalloc(nbytes, GFP_KERNEL);
+
+out:
+    return rc;
+}
+
 /**
  * cflash_probe - Adapter hot plug add entry point
  *
  * Return value:
  *      0 on success / non-zero on failure
  **/
-static int cflash_probe(struct pci_dev *pdev, const struct pci_device_id *dev_id)
+static int cflash_probe(struct pci_dev *pdev, 
+			const struct pci_device_id *dev_id)
 {
 	struct Scsi_Host *host;
+	global_t *gbp = NULL;
+	int	rc = 0;
+
+
+        ENTER;
 
 	/* XXX - TODO: MRO - just added this temporarily to get rid of the unused
 	 * compile warning for the driver_template struct.
 	 */
 	dev_info(&pdev->dev, "Found IOA with IRQ: %d\n", pdev->irq);
-	host = scsi_host_alloc(&driver_template, sizeof(int));
+	host = scsi_host_alloc(&driver_template, sizeof(global_t));
 
-	return 0;
+        if (!host) {
+                dev_err(&pdev->dev, "call to scsi_host_alloc failed!\n");
+                rc = -ENOMEM;
+                goto out;
+        }
+
+        gbp = (global_t *)host->hostdata;
+	rc = cflash_gb_alloc(gbp);
+	if (rc)
+	{
+                dev_err(&pdev->dev, "call to scsi_host_alloc failed!\n");
+                rc = -ENOMEM;
+                goto out;
+	}
+
+	gbp->pdev = pdev;
+	gbp->dev_id = (struct pci_device_id *)dev_id;
+
+#ifdef NEWCXL
+	/* XXX: How do adderess both the AFUs on the CORSA */
+	gbp->afu = cxl_pci_to_afu(pdev, NULL);
+	cflash_afu_init(gbp);
+#endif /* NEWCXL */
+
+
+        LEAVE;
+out:
+	return rc;
 }
 
 /**
