@@ -93,8 +93,10 @@ typedef struct capikv_ini {
 typedef struct {
     struct capikv_ini *p_ini;
     struct afu_alloc *p_afu_a;
-    struct pci_dev *pdev; 
-    struct pci_device_id *dev_id;
+    struct cxl_context *p_ctx;
+
+    struct pci_dev *p_dev; 
+    struct pci_device_id *p_dev_id;
 
 #ifdef NEWCXL
     struct cxl_afu *afu;

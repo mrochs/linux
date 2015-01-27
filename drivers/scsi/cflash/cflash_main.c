@@ -26,8 +26,6 @@
 #include <scsi/scsi_eh.h>
 #include <scsi/scsi_cmnd.h>
 
-static unsigned int cflash_debug = 0;
-
 #include "cflash.h"
 #include "cflash.h"
 #include "sislite.h"
@@ -525,8 +523,8 @@ static int cflash_probe(struct pci_dev *pdev,
                 goto out;
 	}
 
-	gbp->pdev = pdev;
-	gbp->dev_id = (struct pci_device_id *)dev_id;
+	gbp->p_dev = pdev;
+	gbp->p_dev_id = (struct pci_device_id *)dev_id;
 
 #ifdef NEWCXL
 	/* XXX: How do adderess both the AFUs on the CORSA */

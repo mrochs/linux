@@ -59,4 +59,7 @@
  */
 extern int cflash_disk_attach(struct scsi_device *sdev, void __user *arg);
 
+
+static unsigned int cflash_debug = 0;
+
 #endif
