@@ -529,7 +529,7 @@ static int cflash_probe(struct pci_dev *pdev,
 #ifdef NEWCXL
 	/* XXX: How do adderess both the AFUs on the CORSA */
 	gbp->afu = cxl_pci_to_afu(pdev, NULL);
-	cflash_afu_init(gbp);
+	cflash_init_afu(gbp);
 #endif /* NEWCXL */
 
 

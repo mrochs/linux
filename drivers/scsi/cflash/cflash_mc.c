@@ -13,6 +13,7 @@
 #include <linux/semaphore.h>
 #include <linux/fs.h>
 #include <linux/cdev.h>
+#include <linux/delay.h>
 #include <misc/cxl.h>
 #include <uapi/misc/cxl.h>
 #include <linux/unistd.h>
@@ -37,6 +38,120 @@ int cflash_disk_attach(struct scsi_device *sdev, void __user *arg)
 {
 	int rc = 0;
 	return rc;
+}
+
+// online means the FC link layer has sync and has completed the link layer
+// handshake. It is ready for login to start.
+void set_port_online(volatile __u64 *p_fc_regs)
+{
+	__u64 cmdcfg;
+
+	cmdcfg = read_64(&p_fc_regs[FC_MTIP_CMDCONFIG/8]);
+	cmdcfg &= (~FC_MTIP_CMDCONFIG_OFFLINE);  // clear OFF_LINE
+	cmdcfg |= (FC_MTIP_CMDCONFIG_ONLINE); // set ON_LINE
+	write_64(&p_fc_regs[FC_MTIP_CMDCONFIG/8], cmdcfg);
+}
+
+void set_port_offline(volatile __u64 *p_fc_regs)
+{
+	__u64 cmdcfg;
+
+	cmdcfg = read_64(&p_fc_regs[FC_MTIP_CMDCONFIG/8]);
+	cmdcfg &= (~FC_MTIP_CMDCONFIG_ONLINE); // clear ON_LINE
+	cmdcfg |= (FC_MTIP_CMDCONFIG_OFFLINE);  // set OFF_LINE
+	write_64(&p_fc_regs[FC_MTIP_CMDCONFIG/8], cmdcfg);
+}
+
+// returns 1 - went online
+// wait_port_xxx will timeout when cable is not pluggd in
+int wait_port_online(volatile __u64 *p_fc_regs,
+		     useconds_t delay_us,
+		     unsigned int nretry)
+
+{
+	__u64 status;
+
+	do {
+		msleep(delay_us/1000);
+		status = read_64(&p_fc_regs[FC_MTIP_STATUS/8]);
+	}  while ((status & FC_MTIP_STATUS_MASK) != FC_MTIP_STATUS_ONLINE &&
+		  nretry--);
+
+	return ((status & FC_MTIP_STATUS_MASK) == FC_MTIP_STATUS_ONLINE);
+}
+
+// returns 1 - went offline
+int wait_port_offline(volatile __u64 *p_fc_regs,
+		      useconds_t delay_us,
+		      unsigned int nretry)
+{
+	__u64 status;
+
+	do {
+		msleep(delay_us/1000);
+		status = read_64(&p_fc_regs[FC_MTIP_STATUS/8]);
+	} while ((status & FC_MTIP_STATUS_MASK) != FC_MTIP_STATUS_OFFLINE &&
+		 nretry--);
+
+	return ((status & FC_MTIP_STATUS_MASK) == FC_MTIP_STATUS_OFFLINE);
+}
+
+// this function can block up to a few seconds
+int afu_set_wwpn(afu_t *p_afu, int port, volatile __u64 *p_fc_regs,
+		  __u64 wwpn)
+{
+	int ret = 0;
+
+	set_port_offline(p_fc_regs);
+
+	if (!wait_port_offline(p_fc_regs, FC_PORT_STATUS_RETRY_INTERVAL_US,
+			       FC_PORT_STATUS_RETRY_CNT)) {
+		 cflash_dbg("%s: wait on port %d to go offline timed out\n", 
+			    p_afu->name, port);
+		 ret = -1; // but continue on to leave the port back online
+	}
+
+	if (ret == 0) {
+		write_64(&p_fc_regs[FC_PNAME/8], wwpn);
+	}
+
+	set_port_online(p_fc_regs);
+
+	if (!wait_port_online(p_fc_regs, FC_PORT_STATUS_RETRY_INTERVAL_US,
+			      FC_PORT_STATUS_RETRY_CNT)) {
+		cflash_dbg("%s: wait on port %d to go online timed out\n", 
+			   p_afu->name, port);
+		ret = -1;
+	}
+
+	 return ret;
+}
+
+
+void cflash_undo_start_afu(afu_t *p_afu, enum undo_level level)
+{
+	switch(level)
+	{
+	case UNDO_AFU_ALL:
+	case UNDO_EPOLL_ADD:
+	case UNDO_EPOLL_CREATE:
+	case UNDO_BIND_SOCK:
+	case UNDO_OPEN_SOCK:
+	case UNDO_AFU_MMAP:
+	case UNDO_AFU_START:
+	case UNDO_AFU_OPEN:
+	case UNDO_TIMER:
+	case UNDO_MLOCK:
+	default:
+		break;
+	}
+}
+
+int cflash_terminate_afu(afu_t *p_afu)
+{
+	cflash_undo_start_afu(p_afu, UNDO_AFU_ALL);
+
+	return 0;
 }
 
 #ifdef NEWCXL
@@ -67,7 +182,8 @@ void cflash_stop_context(global_t *gbp)
 	cxl_stop_context(gbp->p_ctx);
 }
 
-int cflash_afu_start(global_t *gbp)
+
+int cflash_start_afu(global_t *gbp)
 {
 	afu_t *p_afu = &gbp->p_afu_a->afu;
 	struct capikv_ini_elm *p_elm = &gbp->p_ini->elm[0];
@@ -161,7 +277,7 @@ int cflash_afu_start(global_t *gbp)
 			p_elm->wwpn[i])) {
 			cflash_dbg("%s: failed to set WWPN on port %d\n", 
 				   p_afu->name, i);
-			undo_afu_init(p_afu, level);
+			cflash_undo_start_afu(p_afu, level);
 			return -1;
 		 }
 
@@ -235,7 +351,7 @@ int cflash_afu_init(global_t *gbp)
                 goto err6;
 
 
-        rc = cflash_afu_start (gbp);
+        rc = cflash_start_afu (gbp);
         if (!rc)
                 goto err7;
 

@@ -244,7 +244,7 @@ typedef struct mc_notify_s {
   };
 } mc_notify_t;
 
-int cflash_afu_init(global_t *);
+int cflash_init_afu(global_t *);
 
 #endif  /* ifndef _CFLASHMC_H */
 
