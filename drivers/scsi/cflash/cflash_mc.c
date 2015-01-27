@@ -39,14 +39,21 @@ int cflash_disk_attach(struct scsi_device *sdev, void __user *arg)
 }
 
 #ifdef NEWCXL
-int cflash_afu_init(global_t gbp)
+static irqreturn_t cflash_dummy_irq_handler(int irq, void *data)
 {
+	/* do nothing */
+	return IRQ_HANDLED;
+}
+
+int cflash_afu_init(global_t *gbp)
+{
+	int rc;
 	struct cxl_context *ctx;
 	void __iomem *psa;
 
 	ctx = cxl_dev_context_init(gbp->pdev);
 	if (!ctx)
-		+ return -ENOMEM;
+		return -ENOMEM;
 
 	/* Allocate AFU generated interrupt handler */
 	rc = cxl_allocate_afu_irqs(ctx, 3);
@@ -54,17 +61,17 @@ int cflash_afu_init(global_t gbp)
 		goto err1;
 
 	/* Register AFU interrupt 1. */
-	rc = cxl_map_afu_irq(ctx, 1, cxl_memcpy_irq_afu, info,
+	rc = cxl_map_afu_irq(ctx, 1, cflash_dummy_irq_handler, NULL,
 			      "afu1");
 	if (!rc)
 		goto err2;
 	/* Register AFU interrupt 2 for errors. */
-		rc = cxl_map_afu_irq(ctx, 2, cxl_memcpy_copy_error, ctx,
+		rc = cxl_map_afu_irq(ctx, 2, cflash_dummy_irq_handler, ctx,
 				     "err1");
 	if (!rc)
 		goto err3;
 	/* Register AFU interrupt 3 for errors. */
-	rc = cxl_map_afu_irq(ctx, 3, cxl_memcpy_psl_error, ctx,
+	rc = cxl_map_afu_irq(ctx, 3, cflash_dummy_irq_handler, ctx,
 			     "err2");
 	if (!rc)
 		goto err4;
@@ -84,5 +91,13 @@ int cflash_afu_init(global_t gbp)
 	/* XXX: How do you send the equivalent of CXL_IOCTL_START_WORK
 	 * and CXL_IOCTL_GET_PROCESS_ELEMENT
 	 */
+
+	return 0;
+err1:
+err2:
+err3:
+err4:
+err5:
+	return -EINVAL;
 }
 #endif /* NEWCXL */
