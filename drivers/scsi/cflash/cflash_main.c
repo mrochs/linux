@@ -40,13 +40,13 @@ MODULE_LICENSE("GPL");
 
 
 /**
- * cflash_ioa_info - Get information about the card/driver
+ * cflash_info - Get information about the card/driver
  * @scsi_host:       scsi host struct
  *
  * Return value:
  *      pointer to buffer with description string
  **/
-static const char *cflash_ioa_info(struct Scsi_Host *host)
+static const char *cflash_driver_info(struct Scsi_Host *host)
 {
         static char buffer[512];
         unsigned long lock_flags = 0;
@@ -336,6 +336,26 @@ static ssize_t cflash_store_log_level(struct device *dev,
 }
 
 /**
+ * cflash_wait_for_pci_err_recovery - Wait for any PCI error recovery to
+ *					complete during probe time
+ * @p_cflash:    cflash config struct
+ * 
+ * Return value:
+ *	None
+ */
+static void cflash_wait_for_pci_err_recovery(cflash_t *p_cflash)
+{
+	struct pci_dev *pdev = p_cflash->p_dev;
+
+	if (pci_channel_offline(pdev)) {
+		wait_event_timeout(p_cflash->eeh_wait_q, 
+				   !pci_channel_offline(pdev),
+				   CFLASH_PCI_ERROR_RECOVERY_TIMEOUT);
+		pci_restore_state(pdev);
+	}
+}
+
+/**
  * cflash_ioctl - IOCTL handler
  * @sdev:       scsi device struct
  * @cmd:        IOCTL cmd
@@ -350,19 +370,16 @@ static int cflash_ioctl(struct scsi_device *sdev, int cmd, void __user *arg)
 	/* Brings up the question, how do we get to headers in surelock-sw? */
 	#define CXL_MAGIC 0xCA
 	#define DISK_ATTACH	_IOW(CXL_MAGIC, 0xA0, struct scsi_device)
-	typedef	void	cflash_t;
-
-
-	int	  rc;
 	cflash_t *p_cflash;
+	int	  rc;
 
 	/* XXX - TODO: MRO - an example of how we can pull out 'our' handle */
 	p_cflash = (cflash_t *)sdev->hostdata;
 
 	switch (cmd) {
 	/* XXX - TODO: MRO - regardless of if we do ioctl/sysfs, do we want a
-	 * front-end handler for everything MC-related or do we want to dispatch
-	 * inline with other command genres?
+	 * front-end handler for everything MC-related or do we want to 
+	 * dispatch inline with other command genres?
 	 */
 	case DISK_ATTACH:
 		rc = cflash_disk_attach(sdev, arg);
@@ -415,7 +432,7 @@ static struct device_attribute *cflash_attrs[] = {
 static struct scsi_host_template driver_template = {
         .module = THIS_MODULE,
         .name = "IBM POWER CAPI Flash Adapter",
-        .info = cflash_ioa_info,
+        .info = cflash_driver_info,
 	.ioctl = cflash_ioctl,
         .proc_name = CFLASH_NAME,
         .queuecommand = cflash_queuecommand,
@@ -445,7 +462,7 @@ static struct pci_device_id cflash_pci_table[] = {
 };
 
 
-static int cflash_gb_alloc(global_t *gbp)
+static int cflash_gb_alloc(cflash_t *p_cflash)
 {
     int nafu = CFLASH_NAFU;
     int nbytes;
@@ -457,7 +474,7 @@ static int cflash_gb_alloc(global_t *gbp)
     nbytes = sizeof(*p_ini) +
             ((nafu > 1) ? (nafu - 1)*sizeof(*p_elm) : 0);
 
-    gbp->p_ini = p_ini = (struct capikv_ini *) kzalloc(nbytes, GFP_KERNEL);
+    p_cflash->p_ini = p_ini = (struct capikv_ini *) kzalloc(nbytes, GFP_KERNEL);
     if (p_ini == NULL) {
             cflash_dbg("cannot allocate %d bytes\n", nbytes);
             rc = ENOMEM;
@@ -480,7 +497,7 @@ static int cflash_gb_alloc(global_t *gbp)
     }
 
     nbytes =  sizeof(struct afu_alloc) * p_ini->nelm;
-    gbp->p_afu_a = (struct afu_alloc *) kzalloc(nbytes, GFP_KERNEL);
+    p_cflash->p_afu_a = (struct afu_alloc *) kzalloc(nbytes, GFP_KERNEL);
 
 out:
     return rc;
@@ -496,17 +513,16 @@ static int cflash_probe(struct pci_dev *pdev,
 			const struct pci_device_id *dev_id)
 {
 	struct Scsi_Host *host;
-	global_t *gbp = NULL;
+	unsigned long cflash_regs_pci;
+	void __iomem *cflash_regs;
+	cflash_t *p_cflash = NULL;
 	int	rc = 0;
 
 
         ENTER;
 
-	/* XXX - TODO: MRO - just added this temporarily to get rid of the unused
-	 * compile warning for the driver_template struct.
-	 */
 	dev_info(&pdev->dev, "Found IOA with IRQ: %d\n", pdev->irq);
-	host = scsi_host_alloc(&driver_template, sizeof(global_t));
+	host = scsi_host_alloc(&driver_template, sizeof(cflash_t));
 
         if (!host) {
                 dev_err(&pdev->dev, "call to scsi_host_alloc failed!\n");
@@ -514,8 +530,8 @@ static int cflash_probe(struct pci_dev *pdev,
                 goto out;
         }
 
-        gbp = (global_t *)host->hostdata;
-	rc = cflash_gb_alloc(gbp);
+        p_cflash = (cflash_t *)host->hostdata;
+	rc = cflash_gb_alloc(p_cflash);
 	if (rc)
 	{
                 dev_err(&pdev->dev, "call to scsi_host_alloc failed!\n");
@@ -523,24 +539,92 @@ static int cflash_probe(struct pci_dev *pdev,
                 goto out;
 	}
 
-	gbp->p_dev = pdev;
-	gbp->p_dev_id = (struct pci_device_id *)dev_id;
+	p_cflash->p_dev = pdev;
+	p_cflash->p_dev_id = (struct pci_device_id *)dev_id;
+	pci_set_drvdata(pdev, p_cflash);
 
 #ifdef NEWCXL
 	/* XXX: How to adderess both the AFUs on the CORSA */
-	gbp->afu = cxl_pci_to_afu(pdev, NULL);
-	cflash_init_afu(gbp);
+	p_cflash->afu = cxl_pci_to_afu(pdev, NULL);
+	cflash_init_afu(p_cflash);
 
 	/* XXX: Add threads for afu_rrq_rx and afu_err_rx */
 	/* after creating afu_err_rx thread, unmask error interrupts */
-	afu_err_intr_init(&gbp->p_afu_a->afu);
+	afu_err_intr_init(&p_cflash->p_afu_a->afu);
 
 #endif /* NEWCXL */
 
+	cflash_regs_pci = pci_resource_start(pdev, 0);
+	rc = pci_request_regions(pdev, CFLASH_NAME);
+	if (rc < 0) {
+		dev_err(&pdev->dev,
+			"Couldn't register memory range of registers\n");
+		 goto out_scsi_host_put;
+	}
+
+	rc = pci_enable_device(pdev);
+
+	if (rc || pci_channel_offline(pdev)) {
+		if (pci_channel_offline(pdev)) {
+			cflash_wait_for_pci_err_recovery(p_cflash);
+			rc = pci_enable_device(pdev);
+		}
+
+		if (rc) {
+			dev_err(&pdev->dev, "Cannot enable adapter\n");
+			cflash_wait_for_pci_err_recovery(p_cflash);
+			goto out_release_regions;
+		}
+	}
+
+	cflash_regs = pci_ioremap_bar(pdev, 0);
+
+	if (!cflash_regs) {
+		dev_err(&pdev->dev,
+			"Couldn't map memory range of registers\n");
+		rc = -ENOMEM;
+		goto out_disable;
+	}
+
+	pci_set_master(pdev);
+
+	if (pci_channel_offline(pdev)) {
+		 cflash_wait_for_pci_err_recovery(p_cflash);
+		 pci_set_master(pdev);
+		 if (pci_channel_offline(pdev)) {
+			 rc = -EIO;
+			 goto out_msi_disable;
+		 }
+	}
+
+	/* Save away PCI config space for use following IOA reset */
+	rc = pci_save_state(pdev);
+
+	if (rc != PCIBIOS_SUCCESSFUL) {
+		dev_err(&pdev->dev, "Failed to save PCI config space\n");
+		rc = -EIO;
+		goto cleanup_nolog;
+	}
+	
 
         LEAVE;
 out:
 	return rc;
+
+cleanup_nolog:
+	/* XXX: free up any resources allocated here.
+	cflash_free_mem(p_cflash);
+	*/
+out_msi_disable:
+	cflash_wait_for_pci_err_recovery(p_cflash);
+	iounmap(cflash_regs);
+out_disable:
+	pci_disable_device(pdev);
+out_release_regions:
+	pci_release_regions(pdev);
+out_scsi_host_put:
+	scsi_host_put(host);
+	goto out;
 }
 
 /**

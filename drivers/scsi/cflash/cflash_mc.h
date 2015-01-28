@@ -98,12 +98,16 @@ typedef struct {
     struct pci_dev *p_dev; 
     struct pci_device_id *p_dev_id;
 
+    wait_queue_head_t reset_wait_q;
+    wait_queue_head_t msi_wait_q;
+    wait_queue_head_t eeh_wait_q;
+
 #ifdef NEWCXL
     struct cxl_afu *afu;
 #endif /* NEWCXL */
     timer_t timer_hb;
     timer_t timer_fc;
-} global_t;
+} cflash_t;
 
 /* The write_nn or read_nn routines can be used to do byte reversed MMIO
    or byte reversed SCSI CDB/data.
@@ -244,7 +248,7 @@ typedef struct mc_notify_s {
   };
 } mc_notify_t;
 
-int cflash_init_afu(global_t *);
+int cflash_init_afu(cflash_t *);
 
 #endif  /* ifndef _CFLASHMC_H */
 

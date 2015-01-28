@@ -40,6 +40,8 @@
 #define CFLASH_MAX_CMDS_PER_LUN         64
 #define CFLASH_MAX_SECTORS              0xffffu
 
+#define CFLASH_PCI_ERROR_RECOVERY_TIMEOUT  (120 * HZ)
+
 #define CFLASH_DBG_CMD(CMD) if (cflash_debug) { CMD; }
 
 /*

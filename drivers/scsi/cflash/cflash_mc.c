@@ -210,11 +210,11 @@ static irqreturn_t cflash_dummy_irq_handler(int irq, void *data)
  * Start the afu context.  This is calling into the generic CXL driver code
  * (except for the contents of the WED).
  */
-int cflash_start_context(global_t *gbp)
+int cflash_start_context(cflash_t *p_cflash)
 {
         int rc = 0;
 
-        rc =  cxl_start_context(gbp->p_ctx, gbp->p_afu_a->afu.work.work_element_descriptor, NULL);
+        rc =  cxl_start_context(p_cflash->p_ctx, p_cflash->p_afu_a->afu.work.work_element_descriptor, NULL);
 
         return rc;
 }
@@ -222,16 +222,16 @@ int cflash_start_context(global_t *gbp)
 /*
  * Stop the afu context.  This is calling into the generic CXL driver code
  */
-void cflash_stop_context(global_t *gbp)
+void cflash_stop_context(cflash_t *p_cflash)
 {
-	cxl_stop_context(gbp->p_ctx);
+	cxl_stop_context(p_cflash->p_ctx);
 }
 
 
-int cflash_start_afu(global_t *gbp)
+int cflash_start_afu(cflash_t *p_cflash)
 {
-	afu_t *p_afu = &gbp->p_afu_a->afu;
-	struct capikv_ini_elm *p_elm = &gbp->p_ini->elm[0];
+	afu_t *p_afu = &p_cflash->p_afu_a->afu;
+	struct capikv_ini_elm *p_elm = &p_cflash->p_ini->elm[0];
 	char version[16];
 	__u64 reg;
 	int i = 0;
@@ -241,7 +241,7 @@ int cflash_start_afu(global_t *gbp)
 	/* Map the entire MMIO space of the AFU. 
 	 * XXX: What is the equivalent in the new interface?
 	 */
-	p_afu->p_afu_map =  cxl_psa_map(gbp->p_ctx);
+	p_afu->p_afu_map =  cxl_psa_map(p_cflash->p_ctx);
 	if (!p_afu->p_afu_map)
 		goto out;
 
@@ -258,7 +258,7 @@ int cflash_start_afu(global_t *gbp)
 
 	// copy frequently used fields into p_afu
 	/* XXX, why cannot we get at the process element 
-	 * p_afu->ctx_hndl =  (__u16)gbp->p_ctx->pe; 
+	 * p_afu->ctx_hndl =  (__u16)p_cflash->p_ctx->pe; 
 	 */
 	 // ctx_hndl is 16 bits in CAIA
 	p_afu->p_host_map = &p_afu->p_afu_map->hosts[p_afu->ctx_hndl].host;
@@ -347,15 +347,15 @@ out:
 	return rc;
 }
 
-int cflash_init_afu(global_t *gbp)
+int cflash_init_afu(cflash_t *p_cflash)
 {
 	int rc;
 	struct cxl_context *ctx;
 
-	ctx = cxl_dev_context_init(gbp->p_dev);
+	ctx = cxl_dev_context_init(p_cflash->p_dev);
 	if (!ctx)
 		return -ENOMEM;
-	gbp->p_ctx = ctx;
+	p_cflash->p_ctx = ctx;
 
 	/* Allocate AFU generated interrupt handler */
 	rc = cxl_allocate_afu_irqs(ctx, 4);
@@ -391,18 +391,18 @@ int cflash_init_afu(global_t *gbp)
 	 * The CXL_IOCTL_GET_PROCESS_ELEMENT is implicit in the process
 	 * element (pe) that is embedded in the context (ctx)
 	 */
-        rc = cflash_start_context (gbp);
+        rc = cflash_start_context (p_cflash);
         if (!rc)
                 goto err6;
 
 
-        rc = cflash_start_afu (gbp);
+        rc = cflash_start_afu (p_cflash);
         if (!rc)
                 goto err7;
 
 	return 0;
 err7:
-	cflash_stop_context(gbp);
+	cflash_stop_context(p_cflash);
 err6:
 	cxl_unmap_afu_irq(ctx, 4, NULL);
 err5:
@@ -415,7 +415,7 @@ err2:
 	cxl_free_afu_irqs(ctx);
 err1:
 	cxl_release_context(ctx);
-	gbp->p_ctx = NULL;
+	p_cflash->p_ctx = NULL;
 	return rc;
 }
 #endif /* NEWCXL */
