@@ -527,9 +527,14 @@ static int cflash_probe(struct pci_dev *pdev,
 	gbp->p_dev_id = (struct pci_device_id *)dev_id;
 
 #ifdef NEWCXL
-	/* XXX: How do adderess both the AFUs on the CORSA */
+	/* XXX: How to adderess both the AFUs on the CORSA */
 	gbp->afu = cxl_pci_to_afu(pdev, NULL);
 	cflash_init_afu(gbp);
+
+	/* XXX: Add threads for afu_rrq_rx and afu_err_rx */
+	/* after creating afu_err_rx thread, unmask error interrupts */
+	afu_err_intr_init(&gbp->p_afu_a->afu);
+
 #endif /* NEWCXL */
 
 

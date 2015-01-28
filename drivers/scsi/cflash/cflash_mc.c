@@ -138,6 +138,7 @@ void cflash_undo_start_afu(afu_t *p_afu, enum undo_level level)
 	case UNDO_BIND_SOCK:
 	case UNDO_OPEN_SOCK:
 	case UNDO_AFU_MMAP:
+		cxl_psa_unmap((void *)p_afu->p_afu_map);
 	case UNDO_AFU_START:
 	case UNDO_AFU_OPEN:
 	case UNDO_TIMER:
@@ -153,6 +154,50 @@ int cflash_terminate_afu(afu_t *p_afu)
 
 	return 0;
 }
+
+void afu_err_intr_init(afu_t *p_afu)
+{
+	int i;
+
+	/* global async interrupts: AFU clears afu_ctrl on context exit
+	 * if async interrupts were sent to that context. This prevents
+	 * the AFU form sending further async interrupts when
+	 * there is
+	 * nobody to receive them.
+	 */
+
+	// mask all
+	write_64(&p_afu->p_afu_map->global.regs.aintr_mask, -1ull);
+	// set LISN# to send and point to master context
+	write_64(&p_afu->p_afu_map->global.regs.afu_ctrl,
+		 ((__u64)((p_afu->ctx_hndl << 8) | SISL_MSI_ASYNC_ERROR)) <<
+		 40);
+	// clear all
+	write_64(&p_afu->p_afu_map->global.regs.aintr_clear, -1ull);
+	// unmask bits that are of interest
+	// note: afu can send an interrupt after this step
+	write_64(&p_afu->p_afu_map->global.regs.aintr_mask, SISL_ASTATUS_MASK);
+	// clear again in case a bit came on after previous clear but before
+	// unmask
+	write_64(&p_afu->p_afu_map->global.regs.aintr_clear, -1ull);
+
+	// now clear FC errors
+	for (i = 0; i < NUM_FC_PORTS; i++) {
+		write_64(&p_afu->p_afu_map->global.fc_regs[i][FC_ERROR/8],
+			 (__u32)-1);
+		write_64(&p_afu->p_afu_map->global.fc_regs[i][FC_ERRCAP/8], 0);
+	}
+
+	// sync interrupts for master's IOARRIN write
+	// note that unlike asyncs, there can be no pending sync interrupts
+	// at this time (this is a fresh context and master has not written
+	// IOARRIN yet), so there is nothing to clear.
+	//
+	// set LISN#, it is always sent to the context that wrote IOARRIN
+	write_64(&p_afu->p_host_map->ctx_ctrl, SISL_MSI_SYNC_ERROR);
+	write_64(&p_afu->p_host_map->intr_mask, SISL_ISTATUS_MASK);
+}
+
 
 #ifdef NEWCXL
 static irqreturn_t cflash_dummy_irq_handler(int irq, void *data)
@@ -302,7 +347,7 @@ out:
 	return rc;
 }
 
-int cflash_afu_init(global_t *gbp)
+int cflash_init_afu(global_t *gbp)
 {
 	int rc;
 	struct cxl_context *ctx;
