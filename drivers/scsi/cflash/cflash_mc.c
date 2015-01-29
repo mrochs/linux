@@ -29,7 +29,7 @@
 #include "sislite.h"
 #include "cflash.h"
 #include "cflash_mc.h"
-#include "block_alloc.h"
+#include "cflash_ba.h"
 #include "afu_fc.h"
 #include "mserv.h"
 

@@ -30,7 +30,7 @@
 #include "cflash.h"
 #include "sislite.h"
 #include "cflash_mc.h"
-#include "block_alloc.h"
+#include "cflash_ba.h"
 #include "mserv.h"
 
 MODULE_DESCRIPTION("IBM CAPI Flash Adapter Driver");

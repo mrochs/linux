@@ -26,7 +26,7 @@
 
 #ifndef __KERNEL__
 #include <sislite.h>
-#include <block_alloc.h>
+#include <cflash_ba.h>
 #include <mclient.h>
 #include <signal.h>
 #include <time.h> 

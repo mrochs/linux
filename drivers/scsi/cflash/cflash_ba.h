@@ -1,11 +1,11 @@
 //  IBM_PROLOG_BEGIN_TAG
 //  This is an automatically generated prolog.
 //
-//  $Source: src/master/block_alloc.h $
+//  $Source: drivers/scsi/cflash/cflash_ba.h $
 //
 //  IBM CONFIDENTIAL
 //
-//  COPYRIGHT International Business Machines Corp. 2014
+//  COPYRIGHT International Business Machines Corp. 2015
 //
 //  p1
 //
@@ -20,22 +20,20 @@
 //  Origin: 30
 //
 //  IBM_PROLOG_END
-#ifndef _BLOCK_ALLOC_H
-#define _BLOCK_ALLOC_H
+#ifndef _CFLASH_BA_H
+#define _CFLASH_BA_H
 
-#ifndef __KERNEL__
-#include <inttypes.h>
-#endif /* __KERNEL__ */
+#include <linux/types.h>
 
 typedef size_t aun_t;
 
 typedef struct ba_lun {
-    uint64_t    lun_id;
-    uint64_t    wwpn;
-    size_t      lsize;     /* Lun size in number of LBAs             */
-    size_t      lba_size;  /* LBA size in number of bytes            */
-    size_t      au_size;   /* Allocation Unit size in number of LBAs */
-    void       *ba_lun_handle;
+	uint64_t	lun_id;
+	uint64_t	wwpn;
+	size_t		lsize;     /* Lun size in number of LBAs             */
+	size_t		lba_size;  /* LBA size in number of bytes            */
+	size_t		au_size;   /* Allocation Unit size in number of LBAs */
+	void	       *ba_lun_handle;
 } ba_lun_t;
 
 int ba_init(ba_lun_t *ba_lun);
@@ -49,4 +47,4 @@ void dump_ba_map(ba_lun_t *ba_lun);
 void dump_ba_clone_map(ba_lun_t *ba_lun);
 #endif
 
-#endif /* _BLOCK_ALLOC_H */
+#endif /* _CFLASH_BA_H */
