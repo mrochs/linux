@@ -36,9 +36,17 @@
 #define PCI_DEVICE_ID_IBM_CORSA		0x04cf
 #define CFLASH_SUBS_DEV_ID		0x04dd
 
+#define CFLASH_VSET_BUS                 0xff
+#define CFLASH_BUS                      0xff
+#define CFLASH_TARGET                   0xff
+#define CFLASH_LUN                      0xff
+
 #define CFLASH_MAX_REQUESTS_DEFAULT     100
 #define CFLASH_MAX_CMDS_PER_LUN         64
 #define CFLASH_MAX_SECTORS              0xffffu
+#define CFLASH_MAX_NUM_TARGETS_PER_BUS                     256
+#define CFLASH_MAX_NUM_LUNS_PER_TARGET                     256
+#define CFLASH_MAX_NUM_VSET_LUNS_PER_TARGET        8
 
 #define CFLASH_PCI_ERROR_RECOVERY_TIMEOUT  (120 * HZ)
 

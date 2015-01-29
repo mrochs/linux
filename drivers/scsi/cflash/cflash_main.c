@@ -461,6 +461,26 @@ static struct pci_device_id cflash_pci_table[] = {
         {}
 };
 
+/**
+ * cflash_remove - CFLASH hot plug remove entry point
+ * @pdev:       pci device struct
+ *
+ * Adapter hot plug remove entry point.
+ *
+ * Return value:
+ *      none
+ **/
+static void cflash_remove(struct pci_dev *pdev)
+{
+        cflash_t *p_cflash = pci_get_drvdata(pdev);
+        ENTER;
+
+	/* XXX: Dummy */
+
+        scsi_remove_host(p_cflash->host);
+        LEAVE;
+}
+
 
 static int cflash_gb_alloc(cflash_t *p_cflash)
 {
@@ -503,63 +523,19 @@ out:
     return rc;
 }
 
-/**
- * cflash_probe - Adapter hot plug add entry point
- *
- * Return value:
- *      0 on success / non-zero on failure
- **/
-static int cflash_probe(struct pci_dev *pdev, 
-			const struct pci_device_id *dev_id)
+static int cflash_init_pci(cflash_t *p_cflash)
 {
-	struct Scsi_Host *host;
 	unsigned long cflash_regs_pci;
 	void __iomem *cflash_regs;
-	cflash_t *p_cflash = NULL;
+	struct pci_dev *pdev = p_cflash->p_dev;
 	int	rc = 0;
-
-
-        ENTER;
-
-	dev_info(&pdev->dev, "Found IOA with IRQ: %d\n", pdev->irq);
-	host = scsi_host_alloc(&driver_template, sizeof(cflash_t));
-
-        if (!host) {
-                dev_err(&pdev->dev, "call to scsi_host_alloc failed!\n");
-                rc = -ENOMEM;
-                goto out;
-        }
-
-        p_cflash = (cflash_t *)host->hostdata;
-	rc = cflash_gb_alloc(p_cflash);
-	if (rc)
-	{
-                dev_err(&pdev->dev, "call to scsi_host_alloc failed!\n");
-                rc = -ENOMEM;
-                goto out;
-	}
-
-	p_cflash->p_dev = pdev;
-	p_cflash->p_dev_id = (struct pci_device_id *)dev_id;
-	pci_set_drvdata(pdev, p_cflash);
-
-#ifdef NEWCXL
-	/* XXX: How to adderess both the AFUs on the CORSA */
-	p_cflash->afu = cxl_pci_to_afu(pdev, NULL);
-	cflash_init_afu(p_cflash);
-
-	/* XXX: Add threads for afu_rrq_rx and afu_err_rx */
-	/* after creating afu_err_rx thread, unmask error interrupts */
-	afu_err_intr_init(&p_cflash->p_afu_a->afu);
-
-#endif /* NEWCXL */
 
 	cflash_regs_pci = pci_resource_start(pdev, 0);
 	rc = pci_request_regions(pdev, CFLASH_NAME);
 	if (rc < 0) {
 		dev_err(&pdev->dev,
 			"Couldn't register memory range of registers\n");
-		 goto out_scsi_host_put;
+		 goto out;
 	}
 
 	rc = pci_enable_device(pdev);
@@ -597,7 +573,7 @@ static int cflash_probe(struct pci_dev *pdev,
 		 }
 	}
 
-	/* Save away PCI config space for use following IOA reset */
+	/* Save away PCI config space for use following CFLASH reset */
 	rc = pci_save_state(pdev);
 
 	if (rc != PCIBIOS_SUCCESSFUL) {
@@ -606,8 +582,6 @@ static int cflash_probe(struct pci_dev *pdev,
 		goto cleanup_nolog;
 	}
 	
-
-        LEAVE;
 out:
 	return rc;
 
@@ -622,27 +596,115 @@ out_disable:
 	pci_disable_device(pdev);
 out_release_regions:
 	pci_release_regions(pdev);
-out_scsi_host_put:
-	scsi_host_put(host);
 	goto out;
+
 }
 
 /**
- * cflash_remove - IOA hot plug remove entry point
- * @pdev:       pci device struct
+ * cflash_scan_vsets - Scans for VSET devices
+ * @p_cflash:    cflash_t config struct
  *
- * Adapter hot plug remove entry point.
+ * Description: Since the VSET resources do not follow SAM in that we can have
+ * sparse LUNs with no LUN 0, we have to scan for these ourselves.
  *
  * Return value:
  *      none
  **/
-static void cflash_remove(struct pci_dev *pdev)
+static void cflash_scan_vsets(cflash_t *p_cflash)
 {
+        int target, lun;
+
+        for (target = 0; target < CFLASH_MAX_NUM_TARGETS_PER_BUS; target++)
+                for (lun = 0; lun < CFLASH_MAX_NUM_VSET_LUNS_PER_TARGET; lun++)
+                        scsi_add_device(p_cflash->host, CFLASH_VSET_BUS, target, lun);
+}
+
+static int cflash_init_scsi(cflash_t *p_cflash)
+{
+	struct pci_dev *pdev = p_cflash->p_dev;
+	int rc = 0;
+
+	rc = scsi_add_host(p_cflash->host, &pdev->dev);
+	if (rc) {
+		cflash_remove(pdev);
+		goto out;
+	}
+
+	scsi_scan_host(p_cflash->host);
+	cflash_scan_vsets(p_cflash);
+	scsi_add_device(p_cflash->host, CFLASH_BUS, CFLASH_TARGET,
+			CFLASH_LUN);
+
+out:
+	return rc;
+}
+
+/**
+ * cflash_probe - Adapter hot plug add entry point
+ *
+ * Return value:
+ *      0 on success / non-zero on failure
+ **/
+static int cflash_probe(struct pci_dev *pdev, 
+			const struct pci_device_id *dev_id)
+{
+	struct Scsi_Host *host;
+	cflash_t *p_cflash = NULL;
+	int	rc = 0;
+
         ENTER;
 
-	/* XXX: Dummy */
+	dev_info(&pdev->dev, "Found CFLASH with IRQ: %d\n", pdev->irq);
+	host = scsi_host_alloc(&driver_template, sizeof(cflash_t));
+
+        if (!host) {
+                dev_err(&pdev->dev, "call to scsi_host_alloc failed!\n");
+                rc = -ENOMEM;
+                goto out;
+        }
+
+        p_cflash = (cflash_t *)host->hostdata;
+	rc = cflash_gb_alloc(p_cflash);
+	if (rc)
+	{
+                dev_err(&pdev->dev, "call to scsi_host_alloc failed!\n");
+                rc = -ENOMEM;
+                goto out;
+	}
+
+	p_cflash->p_dev = pdev;
+	p_cflash->p_dev_id = (struct pci_device_id *)dev_id;
+	pci_set_drvdata(pdev, p_cflash);
+
+#ifdef NEWCXL
+	/* XXX: How to adderess both the AFUs on the CORSA */
+	p_cflash->afu = cxl_pci_to_afu(pdev, NULL);
+	cflash_init_afu(p_cflash);
+
+	/* XXX: Add threads for afu_rrq_rx and afu_err_rx */
+	/* after creating afu_err_rx thread, unmask error interrupts */
+	afu_err_intr_init(&p_cflash->p_afu_a->afu);
+
+#endif /* NEWCXL */
+
+	rc = cflash_init_pci(p_cflash);
+	if (rc) {
+		goto out_remove;
+	}
+
+	rc = cflash_init_scsi(p_cflash);
+	if (rc) {
+		goto out_remove;
+	}
 
         LEAVE;
+out:
+	return rc;
+
+out_remove:
+	cflash_remove(pdev);
+        scsi_host_put(host);
+        goto out;
 }
 
 /**
@@ -694,7 +756,7 @@ static pci_ers_result_t cflash_pci_error_detected(struct pci_dev *pdev,
  * @pdev:       PCI device struct
  *
  * Description: This routine is called to tell us that the MMIO
- * access to the IOA has been restored
+ * access to the CFLASH has been restored
  */
 static pci_ers_result_t cflash_pci_mmio_enabled(struct pci_dev *pdev)
 {

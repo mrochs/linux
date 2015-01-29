@@ -97,6 +97,7 @@ typedef struct {
 
     struct pci_dev *p_dev; 
     struct pci_device_id *p_dev_id;
+    struct Scsi_Host *host;
 
     wait_queue_head_t reset_wait_q;
     wait_queue_head_t msi_wait_q;
