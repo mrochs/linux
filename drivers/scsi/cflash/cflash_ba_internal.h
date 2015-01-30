@@ -41,24 +41,4 @@ typedef struct lun_info {
     unsigned char *aun_clone_map;
 } lun_info_t;
 
-#define ba_trc_info(...) printk(KERN_INFO CFLASH_NAME ": "__VA_ARGS__)
-
-#define BA_TRACE_0(lvl, fmt) \
-    if (trc_lvl > lvl) { ba_trc_info(lvl, fmt); }
-
-#define BA_TRACE_1(lvl, fmt, A) \
-    if (trc_lvl > lvl) { ba_trc_info(lvl, fmt, A); }
-
-#define BA_TRACE_2(lvl, fmt, A, B) \
-    if (trc_lvl > lvl) { ba_trc_info(lvl, fmt, A, B); }
-
-#define BA_TRACE_3(lvl, fmt, A, B, C) \
-    if (trc_lvl > lvl) { ba_trc_info(lvl, fmt, A, B, C); }
-
-#define BA_TRACE_4(lvl, fmt, A, B, C, D)\
-    if (trc_lvl > lvl) { ba_trc_info(lvl, fmt, A, B, C, D); }
-
-#define BA_TRACE_5(lvl, fmt, A, B, C, D, E)\
-    if (trc_lvl > lvl) { ba_trc_info(lvl, fmt, A, B, C, D, E); }
-
 #endif /* ifndef _CFLASH_BA_INTERNAL_H */

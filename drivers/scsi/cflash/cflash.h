@@ -28,6 +28,7 @@
 #include <linux/list.h>
 #include <linux/types.h>
 #include <scsi/scsi.h>
+#include <scsi/scsi_device.h>
 
 #define CFLASH_NAME                      "cflash"
 #define CFLASH_DRIVER_VERSION           "1.0.0"

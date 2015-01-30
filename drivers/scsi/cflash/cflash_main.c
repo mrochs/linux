@@ -9,7 +9,6 @@
 */
 #include <linux/pci.h>
 #include <linux/module.h>
-#include <linux/module.h>
 #include <linux/semaphore.h>
 #include <linux/fs.h>
 #include <linux/cdev.h>
@@ -35,7 +34,7 @@
 
 MODULE_DESCRIPTION("IBM CAPI Flash Adapter Driver");
 MODULE_AUTHOR("Manoj Kumar <kumarmn@us.ibm.com>");
-MODULE_AUTHOR("Matthew Ochs <mrochs@us.ibm.com>");
+MODULE_AUTHOR("Matthew R. Ochs <mrochs@us.ibm.com>");
 MODULE_LICENSE("GPL");
 
 
