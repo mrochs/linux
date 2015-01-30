@@ -30,6 +30,8 @@
 #include <scsi/scsi.h>
 #include <scsi/scsi_device.h>
 
+static unsigned int cflash_debug = 0;
+
 #define CFLASH_NAME                      "cflash"
 #define CFLASH_DRIVER_VERSION           "1.0.0"
 #define CFLASH_DRIVER_DATE              "(January 16, 2015)"
@@ -69,8 +71,8 @@
  * Prototypes
  */
 extern int cflash_disk_attach(struct scsi_device *sdev, void __user *arg);
+extern int cflash_mc_register(struct scsi_device *sdev, void __user *arg);
+extern int cflash_mc_unregister(struct scsi_device *sdev, void __user *arg);
 
-
-static unsigned int cflash_debug = 0;
 
 #endif

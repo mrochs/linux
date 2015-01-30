@@ -40,6 +40,226 @@ int cflash_disk_attach(struct scsi_device *sdev, void __user *arg)
 	return rc;
 }
 
+/*
+ * NAME:        cflash_mc_register
+ *
+ * FUNCTION:    Unregister a user AFU context with master.
+ *
+ * INPUTS:
+ *              sdev       - Pointer to scsi device structure
+ *              arg        - Pointer to optional arg structure
+ *
+ * OUTPUTS:
+ *              none
+ *
+ * RETURNS:
+ *              0           - Success
+ *              errno       - Failure
+ *
+ * NOTES:
+ *              When successful:
+ *               a. Sets CTX_CAP
+ *               b. Sets RHT_START & RHT_CNT registers for the
+ *                  registered context
+ *               c. Clears all RHT entries effectively making
+ *                  all resource handles invalid.
+ *               d. goes to rx_ready state
+ *
+ */
+int cflash_mc_register(struct scsi_device *sdev, void __user *arg)
+{
+	/* XXX: How is challenge, conn_info initialized */
+	__u64            challenge = 0;
+        conn_info_t  *p_conn_info = NULL;
+	__u64 reg;
+	ctx_info_t *p_ctx_info;
+	cflash_t *p_cflash = (cflash_t *)sdev->host->hostdata;
+	afu_t *p_afu = &p_cflash->p_afu_a->afu;
+	int i;
+
+
+	if (p_conn_info->ctx_hndl < MAX_CONTEXT) {
+		p_ctx_info = &p_afu->ctx_info[p_conn_info->ctx_hndl];
+
+		/* This code reads the mbox w/o knowing if the requester is 
+		 * the true owner of the context it wants to register. The 
+		 * read has no side effect and does not affect the true 
+		 * owner if this is a fraudulent registration attempt.
+	 	 */
+		reg = read_64(&p_ctx_info->p_ctrl_map->mbox_r);
+
+		if (reg == 0 || /* zeroed mbox is a locked mbox */ 
+		    challenge != reg) {
+			return EACCES; /* return Permission denied */
+		}
+
+		if (p_conn_info->mode == MCREG_DUP_REG && 
+		    p_ctx_info->ref_cnt == 0) {
+			return EINVAL; /* no prior registration to dup */
+		}
+
+		/* a fresh registration will cause all previous 
+		 * registrations, if any, to be forcefully canceled. 
+		 * This is important since a client can close the context 
+		 * (AFU) but not unregister the mc_handle. A new owner of 
+		 * the same context must be able to mc_register by 
+		 * forcefully unregistering the previous owner.  
+		 */
+		if (p_conn_info->mode == MCREG_INITIAL_REG) {
+			for (i = 0; i < MAX_CONNS; i++) { 
+				if (p_afu->conn_tbl[i].p_ctx_info == 
+				    p_ctx_info) { 
+					do_mc_unregister(p_afu, 
+							 &p_afu->conn_tbl[i]); 
+				} 
+			}
+
+			if (p_ctx_info->ref_cnt != 0) { 
+				cflash_err("%s: internal error: p_ctx_info->"
+					"ref_cnt != 0", p_afu->name); 
+			}
+
+			/* This context is not duped and is in a group by 
+			 * itself. 
+			 */
+			p_ctx_info->p_next = p_ctx_info;
+			p_ctx_info->p_forw = p_ctx_info;
+
+			/* restrict user to read/write cmds in translated 
+			 * mode. User has option to choose read and/or write 
+			 * permissions again in mc_open.  
+			 */
+			write_64(&p_ctx_info->p_ctrl_map->ctx_cap, 
+				 SISL_CTX_CAP_READ_CMD | 
+				 SISL_CTX_CAP_WRITE_CMD);
+			asm volatile ( "eieio" : : );
+			reg = read_64(&p_ctx_info->p_ctrl_map->ctx_cap);
+
+			/* if the write failed, the ctx must have been 
+			 * closed since the mbox read and the ctx_cap 
+			 * register locked up.  fail the registration 
+			 */
+			if (reg != (SISL_CTX_CAP_READ_CMD | 
+				    SISL_CTX_CAP_WRITE_CMD)) { 
+				return EAGAIN; 
+			}
+
+			/* the context gets a dedicated RHT tbl unless it 
+			 * is dup'ed later. 
+			 */
+			p_ctx_info->p_rht_info = 
+				&p_afu->rht_info[p_conn_info->ctx_hndl];
+			p_ctx_info->p_rht_info->ref_cnt = 1; 
+			memset(p_ctx_info->p_rht_info->rht_start, 0, 
+			       sizeof(sisl_rht_entry_t)*MAX_RHT_PER_CONTEXT);
+			/* make clearing of the RHT visible to AFU before 
+			 * MMIO 
+			 */
+			asm volatile ( "lwsync" : : );
+
+			/* set up MMIO registers pointing to the RHT */
+			write_64(&p_ctx_info->p_ctrl_map->rht_start, 
+				 (__u64)p_ctx_info->p_rht_info->rht_start);
+			write_64(&p_ctx_info->p_ctrl_map->rht_cnt_id, 
+				 SISL_RHT_CNT_ID((__u64)MAX_RHT_PER_CONTEXT, 
+						 (__u64)(p_afu->ctx_hndl))); 
+		} 
+		p_conn_info->p_ctx_info = p_ctx_info; 
+		p_ctx_info->ref_cnt++; 
+		p_conn_info->rx = rx_ready; 
+		/* it is now registered, go to ready state */ 
+		return 0; 
+	} 
+	else { 
+		return EINVAL; 
+	}
+}
+
+// rx fcn on a fresh connection waiting a MCREG.
+// On receipt of a MCREG, it will go to the rx_ready state where
+// all cmds except a MCREG is accepted.
+//
+int rx_mcreg(afu_t *p_afu, conn_info_t *p_conn_info, 
+	     mc_req_t *p_req, mc_resp_t *p_resp)
+{ 
+	int status = EINVAL; 
+
+	/* XXX: Dummy */
+	return status;
+}
+
+int
+do_mc_close(afu_t        *p_afu, 
+	    conn_info_t  *p_conn_info, 
+	    res_hndl_t   res_hndl)
+{
+	int status = EINVAL; 
+
+	/* XXX: Dummy */
+	return status;
+}
+
+
+
+/*
+ * NAME:        cflash_mc_unregister
+ *
+ * FUNCTION:    Unregister a user AFU context with master.
+ *
+ * INPUTS:
+ *              sdev       - Pointer to scsi device structure
+ *              arg        - Pointer to optional arg structure
+ *
+ * OUTPUTS:
+ *              none
+ *
+ * RETURNS:
+ *              0           - Success
+ *              errno       - Failure
+ *
+ * NOTES:
+ *              When successful:
+ *               a. RHT_START, RHT_CNT & CTX_CAP registers for the
+ *                  context are cleared
+ *               b. There is no need to clear RHT entries since
+ *                  RHT_CNT=0.
+ *               c. goes to rx_mcreg state to allow re-registration
+ */
+int cflash_mc_unregister(struct scsi_device *sdev, void __user *arg)
+{
+	int i;
+        conn_info_t  *p_conn_info = NULL; 
+	ctx_info_t *p_ctx_info = p_conn_info->p_ctx_info; 
+	cflash_t *p_cflash = (cflash_t *)sdev->host->hostdata;
+	afu_t *p_afu = &p_cflash->p_afu_a->afu;
+
+	if (p_ctx_info->ref_cnt-- == 1) { 
+
+		/* close the context */ 
+		/* for any resource still open, dealloate LBAs and close 
+		 * if nobody else is using it. 
+		 */ 
+
+		if (p_ctx_info->p_rht_info->ref_cnt-- == 1) { 
+			for (i = 0; i < MAX_RHT_PER_CONTEXT; i++) { 
+				do_mc_close(p_afu, p_conn_info, i); 
+				// will this p_conn_info work ?  
+			}
+		} 
+		
+		/* clear RHT registers for this context */ 
+		write_64(&p_ctx_info->p_ctrl_map->rht_start, 0); 
+		write_64(&p_ctx_info->p_ctrl_map->rht_cnt_id, 0); 
+		/* drop all capabilities */ 
+		write_64(&p_ctx_info->p_ctrl_map->ctx_cap, 0); 
+	} 
+	p_conn_info->p_ctx_info = NULL; 
+	p_conn_info->rx = rx_mcreg; 
+	/* client can now send another MCREG */ 
+
+	return 0; 
+}
+
 // online means the FC link layer has sync and has completed the link layer
 // handshake. It is ready for login to start.
 void set_port_online(volatile __u64 *p_fc_regs)

@@ -251,5 +251,11 @@ typedef struct mc_notify_s {
 
 int cflash_init_afu(cflash_t *);
 
+
+#define MCREG_INITIAL_REG         0x1   // fresh registration
+#define MCREG_DUP_REG             0x0   // dup
+#define CMD_MCREG         1      // Register an AFU + context handle with MC
+#define CMD_MCUNREG       2      // Unregister a context handle with MC
+
 #endif  /* ifndef _CFLASHMC_H */
 

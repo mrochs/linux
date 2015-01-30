@@ -369,6 +369,9 @@ static int cflash_ioctl(struct scsi_device *sdev, int cmd, void __user *arg)
 	/* Brings up the question, how do we get to headers in surelock-sw? */
 	#define CXL_MAGIC 0xCA
 	#define DISK_ATTACH	_IOW(CXL_MAGIC, 0xA0, struct scsi_device)
+	#define DISK_USER_DIRECT	_IOW(CXL_MAGIC, 0xA1, struct scsi_device)
+	#define DISK_USER_VIRTUAL	_IOW(CXL_MAGIC, 0xA2, struct scsi_device)
+	#define DISK_RELEASE	        _IOW(CXL_MAGIC, 0xA3, struct scsi_device)
 	cflash_t *p_cflash;
 	int	  rc;
 
@@ -382,6 +385,23 @@ static int cflash_ioctl(struct scsi_device *sdev, int cmd, void __user *arg)
 	 */
 	case DISK_ATTACH:
 		rc = cflash_disk_attach(sdev, arg);
+		if (rc) {
+			/* XXX - TODO: trace here */
+			goto cflash_ioctl_exit;
+		}
+
+		break;
+	case DISK_USER_DIRECT:
+	case DISK_USER_VIRTUAL:
+		rc = cflash_mc_register(sdev, arg);
+		if (rc) {
+			/* XXX - TODO: trace here */
+			goto cflash_ioctl_exit;
+		}
+
+		break;
+	case DISK_RELEASE:
+		rc = cflash_mc_unregister(sdev, arg);
 		if (rc) {
 			/* XXX - TODO: trace here */
 			goto cflash_ioctl_exit;
