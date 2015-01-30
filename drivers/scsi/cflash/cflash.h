@@ -30,7 +30,7 @@
 #include <scsi/scsi.h>
 #include <scsi/scsi_device.h>
 
-static unsigned int cflash_debug = 0;
+extern unsigned int cflash_debug;
 
 #define CFLASH_NAME                      "cflash"
 #define CFLASH_DRIVER_VERSION           "1.0.0"

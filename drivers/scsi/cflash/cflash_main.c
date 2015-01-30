@@ -37,6 +37,7 @@ MODULE_AUTHOR("Manoj Kumar <kumarmn@us.ibm.com>");
 MODULE_AUTHOR("Matthew R. Ochs <mrochs@us.ibm.com>");
 MODULE_LICENSE("GPL");
 
+unsigned int cflash_debug = 0;
 
 /**
  * cflash_info - Get information about the card/driver
