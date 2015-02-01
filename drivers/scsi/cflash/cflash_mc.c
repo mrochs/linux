@@ -639,3 +639,328 @@ err1:
 	return rc;
 }
 #endif /* NEWCXL */
+
+int afu_sync(afu_t	*p_afu,
+	    ctx_hndl_t	 ctx_hndl_u,
+	    res_hndl_t	 res_hndl_u,
+	    __u8	 mode)
+{
+	/* XXX - stub */
+	return 0;
+}
+
+/*
+ * NAME:	do_mc_size()
+ *
+ * FUNCTION:	Resize a resource handle by changing the RHT entry and LXT
+ *		Tbl it points to. Synchronize all contexts that refer to
+ *		the RHT.
+ *
+ * INPUTS:
+ *		p_afu		- Pointer to afu struct
+ *		p_conn_info	- Pointer to connection the request came in
+ *		res_hndl	- resource handle to resize
+ *		new_size	- new size in chunks
+ *
+ * OUTPUTS:
+ *		p_act_new_size	- pointer to actual new size in chunks
+ *
+ * RETURNS:
+ *		0	- Success
+ *		errno	- Failure
+ *
+ * NOTES:
+ *		Setting new_size=0 will clear LXT_START and LXT_CNT fields
+ *		in the RHT entry.
+ */
+int
+do_mc_size(afu_t	*p_afu,
+	   conn_info_t	*p_conn_info,
+	   res_hndl_t	 res_hndl,
+	   __u64	 new_size,
+	   __u64	*p_act_new_size)
+{
+	ctx_info_t *p_ctx_info = p_conn_info->p_ctx_info;
+	rht_info_t *p_rht_info = p_ctx_info->p_rht_info;
+	sisl_rht_entry_t *p_rht_entry;
+
+	cflash_info("%s, client_pid=%d client_fd=%d ctx_hdl=%d\n",
+		    __func__, p_conn_info->client_pid, p_conn_info->client_fd,
+		    p_conn_info->ctx_hndl);
+
+	if (res_hndl < MAX_RHT_PER_CONTEXT) {
+		p_rht_entry = &p_rht_info->rht_start[res_hndl];
+
+		if (p_rht_entry->nmask == 0) /* not open */
+			return -EINVAL;
+
+		if (new_size > p_rht_entry->lxt_cnt) {
+			grow_lxt(p_afu,
+				 p_conn_info->ctx_hndl,
+				 res_hndl,
+				 p_rht_entry,
+				 new_size - p_rht_entry->lxt_cnt,
+				 p_act_new_size);
+		} else if (new_size < p_rht_entry->lxt_cnt) {
+			shrink_lxt(p_afu,
+				   p_conn_info->ctx_hndl,
+				   res_hndl,
+				   p_rht_entry,
+				   p_rht_entry->lxt_cnt - new_size,
+				   p_act_new_size);
+		} else {
+			*p_act_new_size = new_size;
+			return 0;
+		}
+	} else {
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+int grow_lxt(afu_t		*p_afu,
+	     ctx_hndl_t		 ctx_hndl_u,
+	     res_hndl_t		 res_hndl_u,
+	     sisl_rht_entry_t	*p_rht_entry,
+	     __u64		 delta,
+	     __u64		*p_act_new_size)
+{
+	sisl_lxt_entry_t *p_lxt, *p_lxt_old;
+	unsigned int av_size;
+	unsigned int ngrps, ngrps_old;
+	aun_t aun; /* chunk# allocated by block allocator */
+	int i;
+
+	/*
+	 * Check what is available in the block allocator before re-allocating
+	 * LXT array. This is done up front under the mutex which must not be
+	 * released until after allocation is complete. 
+	 */
+	/* XXX - need to figure out linux kernel equivalent */
+	//pthread_mutex_lock(&p_afu->p_blka->mutex);
+	av_size = ba_space(&p_afu->p_blka->ba_lun);
+	if (av_size < delta)
+		delta = av_size;
+
+	p_lxt_old = p_rht_entry->lxt_start;
+	ngrps_old = LXT_NUM_GROUPS(p_rht_entry->lxt_cnt);
+	ngrps = LXT_NUM_GROUPS(p_rht_entry->lxt_cnt + delta);
+
+	if (ngrps != ngrps_old) {
+		/* realloate to fit new size */
+		p_lxt = kzalloc((sizeof(*p_lxt) * LXT_GROUP_SIZE * ngrps),
+				GFP_KERNEL);
+		if (!p_lxt) {
+			//pthread_mutex_unlock(&p_afu->p_blka->mutex);
+			return -ENOMEM;
+		}
+
+		/* copy over all old entries */
+		memcpy(p_lxt, p_lxt_old, (sizeof(*p_lxt) * p_rht_entry->lxt_cnt));
+	} else {
+		p_lxt = p_lxt_old;
+	}
+
+	/* nothing can fail from now on */
+	*p_act_new_size = p_rht_entry->lxt_cnt + delta;
+
+	/* add new entries to the end */
+	for (i = p_rht_entry->lxt_cnt; i < *p_act_new_size; i++) {
+		/*
+		 * Due to the earlier check of available space, ba_alloc
+		 * cannot fail here. If it did due to internal error,
+		 * leave a rlba_base of -1u which will likely be a
+		 * invalid LUN (too large).
+		 */
+		aun = ba_alloc(&p_afu->p_blka->ba_lun);
+		if ((aun == (aun_t)-1) || (aun >= p_afu->p_blka->nchunk)) {
+			cflash_err("ba_alloc error: allocated chunk# %lX, max %llX",
+				aun, p_afu->p_blka->nchunk - 1);
+		}
+
+		/* lun_indx = 0, select both ports, use r/w perms from RHT */
+		p_lxt[i].rlba_base = ((aun << MC_CHUNK_SHIFT) | 0x33);
+	}
+
+	//pthread_mutex_unlock(&p_afu->p_blka->mutex);
+
+	asm volatile ( "lwsync" : : );  /* make lxt updates visible */
+
+	/*
+	 * XXX - Do we really need 3 separate syncs here? The first one
+	 * for the lxt visibility updates make sense, as does having one
+	 * after we update the p_rht_entry fields. But having one after
+	 * updating lxt_start and then again after updating lxt_cnt seems
+	 * overkill unless there is a dependency (and if there is one, why
+	 * isn't it noted here in a BIG comment).
+	 */
+
+	/* Now sync up AFU - this can take a while */
+	p_rht_entry->lxt_start = p_lxt; /* even if p_lxt didn't change */
+	asm volatile ( "lwsync" : : );
+
+	p_rht_entry->lxt_cnt = *p_act_new_size;
+	asm volatile ( "lwsync" : : );
+
+	afu_sync(p_afu, ctx_hndl_u, res_hndl_u, AFU_LW_SYNC);
+
+	/* free old lxt if reallocated */
+	if (p_lxt != p_lxt_old)
+		kfree(p_lxt_old);
+
+	/* XXX - what is the significance of this comment? */
+	/* sync up AFU on each context in the doubly linked list */
+	return 0;
+}
+
+int shrink_lxt(afu_t		*p_afu,
+	       ctx_hndl_t	 ctx_hndl_u,
+	       res_hndl_t	 res_hndl_u,
+	       sisl_rht_entry_t *p_rht_entry,
+	       __u64		 delta,
+	       __u64		*p_act_new_size)
+{
+	sisl_lxt_entry_t *p_lxt, *p_lxt_old;
+	unsigned int ngrps, ngrps_old;
+	aun_t aun; /* chunk# allocated by block allocator */
+	int i;
+
+	p_lxt_old = p_rht_entry->lxt_start;
+	ngrps_old = LXT_NUM_GROUPS(p_rht_entry->lxt_cnt);
+	ngrps = LXT_NUM_GROUPS(p_rht_entry->lxt_cnt - delta);
+
+	if (ngrps != ngrps_old) {
+		/* realloate to fit new size unless new size is 0 */
+		if (ngrps) {
+			p_lxt = kzalloc((sizeof(*p_lxt) * LXT_GROUP_SIZE * ngrps),
+					GFP_KERNEL);
+			if (!p_lxt)
+				return -ENOMEM;
+
+			/* copy over old entries that will remain */
+			memcpy(p_lxt, p_lxt_old, (sizeof(*p_lxt) * (p_rht_entry->lxt_cnt - delta)));
+		} else {
+			p_lxt = NULL;
+		}
+	} else {
+		p_lxt = p_lxt_old;
+	}
+
+	/* nothing can fail from now on */
+	*p_act_new_size = p_rht_entry->lxt_cnt - delta;
+
+	/* Now sync up AFU - this can take a while */
+	p_rht_entry->lxt_cnt = *p_act_new_size;
+	asm volatile ( "lwsync" : : ); /* also makes lxt updates visible */
+
+	p_rht_entry->lxt_start = p_lxt; /* even if p_lxt didn't change */
+	asm volatile ( "lwsync" : : );
+
+	afu_sync(p_afu, ctx_hndl_u, res_hndl_u, AFU_HW_SYNC);
+
+	/* free LBAs allocated to freed chunks */
+	//pthread_mutex_lock(&p_afu->p_blka->mutex);
+	for (i = delta - 1; i >= 0; i--) {
+		aun = (p_lxt_old[*p_act_new_size + i].rlba_base >> MC_CHUNK_SHIFT);
+		ba_free(&p_afu->p_blka->ba_lun, aun);
+	}
+	//pthread_mutex_unlock(&p_afu->p_blka->mutex);
+
+	/* free old lxt if reallocated */
+	if (p_lxt != p_lxt_old)
+		kfree(p_lxt_old);
+
+	/* XXX - what is the significance of this comment? */
+	/* sync up AFU on each context in the doubly linked list!!! */
+	return 0;
+}
+
+/*
+ * NAME:	clone_lxt()
+ *
+ * FUNCTION:	clone a LXT table
+ *
+ * INPUTS:
+ *		p_afu		- Pointer to afu struct
+ *		ctx_hndl_u	- context that owns the destination LXT
+ *		res_hndl_u	- res_hndl of the destination LXT
+ *		p_rht_entry	- destination RHT to clone into
+ *		p_rht_entry_src	- source RHT to clone from
+ *
+ * OUTPUTS:
+ *
+ * RETURNS:
+ *		0	- Success
+ *		errno	- Failure
+ *
+ * NOTES:
+ */
+int clone_lxt(afu_t		*p_afu,
+	      ctx_hndl_t	 ctx_hndl_u,
+	      res_hndl_t	 res_hndl_u,
+	      sisl_rht_entry_t	*p_rht_entry,
+	      sisl_rht_entry_t	*p_rht_entry_src)
+{
+	sisl_lxt_entry_t *p_lxt;
+	unsigned int ngrps;
+	aun_t aun; /* chunk# allocated by block allocator */
+	int i, j;
+
+	ngrps = LXT_NUM_GROUPS(p_rht_entry_src->lxt_cnt);
+
+	if (ngrps) {
+		/* alloate new LXTs for clone */
+		p_lxt = kzalloc((sizeof(*p_lxt) * LXT_GROUP_SIZE * ngrps),
+				GFP_KERNEL);
+		if (!p_lxt)
+			return ENOMEM;
+
+		/* copy over */
+		memcpy(p_lxt, p_rht_entry_src->lxt_start, (sizeof(*p_lxt) * p_rht_entry_src->lxt_cnt));
+
+		/* clone the LBAs in block allocator via ref_cnt */
+		//pthread_mutex_lock(&p_afu->p_blka->mutex);
+		for (i = 0; i < p_rht_entry_src->lxt_cnt; i++) {
+			aun = (p_lxt[i].rlba_base >> MC_CHUNK_SHIFT);
+			if (ba_clone(&p_afu->p_blka->ba_lun, aun) == -1) {
+				/* free the clones already made */
+				for (j = 0; j < i; j++) {
+					aun = (p_lxt[j].rlba_base >> MC_CHUNK_SHIFT);
+					ba_free(&p_afu->p_blka->ba_lun, aun);
+				}
+
+				//pthread_mutex_unlock(&p_afu->p_blka->mutex);
+				kfree(p_lxt);
+				return -EIO;
+			}
+		}
+		//pthread_mutex_unlock(&p_afu->p_blka->mutex);
+	} else {
+		p_lxt = NULL;
+	}
+
+	asm volatile ( "lwsync" : : );  /* make lxt updates visible */
+
+	/*
+	 * XXX - Do we really need 3 separate syncs here? The first one
+	 * for the lxt visibility updates make sense, as does having one
+	 * after we update the p_rht_entry fields. But having one after
+	 * updating lxt_start and then again after updating lxt_cnt seems
+	 * overkill unless there is a dependency (and if there is one, why
+	 * isn't it noted here in a BIG comment).
+	 */
+
+	/* Now sync up AFU - this can take a while */
+	p_rht_entry->lxt_start = p_lxt; /* even if p_lxt is NULL */
+	asm volatile ( "lwsync" : : );
+
+	p_rht_entry->lxt_cnt = p_rht_entry_src->lxt_cnt;
+	asm volatile ( "lwsync" : : );
+
+	afu_sync(p_afu, ctx_hndl_u, res_hndl_u, AFU_LW_SYNC);
+
+	/* XXX - what is the significance of this comment? */
+	/* sync up AFU on each context in the doubly linked list */
+	return 0;
+}
