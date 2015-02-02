@@ -964,3 +964,160 @@ int clone_lxt(afu_t		*p_afu,
 	/* sync up AFU on each context in the doubly linked list */
 	return 0;
 }
+
+/*
+ * NAME:        do_mc_xlate_lba
+ *
+ * FUNCTION:    Query the physical LBA mapped to a virtual LBA
+ *
+ * INPUTS:
+ *              p_afu       - Pointer to afu struct
+ *              p_conn_info - Pointer to connection the request came in
+ *              res_hndl    - resource handle to query on
+ *              v_lba       - virtual LBA on res_hndl
+ *
+ * OUTPUTS:
+ *              p_p_lba     - pointer to output physical LBA
+ *
+ * RETURNS:
+ *              0           - Success
+ *              errno       - Failure
+ *
+ */
+int do_mc_xlate_lba(afu_t        *p_afu, 
+		    conn_info_t* p_conn_info, 
+		    res_hndl_t   res_hndl, 
+		    __u64        v_lba, 
+		    __u64        *p_p_lba)
+{
+	ctx_info_t *p_ctx_info = p_conn_info->p_ctx_info; 
+	rht_info_t *p_rht_info = p_ctx_info->p_rht_info; 
+	sisl_rht_entry_t *p_rht_entry; 
+	__u64 chunk_id, chunk_off, rlba_base; 
+	
+	if (res_hndl < MAX_RHT_PER_CONTEXT) { 
+		p_rht_entry = &p_rht_info->rht_start[res_hndl]; 
+		if (p_rht_entry->nmask == 0) { 
+			/* not open */ 
+			return EINVAL; 
+		} 
+
+		chunk_id = (v_lba >> MC_CHUNK_SHIFT); chunk_off 
+			= (v_lba & MC_CHUNK_OFF_MASK); 
+		
+		if (chunk_id < p_rht_entry->lxt_cnt) { 
+			rlba_base = 
+				(p_rht_entry->lxt_start[chunk_id].rlba_base & 
+				 (~MC_CHUNK_OFF_MASK)); 
+			*p_p_lba = (rlba_base | chunk_off); 
+		} 
+		else { 
+			return EINVAL; 
+		} 
+	} 
+	else { 
+		return EINVAL; 
+	} 
+	return 0;
+}
+
+/*
+ * NAME:        do_mc_clone
+ *
+ * FUNCTION:    clone by making a snapshot copy of another context
+ *
+ * INPUTS:
+ *              p_afu        - Pointer to afu struct
+ *              p_conn_info  - Pointer to connection the request came in
+ *                             This is also the target of the clone.
+ *              ctx_hndl_src - AFU context to clone from
+ *              challenge    - used to validate access to ctx_hndl_src
+ *              flags        - permissions for the cloned copy
+ *
+ * OUTPUTS:
+ *              None
+ *
+ * RETURNS:
+ *              0           - Success
+ *              errno       - Failure
+ *
+ * clone effectively does what open and size do. The destination
+ * context must be in pristine state with no resource handles open.
+ *
+ */
+// todo dest ctx must be unduped
+int do_mc_clone(afu_t        *p_afu, 
+		conn_info_t  *p_conn_info, 
+		ctx_hndl_t   ctx_hndl_src, 
+		__u64        challenge, 
+		__u64        flags)
+{
+	ctx_info_t *p_ctx_info = p_conn_info->p_ctx_info; 
+	rht_info_t *p_rht_info = p_ctx_info->p_rht_info; 
+	
+	ctx_info_t *p_ctx_info_src; 
+	rht_info_t *p_rht_info_src; 
+	__u64 reg; 
+	int i, j; 
+	int rc; 
+	
+	/* verify there is no open resource handle in the target context 
+	 * of the clone.  
+	 */ 
+	
+	for (i = 0; i <  MAX_RHT_PER_CONTEXT; i++) { 
+		if (p_rht_info->rht_start[i].nmask != 0) { 
+			return EINVAL; 
+		} 
+	} 
+	
+	/* do not clone yourself */ 
+	if (p_conn_info->ctx_hndl == ctx_hndl_src) { 
+		return EINVAL; 
+	} 
+	
+	if (ctx_hndl_src < MAX_CONTEXT) { 
+		p_ctx_info_src = &p_afu->ctx_info[ctx_hndl_src]; 
+		p_rht_info_src = &p_afu->rht_info[ctx_hndl_src]; 
+	} 
+	else { 
+		return EINVAL; 
+	} 
+	
+	reg = read_64(&p_ctx_info_src->p_ctrl_map->mbox_r); 
+	
+	if (reg == 0 || /* zeroed mbox is a locked mbox */ 
+	    challenge != reg) { 
+		return EACCES; /* return Permission denied */ 
+	} 
+	
+	/* this loop is equivalent to do_mc_open & do_mc_size 
+	 * Not checking if the source context has anything open or whether 
+	 * it is even registered.  
+	 */ 
+	
+	for (i = 0; i <  MAX_RHT_PER_CONTEXT; i++) { 
+		p_rht_info->rht_start[i].nmask = 
+			p_rht_info_src->rht_start[i].nmask; 
+		p_rht_info->rht_start[i].fp = 
+			SISL_RHT_FP_CLONE(p_rht_info_src->rht_start[i].fp, 
+					  flags & 0x3); 
+		
+		rc = clone_lxt(p_afu, p_conn_info->ctx_hndl, i, 
+			       &p_rht_info->rht_start[i], 
+			       &p_rht_info_src->rht_start[i]); 
+		
+		if (rc != 0) { 
+			for (j = 0; j < i; j++) { 
+				do_mc_close(p_afu, p_conn_info, j); 
+			} 
+			
+			p_rht_info->rht_start[i].nmask = 0; 
+			p_rht_info->rht_start[i].fp = 0; 
+			return rc; 
+		} 
+	} 
+	
+	return 0;
+}
+
