@@ -1,0 +1,11 @@
+#
+# IBM CXL-attached Flash Accelerator SCSI Driver
+#
+
+config CFLASH
+	tristate "Support for CAPI Flash (Surelock)"
+	depends on CXL
+	default m
+	help
+	  Allows CAPI Accelerated IO to Flash
+	  If unsure, say N.
