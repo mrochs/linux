@@ -1121,3 +1121,113 @@ int do_mc_clone(afu_t        *p_afu,
 	return 0;
 }
 
+/*
+ * NAME:	do_mc_dup()
+ *
+ * FUNCTION:	dup 2 contexts by linking their RHTs
+ *
+ * INPUTS:
+ *		p_afu		- Pointer to afu struct
+ *		p_conn_info	- Pointer to connection the request came in
+ *				  This is the context to dup to (target)
+ *		ctx_hndl_cand	- This is the context to dup from source)
+ *		challenge	- used to validate access to ctx_hndl_cand
+ *
+ * OUTPUTS:
+ *		None
+ *
+ * RETURNS:
+ *		0	- Success
+ *		errno	- Failure
+ */
+/* XXX - what is the significance of this comment? */
+// dest ctx must be unduped and with no open res_hndls
+int do_mc_dup(afu_t		*p_afu,
+	      conn_info_t	*p_conn_info,
+	      ctx_hndl_t	 ctx_hndl_cand,
+	      __u64		 challenge)
+{
+	ctx_info_t *p_ctx_info = p_conn_info->p_ctx_info;
+	rht_info_t *p_rht_info = p_ctx_info->p_rht_info;
+
+	ctx_info_t *p_ctx_info_cand;
+	__u64 reg;
+	int i;
+
+	cflash_info("%s, client_pid=%d client_fd=%d ctx_hdl=%d\n",
+		__func__, p_conn_info->client_pid, p_conn_info->client_fd,
+		p_conn_info->ctx_hndl);
+
+	/* verify there is no open resource handle in the target context of the clone */
+	for (i = 0; i <  MAX_RHT_PER_CONTEXT; i++)
+		if (p_rht_info->rht_start[i].nmask != 0)
+			return -EINVAL;
+
+	/* do not dup yourself */
+	if (p_conn_info->ctx_hndl == ctx_hndl_cand)
+		return -EINVAL;
+
+	if (ctx_hndl_cand < MAX_CONTEXT)
+		p_ctx_info_cand = &p_afu->ctx_info[ctx_hndl_cand];
+	else
+		return -EINVAL;
+
+	reg = read_64(&p_ctx_info_cand->p_ctrl_map->mbox_r);
+
+	/* fyi, zeroed mbox is a locked mbox */
+	if ((reg == 0) || (challenge != reg))
+		return -EACCES; /* return Permission denied */
+
+	/* XXX - what does this mean? */
+	return EIO; // todo later!!!
+}
+
+/*
+ * NAME:	do_mc_stat()
+ *
+ * FUNCTION:	Query the current information on a resource handle
+ *
+ * INPUTS:
+ *		p_afu		- Pointer to afu struct
+ *		p_conn_info	- Pointer to connection the request came in
+ *		res_hndl	- resource handle to query
+ *
+ * OUTPUTS:
+ *		p_mc_stat	- pointer to output stat information
+ *
+ * RETURNS:
+ *		0		- Success
+ *		errno		- Failure
+ *
+ */
+int do_mc_stat(afu_t		*p_afu,
+	       conn_info_t	*p_conn_info,
+	       res_hndl_t	 res_hndl,
+	       mc_stat_t	*p_mc_stat)
+{
+	ctx_info_t *p_ctx_info = p_conn_info->p_ctx_info;
+	rht_info_t *p_rht_info = p_ctx_info->p_rht_info;
+	sisl_rht_entry_t *p_rht_entry;
+
+	cflash_info("%s, client_pid=%d client_fd=%d ctx_hdl=%d\n",
+		__func__, p_conn_info->client_pid, p_conn_info->client_fd,
+		p_conn_info->ctx_hndl);
+
+	if (res_hndl < MAX_RHT_PER_CONTEXT) {
+		p_rht_entry = &p_rht_info->rht_start[res_hndl];
+
+		/* not open */
+		if (p_rht_entry->nmask == 0)
+			return -EINVAL;
+
+		p_mc_stat->blk_len = p_afu->p_blka->ba_lun.lba_size;
+		p_mc_stat->nmask = p_rht_entry->nmask;
+		p_mc_stat->size = p_rht_entry->lxt_cnt;
+		p_mc_stat->flags = SISL_RHT_PERM(p_rht_entry->fp);
+	} else {
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
