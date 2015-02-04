@@ -373,6 +373,8 @@ static int cflash_ioctl(struct scsi_device *sdev, int cmd, void __user *arg)
 	#define DISK_USER_DIRECT	_IOW(CXL_MAGIC, 0xA1, struct scsi_device)
 	#define DISK_USER_VIRTUAL	_IOW(CXL_MAGIC, 0xA2, struct scsi_device)
 	#define DISK_RELEASE	        _IOW(CXL_MAGIC, 0xA3, struct scsi_device)
+	#define DISK_VLUN_RESIZE	_IOW(CXL_MAGIC, 0xA4, struct scsi_device)
+
 	cflash_t *p_cflash;
 	int	  rc;
 
@@ -403,6 +405,14 @@ static int cflash_ioctl(struct scsi_device *sdev, int cmd, void __user *arg)
 		break;
 	case DISK_RELEASE:
 		rc = cflash_mc_unregister(sdev, arg);
+		if (rc) {
+			/* XXX - TODO: trace here */
+			goto cflash_ioctl_exit;
+		}
+
+		break;
+	case DISK_VLUN_RESIZE:
+		rc = cflash_mc_size(sdev, arg);
 		if (rc) {
 			/* XXX - TODO: trace here */
 			goto cflash_ioctl_exit;
@@ -469,7 +479,7 @@ static struct scsi_host_template driver_template = {
         .cmd_per_lun = 16,
         .can_queue = CFLASH_MAX_REQUESTS_DEFAULT,
         .this_id = -1,
-        .sg_tablesize = SG_ALL,
+        .sg_tablesize = SG_NONE, /* No scatter gather support. */
         .max_sectors = CFLASH_MAX_SECTORS,
         .use_clustering = ENABLE_CLUSTERING,
         .shost_attrs = cflash_attrs,

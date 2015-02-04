@@ -77,6 +77,10 @@ int cflash_mc_register(struct scsi_device *sdev, void __user *arg)
 	afu_t *p_afu = &p_cflash->p_afu_a->afu;
 	int i;
 
+	cflash_info("%s, client_pid=%d client_fd=%d ctx_hdl=%d\n",
+		    __func__, p_conn_info->client_pid, 
+		    p_conn_info->client_fd,
+		    p_conn_info->ctx_hndl);
 
 	if (p_conn_info->ctx_hndl < MAX_CONTEXT) {
 		p_ctx_info = &p_afu->ctx_info[p_conn_info->ctx_hndl];
@@ -232,6 +236,11 @@ int cflash_mc_unregister(struct scsi_device *sdev, void __user *arg)
 	ctx_info_t *p_ctx_info = p_conn_info->p_ctx_info; 
 	cflash_t *p_cflash = (cflash_t *)sdev->host->hostdata;
 	afu_t *p_afu = &p_cflash->p_afu_a->afu;
+
+	cflash_info("%s, client_pid=%d client_fd=%d ctx_hdl=%d\n",
+		    __func__, p_conn_info->client_pid, 
+		    p_conn_info->client_fd,
+		    p_conn_info->ctx_hndl);
 
 	if (p_ctx_info->ref_cnt-- == 1) { 
 
@@ -700,7 +709,8 @@ void wait_resp(afu_t *p_afu, struct afu_cmd *p_cmd)
 	timer_stop(p_cmd->timer); /* already stopped if timer fired */
 
 	if (p_cmd->sa.ioasc != 0)
-		cflash_err("CMD 0x%x failed, IOASC: flags 0x%x, afu_rc 0x%x, scsi_rc 0x%x, fc_rc 0x%x\n",
+		cflash_err("CMD 0x%x failed, IOASC: flags 0x%x, afu_rc 0x%x, "
+			   "scsi_rc 0x%x, fc_rc 0x%x\n",
 			p_cmd->rcb.cdb[0],
 			p_cmd->sa.rc.flags,
 			p_cmd->sa.rc.afu_rc,
@@ -752,7 +762,7 @@ int afu_sync(afu_t	*p_afu,
 }
 
 /*
- * NAME:	do_mc_size()
+ * NAME:	cflash_mc_size()
  *
  * FUNCTION:	Resize a resource handle by changing the RHT entry and LXT
  *		Tbl it points to. Synchronize all contexts that refer to
@@ -775,19 +785,22 @@ int afu_sync(afu_t	*p_afu,
  *		Setting new_size=0 will clear LXT_START and LXT_CNT fields
  *		in the RHT entry.
  */
-int
-do_mc_size(afu_t	*p_afu,
-	   conn_info_t	*p_conn_info,
-	   res_hndl_t	 res_hndl,
-	   __u64	 new_size,
-	   __u64	*p_act_new_size)
+int cflash_mc_size(struct scsi_device *sdev, void __user *arg)
 {
+	cflash_t *p_cflash = (cflash_t *)sdev->host->hostdata;
+	afu_t *p_afu = &p_cflash->p_afu_a->afu;
+	conn_info_t  *p_conn_info = NULL;
+	__u64           new_size = (__u64) arg;
+	__u64        *p_act_new_size = NULL;
+	res_hndl_t    res_hndl = 0;
+
 	ctx_info_t *p_ctx_info = p_conn_info->p_ctx_info;
 	rht_info_t *p_rht_info = p_ctx_info->p_rht_info;
 	sisl_rht_entry_t *p_rht_entry;
 
 	cflash_info("%s, client_pid=%d client_fd=%d ctx_hdl=%d\n",
-		    __func__, p_conn_info->client_pid, p_conn_info->client_fd,
+		    __func__, p_conn_info->client_pid, 
+		    p_conn_info->client_fd,
 		    p_conn_info->ctx_hndl);
 
 	if (res_hndl < MAX_RHT_PER_CONTEXT) {
@@ -859,7 +872,8 @@ int grow_lxt(afu_t		*p_afu,
 		}
 
 		/* copy over all old entries */
-		memcpy(p_lxt, p_lxt_old, (sizeof(*p_lxt) * p_rht_entry->lxt_cnt));
+		memcpy(p_lxt, p_lxt_old, (sizeof(*p_lxt) * 
+					  p_rht_entry->lxt_cnt));
 	} else {
 		p_lxt = p_lxt_old;
 	}
@@ -877,8 +891,8 @@ int grow_lxt(afu_t		*p_afu,
 		 */
 		aun = ba_alloc(&p_afu->p_blka->ba_lun);
 		if ((aun == (aun_t)-1) || (aun >= p_afu->p_blka->nchunk)) {
-			cflash_err("ba_alloc error: allocated chunk# %lX, max %llX",
-				aun, p_afu->p_blka->nchunk - 1);
+			cflash_err("ba_alloc error: allocated chunk# %lX, "
+				   "max %llX", aun, p_afu->p_blka->nchunk - 1);
 		}
 
 		/* lun_indx = 0, select both ports, use r/w perms from RHT */
@@ -935,13 +949,15 @@ int shrink_lxt(afu_t		*p_afu,
 	if (ngrps != ngrps_old) {
 		/* realloate to fit new size unless new size is 0 */
 		if (ngrps) {
-			p_lxt = kzalloc((sizeof(*p_lxt) * LXT_GROUP_SIZE * ngrps),
-					GFP_KERNEL);
+			p_lxt = kzalloc((sizeof(*p_lxt) * LXT_GROUP_SIZE * 
+					 ngrps), GFP_KERNEL);
 			if (!p_lxt)
 				return -ENOMEM;
 
 			/* copy over old entries that will remain */
-			memcpy(p_lxt, p_lxt_old, (sizeof(*p_lxt) * (p_rht_entry->lxt_cnt - delta)));
+			memcpy(p_lxt, p_lxt_old, (sizeof(*p_lxt) * 
+						  (p_rht_entry->lxt_cnt - 
+						   delta)));
 		} else {
 			p_lxt = NULL;
 		}
@@ -1019,7 +1035,8 @@ int clone_lxt(afu_t		*p_afu,
 			return ENOMEM;
 
 		/* copy over */
-		memcpy(p_lxt, p_rht_entry_src->lxt_start, (sizeof(*p_lxt) * p_rht_entry_src->lxt_cnt));
+		memcpy(p_lxt, p_rht_entry_src->lxt_start, 
+		       (sizeof(*p_lxt) * p_rht_entry_src->lxt_cnt));
 
 		/* clone the LBAs in block allocator via ref_cnt */
 		//pthread_mutex_lock(&p_afu->p_blka->mutex);
@@ -1028,7 +1045,8 @@ int clone_lxt(afu_t		*p_afu,
 			if (ba_clone(&p_afu->p_blka->ba_lun, aun) == -1) {
 				/* free the clones already made */
 				for (j = 0; j < i; j++) {
-					aun = (p_lxt[j].rlba_base >> MC_CHUNK_SHIFT);
+					aun = (p_lxt[j].rlba_base >> 
+					       MC_CHUNK_SHIFT);
 					ba_free(&p_afu->p_blka->ba_lun, aun);
 				}
 
@@ -1097,6 +1115,11 @@ int do_mc_xlate_lba(afu_t        *p_afu,
 	sisl_rht_entry_t *p_rht_entry; 
 	__u64 chunk_id, chunk_off, rlba_base; 
 	
+	cflash_info("%s, client_pid=%d client_fd=%d ctx_hdl=%d\n",
+		    __func__, p_conn_info->client_pid, 
+		    p_conn_info->client_fd,
+		    p_conn_info->ctx_hndl);
+
 	if (res_hndl < MAX_RHT_PER_CONTEXT) { 
 		p_rht_entry = &p_rht_info->rht_start[res_hndl]; 
 		if (p_rht_entry->nmask == 0) { 
@@ -1163,6 +1186,11 @@ int do_mc_clone(afu_t        *p_afu,
 	int i, j; 
 	int rc; 
 	
+	cflash_info("%s, client_pid=%d client_fd=%d ctx_hdl=%d\n",
+		    __func__, p_conn_info->client_pid, 
+		    p_conn_info->client_fd,
+		    p_conn_info->ctx_hndl);
+
 	/* verify there is no open resource handle in the target context 
 	 * of the clone.  
 	 */ 
@@ -1257,7 +1285,8 @@ int do_mc_dup(afu_t		*p_afu,
 	int i;
 
 	cflash_info("%s, client_pid=%d client_fd=%d ctx_hdl=%d\n",
-		__func__, p_conn_info->client_pid, p_conn_info->client_fd,
+		__func__, p_conn_info->client_pid, 
+		p_conn_info->client_fd,
 		p_conn_info->ctx_hndl);
 
 	/* verify there is no open resource handle in the target context of the clone */
@@ -1312,7 +1341,8 @@ int do_mc_stat(afu_t		*p_afu,
 	sisl_rht_entry_t *p_rht_entry;
 
 	cflash_info("%s, client_pid=%d client_fd=%d ctx_hdl=%d\n",
-		__func__, p_conn_info->client_pid, p_conn_info->client_fd,
+		__func__, p_conn_info->client_pid, 
+		p_conn_info->client_fd,
 		p_conn_info->ctx_hndl);
 
 	if (res_hndl < MAX_RHT_PER_CONTEXT) {
