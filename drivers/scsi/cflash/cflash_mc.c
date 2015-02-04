@@ -640,12 +640,114 @@ err1:
 }
 #endif /* NEWCXL */
 
+// rep = 0 for 1 shot timer.
+void timer_start(timer_t timer, time_t sec, int rep)
+{
+	/* XXX - leave as stub for now since we're moving to kernel timers */
+}
+
+
+void timer_stop(timer_t timer)
+{
+	/* XXX - leave as stub for now since we're moving to kernel timers */
+}
+
+void send_cmd(afu_t *p_afu, struct afu_cmd *p_cmd)
+{
+	int nretry = 0;
+
+	if (p_afu->room == 0) {
+		asm volatile ( "eieio" : : ); /* let IOARRIN writes complete */
+		do {
+			p_afu->room = read_64(&p_afu->p_host_map->cmd_room);
+			udelay(nretry);
+		} while ((p_afu->room == 0) && (nretry++ < MC_ROOM_RETRY_CNT));
+	}
+
+	p_cmd->sa.host_use_b[0] = 0; // 0 means active
+	p_cmd->sa.ioasc = 0;
+
+	/* make memory updates visible to AFU before MMIO */
+	asm volatile ( "lwsync" : : );
+
+	/*
+	 * XXX - need to figure out how to best convert these POSIX timers
+	 * and signals to kernel services (ie: hrtimer, handler, sleep/wakeup)
+	 */
+	timer_start(p_cmd->timer, p_cmd->rcb.timeout*2, 0);
+
+	/* Write IOARRIN */
+	if (p_afu->room)
+		write_64(&p_afu->p_host_map->ioarrin, (__u64)&p_cmd->rcb);
+	else
+		cflash_err("no cmd_room to send 0x%X\n", p_cmd->rcb.cdb[0]);
+
+	/* Let timer fire to complete the response... */
+}
+
+void wait_resp(afu_t *p_afu, struct afu_cmd *p_cmd)
+{
+	//pthread_mutex_lock(&p_cmd->mutex);
+	while (!(p_cmd->sa.host_use_b[0] & B_DONE)) {
+		//pthread_cond_wait(&p_cmd->cv, &p_cmd->mutex);
+	}
+	//pthread_mutex_unlock(&p_cmd->mutex);
+
+	/*
+	 * XXX - need to figure out how to best convert these POSIX timers
+	 * and signals to kernel services (ie: hrtimer, handler, sleep/wakeup)
+	 */
+	timer_stop(p_cmd->timer); /* already stopped if timer fired */
+
+	if (p_cmd->sa.ioasc != 0)
+		cflash_err("CMD 0x%x failed, IOASC: flags 0x%x, afu_rc 0x%x, scsi_rc 0x%x, fc_rc 0x%x\n",
+			p_cmd->rcb.cdb[0],
+			p_cmd->sa.rc.flags,
+			p_cmd->sa.rc.afu_rc,
+			p_cmd->sa.rc.scsi_rc,
+			p_cmd->sa.rc.fc_rc);
+}
+
+/*
+ * afu_sync can be called from interrupt thread and the main processing
+ * thread. Caller is responsible for any serialization.
+ * Also, it can be called even before/during discovery, so we must use
+ * a dedicated cmd not used by discovery.
+ *
+ * AFU takes only 1 sync cmd at a time.
+ */
 int afu_sync(afu_t	*p_afu,
 	    ctx_hndl_t	 ctx_hndl_u,
 	    res_hndl_t	 res_hndl_u,
 	    __u8	 mode)
 {
-	/* XXX - stub */
+	__u16 *p_u16;
+	__u32 *p_u32;
+	struct afu_cmd *p_cmd = &p_afu->cmd[AFU_SYNC_INDEX];
+
+	memset(&p_cmd->rcb.cdb[0], 0, sizeof(p_cmd->rcb.cdb));
+
+	p_cmd->rcb.req_flags = SISL_REQ_FLAGS_AFU_CMD;
+	p_cmd->rcb.port_sel  = 0x0; /* NA */
+	p_cmd->rcb.lun_id    = 0x0; /* NA */
+	p_cmd->rcb.data_len  = 0x0;
+	p_cmd->rcb.data_ea   = 0x0;
+	p_cmd->rcb.timeout   = MC_AFU_SYNC_TIMEOUT;
+
+	p_cmd->rcb.cdb[0] = 0xC0; /* AFU Sync */
+	p_cmd->rcb.cdb[1] = mode;
+	p_u16 = (__u16*)&p_cmd->rcb.cdb[2];
+	write_16(p_u16, ctx_hndl_u); /* context to sync up */
+	p_u32 = (__u32*)&p_cmd->rcb.cdb[4];
+	write_32(p_u32, res_hndl_u); /* res_hndl to sync up */
+
+	send_cmd(p_afu, p_cmd);
+	wait_resp(p_afu, p_cmd);
+
+	if ((p_cmd->sa.ioasc != 0) ||
+	    (p_cmd->sa.host_use_b[0] & B_ERROR)) /* B_ERROR is set on timeout */
+		return -1;
+
 	return 0;
 }
 
