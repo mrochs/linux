@@ -647,6 +647,19 @@ err1:
 	p_cflash->p_ctx = NULL;
 	return rc;
 }
+
+void cflash_term_afu(cflash_t *p_cflash)
+{
+	cflash_stop_context(p_cflash);
+	cxl_unmap_afu_irq(p_cflash->p_ctx, 4, NULL);
+	cxl_unmap_afu_irq(p_cflash->p_ctx, 3, NULL);
+	cxl_unmap_afu_irq(p_cflash->p_ctx, 2, NULL);
+	cxl_unmap_afu_irq(p_cflash->p_ctx, 1, NULL);
+	cxl_free_afu_irqs(p_cflash->p_ctx);
+	cxl_release_context(p_cflash->p_ctx);
+	p_cflash->p_ctx = NULL;
+}
+
 #endif /* NEWCXL */
 
 // rep = 0 for 1 shot timer.

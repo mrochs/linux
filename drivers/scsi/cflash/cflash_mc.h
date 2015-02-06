@@ -48,15 +48,15 @@ typedef unsigned int    useconds_t;     /* time in microseconds */
  * for MServ to initialize the resources described by the element. This
  * typically includes the AFU, port names, and other info.
  */
-typedef struct capikv_ini_elm {
-  __u64 elmd_marker;       // element data marker: set to 0x454c4d44
-  __u64 lun_id;            // lun_id to use (only 1)
-  __u64 wwpn[SURELOCK_NUM_FC_PORTS]; // wwpn of AFU ports
-  char  afu_dev_path[64];  // non master path to /dev
-  char  afu_pci_path[64];  // non master path to /sys
-  char  afu_dev_pathm[64]; // master path to /dev
-  char  afu_pci_pathm[64]; // master path to /sys
-  /* future expansions go here */
+typedef struct capikv_ini_elm { 
+	__u64 elmd_marker;       // element data marker: set to 0x454c4d44 
+	__u64 lun_id;            // lun_id to use (only 1) 
+	__u64 wwpn[SURELOCK_NUM_FC_PORTS]; // wwpn of AFU ports 
+	char  afu_dev_path[64];  // non master path to /dev 
+	char  afu_pci_path[64];  // non master path to /sys 
+	char  afu_dev_pathm[64]; // master path to /dev 
+	char  afu_pci_pathm[64]; // master path to /sys 
+	/* future expansions go here */
 }capikv_ini_elm_t;
 
 /**
@@ -65,119 +65,122 @@ typedef struct capikv_ini_elm {
  * contained in the variable-length struct. Note that we may have anywhere from
  * 0 to N
  */
-typedef struct capikv_ini {
-  __u32 sini_marker; // set to 0x53494e49
-  __u32 flags;       // to version or for other purposes, presently 0
-  __u32 nelm;        // number of elements
-  __u32 size;        // size of each element
-  __u32 rsvd[8];     // must be zeroed
+typedef struct capikv_ini { 
+	__u32 sini_marker; // set to 0x53494e49 
+	__u32 flags;       // to version or for other purposes, presently 0 
+	__u32 nelm;        // number of elements 
+	__u32 size;        // size of each element 
+	__u32 rsvd[8];     // must be zeroed 
+	/* 
+	 * NOTE: 
+	 * 
+	 * 1. to maintain beckward compatibility, the header of the ini file 
+	 *    (i.e. the fields above) cannot change nor can the header be 
+	 *    expanded.  
+	 *    
+	 * 2. Each element can be expanded by adding fields to the end but they
+	 *    cannot be shrunk.  
+	 *    
+	 * 3. any reserved field must be zeroed 
+	 * 
+	 */
 
-  /*
-   * NOTE:
-   *
-   * 1. to maintain beckward compatibility, the header of the ini file
-   *    (i.e. the fields above) cannot change nor can the header be
-   *    expanded.
-   *
-   * 2. Each element can be expanded by adding fields to the end but they
-   *    cannot be shrunk.
-   *
-   * 3. any reserved field must be zeroed
-   *
-   */
+	struct capikv_ini_elm elm[CFLASH_NAFU];  
 
-  struct capikv_ini_elm elm[CFLASH_NAFU];  
 }capikv_ini_t;
 
 
-typedef struct {
-    struct capikv_ini *p_ini;
-    struct afu_alloc *p_afu_a;
-    struct cxl_context *p_ctx;
+typedef struct { 
+	struct capikv_ini *p_ini; 
+	struct afu_alloc *p_afu_a; 
+	struct cxl_context *p_ctx; 
+	
+	struct pci_dev *p_dev; 
+	struct pci_device_id *p_dev_id; 
+	struct Scsi_Host *host; 
+	
+	unsigned long cflash_regs_pci; 
+	void __iomem *cflash_regs; 
+	
+	wait_queue_head_t reset_wait_q; 
+	wait_queue_head_t msi_wait_q; 
+	wait_queue_head_t eeh_wait_q;
 
-    struct pci_dev *p_dev; 
-    struct pci_device_id *p_dev_id;
-    struct Scsi_Host *host;
-
-    wait_queue_head_t reset_wait_q;
-    wait_queue_head_t msi_wait_q;
-    wait_queue_head_t eeh_wait_q;
-
-#ifdef NEWCXL
-    struct cxl_afu *afu;
-#endif /* NEWCXL */
-    timer_t timer_hb;
-    timer_t timer_fc;
+#ifdef NEWCXL 
+	struct cxl_afu *afu;
+#endif /* NEWCXL */ 
+	timer_t timer_hb; 
+	timer_t timer_fc;
 } cflash_t;
 
 /* The write_nn or read_nn routines can be used to do byte reversed MMIO
    or byte reversed SCSI CDB/data.
 */
 static inline void write_64(volatile __u64 *addr, __u64 val)
-{
-    __u64 zero = 0;
-#ifndef _AIX
-    asm volatile ( "stdbrx %0, %1, %2" : : "r"(val), "r"(zero), "r"(addr) );
-#else
-    *((volatile __u64 *)(addr)) = val;
+{ 
+	__u64 zero = 0;
+#ifndef _AIX 
+	asm volatile ( "stdbrx %0, %1, %2" : : "r"(val), "r"(zero), "r"(addr) );
+#else 
+	*((volatile __u64 *)(addr)) = val;
 #endif /* _AIX */
 }
 
 static inline void write_32(volatile __u32 *addr, __u32 val)
-{
-    __u32 zero = 0;
-#ifndef _AIX
-    asm volatile ( "stwbrx %0, %1, %2" : : "r"(val), "r"(zero), "r"(addr) );
-#else
-    *((volatile __u32 *)(addr)) = val;
+{ 
+	__u32 zero = 0;
+#ifndef _AIX 
+	asm volatile ( "stwbrx %0, %1, %2" : : "r"(val), "r"(zero), "r"(addr) );
+#else 
+	*((volatile __u32 *)(addr)) = val;
 #endif /* _AIX */
 }
 
 static inline void write_16(volatile __u16 *addr, __u16 val)
-{
-    __u16 zero = 0;
-#ifndef _AIX
-    asm volatile ( "sthbrx %0, %1, %2" : : "r"(val), "r"(zero), "r"(addr) );
-#else
-    *((volatile __u16 *)(addr)) = val;
+{ 
+	__u16 zero = 0;
+#ifndef _AIX 
+	asm volatile ( "sthbrx %0, %1, %2" : : "r"(val), "r"(zero), "r"(addr) );
+#else 
+	*((volatile __u16 *)(addr)) = val;
 #endif /* _AIX */
 }
 
 static inline __u64 read_64(volatile __u64 *addr)
-{
-    __u64 val;
-    __u64 zero = 0;
-#ifndef _AIX
-    asm volatile ( "ldbrx %0, %1, %2" : "=r"(val) : "r"(zero), "r"(addr) );
-#else
-   val =  *((volatile __u64 *)(addr));
+{ 
+	__u64 val; 
+	__u64 zero = 0;
+#ifndef _AIX 
+	asm volatile ( "ldbrx %0, %1, %2" : "=r"(val) : "r"(zero), "r"(addr) );
+#else 
+	val =  *((volatile __u64 *)(addr));
 #endif /* _AIX */
 
     return val;
 }
 
 static inline __u32 read_32(volatile __u32 *addr)
-{
-    __u32 val;
-    __u32 zero = 0;
-#ifndef _AIX
-    asm volatile ( "lwbrx %0, %1, %2" : "=r"(val) : "r"(zero), "r"(addr) );
-#else
-     val =  *((volatile __u32 *)(addr));
+{ 
+	__u32 val; 
+	__u32 zero = 0;
+#ifndef _AIX 
+	asm volatile ( "lwbrx %0, %1, %2" : "=r"(val) : "r"(zero), "r"(addr) );
+#else 
+	val =  *((volatile __u32 *)(addr));
 #endif /* _AIX */
     return val;
 }
 
 static inline __u16 read_16(volatile __u16 *addr)
-{
-    __u16 val;
-    __u16 zero = 0;
-#ifndef _AIX
-    asm volatile ( "lhbrx %0, %1, %2" : "=r"(val) : "r"(zero), "r"(addr) );
-#else
-     val =  *((volatile __u16 *)(addr));
-#endif /* _AIX */
-    return val;
+{ 
+	__u16 val; 
+	__u16 zero = 0;
+#ifndef _AIX 
+	asm volatile ( "lhbrx %0, %1, %2" : "=r"(val) : "r"(zero), "r"(addr) );
+#else 
+	val =  *((volatile __u16 *)(addr));
+#endif /* _AIX */ 
+	return val;
 }
 
 
@@ -193,12 +196,13 @@ static inline __u16 read_16(volatile __u16 *addr)
  *   p_mc_stat       - pointer to location that will contain the
  *                     output data
  */
-typedef struct mc_stat_s {
-  __u32       blk_len;   /* length of 1 block in bytes as reported by device */
-  __u8        nmask;     /* chunk_size = (1 << nmask) in device blocks */
-  __u8        rsvd[3];
-  __u64       size;      /* current size of the res_hndl in chunks */
-  __u64       flags;     /* permission flags */
+typedef struct mc_stat_s { 
+	__u32       blk_len;   /* length of 1 block in bytes as reported by 
+				  device */ 
+	__u8        nmask;     /* chunk_size = (1 << nmask) in device blocks */ 
+	__u8        rsvd[3]; 
+	__u64       size;      /* current size of the res_hndl in chunks */ 
+	__u64       flags;     /* permission flags */
 } mc_stat_t;
 
 
@@ -249,7 +253,8 @@ typedef struct mc_notify_s {
   };
 } mc_notify_t;
 
-int cflash_init_afu(cflash_t *);
+int  cflash_init_afu(cflash_t *);
+void cflash_term_afu(cflash_t *);
 
 
 #define MCREG_INITIAL_REG         0x1   // fresh registration

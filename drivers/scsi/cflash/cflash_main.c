@@ -491,6 +491,20 @@ static struct pci_device_id cflash_pci_table[] = {
         {}
 };
 
+
+/**
+ * cflash_free_mem - Frees memory allocated for an adapter
+ * @ioa_cfg:    ioa cfg struct
+ *
+ * Return value:
+ *      nothing
+ **/
+static void cflash_free_mem(cflash_t *p_cflash)
+{
+	/* XXX: Dummy */
+	return;
+}
+
 /**
  * cflash_remove - CFLASH hot plug remove entry point
  * @pdev:       pci device struct
@@ -508,6 +522,15 @@ static void cflash_remove(struct pci_dev *pdev)
 	/* XXX: Dummy */
 
         scsi_remove_host(p_cflash->host);
+
+	iounmap(p_cflash->cflash_regs);
+	pci_release_regions(p_cflash->p_dev); 
+	cflash_free_mem(p_cflash); 
+	scsi_host_put(p_cflash->host); 
+	pci_disable_device(p_cflash->p_dev);
+
+	cflash_term_afu(p_cflash);
+
         LEAVE;
 }
 
@@ -555,12 +578,10 @@ out:
 
 static int cflash_init_pci(cflash_t *p_cflash)
 {
-	unsigned long cflash_regs_pci;
-	void __iomem *cflash_regs;
 	struct pci_dev *pdev = p_cflash->p_dev;
 	int	rc = 0;
 
-	cflash_regs_pci = pci_resource_start(pdev, 0);
+	p_cflash->cflash_regs_pci = pci_resource_start(pdev, 0);
 	rc = pci_request_regions(pdev, CFLASH_NAME);
 	if (rc < 0) {
 		dev_err(&pdev->dev,
@@ -583,9 +604,9 @@ static int cflash_init_pci(cflash_t *p_cflash)
 		}
 	}
 
-	cflash_regs = pci_ioremap_bar(pdev, 0);
+	p_cflash->cflash_regs = pci_ioremap_bar(pdev, 0);
 
-	if (!cflash_regs) {
+	if (!p_cflash->cflash_regs) {
 		dev_err(&pdev->dev,
 			"Couldn't map memory range of registers\n");
 		rc = -ENOMEM;
@@ -621,7 +642,7 @@ cleanup_nolog:
 	*/
 out_msi_disable:
 	cflash_wait_for_pci_err_recovery(p_cflash);
-	iounmap(cflash_regs);
+	iounmap(p_cflash->cflash_regs);
 out_disable:
 	pci_disable_device(pdev);
 out_release_regions:
