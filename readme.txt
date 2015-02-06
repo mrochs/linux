@@ -1,3 +1,3 @@
 Surelock GA2 kernel driver
 
-See wiki for details of build process.
+See wiki for details of build processes.
