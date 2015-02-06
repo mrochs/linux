@@ -1,1 +1,3 @@
-Future home for surelock GA2 kernel driver
+Surelock GA2 kernel driver
+
+See wiki for details of build process.
