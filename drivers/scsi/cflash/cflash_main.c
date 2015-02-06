@@ -368,13 +368,6 @@ static int cflash_ioctl(struct scsi_device *sdev, int cmd, void __user *arg)
 {
 	/* XXX - TODO: MRO - these are for example scaffolding */
 	/* Brings up the question, how do we get to headers in surelock-sw? */
-	#define CXL_MAGIC 0xCA
-	#define DISK_ATTACH	_IOW(CXL_MAGIC, 0xA0, struct scsi_device)
-	#define DISK_USER_DIRECT	_IOW(CXL_MAGIC, 0xA1, struct scsi_device)
-	#define DISK_USER_VIRTUAL	_IOW(CXL_MAGIC, 0xA2, struct scsi_device)
-	#define DISK_RELEASE	        _IOW(CXL_MAGIC, 0xA3, struct scsi_device)
-	#define DISK_VLUN_RESIZE	_IOW(CXL_MAGIC, 0xA4, struct scsi_device)
-
 	cflash_t *p_cflash;
 	int	  rc;
 
@@ -386,7 +379,7 @@ static int cflash_ioctl(struct scsi_device *sdev, int cmd, void __user *arg)
 	 * front-end handler for everything MC-related or do we want to 
 	 * dispatch inline with other command genres?
 	 */
-	case DISK_ATTACH:
+	case DK_CAPI_ATTACH:
 		rc = cflash_disk_attach(sdev, arg);
 		if (rc) {
 			/* XXX - TODO: trace here */
@@ -394,8 +387,8 @@ static int cflash_ioctl(struct scsi_device *sdev, int cmd, void __user *arg)
 		}
 
 		break;
-	case DISK_USER_DIRECT:
-	case DISK_USER_VIRTUAL:
+	case DK_CAPI_USER_DIRECT:
+	case DK_CAPI_USER_VIRTUAL:
 		rc = cflash_mc_register(sdev, arg);
 		if (rc) {
 			/* XXX - TODO: trace here */
@@ -403,7 +396,7 @@ static int cflash_ioctl(struct scsi_device *sdev, int cmd, void __user *arg)
 		}
 
 		break;
-	case DISK_RELEASE:
+	case DK_CAPI_RELEASE:
 		rc = cflash_mc_unregister(sdev, arg);
 		if (rc) {
 			/* XXX - TODO: trace here */
@@ -411,7 +404,7 @@ static int cflash_ioctl(struct scsi_device *sdev, int cmd, void __user *arg)
 		}
 
 		break;
-	case DISK_VLUN_RESIZE:
+	case DK_CAPI_VLUN_RESIZE:
 		rc = cflash_mc_size(sdev, arg);
 		if (rc) {
 			/* XXX - TODO: trace here */

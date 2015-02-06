@@ -538,7 +538,8 @@ int cflash_start_afu(cflash_t *p_cflash)
 	//     will be backwards
 	reg = p_afu->p_afu_map->global.regs.afu_version;
 	memcpy(&version[0], &reg, 8);
-	cflash_dbg("%s: afu version %s, ctx_hndl %d\n", p_afu->name, version, p_afu->ctx_hndl);
+	cflash_dbg("%s: afu version %s, ctx_hndl %d\n", p_afu->name, version, 
+		   p_afu->ctx_hndl);
 
 	// initialize cmd fields that never change
 	for (i = 0; i < NUM_CMDS; i++) {
