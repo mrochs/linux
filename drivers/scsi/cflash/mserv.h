@@ -255,25 +255,27 @@ typedef struct afu
 	sisl_ioarcb_t rcb;  /* IOARCB (cache line aligned) */
 	sisl_ioasa_t sa;    /* IOASA must follow IOARCB */
 #ifdef __KERNEL__
-	struct mutex cmd_mutex; 
-	wait_queue_head_t cv;  /* for signalling responses */
+	spinlock_t slock;
+	struct mutex cmd_mutex; /* XXX - future remove */
+	wait_queue_head_t cv;  /*  XXX - future remove; for signalling responses */
 #else
         pthread_mutex_t mutex;
 	pthread_cond_t cv;  /* for signalling responses */
 #endif /* __KERNEL__ */
-	timer_t timer;
+	struct timer_list timer;
 
 	__u8 cl_pad[CL_SIZE - 
 		    ((sizeof(sisl_ioarcb_t) +
 		      sizeof(sisl_ioasa_t) +
 #ifdef __KERNEL__
-		      sizeof(struct mutex) +
-		      sizeof(wait_queue_head_t) +
+		      sizeof(spinlock_t) +
+		      sizeof(struct mutex) + /* XXX - future remove */
+		      sizeof(wait_queue_head_t) + /* XXX - future remove */
 #else
                       sizeof(pthread_mutex_t) +
                       sizeof(pthread_cond_t) +
 #endif /* __KERNEL__ */
-		      sizeof(timer_t)) & CL_SIZE_MASK)];
+		      sizeof(struct timer_list)) & CL_SIZE_MASK)];
 
     } cmd[NUM_CMDS];
 

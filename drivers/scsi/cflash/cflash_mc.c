@@ -371,6 +371,12 @@ void cflash_undo_start_afu(afu_t *p_afu, enum undo_level level)
 	case UNDO_AFU_START:
 	case UNDO_AFU_OPEN:
 	case UNDO_TIMER:
+		/*
+		 * Nothing to do for timers; note that in the context of
+		 * a non-error path teardown (ie: cflash_terminate_afu)
+		 * we should probably ensure all timers are stopped prior
+		 * to calling this routine.
+		 */
 	case UNDO_MLOCK:
 	default:
 		break;
@@ -379,6 +385,12 @@ void cflash_undo_start_afu(afu_t *p_afu, enum undo_level level)
 
 int cflash_terminate_afu(afu_t *p_afu)
 {
+	int i;
+
+	/* Ensure all timers are stopped before removing resources */
+	for (i = 0; i < NUM_CMDS; i++)
+		del_timer_sync(&p_afu->cmd[i].timer);
+
 	cflash_undo_start_afu(p_afu, UNDO_AFU_ALL);
 
 	return 0;
@@ -456,6 +468,16 @@ void cflash_stop_context(cflash_t *p_cflash)
 	cxl_stop_context(p_cflash->p_ctx);
 }
 
+static void send_cmd_timeout(struct afu_cmd *p_cmd)
+{
+	unsigned long lock_flags = 0;
+
+	cflash_err("command timeout, opcode 0x%X\n", p_cmd->rcb.cdb[0]);
+
+	spin_lock_irqsave(&p_cmd->slock, lock_flags);
+	p_cmd->sa.host_use_b[0] |= (B_DONE | B_ERROR | B_TIMEOUT);
+	spin_unlock_irqrestore(&p_cmd->slock, lock_flags);
+}
 
 int cflash_start_afu(cflash_t *p_cflash)
 {
@@ -466,6 +488,18 @@ int cflash_start_afu(cflash_t *p_cflash)
 	int i = 0;
 	int rc = 0;
 	enum undo_level level = UNDO_NONE;
+
+
+	for (i = 0; i < NUM_CMDS; i++) {
+		struct timer_list *p_timer = &p_afu->cmd[i].timer;
+
+		init_timer(p_timer);
+		p_timer->data = (unsigned long)&p_afu->cmd[i];
+		p_timer->function = (void (*)(unsigned long))send_cmd_timeout;
+
+		spin_lock_init(&p_afu->cmd[i].slock);
+	}
+	level= UNDO_TIMER;
 
 	/* Map the entire MMIO space of the AFU. 
 	 * XXX: What is the equivalent in the new interface?
@@ -693,10 +727,12 @@ void send_cmd(afu_t *p_afu, struct afu_cmd *p_cmd)
 	asm volatile ( "lwsync" : : );
 
 	/*
-	 * XXX - need to figure out how to best convert these POSIX timers
-	 * and signals to kernel services (ie: hrtimer, handler, sleep/wakeup)
+	 * XXX - look at refactoring this timer start into a macro/inline,
+	 * also need to find out why this code originally (and still does)
+	 * had a doubler (*2) for the timeout value
 	 */
-	timer_start(p_cmd->timer, p_cmd->rcb.timeout*2, 0);
+	p_cmd->timer.expires = (jiffies + (p_cmd->rcb.timeout * 2 * HZ));
+	add_timer(&p_cmd->timer);
 
 	/* Write IOARRIN */
 	if (p_afu->room)
@@ -709,17 +745,24 @@ void send_cmd(afu_t *p_afu, struct afu_cmd *p_cmd)
 
 void wait_resp(afu_t *p_afu, struct afu_cmd *p_cmd)
 {
-	//pthread_mutex_lock(&p_cmd->mutex);
-	while (!(p_cmd->sa.host_use_b[0] & B_DONE)) {
-		//pthread_cond_wait(&p_cmd->cv, &p_cmd->mutex);
-	}
-	//pthread_mutex_unlock(&p_cmd->mutex);
+	unsigned long lock_flags = 0;
 
-	/*
-	 * XXX - need to figure out how to best convert these POSIX timers
-	 * and signals to kernel services (ie: hrtimer, handler, sleep/wakeup)
-	 */
-	timer_stop(p_cmd->timer); /* already stopped if timer fired */
+	spin_lock_irqsave(&p_cmd->slock, lock_flags);
+	while (!(p_cmd->sa.host_use_b[0] & B_DONE)) {
+
+		/*
+		 * XXX - how do we want to handle this...
+		 * need to study how send_cmd/wait_resp
+		 * is used in interrupt context.
+		 */
+
+		spin_unlock_irqrestore(&p_cmd->slock, lock_flags);
+		udelay(10);
+		spin_lock_irqsave(&p_cmd->slock, lock_flags);
+	}
+	spin_unlock_irqrestore(&p_cmd->slock, lock_flags);
+
+	del_timer(&p_cmd->timer); /* already stopped if timer fired */
 
 	if (p_cmd->sa.ioasc != 0)
 		cflash_err("CMD 0x%x failed, IOASC: flags 0x%x, afu_rc 0x%x, "
