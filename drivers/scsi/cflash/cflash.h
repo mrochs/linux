@@ -74,6 +74,7 @@ extern int cflash_disk_attach(struct scsi_device *sdev, void __user *arg);
 extern int cflash_mc_register(struct scsi_device *sdev, void __user *arg);
 extern int cflash_mc_unregister(struct scsi_device *sdev, void __user *arg);
 extern int cflash_mc_size(struct scsi_device *sdev, void __user *arg);
+extern int cflash_mc_close(struct scsi_device *sdev, void __user *arg);
 
 
 #endif

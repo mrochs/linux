@@ -40,6 +40,14 @@ int cflash_disk_attach(struct scsi_device *sdev, void __user *arg)
 	return rc;
 }
 
+int do_mc_close(afu_t    *p_afu, 
+	    conn_info_t  *p_conn_info, 
+	    res_hndl_t    res_hndl)
+{
+	return -EINVAL;
+}
+
+
 /*
  * NAME:        cflash_mc_register
  *
@@ -47,7 +55,7 @@ int cflash_disk_attach(struct scsi_device *sdev, void __user *arg)
  *
  * INPUTS:
  *              sdev       - Pointer to scsi device structure
- *              arg        - Pointer to optional arg structure
+ *              arg        - Pointer to ioctl specific structure
  *
  * OUTPUTS:
  *              none
@@ -68,22 +76,23 @@ int cflash_disk_attach(struct scsi_device *sdev, void __user *arg)
  */
 int cflash_mc_register(struct scsi_device *sdev, void __user *arg)
 {
-	/* XXX: How is challenge, conn_info initialized */
-	__u64            challenge = 0;
-        conn_info_t  *p_conn_info = NULL;
+	cflash_t   *p_cflash   = (cflash_t *)sdev->host->hostdata;
+	afu_t      *p_afu      = &p_cflash->p_afu_a->afu;
+
+	struct dk_capi_uvirtual *parg = (struct dk_capi_uvirtual *)arg;
+
+	ctx_info_t *p_ctx_info = &p_afu->ctx_info[parg->context_id]; 
+	int   mode             = (parg->flags & MODE_MASK);
+	__u64 challenge        = parg->challenge;
 	__u64 reg;
-	ctx_info_t *p_ctx_info;
-	cflash_t *p_cflash = (cflash_t *)sdev->host->hostdata;
-	afu_t *p_afu = &p_cflash->p_afu_a->afu;
-	int i;
 
-	cflash_info("%s, client_pid=%d client_fd=%d ctx_hdl=%d\n",
-		    __func__, p_conn_info->client_pid, 
-		    p_conn_info->client_fd,
-		    p_conn_info->ctx_hndl);
+	cflash_info("%s, context=0x%llx res_hndl=0x%llx, challenge=0x%llx\n",
+		    __func__, parg->context_id,
+		    parg->rsrc_handle,
+		    parg->challenge); 
 
-	if (p_conn_info->ctx_hndl < MAX_CONTEXT) {
-		p_ctx_info = &p_afu->ctx_info[p_conn_info->ctx_hndl];
+	if (parg->context_id < MAX_CONTEXT) {
+		p_ctx_info = &p_afu->ctx_info[parg->context_id];
 
 		/* This code reads the mbox w/o knowing if the requester is 
 		 * the true owner of the context it wants to register. The 
@@ -97,7 +106,7 @@ int cflash_mc_register(struct scsi_device *sdev, void __user *arg)
 			return EACCES; /* return Permission denied */
 		}
 
-		if (p_conn_info->mode == MCREG_DUP_REG && 
+		if (mode == MCREG_DUP_REG && 
 		    p_ctx_info->ref_cnt == 0) {
 			return EINVAL; /* no prior registration to dup */
 		}
@@ -109,14 +118,9 @@ int cflash_mc_register(struct scsi_device *sdev, void __user *arg)
 		 * the same context must be able to mc_register by 
 		 * forcefully unregistering the previous owner.  
 		 */
-		if (p_conn_info->mode == MCREG_INITIAL_REG) {
-			for (i = 0; i < MAX_CONNS; i++) { 
-				if (p_afu->conn_tbl[i].p_ctx_info == 
-				    p_ctx_info) { 
-					do_mc_unregister(p_afu, 
-							 &p_afu->conn_tbl[i]); 
-				} 
-			}
+		if (mode == MCREG_INITIAL_REG) {
+			/* XXX: Implicit unregister on new registration */
+			cflash_mc_unregister(sdev, arg);
 
 			if (p_ctx_info->ref_cnt != 0) { 
 				cflash_err("%s: internal error: p_ctx_info->"
@@ -152,7 +156,7 @@ int cflash_mc_register(struct scsi_device *sdev, void __user *arg)
 			 * is dup'ed later. 
 			 */
 			p_ctx_info->p_rht_info = 
-				&p_afu->rht_info[p_conn_info->ctx_hndl];
+				&p_afu->rht_info[parg->context_id];
 			p_ctx_info->p_rht_info->ref_cnt = 1; 
 			memset(p_ctx_info->p_rht_info->rht_start, 0, 
 			       sizeof(sisl_rht_entry_t)*MAX_RHT_PER_CONTEXT);
@@ -168,9 +172,6 @@ int cflash_mc_register(struct scsi_device *sdev, void __user *arg)
 				 SISL_RHT_CNT_ID((__u64)MAX_RHT_PER_CONTEXT, 
 						 (__u64)(p_afu->ctx_hndl))); 
 		} 
-		p_conn_info->p_ctx_info = p_ctx_info; 
-		p_ctx_info->ref_cnt++; 
-		p_conn_info->rx = rx_ready; 
 		/* it is now registered, go to ready state */ 
 		return 0; 
 	} 
@@ -179,28 +180,66 @@ int cflash_mc_register(struct scsi_device *sdev, void __user *arg)
 	}
 }
 
-// rx fcn on a fresh connection waiting a MCREG.
-// On receipt of a MCREG, it will go to the rx_ready state where
-// all cmds except a MCREG is accepted.
-//
-int rx_mcreg(afu_t *p_afu, conn_info_t *p_conn_info, 
-	     mc_req_t *p_req, mc_resp_t *p_resp)
-{ 
-	int status = EINVAL; 
 
-	/* XXX: Dummy */
-	return status;
-}
-
-int
-do_mc_close(afu_t        *p_afu, 
-	    conn_info_t  *p_conn_info, 
-	    res_hndl_t   res_hndl)
+/*
+ * NAME:        cflash_mc_close
+ *
+ * FUNCTION:    Close a virtual LBA space setting it to 0 size and
+ *              marking the res_hndl as free/closed.
+ *
+ * INPUTS:
+ *              sdev       - Pointer to scsi device structure
+ *              arg        - Pointer to ioctl specific structure
+ *
+ * OUTPUTS:
+ *              none
+ *
+ * RETURNS:
+ *              0           - Success
+ *              errno       - Failure
+ *
+ * NOTES:
+ *              When successful, the RHT entry is cleared.
+ */
+int cflash_mc_close(struct scsi_device *sdev, void __user *arg)
 {
-	int status = EINVAL; 
+	cflash_t *p_cflash = (cflash_t *)sdev->host->hostdata;
+	afu_t    *p_afu    = &p_cflash->p_afu_a->afu;
 
-	/* XXX: Dummy */
-	return status;
+	struct dk_capi_resize *parg     = (struct dk_capi_resize *)arg;
+	res_hndl_t             res_hndl = parg->rsrc_handle;
+
+	ctx_info_t       *p_ctx_info = &p_afu->ctx_info[parg->context_id]; 
+	rht_info_t       *p_rht_info = p_ctx_info->p_rht_info; 
+	sisl_rht_entry_t *p_rht_entry; 
+
+	cflash_info("%s, context=0x%llx res_hndl=0x%llx, challenge=0x%llx\n",
+		    __func__, parg->context_id,
+		    parg->rsrc_handle,
+		    parg->challenge); 
+	
+	if (res_hndl < MAX_RHT_PER_CONTEXT) { 
+		p_rht_entry = &p_rht_info->rht_start[res_hndl]; 
+		if (p_rht_entry->nmask == 0) { /* not open */ 
+			return EINVAL; 
+		} 
+		
+		/* set size to 0, this will clear LXT_START and LXT_CNT 
+		 * fields in the RHT entry 
+		 */ 
+		cflash_mc_size(sdev, arg); // p_conn good ?  
+		
+		p_rht_entry->nmask = 0; 
+		p_rht_entry->fp = 0; 
+		
+		/* now the RHT entry is all cleared */ 
+	} 
+	else { 
+		return EINVAL; 
+	}
+
+	return 0;
+
 }
 
 
@@ -212,7 +251,7 @@ do_mc_close(afu_t        *p_afu,
  *
  * INPUTS:
  *              sdev       - Pointer to scsi device structure
- *              arg        - Pointer to optional arg structure
+ *              arg        - Pointer to ioctl specific structure
  *
  * OUTPUTS:
  *              none
@@ -227,20 +266,21 @@ do_mc_close(afu_t        *p_afu,
  *                  context are cleared
  *               b. There is no need to clear RHT entries since
  *                  RHT_CNT=0.
- *               c. goes to rx_mcreg state to allow re-registration
  */
 int cflash_mc_unregister(struct scsi_device *sdev, void __user *arg)
 {
-	int i;
-        conn_info_t  *p_conn_info = NULL; 
-	ctx_info_t *p_ctx_info = p_conn_info->p_ctx_info; 
 	cflash_t *p_cflash = (cflash_t *)sdev->host->hostdata;
-	afu_t *p_afu = &p_cflash->p_afu_a->afu;
+	afu_t    *p_afu    = &p_cflash->p_afu_a->afu;
 
-	cflash_info("%s, client_pid=%d client_fd=%d ctx_hdl=%d\n",
-		    __func__, p_conn_info->client_pid, 
-		    p_conn_info->client_fd,
-		    p_conn_info->ctx_hndl);
+	struct dk_capi_detach  *parg = (struct dk_capi_detach *)arg;
+	struct dk_capi_release *rel  = (struct dk_capi_detach *)parg;
+
+	ctx_info_t *p_ctx_info = &p_afu->ctx_info[parg->context_id];
+
+	int i;
+
+	cflash_info("%s, context=0x%llx\n",
+		    __func__, parg->context_id); 
 
 	if (p_ctx_info->ref_cnt-- == 1) { 
 
@@ -251,8 +291,8 @@ int cflash_mc_unregister(struct scsi_device *sdev, void __user *arg)
 
 		if (p_ctx_info->p_rht_info->ref_cnt-- == 1) { 
 			for (i = 0; i < MAX_RHT_PER_CONTEXT; i++) { 
-				do_mc_close(p_afu, p_conn_info, i); 
-				// will this p_conn_info work ?  
+				rel->rsrc_handle = i;
+				cflash_mc_close(sdev, arg);
 			}
 		} 
 		
@@ -262,8 +302,6 @@ int cflash_mc_unregister(struct scsi_device *sdev, void __user *arg)
 		/* drop all capabilities */ 
 		write_64(&p_ctx_info->p_ctrl_map->ctx_cap, 0); 
 	} 
-	p_conn_info->p_ctx_info = NULL; 
-	p_conn_info->rx = rx_mcreg; 
 	/* client can now send another MCREG */ 
 
 	return 0; 
@@ -300,6 +338,11 @@ int wait_port_online(volatile __u64 *p_fc_regs,
 {
 	__u64 status;
 
+	if (delay_us < 1000) {
+		cflash_err("invalid delay specified %d\n", delay_us);
+		return -EINVAL;
+	}
+
 	do {
 		msleep(delay_us/1000);
 		status = read_64(&p_fc_regs[FC_MTIP_STATUS/8]);
@@ -315,6 +358,11 @@ int wait_port_offline(volatile __u64 *p_fc_regs,
 		      unsigned int nretry)
 {
 	__u64 status;
+
+	if (delay_us < 1000) {
+		cflash_err("invalid delay specified %d\n", delay_us);
+		return -EINVAL;
+	}
 
 	do {
 		msleep(delay_us/1000);
@@ -455,7 +503,9 @@ int cflash_start_context(cflash_t *p_cflash)
 {
         int rc = 0;
 
-        rc =  cxl_start_context(p_cflash->p_ctx, p_cflash->p_afu_a->afu.work.work_element_descriptor, NULL);
+        rc =  cxl_start_context(p_cflash->p_ctx, 
+				p_cflash->p_afu_a->afu.work.
+				work_element_descriptor, NULL);
 
         return rc;
 }
@@ -481,14 +531,14 @@ static void send_cmd_timeout(struct afu_cmd *p_cmd)
 
 int cflash_start_afu(cflash_t *p_cflash)
 {
-	afu_t *p_afu = &p_cflash->p_afu_a->afu;
+	afu_t                 *p_afu = &p_cflash->p_afu_a->afu;
 	struct capikv_ini_elm *p_elm = &p_cflash->p_ini->elm[0];
 	char version[16];
-	__u64 reg;
-	int i = 0;
-	int rc = 0;
-	enum undo_level level = UNDO_NONE;
 
+	int   i  = 0;
+	int   rc = 0;
+	__u64 reg;
+	enum undo_level level = UNDO_NONE;
 
 	for (i = 0; i < NUM_CMDS; i++) {
 		struct timer_list *p_timer = &p_afu->cmd[i].timer;
@@ -502,7 +552,6 @@ int cflash_start_afu(cflash_t *p_cflash)
 	level= UNDO_TIMER;
 
 	/* Map the entire MMIO space of the AFU. 
-	 * XXX: What is the equivalent in the new interface?
 	 */
 	p_afu->p_afu_map =  cxl_psa_map(p_cflash->p_ctx);
 	if (!p_afu->p_afu_map)
@@ -826,10 +875,8 @@ int afu_sync(afu_t	*p_afu,
  *		the RHT.
  *
  * INPUTS:
- *		p_afu		- Pointer to afu struct
- *		p_conn_info	- Pointer to connection the request came in
- *		res_hndl	- resource handle to resize
- *		new_size	- new size in chunks
+ *              sdev       - Pointer to scsi device structure
+ *              arg        - Pointer to ioctl specific structure
  *
  * OUTPUTS:
  *		p_act_new_size	- pointer to actual new size in chunks
@@ -845,20 +892,21 @@ int afu_sync(afu_t	*p_afu,
 int cflash_mc_size(struct scsi_device *sdev, void __user *arg)
 {
 	cflash_t *p_cflash = (cflash_t *)sdev->host->hostdata;
-	afu_t *p_afu = &p_cflash->p_afu_a->afu;
-	conn_info_t  *p_conn_info = NULL;
-	__u64           new_size = (__u64) arg;
-	__u64        *p_act_new_size = NULL;
-	res_hndl_t    res_hndl = 0;
+	afu_t    *p_afu    = &p_cflash->p_afu_a->afu;
 
-	ctx_info_t *p_ctx_info = p_conn_info->p_ctx_info;
+	struct dk_capi_resize *parg  = (struct dk_capi_resize *)arg;
+	__u64         new_size       = parg->req_size;
+	__u64        *p_act_new_size = &parg->last_lba;
+	res_hndl_t    res_hndl       = parg->rsrc_handle;
+
+	ctx_info_t *p_ctx_info = &p_afu->ctx_info[parg->context_id];
 	rht_info_t *p_rht_info = p_ctx_info->p_rht_info;
 	sisl_rht_entry_t *p_rht_entry;
 
-	cflash_info("%s, client_pid=%d client_fd=%d ctx_hdl=%d\n",
-		    __func__, p_conn_info->client_pid, 
-		    p_conn_info->client_fd,
-		    p_conn_info->ctx_hndl);
+	cflash_info("%s, context=0x%llx res_hndl=0x%llx, size=0x%llx\n",
+		    __func__, parg->context_id,
+		    parg->rsrc_handle,
+		    parg->req_size);
 
 	if (res_hndl < MAX_RHT_PER_CONTEXT) {
 		p_rht_entry = &p_rht_info->rht_start[res_hndl];
@@ -868,14 +916,14 @@ int cflash_mc_size(struct scsi_device *sdev, void __user *arg)
 
 		if (new_size > p_rht_entry->lxt_cnt) {
 			grow_lxt(p_afu,
-				 p_conn_info->ctx_hndl,
+				 parg->context_id,
 				 res_hndl,
 				 p_rht_entry,
 				 new_size - p_rht_entry->lxt_cnt,
 				 p_act_new_size);
 		} else if (new_size < p_rht_entry->lxt_cnt) {
 			shrink_lxt(p_afu,
-				   p_conn_info->ctx_hndl,
+				   parg->context_id,
 				   res_hndl,
 				   p_rht_entry,
 				   p_rht_entry->lxt_cnt - new_size,

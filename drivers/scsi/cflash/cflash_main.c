@@ -396,7 +396,7 @@ static int cflash_ioctl(struct scsi_device *sdev, int cmd, void __user *arg)
 		}
 
 		break;
-	case DK_CAPI_RELEASE:
+	case DK_CAPI_DETACH:
 		rc = cflash_mc_unregister(sdev, arg);
 		if (rc) {
 			/* XXX - TODO: trace here */
@@ -406,6 +406,14 @@ static int cflash_ioctl(struct scsi_device *sdev, int cmd, void __user *arg)
 		break;
 	case DK_CAPI_VLUN_RESIZE:
 		rc = cflash_mc_size(sdev, arg);
+		if (rc) {
+			/* XXX - TODO: trace here */
+			goto cflash_ioctl_exit;
+		}
+
+		break;
+	case DK_CAPI_RELEASE:
+		rc = cflash_mc_close(sdev, arg);
 		if (rc) {
 			/* XXX - TODO: trace here */
 			goto cflash_ioctl_exit;

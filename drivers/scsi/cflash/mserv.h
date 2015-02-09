@@ -285,7 +285,9 @@ typedef struct afu
 
     /* Housekeeping data */
     char master_dev_path[MC_PATHLEN]; /* e. g. /dev/cxl/afu1.0m */
+#ifndef __KERNEL
     conn_info_t conn_tbl[MAX_CONNS]; /* conn_tbl[0] is rsvd for listening */
+#endif  /* __KERNEL__ */
     ctx_info_t ctx_info[MAX_CONTEXT];
     rht_info_t rht_info[MAX_CONTEXT];
     char *name;  /* ptr to last component in master_dev_path, e.g. afu1.0m */

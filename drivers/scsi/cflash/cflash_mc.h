@@ -257,11 +257,16 @@ int  cflash_init_afu(cflash_t *);
 void cflash_term_afu(cflash_t *);
 
 
-#define MCREG_INITIAL_REG         0x1   // fresh registration
-#define MCREG_DUP_REG             0x0   // dup
 #define CMD_MCREG         1      // Register an AFU + context handle with MC
 #define CMD_MCUNREG       2      // Unregister a context handle with MC
 
+/* 
+ * XXX: Assume mode bits are passed in in the flags field. 
+ *      Reserve a couple of bits for now
+ */
+#define MODE_MASK 0x0000000000000003
+#define MCREG_INITIAL_REG         0x1   // fresh registration
+#define MCREG_DUP_REG             0x0   // dup
 
 /* XXX: Temporarily placed here. Needs to be moved to a file that is common
  * between AIX and Linux
@@ -285,8 +290,8 @@ struct dk_capi_paths
 struct dk_capi_attach
 {
     uint16_t version;            /* SCSI_VERSION_0 */
-    uint16_t num_interrupts;     /* Requested number of interrupts */
     uint16_t path_id;            /* Path number to attach */
+    uint16_t num_interrupts;     /* Requested number of interrupts */
     uint16_t rsvd[1];
     uint64_t flags;              /* Input flags for the attach */
     uint64_t return_flags;       /* Returned flags */
@@ -308,13 +313,13 @@ struct dk_capi_detach
 struct dk_capi_udirect
 {
     uint16_t version;            /* SCSI_VERSION_0 */
-    uint16_t rsvd[3];
+    uint16_t path_id;            /* MPIO path ID for attach */
+    uint16_t rsvd[2];
     uint64_t flags;              /* Flags for LUN creation */
     uint64_t return_flags;       /* Returned flags */
     uint64_t context_id;         /* Context ID for the attach */
-    uint16_t path_id;            /* MPIO path ID for attach */
-    uint64_t challenge;          /* Validation cookie */
     uint64_t rsrc_handle;        /* Returned resource handle */
+    uint64_t challenge;          /* Validation cookie */
     uint64_t block_size;         /* Returned block size, in bytes */
     uint64_t last_lba;           /* Returned last LBA on the device */
 };
@@ -327,11 +332,11 @@ struct dk_capi_uvirtual
     uint64_t flags;              /* Flags for virtual LUN create */
     uint64_t return_flags;       /* Returned flags */
     uint64_t context_id;         /* Context ID for the attach */
-    uint64_t challenge;          /* Validation cookie */
-    uint64_t lun_size;           /* Requested size, blocks */
     uint64_t rsrc_handle;        /* Returned resource handle */
+    uint64_t challenge;          /* Validation cookie */
     uint64_t block_size;         /* Returned block size, in bytes */
     uint64_t last_lba;           /* Returned last LBA of LUN */
+    uint64_t lun_size;           /* Requested size, blocks */
 };
 
 struct dk_capi_release
@@ -341,8 +346,8 @@ struct dk_capi_release
     uint16_t rsvd[2];
     uint64_t flags;              /* Flags for the release op */
     uint64_t return_flags;       /* Returned flags */
-    uint64_t rsrc_handle;        /* Resource handle to release */
     uint64_t context_id;         /* Context ID for the attach */
+    uint64_t rsrc_handle;        /* Resource handle to release */
     uint64_t challenge;          /* Validation cookie */
 };
 
@@ -354,8 +359,8 @@ struct dk_capi_resize
     uint64_t flags;              /* Flags for resize */
     uint64_t return_flags;       /* Returned flags */
     uint64_t context_id;         /* Context ID of LUN to resize */
-    uint64_t challenge;          /* Validation cookie */
     uint64_t rsrc_handle;        /* Resource handle of LUN to resize */
+    uint64_t challenge;          /* Validation cookie */
     uint64_t req_size;           /* New requested size, blocks */
     uint64_t last_lba;           /* Returned last LBA of LUN */
 };
@@ -367,8 +372,8 @@ struct dk_capi_verify
     uint16_t rsvd[2];
     uint64_t flags;              /* Flags for verification */
     uint64_t return_flags;       /* Returned verification flags */
-    uint64_t challenge;          /* Validation cookie */
     uint64_t rsrc_handle;        /* Resource handle of LUN */
+    uint64_t challenge;          /* Validation cookie */
     uint64_t hint;               /* Reasons for verify */
     uint64_t last_lba;           /* Returned last LBA of device */
 };
@@ -380,8 +385,8 @@ struct dk_capi_log
     uint16_t log_rsvd[2];
     uint64_t flags;              /* Flags for error log */
     uint64_t return_flags;       /* Returned flags */
-    uint64_t challenge;          /* Validation cookie */
     uint64_t rsrc_handle;        /* Resource handle to log error against */
+    uint64_t challenge;          /* Validation cookie */
     uint64_t reason;             /* Reason code for error */
     char sense_data[256];        /* Sense data to include in error */
 };
@@ -393,8 +398,8 @@ struct dk_capi_recover_afu
     uint16_t ver_rsvd[2];
     uint64_t flags;              /* Flags for recovery */
     uint64_t return_flags;       /* Returned flags */
-    uint64_t challenge;          /* Validation cookie */
     uint64_t rsrc_handle;        /* Resource handle for LUN to recover */
+    uint64_t challenge;          /* Validation cookie */
     uint64_t reason;             /* Reason for recovery request */
 };
 
