@@ -27,7 +27,7 @@ static DEFINE_PCI_DEVICE_TABLE(cxl_memcpy_pci_tbl) = {
 	{ PCI_DEVICE(PCI_VENDOR_ID_IBM, 0x4350), },
 	{ }
 };
-MODULE_DEVICE_TABLE(pci, cxl_pci_tbl);
+MODULE_DEVICE_TABLE(pci, cxl_memcpy_pci_tbl);
 
 uint cpu_memcopy;
 module_param_named(cpu_memcopy, cpu_memcopy, uint, 0600);
