@@ -189,3 +189,4 @@ struct cxl_afu *cxl_pci_to_afu(struct pci_dev *dev, unsigned int *cfg_record)
 
 	return afu;
 }
+EXPORT_SYMBOL_GPL(cxl_pci_to_afu);
