@@ -516,7 +516,7 @@ config VEXPRESS_SYSCFG
 	  of generating transactions on this bus.
 
 config CXL_MEMCPY
-	bool "Example CXL memcpy AFU driver"
+	tristate "Example CXL memcpy AFU driver"
 	depends on CXL
 	default y
 	help
