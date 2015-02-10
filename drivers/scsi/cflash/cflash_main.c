@@ -1,4 +1,3 @@
-
 /*
 * Copyright 2015 IBM Corp.
 *
@@ -24,6 +23,7 @@
 #include <scsi/scsi_tcq.h>
 #include <scsi/scsi_eh.h>
 #include <scsi/scsi_cmnd.h>
+#include <scsi/scsi_transport_fc.h>
 
 #include "cflash.h"
 #include "cflash.h"
@@ -33,14 +33,14 @@
 #include "mserv.h"
 
 MODULE_DESCRIPTION("IBM CAPI Flash Adapter Driver");
-MODULE_AUTHOR("Manoj Kumar <kumarmn@us.ibm.com>");
+MODULE_AUTHOR("Manoj N. Kumar <kumarmn@us.ibm.com>");
 MODULE_AUTHOR("Matthew R. Ochs <mrochs@us.ibm.com>");
 MODULE_LICENSE("GPL");
 
 unsigned int cflash_debug = 0;
 
 /**
- * cflash_info - Get information about the card/driver
+ * cflash_driver_info - Get information about the card/driver
  * @scsi_host:       scsi host struct
  *
  * Return value:
@@ -75,6 +75,8 @@ static int cflash_queuecommand(struct Scsi_Host *shost,
                                struct scsi_cmnd *scsi_cmd)
 {
         /* XXX: Dummy */
+	int rc=0;
+        cflash_info("in %s returning rc=%d\n", __func__, rc);
         return 0;
 }
 
@@ -92,6 +94,7 @@ static int cflash_eh_abort_handler(struct scsi_cmnd *scsi_cmd)
         ENTER;
 	/* XXX: Dummy */
         LEAVE;
+        cflash_info("in %s returning rc=%d\n", __func__, rc);
         return rc;
 }
 
@@ -106,6 +109,7 @@ static int cflash_eh_device_reset_handler(struct scsi_cmnd *cmd)
 {
         int rc = FAILED;
 	/* XXX: Dummy */
+        cflash_info("in %s returning rc=%d\n", __func__, rc);
         return rc;
 }
 
@@ -121,6 +125,7 @@ static int cflash_eh_target_reset_handler(struct scsi_cmnd *cmd)
 {
         int rc = FAILED;
 	/* XXX: Dummy */
+        cflash_info("in %s returning rc=%d\n", __func__, rc);
         return rc;
 }
 
@@ -149,7 +154,17 @@ static int cflash_eh_host_reset_handler(struct scsi_cmnd *cmd)
 static int cflash_slave_alloc(struct scsi_device *sdev)
 {
         int rc = -ENXIO;
-	/* XXX: Dummy */
+
+	/* XXX: Figure out why this symbol is not available
+	struct fc_rport *rport = starget_to_rport(scsi_target(sdev));
+
+	if (!rport || fc_remote_port_chkready(rport)) 
+		rc = -ENXIO;
+	else
+	*/
+		rc = 0;
+
+        cflash_info("in %s returning rc=%d\n", __func__, rc);
 	return rc;
 }
 
@@ -166,6 +181,8 @@ static int cflash_slave_alloc(struct scsi_device *sdev)
 static int cflash_slave_configure(struct scsi_device *sdev)
 {
 	/* XXX: Dummy */
+	int rc=0;
+        cflash_info("in %s returning rc=%d\n", __func__, rc);
 	return 0;
 }
 
@@ -182,6 +199,8 @@ static int cflash_slave_configure(struct scsi_device *sdev)
 static int cflash_target_alloc(struct scsi_target *starget)
 {
 	/* XXX: Dummy */
+	int rc=0;
+        cflash_info("in %s returning rc=%d\n", __func__, rc);
         return 0;
 }
 
@@ -195,8 +214,9 @@ static int cflash_target_alloc(struct scsi_target *starget)
  **/
 static int cflash_scan_finished(struct Scsi_Host *shost, unsigned long time)
 {
-        int done = 0;
+        int done = 1;
 	/* XXX: Dummy */
+        cflash_info("in %s returning done=%d\n", __func__, done);
         return done;
 }
 
@@ -382,7 +402,7 @@ static int cflash_ioctl(struct scsi_device *sdev, int cmd, void __user *arg)
 	case DK_CAPI_ATTACH:
 		rc = cflash_disk_attach(sdev, arg);
 		if (rc) {
-			/* XXX - TODO: trace here */
+			cflash_err("ioctl 0x%x returned rc %d\n", cmd, rc);
 			goto cflash_ioctl_exit;
 		}
 
@@ -391,7 +411,7 @@ static int cflash_ioctl(struct scsi_device *sdev, int cmd, void __user *arg)
 	case DK_CAPI_USER_VIRTUAL:
 		rc = cflash_mc_register(sdev, arg);
 		if (rc) {
-			/* XXX - TODO: trace here */
+			cflash_err("ioctl 0x%x returned rc %d\n", cmd, rc);
 			goto cflash_ioctl_exit;
 		}
 
@@ -399,7 +419,7 @@ static int cflash_ioctl(struct scsi_device *sdev, int cmd, void __user *arg)
 	case DK_CAPI_DETACH:
 		rc = cflash_mc_unregister(sdev, arg);
 		if (rc) {
-			/* XXX - TODO: trace here */
+			cflash_err("ioctl 0x%x returned rc %d\n", cmd, rc);
 			goto cflash_ioctl_exit;
 		}
 
@@ -407,7 +427,7 @@ static int cflash_ioctl(struct scsi_device *sdev, int cmd, void __user *arg)
 	case DK_CAPI_VLUN_RESIZE:
 		rc = cflash_mc_size(sdev, arg);
 		if (rc) {
-			/* XXX - TODO: trace here */
+			cflash_err("ioctl 0x%x returned rc %d\n", cmd, rc);
 			goto cflash_ioctl_exit;
 		}
 
@@ -415,7 +435,7 @@ static int cflash_ioctl(struct scsi_device *sdev, int cmd, void __user *arg)
 	case DK_CAPI_RELEASE:
 		rc = cflash_mc_close(sdev, arg);
 		if (rc) {
-			/* XXX - TODO: trace here */
+			cflash_err("ioctl 0x%x returned rc %d\n", cmd, rc);
 			goto cflash_ioctl_exit;
 		}
 
@@ -439,7 +459,8 @@ cflash_ioctl_exit:
  * structure. I'm thinking that might be more appropriate for us, at least for
  * the MC communications path.
  */
-static DEVICE_ATTR(partition_name, S_IRUGO, cflash_show_host_partition_name, NULL);
+static DEVICE_ATTR(partition_name, S_IRUGO, cflash_show_host_partition_name, 
+		   NULL);
 static DEVICE_ATTR(device_name, S_IRUGO, cflash_show_host_device_name, NULL);
 static DEVICE_ATTR(port_loc_code, S_IRUGO, cflash_show_host_loc_code, NULL);
 static DEVICE_ATTR(drc_name, S_IRUGO, cflash_show_host_drc_name, NULL);
@@ -487,8 +508,7 @@ static struct scsi_host_template driver_template = {
 };
 
 static struct pci_device_id cflash_pci_table[] = {
-        { PCI_VENDOR_ID_IBM, PCI_DEVICE_ID_IBM_CORSA,
-                PCI_VENDOR_ID_IBM, CFLASH_SUBS_DEV_ID, 0, 0, 0 },
+	{ PCI_DEVICE(PCI_VENDOR_ID_IBM, PCI_DEVICE_ID_IBM_CORSA), },
         {}
 };
 
@@ -531,15 +551,25 @@ static void cflash_remove(struct pci_dev *pdev)
 	 * the pci drvdata and when to use the scsi hostdata.
 	 */
 
+        dev_err(&pdev->dev, "enter cflash_remove!\n");
         scsi_remove_host(p_cflash->host);
+        dev_err(&pdev->dev, "after scsi_remove_host!\n");
 
+	/* XXX: Commented out for now 
 	iounmap(p_cflash->cflash_regs);
-	pci_release_regions(p_cflash->p_dev);
-	cflash_free_mem(p_cflash);
-	scsi_host_put(p_cflash->host);
+	pci_release_regions(p_cflash->p_dev); 
+	*/
+
+	cflash_free_mem(p_cflash); 
+	scsi_host_put(p_cflash->host); 
+        dev_err(&pdev->dev, "after scsi_host_put!\n");
+
+	/* XXX: Commented out for now
 	pci_disable_device(p_cflash->p_dev);
+	*/
 
 	cflash_term_afu(p_cflash);
+        dev_err(&pdev->dev, "after cflash_term_afu!\n");
 
 	free_pages((unsigned long)p_cflash->p_afu_a,
 		get_order(p_cflash->p_ini->nelm * sizeof(struct afu_alloc)));
@@ -696,14 +726,21 @@ static int cflash_init_scsi(cflash_t *p_cflash)
 	struct pci_dev *pdev = p_cflash->p_dev;
 	int rc = 0;
 
+	dev_info(&pdev->dev, "in %s before scsi_add_host\n", __func__);
 	rc = scsi_add_host(p_cflash->host, &pdev->dev);
 	if (rc) {
 		cflash_remove(pdev);
 		goto out;
 	}
 
+	dev_info(&pdev->dev, "in %s before scsi_scan_host\n", __func__);
 	scsi_scan_host(p_cflash->host);
+
+	/* XXX: Commented out for now 
 	cflash_scan_vsets(p_cflash);
+	*/
+
+	dev_info(&pdev->dev, "in %s before scsi_add_device\n", __func__);
 	scsi_add_device(p_cflash->host, CFLASH_BUS, CFLASH_TARGET,
 			CFLASH_LUN);
 
@@ -736,6 +773,7 @@ static int cflash_probe(struct pci_dev *pdev,
         }
 
         p_cflash = (cflash_t *)host->hostdata;
+	p_cflash->host = host;
 	rc = cflash_gb_alloc(p_cflash);
 	if (rc)
 	{
@@ -759,13 +797,19 @@ static int cflash_probe(struct pci_dev *pdev,
 
 #endif /* NEWCXL */
 
+	/* XXX: Commented out for now, until Mikey's implementation is done 
 	rc = cflash_init_pci(p_cflash);
 	if (rc) {
+                dev_err(&pdev->dev, "call to cflash_init_pci failed rc=%d!\n",
+			rc);
 		goto out_remove;
 	}
+	*/
 
 	rc = cflash_init_scsi(p_cflash);
 	if (rc) {
+                dev_err(&pdev->dev, "call to cflash_init_scsi failed rc=%d!\n",
+			rc);
 		goto out_remove;
 	}
 

@@ -36,8 +36,8 @@ extern unsigned int cflash_debug;
 #define CFLASH_DRIVER_VERSION           "1.0.0"
 #define CFLASH_DRIVER_DATE              "(January 16, 2015)"
 
-#define PCI_DEVICE_ID_IBM_CORSA		0x04cf
-#define CFLASH_SUBS_DEV_ID		0x04dd
+#define PCI_DEVICE_ID_IBM_CORSA		0x04F0
+#define CFLASH_SUBS_DEV_ID		0x04F0
 
 #define CFLASH_VSET_BUS                 0xff
 #define CFLASH_BUS                      0xff

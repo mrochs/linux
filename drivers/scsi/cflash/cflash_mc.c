@@ -37,6 +37,7 @@
 int cflash_disk_attach(struct scsi_device *sdev, void __user *arg)
 {
 	int rc = 0;
+        cflash_info("in %s returning rc=%d\n", __func__, rc);
 	return rc;
 }
 
@@ -44,6 +45,9 @@ int do_mc_close(afu_t    *p_afu,
 	    conn_info_t  *p_conn_info, 
 	    res_hndl_t    res_hndl)
 {
+	int rc=-EINVAL;
+
+        cflash_info("in %s returning rc=%d\n", __func__, rc);
 	return -EINVAL;
 }
 
@@ -278,6 +282,7 @@ int cflash_mc_unregister(struct scsi_device *sdev, void __user *arg)
 	ctx_info_t *p_ctx_info = &p_afu->ctx_info[parg->context_id];
 
 	int i;
+	int rc=0;
 
 	cflash_info("%s, context=0x%llx\n",
 		    __func__, parg->context_id); 
@@ -304,7 +309,8 @@ int cflash_mc_unregister(struct scsi_device *sdev, void __user *arg)
 	} 
 	/* client can now send another MCREG */ 
 
-	return 0; 
+        cflash_info("in %s returning rc=%d\n", __func__, rc);
+	return rc; 
 }
 
 // online means the FC link layer has sync and has completed the link layer
@@ -429,11 +435,13 @@ void cflash_undo_start_afu(afu_t *p_afu, enum undo_level level)
 	default:
 		break;
 	}
+        cflash_info("in %s returning \n", __func__);
 }
 
 int cflash_terminate_afu(afu_t *p_afu)
 {
 	int i;
+	int rc=0;
 
 	/* Ensure all timers are stopped before removing resources */
 	for (i = 0; i < NUM_CMDS; i++)
@@ -441,7 +449,8 @@ int cflash_terminate_afu(afu_t *p_afu)
 
 	cflash_undo_start_afu(p_afu, UNDO_AFU_ALL);
 
-	return 0;
+        cflash_info("in %s returning rc=%d\n", __func__, rc);
+	return rc;
 }
 
 void afu_err_intr_init(afu_t *p_afu)
@@ -492,6 +501,7 @@ void afu_err_intr_init(afu_t *p_afu)
 static irqreturn_t cflash_dummy_irq_handler(int irq, void *data)
 {
 	/* XXX make unique handlers for each interrupt */
+        cflash_info("in %s returning rc=%d\n", __func__, IRQ_HANDLED);
 	return IRQ_HANDLED;
 }
 
@@ -507,6 +517,7 @@ int cflash_start_context(cflash_t *p_cflash)
 				p_cflash->p_afu_a->afu.work.
 				work_element_descriptor, NULL);
 
+        cflash_info("in %s returning rc=%d\n", __func__, rc);
         return rc;
 }
 
@@ -516,6 +527,7 @@ int cflash_start_context(cflash_t *p_cflash)
 void cflash_stop_context(cflash_t *p_cflash)
 {
 	cxl_stop_context(p_cflash->p_ctx);
+        cflash_info("in %s returning \n", __func__);
 }
 
 static void send_cmd_timeout(struct afu_cmd *p_cmd)
@@ -657,6 +669,7 @@ int cflash_start_afu(cflash_t *p_cflash)
 	  p_afu->hb = read_64(&p_afu->p_afu_map->global.regs.afu_hb);
 
 out:
+        cflash_info("in %s returning rc=%d\n", __func__, rc);
 	return rc;
 }
 
@@ -672,30 +685,41 @@ int cflash_init_afu(cflash_t *p_cflash)
 
 	/* Allocate AFU generated interrupt handler */
 	rc = cxl_allocate_afu_irqs(ctx, 4);
-	if (rc)
+	if (rc) {
+		dev_err(&p_cflash->p_dev->dev, 
+			"call to allocate_afu_irqs failed rc=%d!\n", rc);
 		goto err1;
+	}
 
 	/* Register AFU interrupt 1. */
 	rc = cxl_map_afu_irq(ctx, 1, cflash_dummy_irq_handler, NULL,
 			      "afu1");
-	if (!rc)
+	if (!rc) {
+		dev_err(&p_cflash->p_dev->dev, "call to map IRQ 1 failed!\n");
 		goto err2;
+	}
 	/* Register AFU interrupt 2 for errors. */
 	rc = cxl_map_afu_irq(ctx, 2, cflash_dummy_irq_handler, ctx,
 			     "err1");
-	if (!rc)
+	if (!rc) {
+		dev_err(&p_cflash->p_dev->dev, "call to map IRQ 2 failed!\n");
 		goto err3;
+	}
 	/* Register AFU interrupt 3 for errors. */
 	rc = cxl_map_afu_irq(ctx, 3, cflash_dummy_irq_handler, ctx,
 			     "err2");
-	if (!rc)
+	if (!rc) {
+		dev_err(&p_cflash->p_dev->dev, "call to map IRQ 3 failed!\n");
 		goto err4;
+	}
 
 	/* Register AFU interrupt 4 for errors. */
 	rc = cxl_map_afu_irq(ctx, 4, cflash_dummy_irq_handler, ctx,
 			     "err3");
-	if (!rc)
+	if (!rc) {
+		dev_err(&p_cflash->p_dev->dev, "call to map IRQ 4 failed!\n");
 		goto err5;
+	}
 
 	/* Register for PSL errors. TODO: implement this */
 	//cxl_register_error_irq(dev, flags??, callback function, private data);
@@ -704,19 +728,19 @@ int cflash_init_afu(cflash_t *p_cflash)
 	 * The CXL_IOCTL_GET_PROCESS_ELEMENT is implicit in the process
 	 * element (pe) that is embedded in the context (ctx)
 	 */
-        rc = cflash_start_context (p_cflash);
-        if (!rc)
-                goto err6;
-
+        cflash_start_context (p_cflash);
 
         rc = cflash_start_afu (p_cflash);
-        if (!rc)
-                goto err7;
+        if (rc) {
+		dev_err(&p_cflash->p_dev->dev, 
+			"call to start_afu failed, rc=%d!\n", rc);
+                goto err6;
+	}
 
-	return 0;
-err7:
-	cflash_stop_context(p_cflash);
+        cflash_info("in %s returning rc=%d\n", __func__, rc);
+	return rc;
 err6:
+	cflash_stop_context(p_cflash);
 	cxl_unmap_afu_irq(ctx, 4, NULL);
 err5:
 	cxl_unmap_afu_irq(ctx, 3, NULL);
@@ -729,17 +753,24 @@ err2:
 err1:
 	cxl_release_context(ctx);
 	p_cflash->p_ctx = NULL;
+        cflash_info("in %s returning rc=%d\n", __func__, rc);
 	return rc;
 }
 
 void cflash_term_afu(cflash_t *p_cflash)
 {
 	cflash_stop_context(p_cflash);
+        cflash_info("in %s before unmap 4 \n", __func__);
 	cxl_unmap_afu_irq(p_cflash->p_ctx, 4, NULL);
+        cflash_info("in %s before unmap 3 \n", __func__);
 	cxl_unmap_afu_irq(p_cflash->p_ctx, 3, NULL);
+        cflash_info("in %s before unmap 2 \n", __func__);
 	cxl_unmap_afu_irq(p_cflash->p_ctx, 2, NULL);
+        cflash_info("in %s before unmap 1 \n", __func__);
 	cxl_unmap_afu_irq(p_cflash->p_ctx, 1, NULL);
+        cflash_info("in %s before cxl_free_afu_irqs \n", __func__);
 	cxl_free_afu_irqs(p_cflash->p_ctx);
+        cflash_info("in %s before cxl_release_context \n", __func__);
 	cxl_release_context(p_cflash->p_ctx);
 	p_cflash->p_ctx = NULL;
 }
