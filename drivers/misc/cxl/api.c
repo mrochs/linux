@@ -31,11 +31,13 @@ struct cxl_context *cxl_dev_context_init(struct pci_dev *dev)
 
 	return ctx;
 }
+EXPORT_SYMBOL_GPL(cxl_dev_context_init);
 
 void cxl_release_context(struct cxl_context *ctx)
 {
 	cxl_context_free(ctx);
 }
+EXPORT_SYMBOL_GPL(cxl_release_context);
 
 int cxl_allocate_afu_irqs(struct cxl_context *ctx, int num)
 {
@@ -43,11 +45,13 @@ int cxl_allocate_afu_irqs(struct cxl_context *ctx, int num)
 		num = ctx->afu->pp_irqs;
 	return afu_allocate_irqs(ctx, num);
 }
+EXPORT_SYMBOL_GPL(cxl_allocate_afu_irqs);
 
 void cxl_free_afu_irqs(struct cxl_context *ctx)
 {
 	cxl_release_irq_ranges(&ctx->irqs, ctx->afu->adapter);
 }
+EXPORT_SYMBOL_GPL(cxl_free_afu_irqs);
 
 static irq_hw_number_t cxl_find_afu_irq(struct cxl_context *ctx, int num)
 {
@@ -80,6 +84,7 @@ int cxl_map_afu_irq(struct cxl_context *ctx, int num,
 
 	return cxl_map_irq(ctx->afu->adapter, hwirq, handler, cookie, name);
 }
+EXPORT_SYMBOL_GPL(cxl_map_afu_irq);
 
 void cxl_unmap_afu_irq(struct cxl_context *ctx, int num, void *cookie)
 {
@@ -94,7 +99,7 @@ void cxl_unmap_afu_irq(struct cxl_context *ctx, int num, void *cookie)
 	if (virq)
 		cxl_unmap_irq(virq, cookie);
 }
-
+EXPORT_SYMBOL_GPL(cxl_unmap_afu_irq);
 
 /*
  * Start a context
@@ -127,12 +132,14 @@ out:
 	mutex_unlock(&ctx->status_mutex);
 	return rc;
 }
+EXPORT_SYMBOL_GPL(cxl_start_context);
 
 /* Stop a context */
 void cxl_stop_context(struct cxl_context *ctx)
 {
 	___detach_context(ctx);
 }
+EXPORT_SYMBOL_GPL(cxl_stop_context);
 
 void __iomem *cxl_psa_map(struct cxl_context *ctx)
 {
@@ -147,8 +154,10 @@ void __iomem *cxl_psa_map(struct cxl_context *ctx)
 		 __func__, afu->psn_phys, afu->adapter->ps_size);
 	return ioremap(afu->psn_phys, afu->adapter->ps_size);
 }
+EXPORT_SYMBOL_GPL(cxl_psa_map);
 
 void cxl_psa_unmap(void __iomem *addr)
 {
 	iounmap(addr);
 }
+EXPORT_SYMBOL_GPL(cxl_psa_unmap);
