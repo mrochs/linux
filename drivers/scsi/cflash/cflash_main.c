@@ -520,58 +520,78 @@ static void cflash_remove(struct pci_dev *pdev)
         cflash_t *p_cflash = pci_get_drvdata(pdev);
         ENTER;
 
-	/* XXX: Dummy */
+	/*
+	 * XXX: We need to study this, something doesn't add up here
+	 * because cflash currently hangs off of the host and is created
+	 * when we register via scsi_host_alloc. I would suspect that once
+	 * we destroy the host (either scsi_remove_host or scsi_host_put -
+	 * not sure which) that we can no longer reference p_cflash. Also, given
+	 * this, I'm also thinking we're deriving the p_cflash reference
+	 * incorrectly. We need to find out the difference between when to use
+	 * the pci drvdata and when to use the scsi hostdata.
+	 */
 
         scsi_remove_host(p_cflash->host);
 
 	iounmap(p_cflash->cflash_regs);
-	pci_release_regions(p_cflash->p_dev); 
-	cflash_free_mem(p_cflash); 
-	scsi_host_put(p_cflash->host); 
+	pci_release_regions(p_cflash->p_dev);
+	cflash_free_mem(p_cflash);
+	scsi_host_put(p_cflash->host);
 	pci_disable_device(p_cflash->p_dev);
 
 	cflash_term_afu(p_cflash);
 
+	free_pages((unsigned long)p_cflash->p_afu_a,
+		get_order(p_cflash->p_ini->nelm * sizeof(struct afu_alloc)));
+	kfree(p_cflash->p_ini);
         LEAVE;
 }
 
 
 static int cflash_gb_alloc(cflash_t *p_cflash)
 {
-    int nafu = CFLASH_NAFU;
-    int nbytes;
-    struct capikv_ini *p_ini;
-    struct capikv_ini_elm *p_elm;
-    int i=0;
-    int rc=0;
+	int nafu = CFLASH_NAFU;
+	int nbytes;
+	struct capikv_ini *p_ini;
+	struct capikv_ini_elm *p_elm;
+	int i=0;
+	int rc=0;
 
-    nbytes = sizeof(*p_ini) +
-            ((nafu > 1) ? (nafu - 1)*sizeof(*p_elm) : 0);
+	nbytes = sizeof(*p_ini) + ((nafu > 1) ? (nafu - 1)*sizeof(*p_elm) : 0);
 
-    p_cflash->p_ini = p_ini = (struct capikv_ini *) kzalloc(nbytes, GFP_KERNEL);
-    if (p_ini == NULL) {
-            cflash_dbg("cannot allocate %d bytes\n", nbytes);
-            rc = ENOMEM;
-	    goto out;
-    }
+	p_cflash->p_ini = p_ini = kzalloc(nbytes, GFP_KERNEL);
+	if (!p_ini) {
+		cflash_err("cannot allocate %d bytes\n", nbytes);
+		rc = -ENOMEM;
+		goto out;
+	}
 
-    p_ini->sini_marker = 0x53494e49;
-    p_ini->nelm = nafu;
-    p_ini->size = sizeof(*p_elm);
+	p_ini->sini_marker = 0x53494e49;
+	p_ini->nelm = nafu;
+	p_ini->size = sizeof(*p_elm);
 
-    for (i = 0; i < nafu; i++) {
-            p_elm = &p_ini->elm[i];
-            // for this mode, the user enters the master dev path.
-            // also assume wwpns are already programmed off-line and
-            // master should leave them alone
-            //
-            p_elm->elmd_marker = 0x454c4d44;
-            // XXX strcpy(&p_elm->afu_dev_pathm[0], argv[i + optind]);
-            // XXX p_elm->lun_id = lun_id;
-    }
+	for (i = 0; i < nafu; i++) {
+		p_elm = &p_ini->elm[i];
 
-    nbytes =  sizeof(struct afu_alloc) * p_ini->nelm;
-    p_cflash->p_afu_a = (struct afu_alloc *) kzalloc(nbytes, GFP_KERNEL);
+		/*
+		 * for this mode, the user enters the master dev path.
+		 * also assume wwpns are already programmed off-line and
+		 * master should leave them alone
+		 */
+		p_elm->elmd_marker = 0x454c4d44;
+		// XXX strcpy(&p_elm->afu_dev_pathm[0], argv[i + optind]);
+		// XXX p_elm->lun_id = lun_id;
+	}
+
+	nbytes = sizeof(struct afu_alloc) * p_ini->nelm;
+	p_cflash->p_afu_a = (void *)__get_free_pages(GFP_KERNEL | __GFP_ZERO,
+						get_order(nbytes));
+	if (!p_cflash->p_afu_a) {
+		cflash_err("cannot get %d free pages\n", get_order(nbytes));
+		kfree(p_cflash->p_ini);
+		rc = -ENOMEM;
+		goto out;
+	}
 
 out:
     return rc;
