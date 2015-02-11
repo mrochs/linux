@@ -277,7 +277,7 @@ int cflash_mc_unregister(struct scsi_device *sdev, void __user *arg)
 	afu_t    *p_afu    = &p_cflash->p_afu_a->afu;
 
 	struct dk_capi_detach  *parg = (struct dk_capi_detach *)arg;
-	struct dk_capi_release *rel  = (struct dk_capi_detach *)parg;
+	struct dk_capi_release *rel  = (struct dk_capi_release *)parg;
 
 	ctx_info_t *p_ctx_info = &p_afu->ctx_info[parg->context_id];
 
@@ -500,8 +500,81 @@ void afu_err_intr_init(afu_t *p_afu)
 #ifdef NEWCXL
 static irqreturn_t cflash_dummy_irq_handler(int irq, void *data)
 {
-	/* XXX make unique handlers for each interrupt */
+	/* XXX - to be removed once we settle the 4th interrupt */
         cflash_info("in %s returning rc=%d\n", __func__, IRQ_HANDLED);
+	return IRQ_HANDLED;
+}
+
+static irqreturn_t cflash_sync_err_irq(int irq, void *data)
+{
+	struct afu	*p_afu = (struct afu *)data;
+	__u64		 reg;
+	__u64		 reg_unmasked;
+
+	reg = read_64(&p_afu->p_host_map->intr_status);
+	reg_unmasked = (reg & SISL_ISTATUS_UNMASK);
+
+	if (reg_unmasked == 0UL) {
+		cflash_err("%llX: spurious interrupt, intr_status %016llX\n",
+			   (u64)p_afu, reg);
+		goto cflash_sync_err_irq_exit;
+	}
+
+	cflash_err("%llX: unexpected interrupt, intr_status %016llX\n",
+		   (u64)p_afu, reg);
+
+	write_64(&p_afu->p_host_map->intr_clear, reg_unmasked);
+
+cflash_sync_err_irq_exit:
+        cflash_info("in %s returning rc=%d\n", __func__, IRQ_HANDLED);
+	return IRQ_HANDLED;
+}
+
+static irqreturn_t cflash_rrq_irq(int irq, void *data)
+{
+	struct afu	*p_afu = (struct afu *)data;
+	struct afu_cmd	*p_cmd;
+	unsigned long	 lock_flags = 0UL;
+
+	/*
+	 * XXX - might want to look at using locals for loop control
+	 * as an optimizaion
+	 */
+
+	/* Process however many RRQ entries that are ready */
+	while ((*p_afu->p_hrrq_curr & SISL_RESP_HANDLE_T_BIT) == p_afu->toggle) {
+		p_cmd = (struct afu_cmd *)
+			((*p_afu->p_hrrq_curr) & (~SISL_RESP_HANDLE_T_BIT));
+
+		spin_lock_irqsave(&p_cmd->slock, lock_flags);
+		p_cmd->sa.host_use_b[0] |= B_DONE;
+		spin_unlock_irqrestore(&p_cmd->slock, lock_flags);
+
+		/* Advance to next entry or wrap and flip the toggle bit */
+		if (p_afu->p_hrrq_curr < p_afu->p_hrrq_end) {
+			p_afu->p_hrrq_curr++;
+		} else {
+			p_afu->p_hrrq_curr = p_afu->p_hrrq_start;
+			p_afu->toggle ^= SISL_RESP_HANDLE_T_BIT;
+		}
+	}
+
+        cflash_info("in %s returning rc=%d\n", __func__, IRQ_HANDLED);
+	return IRQ_HANDLED;
+}
+
+static irqreturn_t cflash_async_err_irq(int irq, void *data)
+{
+	struct afu	*p_afu = (struct afu *)data;
+
+	/*
+	 * XXX - Matt to work on this next, need to create a thread
+	 * as this type of interrupt can drive a link reset which
+	 * will block.
+	 */
+
+        cflash_info("in %s returning rc=%d, afu = %p\n",
+		    __func__, IRQ_HANDLED, p_afu);
 	return IRQ_HANDLED;
 }
 
@@ -675,7 +748,8 @@ out:
 
 int cflash_init_afu(cflash_t *p_cflash)
 {
-	int rc;
+	int		    rc;
+	afu_t		   *p_afu = &p_cflash->p_afu_a->afu;
 	struct cxl_context *ctx;
 
 	ctx = cxl_dev_context_init(p_cflash->p_dev);
@@ -691,27 +765,36 @@ int cflash_init_afu(cflash_t *p_cflash)
 		goto err1;
 	}
 
-	/* Register AFU interrupt 1. */
-	rc = cxl_map_afu_irq(ctx, 1, cflash_dummy_irq_handler, NULL,
-			      "afu1");
+	/* Register AFU interrupt 1 (SISL_MSI_SYNC_ERROR) */
+	rc = cxl_map_afu_irq(ctx, 1, cflash_sync_err_irq, p_afu,
+			     "SISL_MSI_SYNC_ERROR");
 	if (!rc) {
-		dev_err(&p_cflash->p_dev->dev, "call to map IRQ 1 failed!\n");
+		dev_err(&p_cflash->p_dev->dev,
+			"call to map IRQ 1 (SISL_MSI_SYNC_ERROR) failed!\n");
 		goto err2;
 	}
-	/* Register AFU interrupt 2 for errors. */
-	rc = cxl_map_afu_irq(ctx, 2, cflash_dummy_irq_handler, ctx,
-			     "err1");
+	/* Register AFU interrupt 2 (SISL_MSI_RRQ_UPDATED) */
+	rc = cxl_map_afu_irq(ctx, 2, cflash_rrq_irq, p_afu,
+			     "SISL_MSI_RRQ_UPDATED");
 	if (!rc) {
-		dev_err(&p_cflash->p_dev->dev, "call to map IRQ 2 failed!\n");
+		dev_err(&p_cflash->p_dev->dev,
+			"call to map IRQ 2 (SISL_MSI_RRQ_UPDATED) failed!\n");
 		goto err3;
 	}
-	/* Register AFU interrupt 3 for errors. */
-	rc = cxl_map_afu_irq(ctx, 3, cflash_dummy_irq_handler, ctx,
-			     "err2");
+	/* Register AFU interrupt 3 (SISL_MSI_ASYNC_ERROR) */
+	rc = cxl_map_afu_irq(ctx, 3, cflash_async_err_irq, p_afu,
+			     "SISL_MSI_ASYNC_ERROR");
 	if (!rc) {
-		dev_err(&p_cflash->p_dev->dev, "call to map IRQ 3 failed!\n");
+		dev_err(&p_cflash->p_dev->dev,
+			"call to map IRQ 3 (SISL_MSI_ASYNC_ERROR) failed!\n");
 		goto err4;
 	}
+
+	/*
+	 * XXX - why did we put a 4th interrupt? Were we thinking this is
+	 * for the SISL_MSI_PSL_XLATE? Wouldn't that be covered under the
+	 * cxl_register_error_irq() ?
+         */	
 
 	/* Register AFU interrupt 4 for errors. */
 	rc = cxl_map_afu_irq(ctx, 4, cflash_dummy_irq_handler, ctx,
