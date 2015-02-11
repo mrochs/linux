@@ -145,11 +145,31 @@ static int find_free_bit(uint64_t lun_map_entry)
 	return pos;
 }
 
+static int find_free_range(uint32_t low, uint32_t high, lun_info_t *lun_info, int *bit_word)
+{
+        int     i;
+        aun_t   bit_pos = -1;
+
+        for (i = low; i < high; i++)
+                if (lun_info->lun_alloc_map[i] != 0) {
+                        bit_pos = find_free_bit(lun_info->lun_alloc_map[i]);
+
+                        cflash_info("block_alloc: Found free bit %lX in lun map entry %llX at bitmap index = %X\n",
+                                    bit_pos, lun_info->lun_alloc_map[i], i);
+
+                        *bit_word = i;
+                        lun_info->free_aun_cnt--;
+                        CLR_BIT(lun_info->lun_alloc_map[i], bit_pos);
+			break;
+                }
+
+        return bit_pos;
+}
 
 aun_t ba_alloc(ba_lun_t *ba_lun)
 {
 	aun_t		 bit_pos = -1;
-	int		 i = 0;
+	int		 bit_word = 0;
 	lun_info_t	*lun_info = NULL;
 
 	lun_info = (lun_info_t *)ba_lun->ba_lun_handle;
@@ -163,55 +183,33 @@ aun_t ba_alloc(ba_lun_t *ba_lun)
 		return (aun_t)-1;
 	}
 
-	/* Search for free entry between free_curr_idx and free_high_idx */
-	for (i = lun_info->free_curr_idx; i < lun_info->free_high_idx; i++) {
-		if (lun_info->lun_alloc_map[i] != 0) {
-			/* There are some free AUs .. find free entry */
-			bit_pos = find_free_bit(lun_info->lun_alloc_map[i]);
-
-			cflash_info("block_alloc: Found free bit %lX in lun map entry %llX at bitmap index = %X\n",
-				bit_pos, lun_info->lun_alloc_map[i], i);
-
-			lun_info->free_aun_cnt--;
-			CLR_BIT(lun_info->lun_alloc_map[i], bit_pos);
-			break;
-		}
-	}
-
-	/* XXX - look at refactoring these searches (dup code) */
+	/* Search to find a free entry, curr->high then low->curr */
+        bit_pos = find_free_range(lun_info->free_curr_idx,
+                                  lun_info->free_high_idx,
+                                  lun_info,
+                                  &bit_word);
 	if (bit_pos == -1) {
-		/* Search for free entry between free_low_idx and free_curr_idx  */
-		for (i = lun_info->free_low_idx; i < lun_info->free_curr_idx; i++) {
-			if (lun_info->lun_alloc_map[i] != 0) {
-				/* There are some free AUs .. find free entry */
-				bit_pos = find_free_bit(lun_info->lun_alloc_map[i]);
-
-				cflash_info("block_alloc: Found free bit %lX in lun map entry %llX at bitmap index = %X\n",
-					bit_pos, lun_info->lun_alloc_map[i], i);
-
-				lun_info->free_aun_cnt--;
-				CLR_BIT(lun_info->lun_alloc_map[i], bit_pos);
-				break;
-			}
-		}
-	}
-
-	if (bit_pos == -1) {
-		cflash_err("block_alloc: Could not find an allocation unit on LUN: lun_id = %llX\n",
-			ba_lun->lun_id);
-		return (aun_t)-1;
-	}
+                bit_pos = find_free_range(lun_info->free_low_idx,
+                                          lun_info->free_curr_idx,
+                                          lun_info,
+                                          &bit_word);
+                if (bit_pos == -1) {
+                        cflash_err("block_alloc: Could not find an allocation unit on LUN: lun_id = %llX\n",
+                                   ba_lun->lun_id);
+                        return (aun_t)-1;
+                }
+        }
 
 	/* Update the free_curr_idx */
 	if (bit_pos == 63)
-		lun_info->free_curr_idx = i + 1;
+		lun_info->free_curr_idx = bit_word + 1;
 	else
-		lun_info->free_curr_idx = i;
+		lun_info->free_curr_idx = bit_word;
 
 	cflash_info("block_alloc: Allocating AU number %lX, on lun_id %llX, free_aun_cnt = %llX\n",
-		((i * 64) + bit_pos), ba_lun->lun_id, lun_info->free_aun_cnt);
+		((bit_word * 64) + bit_pos), ba_lun->lun_id, lun_info->free_aun_cnt);
 
-	return (aun_t)((i * 64) + bit_pos);
+	return (aun_t)((bit_word * 64) + bit_pos);
 }
 
 
