@@ -542,13 +542,28 @@ static irqreturn_t cflash_rrq_irq(int irq, void *data)
 	 */
 
 	/* Process however many RRQ entries that are ready */
-	while ((*p_afu->p_hrrq_curr & SISL_RESP_HANDLE_T_BIT) == p_afu->toggle) {
-		p_cmd = (struct afu_cmd *)
+	while ((*p_afu->p_hrrq_curr & SISL_RESP_HANDLE_T_BIT) == p_afu->toggle)
+       	{ 
+		struct scsi_cmnd *scp; 
+		
+		p_cmd = (struct afu_cmd *) 
 			((*p_afu->p_hrrq_curr) & (~SISL_RESP_HANDLE_T_BIT));
 
 		spin_lock_irqsave(&p_cmd->slock, lock_flags);
 		p_cmd->sa.host_use_b[0] |= B_DONE;
-		spin_unlock_irqrestore(&p_cmd->slock, lock_flags);
+		spin_unlock_irqrestore(&p_cmd->slock, lock_flags); 
+		
+		timer_stop(p_cmd->timer); /* already stopped if timer fired */ 
+		if (p_cmd->rcb.rsvd2) 
+		{ 
+			scp =  (struct scsi_cmnd *)p_cmd->rcb.rsvd2; 
+			cflash_info("In %s calling scsi_set_resid, " 
+				    "scp=0x%llx len=%d\n", 
+				    __func__, p_cmd->rcb.rsvd2, 
+				    p_cmd->rcb.data_len); 
+			scsi_set_resid(scp, p_cmd->rcb.data_len); 
+			scp->scsi_done(scp); 
+		}
 
 		/* Advance to next entry or wrap and flip the toggle bit */
 		if (p_afu->p_hrrq_curr < p_afu->p_hrrq_end) {
@@ -861,14 +876,15 @@ void cflash_term_afu(cflash_t *p_cflash)
 #endif /* NEWCXL */
 
 // rep = 0 for 1 shot timer.
-void timer_start(timer_t timer, time_t sec, int rep)
+void timer_start(struct timer_list timer, time_t sec, int rep)
 {
 	/* XXX - leave as stub for now since we're moving to kernel timers */
 }
 
 
-void timer_stop(timer_t timer)
+void timer_stop(struct timer_list timer)
 {
+	del_timer(&timer);
 	/* XXX - leave as stub for now since we're moving to kernel timers */
 }
 
@@ -894,9 +910,9 @@ void send_cmd(afu_t *p_afu, struct afu_cmd *p_cmd)
 	 * XXX - look at refactoring this timer start into a macro/inline,
 	 * also need to find out why this code originally (and still does)
 	 * had a doubler (*2) for the timeout value
-	 */
 	p_cmd->timer.expires = (jiffies + (p_cmd->rcb.timeout * 2 * HZ));
 	add_timer(&p_cmd->timer);
+	 */
 
 	/* Write IOARRIN */
 	if (p_afu->room)
@@ -1580,5 +1596,40 @@ int do_mc_stat(afu_t		*p_afu,
 	}
 
 	return 0;
+}
+
+void build_and_send_cmd(afu_t *p_afu, struct scsi_cmnd *scp)
+{ 
+	struct afu_cmd *p_cmd = &p_afu->cmd[AFU_INIT_INDEX]; 
+	
+	/* XXX: Decide how to select port */ 
+	__u64 port_sel = 0x1; 
+	
+	memset(&p_afu->buf[0], 0, sizeof(p_afu->buf)); 
+	memset(&p_cmd->rcb.cdb[0], 0, sizeof(p_cmd->rcb.cdb)); 
+	
+	p_cmd->rcb.req_flags = (SISL_REQ_FLAGS_PORT_LUN_ID | 
+				SISL_REQ_FLAGS_SUP_UNDERRUN | 
+				SISL_REQ_FLAGS_HOST_READ); 
+	
+	p_cmd->rcb.port_sel = port_sel; 
+	p_cmd->rcb.lun_id = scp->device->lun; 
+	p_cmd->rcb.data_len = sizeof(p_afu->buf); 
+	p_cmd->rcb.data_ea = (__u64) &p_afu->buf[0]; 
+	p_cmd->rcb.timeout = MC_DISCOVERY_TIMEOUT; 
+	
+	/* Stash the scp in the reserved field, for reuse during interrupt */ 
+	p_cmd->rcb.rsvd2 = (__u64)scp; 
+	
+	/* Copy the CDB from the scsi_cmnd passed in */ 
+	memcpy(p_cmd->rcb.cdb, scp->cmnd, sizeof(p_cmd->rcb.cdb)); 
+	
+	p_cmd->sa.host_use_b[1] = 0; /* reset retry cnt */ 
+	
+	cflash_info("In %s calling send_cmd, scp=0x%llx\n", 
+		    __func__, p_cmd->rcb.rsvd2); 
+	
+	/* Send the command */ 
+	send_cmd(p_afu, p_cmd);
 }
 

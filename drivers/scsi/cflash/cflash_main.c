@@ -37,6 +37,8 @@ MODULE_AUTHOR("Manoj N. Kumar <kumarmn@us.ibm.com>");
 MODULE_AUTHOR("Matthew R. Ochs <mrochs@us.ibm.com>");
 MODULE_LICENSE("GPL");
 
+extern void build_and_send_cmd(afu_t *, struct scsi_cmnd *);
+
 unsigned int cflash_debug = 0;
 
 /**
@@ -58,9 +60,8 @@ static const char *cflash_driver_info(struct Scsi_Host *host)
         return buffer;
 }
 
-
 /**
- * cflash_queuecommand - Queue a mid-layer request
+ * cflash_queuecommand_lck - Queue a mid-layer request
  * @shost:               scsi host struct
  * @scsi_cmd:            scsi command struct
  *
@@ -71,14 +72,33 @@ static const char *cflash_driver_info(struct Scsi_Host *host)
  *      SCSI_MLQUEUE_DEVICE_BUSY if device is busy
  *      SCSI_MLQUEUE_HOST_BUSY if host is busy
  **/
-static int cflash_queuecommand(struct Scsi_Host *shost,
-                               struct scsi_cmnd *scsi_cmd)
+static int cflash_queuecommand_lck(struct scsi_cmnd *scp,
+				   void (*done)(struct scsi_cmnd *))
 {
         /* XXX: Dummy */
 	int rc=0;
+	struct Scsi_Host *host = scp->device->host;
+	cflash_t *p_cflash     = (cflash_t *)host->hostdata;
+        afu_t    *p_afu        = &p_cflash->p_afu_a->afu;
+
         cflash_info("in %s returning rc=%d\n", __func__, rc);
+        cflash_info("in %s (scp=%p) %d/%d/%d/%llu " 
+		    "cdb=(%08x-%08x-%08x-%08x)\n", 
+		    __func__, scp, 
+		    host->host_no, scp->device->channel, 
+		    scp->device->id, scp->device->lun, 
+		    cpu_to_be32(((u32 *)scp->cmnd)[0]), 
+		    cpu_to_be32(((u32 *)scp->cmnd)[1]), 
+		    cpu_to_be32(((u32 *)scp->cmnd)[2]), 
+		    cpu_to_be32(((u32 *)scp->cmnd)[3]));
+
+	scp->scsi_done = done;
+	scp->result = (DID_OK << 16);;
+	build_and_send_cmd(p_afu, scp);
         return 0;
 }
+
+static DEF_SCSI_QCMD(cflash_queuecommand)
 
 /**
  * cflash_eh_abort_handler - Abort a single op

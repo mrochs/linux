@@ -501,7 +501,12 @@ void periodic_hb(void);
 void periodic_fc(void);
 void *sig_rx(void *arg);
 
+#ifdef __KERNEL__
+void timer_start(struct timer_list timer, time_t sec, int rep);
+void timer_stop(struct timer_list timer);
+#else
 void timer_start(timer_t timer, time_t sec, int rep);
 void timer_stop(timer_t timer);
+#endif /* __KERNEL__ */
 
 #endif /* _MSERVE_H */
