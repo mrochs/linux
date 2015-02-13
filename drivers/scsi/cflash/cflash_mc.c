@@ -512,7 +512,7 @@ int cflash_terminate_afu(afu_t *p_afu)
 
 	/* Ensure all timers are stopped before removing resources */
 	for (i = 0; i < NUM_CMDS; i++)
-		del_timer_sync(&p_afu->cmd[i].timer);
+		timer_stop(&p_afu->cmd[i].timer, TRUE);
 
 	cflash_undo_start_afu(p_afu, UNDO_AFU_ALL);
 
@@ -610,17 +610,17 @@ static irqreturn_t cflash_rrq_irq(int irq, void *data)
 
 	/* Process however many RRQ entries that are ready */
 	while ((*p_afu->p_hrrq_curr & SISL_RESP_HANDLE_T_BIT) == p_afu->toggle)
-       	{ 
-		struct scsi_cmnd *scp; 
-		
-		p_cmd = (struct afu_cmd *) 
+	{
+		struct scsi_cmnd *scp;
+
+		p_cmd = (struct afu_cmd *)
 			((*p_afu->p_hrrq_curr) & (~SISL_RESP_HANDLE_T_BIT));
 
 		spin_lock_irqsave(&p_cmd->slock, lock_flags);
 		p_cmd->sa.host_use_b[0] |= B_DONE;
-		spin_unlock_irqrestore(&p_cmd->slock, lock_flags); 
-		
-		timer_stop(p_cmd->timer); /* already stopped if timer fired */ 
+		spin_unlock_irqrestore(&p_cmd->slock, lock_flags);
+
+		timer_stop(&p_cmd->timer, FALSE); /* already stopped if timer fired */
 
 		/*
 		hexdump ((void *)&p_cmd->rcb, sizeof(sisl_ioarcb_t), "rcb");
@@ -630,16 +630,15 @@ static irqreturn_t cflash_rrq_irq(int irq, void *data)
 		hexdump ((void *)p_cmd->rcb.data_ea, 64, "data");
 		*/
 
-		if (p_cmd->rcb.rsvd2) 
-		{ 
-			scp =  (struct scsi_cmnd *)p_cmd->rcb.rsvd2; 
-			cflash_info("In %s calling scsi_set_resid, " 
-				    "scp=0x%llx len=%d\n", 
-				    __func__, p_cmd->rcb.rsvd2, 
-				    p_cmd->sa.resid); 
+		if (p_cmd->rcb.rsvd2) {
+			scp =  (struct scsi_cmnd *)p_cmd->rcb.rsvd2;
+			cflash_info("In %s calling scsi_set_resid, "
+				    "scp=0x%llx len=%d\n",
+				    __func__, p_cmd->rcb.rsvd2,
+				    p_cmd->sa.resid);
 
-			scsi_set_resid(scp, p_cmd->sa.resid); 
-			scp->scsi_done(scp); 
+			scsi_set_resid(scp, p_cmd->sa.resid);
+			scp->scsi_done(scp);
 			scsi_dma_unmap(scp);
 		}
 
@@ -959,17 +958,19 @@ void cflash_term_afu(cflash_t *p_cflash)
 
 #endif /* NEWCXL */
 
-// rep = 0 for 1 shot timer.
-void timer_start(struct timer_list timer, time_t sec, int rep)
+void timer_start(struct timer_list *p_timer, unsigned long timeout_in_jiffies)
 {
-	/* XXX - leave as stub for now since we're moving to kernel timers */
+	p_timer->expires = (jiffies + timeout_in_jiffies);
+	add_timer(p_timer);
 }
 
 
-void timer_stop(struct timer_list timer)
+void timer_stop(struct timer_list *p_timer, bool sync)
 {
-	del_timer(&timer);
-	/* XXX - leave as stub for now since we're moving to kernel timers */
+	if (unlikely(sync))
+		del_timer_sync(p_timer);
+	else
+		del_timer(p_timer);
 }
 
 // do we need to retry AFU_CMDs (sync) on afu_rc = 0x30 ?
@@ -1025,12 +1026,12 @@ void cflash_send_cmd(afu_t *p_afu, struct afu_cmd *p_cmd)
 	asm volatile ( "lwsync" : : );
 
 	/*
-	 * XXX - look at refactoring this timer start into a macro/inline,
-	 * also need to find out why this code originally (and still does)
-	 * had a doubler (*2) for the timeout value
-	p_cmd->timer.expires = (jiffies + (p_cmd->rcb.timeout * 2 * HZ));
-	add_timer(&p_cmd->timer);
+	 * XXX - find out why this code originally (and still does)
+	 * have a doubler (*2) for the timeout value
 	 */
+#if 0 /* XXX - temporarily disable timer */
+	timer_start(&p_cmd->timer, (p_cmd->rcb.timeout * 2 * HZ));
+#endif
 
 	/* Write IOARRIN */
 	if (p_afu->room)
@@ -1064,7 +1065,7 @@ void cflash_wait_resp(afu_t *p_afu, struct afu_cmd *p_cmd)
 	}
 	spin_unlock_irqrestore(&p_cmd->slock, lock_flags);
 
-	del_timer(&p_cmd->timer); /* already stopped if timer fired */
+	timer_stop(&p_cmd->timer, FALSE);  /* already stopped if timer fired */
 
 	if (p_cmd->sa.ioasc != 0)
 		cflash_err("CMD 0x%x failed, IOASC: flags 0x%x, afu_rc 0x%x, "

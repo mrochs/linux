@@ -506,9 +506,17 @@ void periodic_hb(void);
 void periodic_fc(void);
 void *sig_rx(void *arg);
 
+#ifndef TRUE
+#define TRUE	1
+#endif
+
+#ifndef FALSE
+#define FALSE	0
+#endif
+
 #ifdef __KERNEL__
-void timer_start(struct timer_list timer, time_t sec, int rep);
-void timer_stop(struct timer_list timer);
+void timer_start(struct timer_list *p_timer, unsigned long timeout_in_jiffies);
+void timer_stop(struct timer_list *p_timer, bool sync);
 #else
 void timer_start(timer_t timer, time_t sec, int rep);
 void timer_stop(timer_t timer);
