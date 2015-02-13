@@ -165,8 +165,8 @@ out:
 	return rc;
 }
 
-int do_mc_close(afu_t    *p_afu, 
-	    conn_info_t  *p_conn_info, 
+int do_mc_close(afu_t    *p_afu,
+	    conn_info_t  *p_conn_info,
 	    res_hndl_t    res_hndl)
 {
 	int rc=-EINVAL;
@@ -209,7 +209,7 @@ int cflash_mc_register(struct scsi_device *sdev, void __user *arg)
 
 	struct dk_capi_uvirtual *parg = (struct dk_capi_uvirtual *)arg;
 
-	ctx_info_t *p_ctx_info = &p_afu->ctx_info[parg->context_id]; 
+	ctx_info_t *p_ctx_info;
 	int   mode             = (parg->flags & MODE_MASK);
 	__u64 challenge        = parg->challenge;
 	__u64 reg;
@@ -217,7 +217,7 @@ int cflash_mc_register(struct scsi_device *sdev, void __user *arg)
 	cflash_info("%s, context=0x%llx res_hndl=0x%llx, challenge=0x%llx\n",
 		    __func__, parg->context_id,
 		    parg->rsrc_handle,
-		    parg->challenge); 
+		    parg->challenge);
 
 	if (parg->context_id < MAX_CONTEXT) {
 		p_ctx_info = &p_afu->ctx_info[parg->context_id];
@@ -229,14 +229,14 @@ int cflash_mc_register(struct scsi_device *sdev, void __user *arg)
 	 	 */
 		reg = read_64(&p_ctx_info->p_ctrl_map->mbox_r);
 
-		if (reg == 0 || /* zeroed mbox is a locked mbox */ 
+		if (reg == 0 || /* zeroed mbox is a locked mbox */
 		    challenge != reg) {
-			return EACCES; /* return Permission denied */
+			return -EACCES; /* return Permission denied */
 		}
 
 		if (mode == MCREG_DUP_REG && 
 		    p_ctx_info->ref_cnt == 0) {
-			return EINVAL; /* no prior registration to dup */
+			return -EINVAL; /* no prior registration to dup */
 		}
 
 		/* a fresh registration will cause all previous 
@@ -250,9 +250,9 @@ int cflash_mc_register(struct scsi_device *sdev, void __user *arg)
 			/* XXX: Implicit unregister on new registration */
 			cflash_mc_unregister(sdev, arg);
 
-			if (p_ctx_info->ref_cnt != 0) { 
+			if (p_ctx_info->ref_cnt != 0) {
 				cflash_err("%s: internal error: p_ctx_info->"
-					"ref_cnt != 0", p_afu->name); 
+					"ref_cnt != 0", p_afu->name);
 			}
 
 			/* This context is not duped and is in a group by 
@@ -265,8 +265,8 @@ int cflash_mc_register(struct scsi_device *sdev, void __user *arg)
 			 * mode. User has option to choose read and/or write 
 			 * permissions again in mc_open.  
 			 */
-			write_64(&p_ctx_info->p_ctrl_map->ctx_cap, 
-				 SISL_CTX_CAP_READ_CMD | 
+			write_64(&p_ctx_info->p_ctrl_map->ctx_cap,
+				 SISL_CTX_CAP_READ_CMD |
 				 SISL_CTX_CAP_WRITE_CMD);
 			asm volatile ( "eieio" : : );
 			reg = read_64(&p_ctx_info->p_ctrl_map->ctx_cap);
@@ -275,18 +275,18 @@ int cflash_mc_register(struct scsi_device *sdev, void __user *arg)
 			 * closed since the mbox read and the ctx_cap 
 			 * register locked up.  fail the registration 
 			 */
-			if (reg != (SISL_CTX_CAP_READ_CMD | 
-				    SISL_CTX_CAP_WRITE_CMD)) { 
-				return EAGAIN; 
+			if (reg != (SISL_CTX_CAP_READ_CMD |
+				    SISL_CTX_CAP_WRITE_CMD)) {
+				return -EAGAIN;
 			}
 
 			/* the context gets a dedicated RHT tbl unless it 
 			 * is dup'ed later. 
 			 */
-			p_ctx_info->p_rht_info = 
+			p_ctx_info->p_rht_info =
 				&p_afu->rht_info[parg->context_id];
-			p_ctx_info->p_rht_info->ref_cnt = 1; 
-			memset(p_ctx_info->p_rht_info->rht_start, 0, 
+			p_ctx_info->p_rht_info->ref_cnt = 1;
+			memset(p_ctx_info->p_rht_info->rht_start, 0,
 			       sizeof(sisl_rht_entry_t)*MAX_RHT_PER_CONTEXT);
 			/* make clearing of the RHT visible to AFU before 
 			 * MMIO 
@@ -294,17 +294,16 @@ int cflash_mc_register(struct scsi_device *sdev, void __user *arg)
 			asm volatile ( "lwsync" : : );
 
 			/* set up MMIO registers pointing to the RHT */
-			write_64(&p_ctx_info->p_ctrl_map->rht_start, 
+			write_64(&p_ctx_info->p_ctrl_map->rht_start,
 				 (__u64)p_ctx_info->p_rht_info->rht_start);
-			write_64(&p_ctx_info->p_ctrl_map->rht_cnt_id, 
-				 SISL_RHT_CNT_ID((__u64)MAX_RHT_PER_CONTEXT, 
-						 (__u64)(p_afu->ctx_hndl))); 
-		} 
-		/* it is now registered, go to ready state */ 
-		return 0; 
-	} 
-	else { 
-		return EINVAL; 
+			write_64(&p_ctx_info->p_ctrl_map->rht_cnt_id,
+				 SISL_RHT_CNT_ID((__u64)MAX_RHT_PER_CONTEXT,
+						 (__u64)(p_afu->ctx_hndl)));
+		}
+		/* it is now registered, go to ready state */
+		return 0;
+	} else {
+		return -EINVAL;
 	}
 }
 
@@ -337,37 +336,41 @@ int cflash_mc_close(struct scsi_device *sdev, void __user *arg)
 	struct dk_capi_resize *parg     = (struct dk_capi_resize *)arg;
 	res_hndl_t             res_hndl = parg->rsrc_handle;
 
-	ctx_info_t       *p_ctx_info = &p_afu->ctx_info[parg->context_id]; 
-	rht_info_t       *p_rht_info = p_ctx_info->p_rht_info; 
-	sisl_rht_entry_t *p_rht_entry; 
+	ctx_info_t       *p_ctx_info;
+	rht_info_t       *p_rht_info;
+	sisl_rht_entry_t *p_rht_entry;
 
 	cflash_info("%s, context=0x%llx res_hndl=0x%llx, challenge=0x%llx\n",
 		    __func__, parg->context_id,
 		    parg->rsrc_handle,
-		    parg->challenge); 
-	
-	if (res_hndl < MAX_RHT_PER_CONTEXT) { 
-		p_rht_entry = &p_rht_info->rht_start[res_hndl]; 
-		if (p_rht_entry->nmask == 0) { /* not open */ 
-			return EINVAL; 
-		} 
-		
+		    parg->challenge);
+
+	if (parg->context_id < MAX_CONTEXT) {
+		p_ctx_info = &p_afu->ctx_info[parg->context_id];
+		p_rht_info = p_ctx_info->p_rht_info;
+	} else {
+		return -EINVAL;
+	}
+
+	if (res_hndl < MAX_RHT_PER_CONTEXT) {
+		p_rht_entry = &p_rht_info->rht_start[res_hndl];
+		if (p_rht_entry->nmask == 0) /* not open */
+			return -EINVAL;
+
 		/* set size to 0, this will clear LXT_START and LXT_CNT 
 		 * fields in the RHT entry 
-		 */ 
+		 */
 		cflash_mc_size(sdev, arg); // p_conn good ?  
-		
-		p_rht_entry->nmask = 0; 
-		p_rht_entry->fp = 0; 
-		
-		/* now the RHT entry is all cleared */ 
-	} 
-	else { 
-		return EINVAL; 
+
+		p_rht_entry->nmask = 0;
+		p_rht_entry->fp = 0;
+
+		/* now the RHT entry is all cleared */
+	} else {
+		return -EINVAL;
 	}
 
 	return 0;
-
 }
 
 
@@ -403,38 +406,44 @@ int cflash_mc_unregister(struct scsi_device *sdev, void __user *arg)
 	struct dk_capi_detach  *parg = (struct dk_capi_detach *)arg;
 	struct dk_capi_release *rel  = (struct dk_capi_release *)parg;
 
-	ctx_info_t *p_ctx_info = &p_afu->ctx_info[parg->context_id];
+	ctx_info_t *p_ctx_info;
 
 	int i;
 	int rc=0;
 
 	cflash_info("%s, context=0x%llx\n",
-		    __func__, parg->context_id); 
+		    __func__, parg->context_id);
 
-	if (p_ctx_info->ref_cnt-- == 1) { 
+	if (parg->context_id < MAX_CONTEXT)
+		p_ctx_info = &p_afu->ctx_info[parg->context_id];
+	else
+		return -EINVAL;
 
-		/* close the context */ 
+
+	if (p_ctx_info->ref_cnt-- == 1) {
+
+		/* close the context */
 		/* for any resource still open, dealloate LBAs and close 
 		 * if nobody else is using it. 
-		 */ 
+		 */
 
-		if (p_ctx_info->p_rht_info->ref_cnt-- == 1) { 
-			for (i = 0; i < MAX_RHT_PER_CONTEXT; i++) { 
+		if (p_ctx_info->p_rht_info->ref_cnt-- == 1) {
+			for (i = 0; i < MAX_RHT_PER_CONTEXT; i++) {
 				rel->rsrc_handle = i;
 				cflash_mc_close(sdev, arg);
 			}
-		} 
-		
-		/* clear RHT registers for this context */ 
-		write_64(&p_ctx_info->p_ctrl_map->rht_start, 0); 
-		write_64(&p_ctx_info->p_ctrl_map->rht_cnt_id, 0); 
-		/* drop all capabilities */ 
-		write_64(&p_ctx_info->p_ctrl_map->ctx_cap, 0); 
-	} 
-	/* client can now send another MCREG */ 
+		}
+
+		/* clear RHT registers for this context */
+		write_64(&p_ctx_info->p_ctrl_map->rht_start, 0);
+		write_64(&p_ctx_info->p_ctrl_map->rht_cnt_id, 0);
+		/* drop all capabilities */
+		write_64(&p_ctx_info->p_ctrl_map->ctx_cap, 0);
+	}
+	/* client can now send another MCREG */
 
         cflash_info("in %s returning rc=%d\n", __func__, rc);
-	return rc; 
+	return rc;
 }
 
 // online means the FC link layer has sync and has completed the link layer
@@ -513,7 +522,7 @@ int afu_set_wwpn(afu_t *p_afu, int port, volatile __u64 *p_fc_regs,
 
 	if (!wait_port_offline(p_fc_regs, FC_PORT_STATUS_RETRY_INTERVAL_US,
 			       FC_PORT_STATUS_RETRY_CNT)) {
-		 cflash_dbg("%s: wait on port %d to go offline timed out\n", 
+		 cflash_dbg("%s: wait on port %d to go offline timed out\n",
 			    p_afu->name, port);
 		 ret = -1; // but continue on to leave the port back online
 	}
@@ -526,7 +535,7 @@ int afu_set_wwpn(afu_t *p_afu, int port, volatile __u64 *p_fc_regs,
 
 	if (!wait_port_online(p_fc_regs, FC_PORT_STATUS_RETRY_INTERVAL_US,
 			      FC_PORT_STATUS_RETRY_CNT)) {
-		cflash_dbg("%s: wait on port %d to go online timed out\n", 
+		cflash_dbg("%s: wait on port %d to go online timed out\n",
 			   p_afu->name, port);
 		ret = -1;
 	}
@@ -739,7 +748,7 @@ int cflash_start_context(cflash_t *p_cflash)
 {
         int rc = 0;
 
-        rc =  cxl_start_context(p_cflash->p_ctx, 
+        rc =  cxl_start_context(p_cflash->p_ctx,
 				p_cflash->p_afu_a->afu.work.
 				work_element_descriptor, NULL);
 
@@ -801,7 +810,7 @@ int cflash_start_afu(cflash_t *p_cflash)
 		goto out;
 
 	for (i = 0; i < MAX_CONTEXT; i++) {
-		p_afu->ctx_info[i].p_ctrl_map = 
+		p_afu->ctx_info[i].p_ctrl_map =
 			&p_afu->p_afu_map->ctrls[i].ctrl;
 		// disrupt any clients that could be running
 		// e. g. clients that survived a master restart
@@ -830,7 +839,7 @@ int cflash_start_afu(cflash_t *p_cflash)
 	//     will be backwards
 	reg = p_afu->p_afu_map->global.regs.afu_version;
 	memcpy(&version[0], &reg, 8);
-	cflash_dbg("%s: afu version %s, ctx_hndl %d\n", p_afu->name, version, 
+	cflash_dbg("%s: afu version %s, ctx_hndl %d\n", p_afu->name, version,
 		   p_afu->ctx_hndl);
 
 	// initialize cmd fields that never change
@@ -911,7 +920,7 @@ int cflash_init_afu(cflash_t *p_cflash)
 	/* Allocate AFU generated interrupt handler */
 	rc = cxl_allocate_afu_irqs(ctx, 4);
 	if (rc) {
-		dev_err(&p_cflash->p_dev->dev, 
+		dev_err(&p_cflash->p_dev->dev,
 			"call to allocate_afu_irqs failed rc=%d!\n", rc);
 		goto err1;
 	}
@@ -945,7 +954,7 @@ int cflash_init_afu(cflash_t *p_cflash)
 	 * XXX - why did we put a 4th interrupt? Were we thinking this is
 	 * for the SISL_MSI_PSL_XLATE? Wouldn't that be covered under the
 	 * cxl_register_error_irq() ?
-         */	
+         */
 
 	/* Register AFU interrupt 4 for errors. */
 	rc = cxl_map_afu_irq(ctx, 4, cflash_dummy_irq_handler, ctx,
@@ -957,7 +966,7 @@ int cflash_init_afu(cflash_t *p_cflash)
 
 	/* Register for PSL errors. TODO: implement this */
 	//cxl_register_error_irq(dev, flags??, callback function, private data);
-	
+
 	/* This performs the equivalent of the CXL_IOCTL_START_WORK.
 	 * The CXL_IOCTL_GET_PROCESS_ELEMENT is implicit in the process
 	 * element (pe) that is embedded in the context (ctx)
@@ -966,7 +975,7 @@ int cflash_init_afu(cflash_t *p_cflash)
 
         rc = cflash_start_afu (p_cflash);
         if (rc) {
-		dev_err(&p_cflash->p_dev->dev, 
+		dev_err(&p_cflash->p_dev->dev,
 			"call to start_afu failed, rc=%d!\n", rc);
                 goto err6;
 	}
@@ -1205,14 +1214,21 @@ int cflash_mc_size(struct scsi_device *sdev, void __user *arg)
 	__u64        *p_act_new_size = &parg->last_lba;
 	res_hndl_t    res_hndl       = parg->rsrc_handle;
 
-	ctx_info_t *p_ctx_info = &p_afu->ctx_info[parg->context_id];
-	rht_info_t *p_rht_info = p_ctx_info->p_rht_info;
+	ctx_info_t *p_ctx_info;
+	rht_info_t *p_rht_info;
 	sisl_rht_entry_t *p_rht_entry;
 
 	cflash_info("%s, context=0x%llx res_hndl=0x%llx, size=0x%llx\n",
 		    __func__, parg->context_id,
 		    parg->rsrc_handle,
 		    parg->req_size);
+
+	if (parg->context_id < MAX_CONTEXT) {
+		p_ctx_info = &p_afu->ctx_info[parg->context_id];
+		p_rht_info = p_ctx_info->p_rht_info;
+	} else {
+		return -EINVAL;
+	}
 
 	if (res_hndl < MAX_RHT_PER_CONTEXT) {
 		p_rht_entry = &p_rht_info->rht_start[res_hndl];
@@ -1283,7 +1299,7 @@ int grow_lxt(afu_t		*p_afu,
 		}
 
 		/* copy over all old entries */
-		memcpy(p_lxt, p_lxt_old, (sizeof(*p_lxt) * 
+		memcpy(p_lxt, p_lxt_old, (sizeof(*p_lxt) *
 					  p_rht_entry->lxt_cnt));
 	} else {
 		p_lxt = p_lxt_old;
@@ -1360,14 +1376,14 @@ int shrink_lxt(afu_t		*p_afu,
 	if (ngrps != ngrps_old) {
 		/* realloate to fit new size unless new size is 0 */
 		if (ngrps) {
-			p_lxt = kzalloc((sizeof(*p_lxt) * LXT_GROUP_SIZE * 
+			p_lxt = kzalloc((sizeof(*p_lxt) * LXT_GROUP_SIZE *
 					 ngrps), GFP_KERNEL);
 			if (!p_lxt)
 				return -ENOMEM;
 
 			/* copy over old entries that will remain */
-			memcpy(p_lxt, p_lxt_old, (sizeof(*p_lxt) * 
-						  (p_rht_entry->lxt_cnt - 
+			memcpy(p_lxt, p_lxt_old, (sizeof(*p_lxt) *
+						  (p_rht_entry->lxt_cnt -
 						   delta)));
 		} else {
 			p_lxt = NULL;
@@ -1443,10 +1459,10 @@ int clone_lxt(afu_t		*p_afu,
 		p_lxt = kzalloc((sizeof(*p_lxt) * LXT_GROUP_SIZE * ngrps),
 				GFP_KERNEL);
 		if (!p_lxt)
-			return ENOMEM;
+			return -ENOMEM;
 
 		/* copy over */
-		memcpy(p_lxt, p_rht_entry_src->lxt_start, 
+		memcpy(p_lxt, p_rht_entry_src->lxt_start,
 		       (sizeof(*p_lxt) * p_rht_entry_src->lxt_cnt));
 
 		/* clone the LBAs in block allocator via ref_cnt */
@@ -1456,7 +1472,7 @@ int clone_lxt(afu_t		*p_afu,
 			if (ba_clone(&p_afu->p_blka->ba_lun, aun) == -1) {
 				/* free the clones already made */
 				for (j = 0; j < i; j++) {
-					aun = (p_lxt[j].rlba_base >> 
+					aun = (p_lxt[j].rlba_base >>
 					       MC_CHUNK_SHIFT);
 					ba_free(&p_afu->p_blka->ba_lun, aun);
 				}
@@ -1515,45 +1531,44 @@ int clone_lxt(afu_t		*p_afu,
  *              errno       - Failure
  *
  */
-int do_mc_xlate_lba(afu_t        *p_afu, 
-		    conn_info_t* p_conn_info, 
-		    res_hndl_t   res_hndl, 
-		    __u64        v_lba, 
+int do_mc_xlate_lba(afu_t        *p_afu,
+		    conn_info_t* p_conn_info,
+		    res_hndl_t   res_hndl,
+		    __u64        v_lba,
 		    __u64        *p_p_lba)
 {
-	ctx_info_t *p_ctx_info = p_conn_info->p_ctx_info; 
-	rht_info_t *p_rht_info = p_ctx_info->p_rht_info; 
-	sisl_rht_entry_t *p_rht_entry; 
-	__u64 chunk_id, chunk_off, rlba_base; 
-	
+	ctx_info_t *p_ctx_info = p_conn_info->p_ctx_info;
+	rht_info_t *p_rht_info = p_ctx_info->p_rht_info;
+	sisl_rht_entry_t *p_rht_entry;
+	__u64 chunk_id, chunk_off, rlba_base;
+
 	cflash_info("%s, client_pid=%d client_fd=%d ctx_hdl=%d\n",
-		    __func__, p_conn_info->client_pid, 
+		    __func__, p_conn_info->client_pid,
 		    p_conn_info->client_fd,
 		    p_conn_info->ctx_hndl);
 
-	if (res_hndl < MAX_RHT_PER_CONTEXT) { 
-		p_rht_entry = &p_rht_info->rht_start[res_hndl]; 
-		if (p_rht_entry->nmask == 0) { 
-			/* not open */ 
-			return EINVAL; 
-		} 
+	if (res_hndl < MAX_RHT_PER_CONTEXT) {
+		p_rht_entry = &p_rht_info->rht_start[res_hndl];
+		if (p_rht_entry->nmask == 0) {
+			/* not open */
+			return -EINVAL;
+		}
 
-		chunk_id = (v_lba >> MC_CHUNK_SHIFT); chunk_off 
-			= (v_lba & MC_CHUNK_OFF_MASK); 
-		
-		if (chunk_id < p_rht_entry->lxt_cnt) { 
-			rlba_base = 
-				(p_rht_entry->lxt_start[chunk_id].rlba_base & 
-				 (~MC_CHUNK_OFF_MASK)); 
-			*p_p_lba = (rlba_base | chunk_off); 
-		} 
-		else { 
-			return EINVAL; 
-		} 
-	} 
-	else { 
-		return EINVAL; 
-	} 
+		chunk_id = (v_lba >> MC_CHUNK_SHIFT); chunk_off
+			= (v_lba & MC_CHUNK_OFF_MASK);
+
+		if (chunk_id < p_rht_entry->lxt_cnt) {
+			rlba_base =
+				(p_rht_entry->lxt_start[chunk_id].rlba_base &
+				 (~MC_CHUNK_OFF_MASK));
+			*p_p_lba = (rlba_base | chunk_off);
+		} else {
+			return -EINVAL;
+		}
+	} else {
+		return -EINVAL;
+	}
+
 	return 0;
 }
 
@@ -1582,83 +1597,82 @@ int do_mc_xlate_lba(afu_t        *p_afu,
  *
  */
 // todo dest ctx must be unduped
-int do_mc_clone(afu_t        *p_afu, 
-		conn_info_t  *p_conn_info, 
-		ctx_hndl_t   ctx_hndl_src, 
-		__u64        challenge, 
+int do_mc_clone(afu_t        *p_afu,
+		conn_info_t  *p_conn_info,
+		ctx_hndl_t   ctx_hndl_src,
+		__u64        challenge,
 		__u64        flags)
 {
-	ctx_info_t *p_ctx_info = p_conn_info->p_ctx_info; 
-	rht_info_t *p_rht_info = p_ctx_info->p_rht_info; 
-	
-	ctx_info_t *p_ctx_info_src; 
-	rht_info_t *p_rht_info_src; 
-	__u64 reg; 
-	int i, j; 
-	int rc; 
-	
+	ctx_info_t *p_ctx_info = p_conn_info->p_ctx_info;
+	rht_info_t *p_rht_info = p_ctx_info->p_rht_info;
+
+	ctx_info_t *p_ctx_info_src;
+	rht_info_t *p_rht_info_src;
+	__u64 reg;
+	int i, j;
+	int rc;
+
 	cflash_info("%s, client_pid=%d client_fd=%d ctx_hdl=%d\n",
-		    __func__, p_conn_info->client_pid, 
+		    __func__, p_conn_info->client_pid,
 		    p_conn_info->client_fd,
 		    p_conn_info->ctx_hndl);
 
 	/* verify there is no open resource handle in the target context 
 	 * of the clone.  
-	 */ 
-	
-	for (i = 0; i <  MAX_RHT_PER_CONTEXT; i++) { 
-		if (p_rht_info->rht_start[i].nmask != 0) { 
-			return EINVAL; 
-		} 
-	} 
-	
-	/* do not clone yourself */ 
-	if (p_conn_info->ctx_hndl == ctx_hndl_src) { 
-		return EINVAL; 
-	} 
-	
-	if (ctx_hndl_src < MAX_CONTEXT) { 
-		p_ctx_info_src = &p_afu->ctx_info[ctx_hndl_src]; 
-		p_rht_info_src = &p_afu->rht_info[ctx_hndl_src]; 
-	} 
-	else { 
-		return EINVAL; 
-	} 
-	
-	reg = read_64(&p_ctx_info_src->p_ctrl_map->mbox_r); 
-	
-	if (reg == 0 || /* zeroed mbox is a locked mbox */ 
-	    challenge != reg) { 
-		return EACCES; /* return Permission denied */ 
-	} 
-	
+	 */
+
+	for (i = 0; i <  MAX_RHT_PER_CONTEXT; i++) {
+		if (p_rht_info->rht_start[i].nmask != 0) {
+			return -EINVAL;
+		}
+	}
+
+	/* do not clone yourself */
+	if (p_conn_info->ctx_hndl == ctx_hndl_src) {
+		return -EINVAL;
+	}
+
+	if (ctx_hndl_src < MAX_CONTEXT) {
+		p_ctx_info_src = &p_afu->ctx_info[ctx_hndl_src];
+		p_rht_info_src = &p_afu->rht_info[ctx_hndl_src];
+	} else {
+		return -EINVAL;
+	}
+
+	reg = read_64(&p_ctx_info_src->p_ctrl_map->mbox_r);
+
+	if (reg == 0 || /* zeroed mbox is a locked mbox */
+	    challenge != reg) {
+		return -EACCES; /* return Permission denied */
+	}
+
 	/* this loop is equivalent to do_mc_open & do_mc_size 
 	 * Not checking if the source context has anything open or whether 
 	 * it is even registered.  
-	 */ 
-	
-	for (i = 0; i <  MAX_RHT_PER_CONTEXT; i++) { 
-		p_rht_info->rht_start[i].nmask = 
-			p_rht_info_src->rht_start[i].nmask; 
-		p_rht_info->rht_start[i].fp = 
-			SISL_RHT_FP_CLONE(p_rht_info_src->rht_start[i].fp, 
-					  flags & 0x3); 
-		
-		rc = clone_lxt(p_afu, p_conn_info->ctx_hndl, i, 
-			       &p_rht_info->rht_start[i], 
-			       &p_rht_info_src->rht_start[i]); 
-		
-		if (rc != 0) { 
-			for (j = 0; j < i; j++) { 
-				do_mc_close(p_afu, p_conn_info, j); 
-			} 
-			
-			p_rht_info->rht_start[i].nmask = 0; 
-			p_rht_info->rht_start[i].fp = 0; 
-			return rc; 
-		} 
-	} 
-	
+	 */
+
+	for (i = 0; i <  MAX_RHT_PER_CONTEXT; i++) {
+		p_rht_info->rht_start[i].nmask =
+			p_rht_info_src->rht_start[i].nmask;
+		p_rht_info->rht_start[i].fp =
+			SISL_RHT_FP_CLONE(p_rht_info_src->rht_start[i].fp,
+					  flags & 0x3);
+
+		rc = clone_lxt(p_afu, p_conn_info->ctx_hndl, i,
+			       &p_rht_info->rht_start[i],
+			       &p_rht_info_src->rht_start[i]);
+
+		if (rc != 0) {
+			for (j = 0; j < i; j++) {
+				do_mc_close(p_afu, p_conn_info, j);
+			}
+
+			p_rht_info->rht_start[i].nmask = 0;
+			p_rht_info->rht_start[i].fp = 0;
+			return rc;
+		}
+	}
+
 	return 0;
 }
 
@@ -1696,7 +1710,7 @@ int do_mc_dup(afu_t		*p_afu,
 	int i;
 
 	cflash_info("%s, client_pid=%d client_fd=%d ctx_hdl=%d\n",
-		__func__, p_conn_info->client_pid, 
+		__func__, p_conn_info->client_pid,
 		p_conn_info->client_fd,
 		p_conn_info->ctx_hndl);
 
@@ -1721,7 +1735,7 @@ int do_mc_dup(afu_t		*p_afu,
 		return -EACCES; /* return Permission denied */
 
 	/* XXX - what does this mean? */
-	return EIO; // todo later!!!
+	return -EIO; // todo later!!!
 }
 
 /*
@@ -1752,7 +1766,7 @@ int do_mc_stat(afu_t		*p_afu,
 	sisl_rht_entry_t *p_rht_entry;
 
 	cflash_info("%s, client_pid=%d client_fd=%d ctx_hdl=%d\n",
-		__func__, p_conn_info->client_pid, 
+		__func__, p_conn_info->client_pid,
 		p_conn_info->client_fd,
 		p_conn_info->ctx_hndl);
 
@@ -1774,70 +1788,69 @@ int do_mc_stat(afu_t		*p_afu,
 	return 0;
 }
 
-
 // lun_id must be set in p_lun_info
-int find_lun(cflash_t *p_cflash,
-	     __u32 port_sel) { 
-	__u32 *p_u32; 
-	__u32 len; 
-	__u64 *p_u64; 
+int find_lun(cflash_t *p_cflash, __u32 port_sel)
+{
+	__u32 *p_u32;
+	__u32 len;
+	__u64 *p_u64;
 	afu_t      *p_afu     = &p_cflash->p_afu_a->afu;
-	struct afu_cmd *p_cmd = &p_afu->cmd[AFU_INIT_INDEX]; 
+	struct afu_cmd *p_cmd = &p_afu->cmd[AFU_INIT_INDEX];
 	__u64 lunidarray[CFLASH_MAX_NUM_LUNS_PER_TARGET];
 	int i=0;
 	int j=0;
-	
-	memset(&p_afu->buf[0], 0, sizeof(p_afu->buf)); 
-	memset(&p_cmd->rcb.cdb[0], 0, sizeof(p_cmd->rcb.cdb)); 
-	
-	p_cmd->rcb.req_flags = (SISL_REQ_FLAGS_PORT_LUN_ID | 
-				SISL_REQ_FLAGS_SUP_UNDERRUN | 
-				SISL_REQ_FLAGS_HOST_READ); 
-	
-	p_cmd->rcb.port_sel = port_sel; 
-	p_cmd->rcb.lun_id = 0x0; /* use lun_id=0 w/report luns */ 
-	p_cmd->rcb.data_len = sizeof(p_afu->buf); 
-	p_cmd->rcb.data_ea = (__u64) &p_afu->buf[0]; 
-	p_cmd->rcb.timeout = MC_DISCOVERY_TIMEOUT; 
-	
-	p_cmd->rcb.cdb[0] = 0xA0; /* report luns */ 
-	p_u32 = (__u32*)&p_cmd->rcb.cdb[6]; 
-	write_32(p_u32, sizeof(p_afu->buf)); /* allocaiton length */ 
-	p_cmd->sa.host_use_b[1] = 0; /* reset retry cnt */ 
-	
-	cflash_info("%s: sending cmd(0x%x) with RCB EA=%p data EA=0x%p\n", 
+
+	memset(&p_afu->buf[0], 0, sizeof(p_afu->buf));
+	memset(&p_cmd->rcb.cdb[0], 0, sizeof(p_cmd->rcb.cdb));
+
+	p_cmd->rcb.req_flags = (SISL_REQ_FLAGS_PORT_LUN_ID |
+				SISL_REQ_FLAGS_SUP_UNDERRUN |
+				SISL_REQ_FLAGS_HOST_READ);
+
+	p_cmd->rcb.port_sel = port_sel;
+	p_cmd->rcb.lun_id = 0x0; /* use lun_id=0 w/report luns */
+	p_cmd->rcb.data_len = sizeof(p_afu->buf);
+	p_cmd->rcb.data_ea = (__u64) &p_afu->buf[0];
+	p_cmd->rcb.timeout = MC_DISCOVERY_TIMEOUT;
+
+	p_cmd->rcb.cdb[0] = 0xA0; /* report luns */
+	p_u32 = (__u32*)&p_cmd->rcb.cdb[6];
+	write_32(p_u32, sizeof(p_afu->buf)); /* allocaiton length */
+	p_cmd->sa.host_use_b[1] = 0; /* reset retry cnt */
+
+	cflash_info("%s: sending cmd(0x%x) with RCB EA=%p data EA=0x%p\n",
 		    __func__,
-		    p_cmd->rcb.cdb[0], 
-		    &p_cmd->rcb, 
-		    (void *)p_cmd->rcb.data_ea); 
-	
-	do { 
-		cflash_send_cmd(p_afu, p_cmd); 
-		cflash_wait_resp(p_afu, p_cmd); 
-	} while (check_status(&p_cmd->sa)); 
-	
-	if (p_cmd->sa.host_use_b[0] & B_ERROR) { 
-		return -1; 
-	} 
-	
+		    p_cmd->rcb.cdb[0],
+		    &p_cmd->rcb,
+		    (void *)p_cmd->rcb.data_ea);
+
+	do {
+		cflash_send_cmd(p_afu, p_cmd);
+		cflash_wait_resp(p_afu, p_cmd);
+	} while (check_status(&p_cmd->sa));
+
+	if (p_cmd->sa.host_use_b[0] & B_ERROR) {
+		return -1;
+	}
+
 	// report luns success 
-	len = read_32((__u32*)&p_afu->buf[0]); 
+	len = read_32((__u32*)&p_afu->buf[0]);
 	hexdump ((void *)p_afu->buf, len+8, "report luns data");
 
-	p_u64 = (__u64*)&p_afu->buf[8]; /* start of lun list */ 
-	
-	while (len) { 
+	p_u64 = (__u64*)&p_afu->buf[8]; /* start of lun list */
+
+	while (len) {
 		lunidarray[i] =  (__u64)(*p_u64);
-		len -= 8; 
+		len -= 8;
 		p_u64++;
 		i++;
-	} 
+	}
 	cflash_info("%s: found %d luns\n", __func__, i);
 	for (j=0; j<i; j++)
 	{
-		cflash_info("%s: adding i=%d lun_id %llx \n", 
+		cflash_info("%s: adding i=%d lun_id %llx \n",
 			    __func__, j, lunidarray[j]);
-		scsi_add_device(p_cflash->host, CFLASH_BUS, 
+		scsi_add_device(p_cflash->host, CFLASH_BUS,
 				port_sel, lunidarray[j]);
 		// program FC_PORT LUN Tbl
 		write_64(&p_afu->p_afu_map->global.fc_port[port_sel-1][j],
@@ -1846,42 +1859,42 @@ int find_lun(cflash_t *p_cflash,
 		 // record the lun_id to be used in discovery later
 		 p_afu->lun_info[j].lun_id = lunidarray[j];
 	}
-	
+
 	return 0;
 }
 
 void cflash_send_scsi(afu_t *p_afu, struct scsi_cmnd *scp)
-{ 
-	struct afu_cmd *p_cmd = &p_afu->cmd[AFU_INIT_INDEX]; 
-	
-	/* XXX: Decide how to select port */ 
-	__u64 port_sel = 0x1; 
+{
+	struct afu_cmd *p_cmd = &p_afu->cmd[AFU_INIT_INDEX];
+
+	/* XXX: Decide how to select port */
+	__u64 port_sel = 0x1;
 	int nseg, i, ncount;
         struct scatterlist *sg;
 	short lflag = 0;
-	
-	memset(&p_afu->buf[0], 0, sizeof(p_afu->buf)); 
-	memset(&p_cmd->rcb.cdb[0], 0, sizeof(p_cmd->rcb.cdb)); 
+
+	memset(&p_afu->buf[0], 0, sizeof(p_afu->buf));
+	memset(&p_cmd->rcb.cdb[0], 0, sizeof(p_cmd->rcb.cdb));
 
 	p_cmd->rcb.ctx_id    = p_afu->ctx_hndl;
-	
-	p_cmd->rcb.port_sel = port_sel; 
-	p_cmd->rcb.lun_id = scp->device->lun; 
+
+	p_cmd->rcb.port_sel = port_sel;
+	p_cmd->rcb.lun_id = scp->device->lun;
 
 	if (scp->sc_data_direction == DMA_TO_DEVICE)
 		lflag = SISL_REQ_FLAGS_HOST_WRITE;
 	else
 		lflag = SISL_REQ_FLAGS_HOST_READ;
 
-	p_cmd->rcb.req_flags = (SISL_REQ_FLAGS_PORT_LUN_ID | 
-				SISL_REQ_FLAGS_SUP_UNDERRUN | 
-				lflag); 
-	p_cmd->rcb.timeout = MC_DISCOVERY_TIMEOUT; 
-	
-	/* Stash the scp in the reserved field, for reuse during interrupt */ 
-	p_cmd->rcb.rsvd2 = (__u64)scp; 
-	
-	p_cmd->sa.host_use_b[1] = 0; /* reset retry cnt */ 
+	p_cmd->rcb.req_flags = (SISL_REQ_FLAGS_PORT_LUN_ID |
+				SISL_REQ_FLAGS_SUP_UNDERRUN |
+				lflag);
+	p_cmd->rcb.timeout = MC_DISCOVERY_TIMEOUT;
+
+	/* Stash the scp in the reserved field, for reuse during interrupt */
+	p_cmd->rcb.rsvd2 = (__u64)scp;
+
+	p_cmd->sa.host_use_b[1] = 0; /* reset retry cnt */
 
 	nseg = scsi_dma_map(scp);
 	ncount = scsi_sg_count(scp);
@@ -1890,9 +1903,9 @@ void cflash_send_scsi(afu_t *p_afu, struct scsi_cmnd *scp)
                 p_cmd->rcb.data_ea = (sg_phys(sg));
         }
 
-	/* Copy the CDB from the scsi_cmnd passed in */ 
-	memcpy(p_cmd->rcb.cdb, scp->cmnd, sizeof(p_cmd->rcb.cdb)); 
+	/* Copy the CDB from the scsi_cmnd passed in */
+	memcpy(p_cmd->rcb.cdb, scp->cmnd, sizeof(p_cmd->rcb.cdb));
 
-	/* Send the command */ 
+	/* Send the command */
 	cflash_send_cmd(p_afu, p_cmd);
 }
