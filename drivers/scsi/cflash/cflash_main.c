@@ -37,7 +37,7 @@ MODULE_AUTHOR("Manoj N. Kumar <kumarmn@us.ibm.com>");
 MODULE_AUTHOR("Matthew R. Ochs <mrochs@us.ibm.com>");
 MODULE_LICENSE("GPL");
 
-extern void build_and_send_cmd(afu_t *, struct scsi_cmnd *);
+extern void cflash_send_scsi(afu_t *, struct scsi_cmnd *);
 
 unsigned int cflash_debug = 0;
 
@@ -75,13 +75,10 @@ static const char *cflash_driver_info(struct Scsi_Host *host)
 static int cflash_queuecommand_lck(struct scsi_cmnd *scp,
 				   void (*done)(struct scsi_cmnd *))
 {
-        /* XXX: Dummy */
-	int rc=0;
 	struct Scsi_Host *host = scp->device->host;
 	cflash_t *p_cflash     = (cflash_t *)host->hostdata;
         afu_t    *p_afu        = &p_cflash->p_afu_a->afu;
 
-        cflash_info("in %s returning rc=%d\n", __func__, rc);
         cflash_info("in %s (scp=%p) %d/%d/%d/%llu " 
 		    "cdb=(%08x-%08x-%08x-%08x)\n", 
 		    __func__, scp, 
@@ -94,7 +91,7 @@ static int cflash_queuecommand_lck(struct scsi_cmnd *scp,
 
 	scp->scsi_done = done;
 	scp->result = (DID_OK << 16);;
-	build_and_send_cmd(p_afu, scp);
+	cflash_send_scsi(p_afu, scp);
         return 0;
 }
 
@@ -174,6 +171,8 @@ static int cflash_eh_host_reset_handler(struct scsi_cmnd *cmd)
 static int cflash_slave_alloc(struct scsi_device *sdev)
 {
         int rc = -ENXIO;
+	struct Scsi_Host *shost = sdev->host;
+	cflash_t *p_cflash = shost_priv(shost);
 
 	/* XXX: Figure out why this symbol is not available
 	struct fc_rport *rport = starget_to_rport(scsi_target(sdev));
@@ -184,6 +183,7 @@ static int cflash_slave_alloc(struct scsi_device *sdev)
 	*/
 		rc = 0;
 
+	sdev->hostdata = (void *)(unsigned long)p_cflash->task_set++;
         cflash_info("in %s returning rc=%d\n", __func__, rc);
 	return rc;
 }
@@ -220,6 +220,10 @@ static int cflash_target_alloc(struct scsi_target *starget)
 {
 	/* XXX: Dummy */
 	int rc=0;
+	struct Scsi_Host *shost = dev_to_shost(starget->dev.parent);
+	cflash_t *p_cflash = shost_priv(shost);
+
+	starget->hostdata = (void *)(unsigned long)p_cflash->task_set++;
         cflash_info("in %s returning rc=%d\n", __func__, rc);
         return 0;
 }
@@ -580,6 +584,7 @@ static void cflash_remove(struct pci_dev *pdev)
 	pci_release_regions(p_cflash->p_dev); 
 	*/
 
+
 	cflash_free_mem(p_cflash); 
 	scsi_host_put(p_cflash->host); 
         dev_err(&pdev->dev, "after scsi_host_put!\n");
@@ -660,7 +665,10 @@ static int cflash_init_pci(cflash_t *p_cflash)
 		 goto out;
 	}
 
+	/* XXX: Ignore errors until Mikey's fix comes in.
 	rc = pci_enable_device(pdev);
+	*/
+	pci_enable_device(pdev);
 
 	if (rc || pci_channel_offline(pdev)) {
 		if (pci_channel_offline(pdev)) {
@@ -675,6 +683,7 @@ static int cflash_init_pci(cflash_t *p_cflash)
 		}
 	}
 
+	/*
 	p_cflash->cflash_regs = pci_ioremap_bar(pdev, 0);
 
 	if (!p_cflash->cflash_regs) {
@@ -682,7 +691,29 @@ static int cflash_init_pci(cflash_t *p_cflash)
 			"Couldn't map memory range of registers\n");
 		rc = -ENOMEM;
 		goto out_disable;
-	}
+	} 
+	*/
+	
+	rc = pci_set_dma_mask(pdev, DMA_BIT_MASK(64)); 
+	if (rc < 0) { 
+		dev_dbg(&pdev->dev, "Failed to set 64 bit PCI DMA mask\n"); 
+		rc = pci_set_dma_mask(pdev, DMA_BIT_MASK(32)); 
+	} 
+	
+	if (rc < 0) { 
+		dev_err(&pdev->dev, "Failed to set PCI DMA mask\n");
+	       	goto out_disable; 
+	} 
+	
+	rc = pci_write_config_byte(pdev, PCI_CACHE_LINE_SIZE, 0x20);
+	
+	if (rc != PCIBIOS_SUCCESSFUL) { 
+		dev_err(&pdev->dev, "Write of cache line size failed\n"); 
+		cflash_wait_for_pci_err_recovery(p_cflash); 
+		
+		rc = -EIO;
+										                goto out_disable; 
+	} 
 
 	pci_set_master(pdev);
 
@@ -734,11 +765,15 @@ out_release_regions:
  **/
 static void cflash_scan_vsets(cflash_t *p_cflash)
 {
-        int target, lun;
+	int j, rc;
 
-        for (target = 0; target < CFLASH_MAX_NUM_TARGETS_PER_BUS; target++)
-                for (lun = 0; lun < CFLASH_MAX_NUM_VSET_LUNS_PER_TARGET; lun++)
-                        scsi_add_device(p_cflash->host, CFLASH_VSET_BUS, target, lun);
+        for (j = 0; j < NUM_FC_PORTS; j++) { /* discover on each port */
+		 if ((rc = find_lun(p_cflash, 1u << j)) == 0) {
+			 cflash_info("Found valid lun on port=%d\n", j);
+		 } else {
+			 cflash_err("find_lun returned rc=%d\n", rc);
+		 }
+	}
 }
 
 static int cflash_init_scsi(cflash_t *p_cflash)
@@ -756,13 +791,13 @@ static int cflash_init_scsi(cflash_t *p_cflash)
 	dev_info(&pdev->dev, "in %s before scsi_scan_host\n", __func__);
 	scsi_scan_host(p_cflash->host);
 
-	/* XXX: Commented out for now 
 	cflash_scan_vsets(p_cflash);
-	*/
 
+	/*
 	dev_info(&pdev->dev, "in %s before scsi_add_device\n", __func__);
 	scsi_add_device(p_cflash->host, CFLASH_BUS, CFLASH_TARGET,
 			CFLASH_LUN);
+	*/
 
 out:
 	return rc;
@@ -791,6 +826,12 @@ static int cflash_probe(struct pci_dev *pdev,
                 rc = -ENOMEM;
                 goto out;
         }
+	/* XXX: Need to double check with the sislite spec */
+	host->max_id = CFLASH_MAX_NUM_TARGETS_PER_BUS;
+	host->max_lun = CFLASH_MAX_NUM_VSET_LUNS_PER_TARGET;
+	host->max_channel = CFLASH_BUS;
+	host->unique_id = host->host_no;
+	host->max_cmd_len = CFLASH_MAX_CDB_LEN;
 
         p_cflash = (cflash_t *)host->hostdata;
 	p_cflash->host = host;
@@ -819,6 +860,7 @@ static int cflash_probe(struct pci_dev *pdev,
 
 	/* XXX: Commented out for now, until Mikey's implementation is done 
 	rc = cflash_init_pci(p_cflash);
+	cflash_init_pci(p_cflash);
 	if (rc) {
                 dev_err(&pdev->dev, "call to cflash_init_pci failed rc=%d!\n",
 			rc);

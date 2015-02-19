@@ -1,4 +1,3 @@
-
 /*
 * Copyright 2015 IBM Corp.
 *
@@ -14,10 +13,10 @@
 #include <linux/fs.h>
 #include <linux/cdev.h>
 #include <linux/delay.h>
-#include <misc/cxl.h>
 #include <uapi/misc/cxl.h>
 #include <linux/unistd.h>
 #include <asm/unistd.h>
+#include <misc/cxl.h>
 
 #include <scsi/scsi.h>
 #include <scsi/scsi_host.h>
@@ -32,6 +31,72 @@
 #include "cflash_ba.h"
 #include "afu_fc.h"
 #include "mserv.h"
+
+
+/* Mask off the low nibble of the length to ensure 16 byte multiple */
+#define SISLITE_LEN_MASK 0xFFFFFFF0
+
+void
+hexdump(void *data, long len, const char *hdr)
+{
+
+        int     i,j,k;
+        char    str[18];
+        char    *p = (char *)data;
+
+        i=j=k=0;
+        printk("%s: length=%ld\n", hdr?hdr:"hexdump()", len);
+
+        /* Print each 16 byte line of data */
+        while (i < len)
+        {
+                if (!(i%16))    /* Print offset at 16 byte bndry */
+                        printk("%03x  ",i);
+
+                /* Get next data byte, save ascii, print hex */
+                j=(int) p[i++];
+                if (j>=32 && j<=126)
+                        str[k++] = (char) j;
+                else
+                        str[k++] = '.';
+                printk("%02x ",j);
+
+                /* Add an extra space at 8 byte bndry */
+                if (!(i%8))
+                {
+                        printk(" ");
+                        str[k++] = ' ';
+                }
+
+                /* Print the ascii at 16 byte bndry */
+                if (!(i%16))
+                {
+                        str[k] = '\0';
+                        printk(" %s\n",str);
+                        k = 0;
+                }
+        }
+
+        /* If we didn't end on an even 16 byte bndry, print ascii for partial
+         * line. */
+        if ((j = i%16)) {
+                /* First, space over to ascii region */
+                while (i%16)
+                {
+                        /* Extra space at 8 byte bndry--but not if we
+                         * started there (was already inserted) */
+                        if (!(i%8) && j != 8)
+                                printk(" ");
+                        printk("   ");
+                        i++;
+                }
+                /* Terminate the ascii and print it */
+                str[k]='\0';
+                printk("  %s\n",str);
+        }
+
+        return;
+}
 
 
 int cflash_disk_attach(struct scsi_device *sdev, void __user *arg)
@@ -407,7 +472,9 @@ int afu_set_wwpn(afu_t *p_afu, int port, volatile __u64 *p_fc_regs,
 		ret = -1;
 	}
 
-	 return ret;
+	cflash_info("In %s returning rc=%d\n", __func__, ret);
+	
+	return ret;
 }
 
 
@@ -554,15 +621,26 @@ static irqreturn_t cflash_rrq_irq(int irq, void *data)
 		spin_unlock_irqrestore(&p_cmd->slock, lock_flags); 
 		
 		timer_stop(p_cmd->timer); /* already stopped if timer fired */ 
+
+		/*
+		hexdump ((void *)&p_cmd->rcb, sizeof(sisl_ioarcb_t), "rcb");
+		hexdump ((void *)&p_cmd->sa, sizeof(sisl_ioasa_t), "sa");
+		*/
+		/*
+		hexdump ((void *)p_cmd->rcb.data_ea, 64, "data");
+		*/
+
 		if (p_cmd->rcb.rsvd2) 
 		{ 
 			scp =  (struct scsi_cmnd *)p_cmd->rcb.rsvd2; 
 			cflash_info("In %s calling scsi_set_resid, " 
 				    "scp=0x%llx len=%d\n", 
 				    __func__, p_cmd->rcb.rsvd2, 
-				    p_cmd->rcb.data_len); 
-			scsi_set_resid(scp, p_cmd->rcb.data_len); 
+				    p_cmd->sa.resid); 
+
+			scsi_set_resid(scp, p_cmd->sa.resid); 
 			scp->scsi_done(scp); 
+			scsi_dma_unmap(scp);
 		}
 
 		/* Advance to next entry or wrap and flip the toggle bit */
@@ -574,7 +652,9 @@ static irqreturn_t cflash_rrq_irq(int irq, void *data)
 		}
 	}
 
+	/* XXX
         cflash_info("in %s returning rc=%d\n", __func__, IRQ_HANDLED);
+	*/
 	return IRQ_HANDLED;
 }
 
@@ -640,6 +720,10 @@ int cflash_start_afu(cflash_t *p_cflash)
 	__u64 reg;
 	enum undo_level level = UNDO_NONE;
 
+	/* XXX: Hardcoded for now, How do you figure out WWPN */
+	p_elm->wwpn[0] =  0x2C00072800000001;
+	p_elm->wwpn[1] =  0x5C00072800000002;
+
 	for (i = 0; i < NUM_CMDS; i++) {
 		struct timer_list *p_timer = &p_afu->cmd[i].timer;
 
@@ -670,9 +754,9 @@ int cflash_start_afu(cflash_t *p_cflash)
 
 	// copy frequently used fields into p_afu
 	/* XXX, why cannot we get at the process element 
-	 * p_afu->ctx_hndl =  (__u16)p_cflash->p_ctx->pe; 
-	 */
-	 // ctx_hndl is 16 bits in CAIA
+	p_afu->ctx_hndl =  (u16) (p_cflash->p_ctx->pe); 
+	*/
+	// ctx_hndl is 16 bits in CAIA
 	p_afu->p_host_map = &p_afu->p_afu_map->hosts[p_afu->ctx_hndl].host;
 	p_afu->p_ctrl_map = &p_afu->p_afu_map->ctrls[p_afu->ctx_hndl].ctrl;
 
@@ -888,7 +972,41 @@ void timer_stop(struct timer_list timer)
 	/* XXX - leave as stub for now since we're moving to kernel timers */
 }
 
-void send_cmd(afu_t *p_afu, struct afu_cmd *p_cmd)
+// do we need to retry AFU_CMDs (sync) on afu_rc = 0x30 ?
+// can we not avoid that ?
+// not retrying afu timeouts (B_TIMEOUT)
+// returns 1 if the cmd should be retried, 0 otherwise
+// sets B_ERROR flag based on IOASA
+int check_status(sisl_ioasa_t *p_ioasa)
+{
+    if (p_ioasa->ioasc == 0) {
+        return 0;
+    }
+
+    p_ioasa->host_use_b[0] |= B_ERROR;
+
+    if (!(p_ioasa->host_use_b[1]++ < MC_RETRY_CNT)) {
+        return 0;
+    }
+
+    switch (p_ioasa->rc.afu_rc)
+    {
+    case SISL_AFU_RC_NO_CHANNELS:
+    case SISL_AFU_RC_OUT_OF_DATA_BUFS:
+        msleep(1); // 1 msec
+        return 1;
+
+    case 0:
+        // no afu_rc, but either scsi_rc and/or fc_rc is set
+        // retry all scsi_rc and fc_rc after a small delay
+        msleep(1); // 1 msec
+        return 1;
+    }
+
+    return 0;
+}
+
+void cflash_send_cmd(afu_t *p_afu, struct afu_cmd *p_cmd)
 {
 	int nretry = 0;
 
@@ -920,10 +1038,14 @@ void send_cmd(afu_t *p_afu, struct afu_cmd *p_cmd)
 	else
 		cflash_err("no cmd_room to send 0x%X\n", p_cmd->rcb.cdb[0]);
 
+	cflash_info("In %s p_cmd=%p len=%d ea=%p\n", 
+		    __func__, p_cmd, p_cmd->rcb.data_len, 
+		    (void *)p_cmd->rcb.data_ea); 
+
 	/* Let timer fire to complete the response... */
 }
 
-void wait_resp(afu_t *p_afu, struct afu_cmd *p_cmd)
+void cflash_wait_resp(afu_t *p_afu, struct afu_cmd *p_cmd)
 {
 	unsigned long lock_flags = 0;
 
@@ -987,8 +1109,8 @@ int afu_sync(afu_t	*p_afu,
 	p_u32 = (__u32*)&p_cmd->rcb.cdb[4];
 	write_32(p_u32, res_hndl_u); /* res_hndl to sync up */
 
-	send_cmd(p_afu, p_cmd);
-	wait_resp(p_afu, p_cmd);
+	cflash_send_cmd(p_afu, p_cmd);
+	cflash_wait_resp(p_afu, p_cmd);
 
 	if ((p_cmd->sa.ioasc != 0) ||
 	    (p_cmd->sa.host_use_b[0] & B_ERROR)) /* B_ERROR is set on timeout */
@@ -1598,12 +1720,18 @@ int do_mc_stat(afu_t		*p_afu,
 	return 0;
 }
 
-void build_and_send_cmd(afu_t *p_afu, struct scsi_cmnd *scp)
-{ 
+
+// lun_id must be set in p_lun_info
+int find_lun(cflash_t *p_cflash,
+	     __u32 port_sel) { 
+	__u32 *p_u32; 
+	__u32 len; 
+	__u64 *p_u64; 
+	afu_t      *p_afu     = &p_cflash->p_afu_a->afu;
 	struct afu_cmd *p_cmd = &p_afu->cmd[AFU_INIT_INDEX]; 
-	
-	/* XXX: Decide how to select port */ 
-	__u64 port_sel = 0x1; 
+	__u64 lunidarray[CFLASH_MAX_NUM_LUNS_PER_TARGET];
+	int i=0;
+	int j=0;
 	
 	memset(&p_afu->buf[0], 0, sizeof(p_afu->buf)); 
 	memset(&p_cmd->rcb.cdb[0], 0, sizeof(p_cmd->rcb.cdb)); 
@@ -1613,23 +1741,98 @@ void build_and_send_cmd(afu_t *p_afu, struct scsi_cmnd *scp)
 				SISL_REQ_FLAGS_HOST_READ); 
 	
 	p_cmd->rcb.port_sel = port_sel; 
-	p_cmd->rcb.lun_id = scp->device->lun; 
+	p_cmd->rcb.lun_id = 0x0; /* use lun_id=0 w/report luns */ 
 	p_cmd->rcb.data_len = sizeof(p_afu->buf); 
 	p_cmd->rcb.data_ea = (__u64) &p_afu->buf[0]; 
+	p_cmd->rcb.timeout = MC_DISCOVERY_TIMEOUT; 
+	
+	p_cmd->rcb.cdb[0] = 0xA0; /* report luns */ 
+	p_u32 = (__u32*)&p_cmd->rcb.cdb[6]; 
+	write_32(p_u32, sizeof(p_afu->buf)); /* allocaiton length */ 
+	p_cmd->sa.host_use_b[1] = 0; /* reset retry cnt */ 
+	
+	cflash_info("%s: sending cmd(0x%x) with RCB EA=%p data EA=0x%p\n", 
+		    __func__,
+		    p_cmd->rcb.cdb[0], 
+		    &p_cmd->rcb, 
+		    (void *)p_cmd->rcb.data_ea); 
+	
+	do { 
+		cflash_send_cmd(p_afu, p_cmd); 
+		cflash_wait_resp(p_afu, p_cmd); 
+	} while (check_status(&p_cmd->sa)); 
+	
+	if (p_cmd->sa.host_use_b[0] & B_ERROR) { 
+		return -1; 
+	} 
+	
+	// report luns success 
+	len = read_32((__u32*)&p_afu->buf[0]); 
+	hexdump ((void *)p_afu->buf, len+8, "report luns data");
+
+	p_u64 = (__u64*)&p_afu->buf[8]; /* start of lun list */ 
+	
+	while (len) { 
+		lunidarray[i] =  (__u64)(*p_u64);
+		len -= 8; 
+		p_u64++;
+		i++;
+	} 
+	cflash_info("%s: found %d luns\n", __func__, i);
+	for (j=0; j<i; j++)
+	{
+		cflash_info("%s: adding i=%d lun_id %llx \n", 
+			    __func__, j, lunidarray[j]);
+		scsi_add_device(p_cflash->host, CFLASH_BUS, 
+				port_sel, lunidarray[j]);
+	}
+	
+	return 0;
+}
+
+void cflash_send_scsi(afu_t *p_afu, struct scsi_cmnd *scp)
+{ 
+	struct afu_cmd *p_cmd = &p_afu->cmd[AFU_INIT_INDEX]; 
+	
+	/* XXX: Decide how to select port */ 
+	__u64 port_sel = 0x1; 
+	int nseg, i, ncount;
+        struct scatterlist *sg;
+	short lflag = 0;
+	
+	memset(&p_afu->buf[0], 0, sizeof(p_afu->buf)); 
+	memset(&p_cmd->rcb.cdb[0], 0, sizeof(p_cmd->rcb.cdb)); 
+
+	p_cmd->rcb.ctx_id    = p_afu->ctx_hndl;
+	
+	p_cmd->rcb.port_sel = port_sel; 
+	p_cmd->rcb.lun_id = scp->device->lun; 
+
+	if (scp->sc_data_direction == DMA_TO_DEVICE)
+		lflag = SISL_REQ_FLAGS_HOST_WRITE;
+	else
+		lflag = SISL_REQ_FLAGS_HOST_READ;
+
+	p_cmd->rcb.req_flags = (SISL_REQ_FLAGS_PORT_LUN_ID | 
+				SISL_REQ_FLAGS_SUP_UNDERRUN | 
+				lflag); 
 	p_cmd->rcb.timeout = MC_DISCOVERY_TIMEOUT; 
 	
 	/* Stash the scp in the reserved field, for reuse during interrupt */ 
 	p_cmd->rcb.rsvd2 = (__u64)scp; 
 	
+	p_cmd->sa.host_use_b[1] = 0; /* reset retry cnt */ 
+
+	nseg = scsi_dma_map(scp);
+	ncount = scsi_sg_count(scp);
+        scsi_for_each_sg(scp, sg, ncount, i) {
+                p_cmd->rcb.data_len = (sg_dma_len(sg) & SISLITE_LEN_MASK);
+                p_cmd->rcb.data_ea = (sg_phys(sg));
+        }
+
 	/* Copy the CDB from the scsi_cmnd passed in */ 
 	memcpy(p_cmd->rcb.cdb, scp->cmnd, sizeof(p_cmd->rcb.cdb)); 
-	
-	p_cmd->sa.host_use_b[1] = 0; /* reset retry cnt */ 
-	
-	cflash_info("In %s calling send_cmd, scp=0x%llx\n", 
-		    __func__, p_cmd->rcb.rsvd2); 
-	
-	/* Send the command */ 
-	send_cmd(p_afu, p_cmd);
-}
 
+	/* Send the command */ 
+	cflash_send_cmd(p_afu, p_cmd);
+}

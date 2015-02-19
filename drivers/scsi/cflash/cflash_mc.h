@@ -91,8 +91,8 @@ typedef struct capikv_ini {
 
 
 typedef struct { 
-	struct capikv_ini *p_ini; 
 	struct afu_alloc *p_afu_a; 
+	struct capikv_ini *p_ini; 
 	struct cxl_context *p_ctx; 
 	
 	struct pci_dev *p_dev; 
@@ -111,6 +111,10 @@ typedef struct {
 #endif /* NEWCXL */ 
 	timer_t timer_hb; 
 	timer_t timer_fc;
+
+	int task_set;
+	struct pci_pool *cflash_cmd_pool;
+
 } cflash_t;
 
 /* The write_nn or read_nn routines can be used to do byte reversed MMIO

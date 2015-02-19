@@ -39,10 +39,10 @@ extern unsigned int cflash_debug;
 #define PCI_DEVICE_ID_IBM_CORSA		0x04F0
 #define CFLASH_SUBS_DEV_ID		0x04F0
 
-#define CFLASH_VSET_BUS                 0xff
 #define CFLASH_BUS                      0xff
 #define CFLASH_TARGET                   0xff
-#define CFLASH_LUN                      0xff
+#define CFLASH_LUN                      0x00
+#define CFLASH_MAX_CDB_LEN		16
 
 #define CFLASH_MAX_REQUESTS_DEFAULT     100
 #define CFLASH_MAX_CMDS_PER_LUN         64

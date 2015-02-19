@@ -486,8 +486,13 @@ int mkdir_p(char *file_path);
 void send_cmd(afu_t *p_afu, struct afu_cmd *p_cmd);
 void wait_resp(afu_t *p_afu, struct afu_cmd *p_cmd);
 
+#ifdef __KERNEL__
+int find_lun(cflash_t *p_cflash,
+	     __u32 port_sel);
+#else
 int find_lun(afu_t *p_afu, lun_info_t *p_lun_info,
 	     __u32 port_sel);
+#endif
 int read_cap16(afu_t *p_afu, lun_info_t *p_lun_info,
 	       __u32 port_sel);
 int page83_inquiry(afu_t *p_afu, lun_info_t *p_lun_info,
