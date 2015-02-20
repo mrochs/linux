@@ -11,12 +11,14 @@
 #include <linux/module.h>
 #include <linux/semaphore.h>
 #include <linux/fs.h>
+#include <linux/file.h>
 #include <linux/cdev.h>
 #include <linux/delay.h>
+#include <linux/syscalls.h>
 #include <uapi/misc/cxl.h>
+#include <misc/cxl.h>
 #include <linux/unistd.h>
 #include <asm/unistd.h>
-#include <misc/cxl.h>
 
 #include <scsi/scsi.h>
 #include <scsi/scsi_host.h>
@@ -29,6 +31,7 @@
 #include "cflash.h"
 #include "cflash_mc.h"
 #include "cflash_ba.h"
+#include "cflash_ioctl.h"
 #include "afu_fc.h"
 #include "mserv.h"
 
@@ -101,7 +104,63 @@ hexdump(void *data, long len, const char *hdr)
 
 int cflash_disk_attach(struct scsi_device *sdev, void __user *arg)
 {
+	cflash_t   *p_cflash   = (cflash_t *)sdev->host->hostdata;
 	int rc = 0;
+
+	struct dk_capi_attach *parg = (struct dk_capi_attach *)arg;
+	struct cxl_context *ctx;
+
+	/*
+	const char *name = p_cflash->afu->afu_cdev_m.kobj.name;
+	const char *mname = p_cflash->afu->afu_cdev_m.kobj.name;
+	*/
+	const char *name = "/dev/cxl/afu0.0s";
+	struct file *file;
+	int fd = 0;
+
+	/*
+	 * XXX: This would be ideal, but sys_open is not exported by the kernel
+	fd = sys_open(name, O_RDWR, 0);
+	 * XXX: So instead we have to allocate a descriptor, open a file
+	 * and then attach them.
+	*/
+	fd = get_unused_fd_flags(O_RDWR);
+	if (fd < 0) {
+		cflash_err("Could not allocate file descriptor for %s\n", name);
+		rc = -ENOMEM;
+		goto out;
+	}
+
+	cflash_info("in %s slave name=%s\n", __func__, name);
+
+	file = filp_open(name, O_RDWR, 0);
+	if (IS_ERR(file)) {
+		put_unused_fd(fd);
+		cflash_err("Could not open device special file %s\n", name);
+		rc = -ENODEV;
+		goto out;
+	}
+
+	fd_install(fd, file);
+
+	ctx = cxl_dev_context_init(p_cflash->p_dev);
+	if (!ctx) {
+		cflash_err("Could not initialize context for%s\n", name);
+		put_unused_fd(fd);
+		filp_close(file, NULL);
+		/*
+		sys_close(fd);
+		*/
+		return -ENOMEM;
+	}
+
+	parg->adap_fd = fd;
+	/* XXX: Cannot get to the process element until Mikey's headers
+	 * are included
+	parg->context_id = (uint64_t)ctx->pe;
+	*/
+
+out:
         cflash_info("in %s returning rc=%d\n", __func__, rc);
 	return rc;
 }
@@ -711,8 +770,9 @@ static void send_cmd_timeout(struct afu_cmd *p_cmd)
 int cflash_start_afu(cflash_t *p_cflash)
 {
 	afu_t                 *p_afu = &p_cflash->p_afu_a->afu;
-	struct capikv_ini_elm *p_elm = &p_cflash->p_ini->elm[0];
 	char version[16];
+	__u64 wwpn[SURELOCK_NUM_FC_PORTS]; // wwpn of AFU ports
+
 
 	int   i  = 0;
 	int   rc = 0;
@@ -720,8 +780,8 @@ int cflash_start_afu(cflash_t *p_cflash)
 	enum undo_level level = UNDO_NONE;
 
 	/* XXX: Hardcoded for now, How do you figure out WWPN */
-	p_elm->wwpn[0] =  0x2C00072800000001;
-	p_elm->wwpn[1] =  0x5C00072800000002;
+	wwpn[0] =  0x2C00072800000001;
+	wwpn[1] =  0x5C00072800000002;
 
 	for (i = 0; i < NUM_CMDS; i++) {
 		struct timer_list *p_timer = &p_afu->cmd[i].timer;
@@ -796,34 +856,28 @@ int cflash_start_afu(cflash_t *p_cflash)
 	 write_64(&p_afu->p_afu_map->global.regs.afu_port_sel, 0x3);
 
 	 for (i = 0; i < NUM_FC_PORTS; i++) {
-		// program FC_PORT LUN Tbl
-		write_64(&p_afu->p_afu_map->global.fc_port[i][0],
-			p_elm->lun_id);
 		// unmask all errors (but they are still masked at AFU)
 		write_64(&p_afu->p_afu_map->global.fc_regs[i][FC_ERRMSK/8],
 			 0);
 		// clear CRC error cnt & set a threshold
 		(void) read_64(&p_afu->p_afu_map->
-			global.fc_regs[i][FC_CNT_CRCERR/8]);
+			       global.fc_regs[i][FC_CNT_CRCERR/8]);
 		write_64(&p_afu->p_afu_map->global.fc_regs[i]
 			 [FC_CRC_THRESH/8], MC_CRC_THRESH);
 
 		/* XXX: This whole section with WWPN and and LUN_IDs needs
 		 * to be reworked.
 		 */
-		  // set WWPNs. If already programmed, p_elm->wwpn[i] is 0
-		if (p_elm->wwpn[i] != 0 &&
+		  // set WWPNs. If already programmed, wwpn[i] is 0
+		if (wwpn[i] != 0 &&
 			afu_set_wwpn(p_afu, i,
-			&p_afu->p_afu_map->global.fc_regs[i][0],
-			p_elm->wwpn[i])) {
+			&p_afu->p_afu_map->global.fc_regs[i][0], wwpn[i])) {
 			cflash_dbg("%s: failed to set WWPN on port %d\n", 
 				   p_afu->name, i);
 			cflash_undo_start_afu(p_afu, level);
 			return -1;
 		 }
 
-		 // record the lun_id to be used in discovery later
-		 p_afu->lun_info[i].lun_id = p_elm->lun_id;
 	 }
 
 	 // set up master's own CTX_CAP to allow real mode, host translation
@@ -832,10 +886,9 @@ int cflash_start_afu(cflash_t *p_cflash)
 	 //
 	 (void) read_64(&p_afu->p_ctrl_map->mbox_r); // unlock ctx_cap
 	 asm volatile ( "eieio" : : );
-	 write_64(&p_afu->p_ctrl_map->ctx_cap,
-			SISL_CTX_CAP_REAL_MODE | SISL_CTX_CAP_HOST_XLATE |
-			SISL_CTX_CAP_AFU_CMD |
-			SISL_CTX_CAP_GSCSI_CMD);
+	 write_64(&p_afu->p_ctrl_map->ctx_cap, 
+		  SISL_CTX_CAP_REAL_MODE | SISL_CTX_CAP_HOST_XLATE | 
+		  SISL_CTX_CAP_AFU_CMD | SISL_CTX_CAP_GSCSI_CMD);
 	  // init heartbeat
 	  p_afu->hb = read_64(&p_afu->p_afu_map->global.regs.afu_hb);
 
@@ -1029,7 +1082,7 @@ void cflash_send_cmd(afu_t *p_afu, struct afu_cmd *p_cmd)
 	 * XXX - find out why this code originally (and still does)
 	 * have a doubler (*2) for the timeout value
 	 */
-#if 0 /* XXX - temporarily disable timer */
+#if 0
 	timer_start(&p_cmd->timer, (p_cmd->rcb.timeout * 2 * HZ));
 #endif
 
@@ -1786,6 +1839,12 @@ int find_lun(cflash_t *p_cflash,
 			    __func__, j, lunidarray[j]);
 		scsi_add_device(p_cflash->host, CFLASH_BUS, 
 				port_sel, lunidarray[j]);
+		// program FC_PORT LUN Tbl
+		write_64(&p_afu->p_afu_map->global.fc_port[port_sel-1][j],
+			lunidarray[j]);
+
+		 // record the lun_id to be used in discovery later
+		 p_afu->lun_info[j].lun_id = lunidarray[j];
 	}
 	
 	return 0;

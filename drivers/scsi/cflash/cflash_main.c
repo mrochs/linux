@@ -30,6 +30,7 @@
 #include "sislite.h"
 #include "cflash_mc.h"
 #include "cflash_ba.h"
+#include "cflash_ioctl.h"
 #include "mserv.h"
 
 MODULE_DESCRIPTION("IBM CAPI Flash Adapter Driver");
@@ -596,54 +597,20 @@ static void cflash_remove(struct pci_dev *pdev)
 	cflash_term_afu(p_cflash);
         dev_err(&pdev->dev, "after cflash_term_afu!\n");
 
-	free_pages((unsigned long)p_cflash->p_afu_a,
-		get_order(p_cflash->p_ini->nelm * sizeof(struct afu_alloc)));
-	kfree(p_cflash->p_ini);
         LEAVE;
 }
 
 
 static int cflash_gb_alloc(cflash_t *p_cflash)
 {
-	int nafu = CFLASH_NAFU;
 	int nbytes;
-	struct capikv_ini *p_ini;
-	struct capikv_ini_elm *p_elm;
-	int i=0;
 	int rc=0;
 
-	nbytes = sizeof(*p_ini) + ((nafu > 1) ? (nafu - 1)*sizeof(*p_elm) : 0);
-
-	p_cflash->p_ini = p_ini = kzalloc(nbytes, GFP_KERNEL);
-	if (!p_ini) {
-		cflash_err("cannot allocate %d bytes\n", nbytes);
-		rc = -ENOMEM;
-		goto out;
-	}
-
-	p_ini->sini_marker = 0x53494e49;
-	p_ini->nelm = nafu;
-	p_ini->size = sizeof(*p_elm);
-
-	for (i = 0; i < nafu; i++) {
-		p_elm = &p_ini->elm[i];
-
-		/*
-		 * for this mode, the user enters the master dev path.
-		 * also assume wwpns are already programmed off-line and
-		 * master should leave them alone
-		 */
-		p_elm->elmd_marker = 0x454c4d44;
-		// XXX strcpy(&p_elm->afu_dev_pathm[0], argv[i + optind]);
-		// XXX p_elm->lun_id = lun_id;
-	}
-
-	nbytes = sizeof(struct afu_alloc) * p_ini->nelm;
-	p_cflash->p_afu_a = (void *)__get_free_pages(GFP_KERNEL | __GFP_ZERO,
-						get_order(nbytes));
+	nbytes = sizeof(struct afu_alloc) * CFLASH_NAFU;
+	p_cflash->p_afu_a = (void *)__get_free_pages(GFP_KERNEL | __GFP_ZERO, 
+						     get_order(nbytes));
 	if (!p_cflash->p_afu_a) {
 		cflash_err("cannot get %d free pages\n", get_order(nbytes));
-		kfree(p_cflash->p_ini);
 		rc = -ENOMEM;
 		goto out;
 	}
