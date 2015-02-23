@@ -218,7 +218,7 @@ typedef struct blka
     ba_lun_t    ba_lun;    /* single LUN for SureLock */
     __u64       nchunk;    /* number of chunks */
 #ifdef __KERNEL__
-    struct mutex ba_mutex;
+    struct mutex mutex;
 #else
     pthread_mutex_t mutex;
 #endif /* __KERNEL__ */

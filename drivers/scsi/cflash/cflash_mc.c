@@ -1002,6 +1002,8 @@ err1:
 
 void cflash_term_afu(cflash_t *p_cflash)
 {
+	afu_t *p_afu = &p_cflash->p_afu_a->afu;
+
 	cflash_stop_context(p_cflash);
         cflash_info("in %s before unmap 4 \n", __func__);
 	cxl_unmap_afu_irq(p_cflash->p_ctx, 4, NULL);
@@ -1016,6 +1018,9 @@ void cflash_term_afu(cflash_t *p_cflash)
         cflash_info("in %s before cxl_release_context \n", __func__);
 	cxl_release_context(p_cflash->p_ctx);
 	p_cflash->p_ctx = NULL;
+
+	if (p_afu->p_blka)
+		kfree(p_afu->p_blka);
 }
 
 #endif /* NEWCXL */
@@ -1279,8 +1284,7 @@ int grow_lxt(afu_t		*p_afu,
 	 * LXT array. This is done up front under the mutex which must not be
 	 * released until after allocation is complete. 
 	 */
-	/* XXX - need to figure out linux kernel equivalent */
-	//pthread_mutex_lock(&p_afu->p_blka->mutex);
+	mutex_lock(&p_afu->p_blka->mutex);
 	av_size = ba_space(&p_afu->p_blka->ba_lun);
 	if (av_size < delta)
 		delta = av_size;
@@ -1294,7 +1298,7 @@ int grow_lxt(afu_t		*p_afu,
 		p_lxt = kzalloc((sizeof(*p_lxt) * LXT_GROUP_SIZE * ngrps),
 				GFP_KERNEL);
 		if (!p_lxt) {
-			//pthread_mutex_unlock(&p_afu->p_blka->mutex);
+			mutex_unlock(&p_afu->p_blka->mutex);
 			return -ENOMEM;
 		}
 
@@ -1326,7 +1330,7 @@ int grow_lxt(afu_t		*p_afu,
 		p_lxt[i].rlba_base = ((aun << MC_CHUNK_SHIFT) | 0x33);
 	}
 
-	//pthread_mutex_unlock(&p_afu->p_blka->mutex);
+	mutex_unlock(&p_afu->p_blka->mutex);
 
 	asm volatile ( "lwsync" : : );  /* make lxt updates visible */
 
@@ -1405,12 +1409,12 @@ int shrink_lxt(afu_t		*p_afu,
 	afu_sync(p_afu, ctx_hndl_u, res_hndl_u, AFU_HW_SYNC);
 
 	/* free LBAs allocated to freed chunks */
-	//pthread_mutex_lock(&p_afu->p_blka->mutex);
+	mutex_lock(&p_afu->p_blka->mutex);
 	for (i = delta - 1; i >= 0; i--) {
 		aun = (p_lxt_old[*p_act_new_size + i].rlba_base >> MC_CHUNK_SHIFT);
 		ba_free(&p_afu->p_blka->ba_lun, aun);
 	}
-	//pthread_mutex_unlock(&p_afu->p_blka->mutex);
+	mutex_unlock(&p_afu->p_blka->mutex);
 
 	/* free old lxt if reallocated */
 	if (p_lxt != p_lxt_old)
@@ -1466,7 +1470,7 @@ int clone_lxt(afu_t		*p_afu,
 		       (sizeof(*p_lxt) * p_rht_entry_src->lxt_cnt));
 
 		/* clone the LBAs in block allocator via ref_cnt */
-		//pthread_mutex_lock(&p_afu->p_blka->mutex);
+		mutex_lock(&p_afu->p_blka->mutex);
 		for (i = 0; i < p_rht_entry_src->lxt_cnt; i++) {
 			aun = (p_lxt[i].rlba_base >> MC_CHUNK_SHIFT);
 			if (ba_clone(&p_afu->p_blka->ba_lun, aun) == -1) {
@@ -1477,12 +1481,12 @@ int clone_lxt(afu_t		*p_afu,
 					ba_free(&p_afu->p_blka->ba_lun, aun);
 				}
 
-				//pthread_mutex_unlock(&p_afu->p_blka->mutex);
+				mutex_unlock(&p_afu->p_blka->mutex);
 				kfree(p_lxt);
 				return -EIO;
 			}
 		}
-		//pthread_mutex_unlock(&p_afu->p_blka->mutex);
+		mutex_unlock(&p_afu->p_blka->mutex);
 	} else {
 		p_lxt = NULL;
 	}
