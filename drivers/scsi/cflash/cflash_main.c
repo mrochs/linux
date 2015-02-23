@@ -81,6 +81,12 @@ static int cflash_queuecommand_lck(struct scsi_cmnd *scp,
 	cflash_t *p_cflash     = (cflash_t *)host->hostdata;
         afu_t    *p_afu        = &p_cflash->p_afu_a->afu;
 
+	/* XXX: Until the scsi_dma_map works, this stuff is meaningless
+	 * Make the queuecommand entry point a dummy one for now.
+	 */
+	scp->scsi_done = done;
+	scp->scsi_done(scp);
+	return 0;
         cflash_info("in %s (scp=%p) %d/%d/%d/%llu " 
 		    "cdb=(%08x-%08x-%08x-%08x)\n", 
 		    __func__, scp, 
@@ -412,56 +418,44 @@ static void cflash_wait_for_pci_err_recovery(cflash_t *p_cflash)
  **/
 static int cflash_ioctl(struct scsi_device *sdev, int cmd, void __user *arg)
 {
-	/* XXX - TODO: MRO - these are for example scaffolding */
-	/* Brings up the question, how do we get to headers in surelock-sw? */
 	cflash_t *p_cflash;
 	int	  rc;
 
-	/* XXX - TODO: MRO - an example of how we can pull out 'our' handle */
 	p_cflash = (cflash_t *)sdev->hostdata;
 
 	switch (cmd) {
-	/* XXX - TODO: MRO - regardless of if we do ioctl/sysfs, do we want a
-	 * front-end handler for everything MC-related or do we want to 
-	 * dispatch inline with other command genres?
-	 */
 	case DK_CAPI_ATTACH:
 		rc = cflash_disk_attach(sdev, arg);
 		if (rc) {
-			cflash_err("ioctl 0x%x returned rc %d\n", cmd, rc);
 			goto cflash_ioctl_exit;
 		}
 
 		break;
 	case DK_CAPI_USER_DIRECT:
 	case DK_CAPI_USER_VIRTUAL:
-		rc = cflash_mc_register(sdev, arg);
+		rc = cflash_disk_uvirtual(sdev, arg);
 		if (rc) {
-			cflash_err("ioctl 0x%x returned rc %d\n", cmd, rc);
 			goto cflash_ioctl_exit;
 		}
 
 		break;
 	case DK_CAPI_DETACH:
-		rc = cflash_mc_unregister(sdev, arg);
+		rc = cflash_disk_detach(sdev, arg);
 		if (rc) {
-			cflash_err("ioctl 0x%x returned rc %d\n", cmd, rc);
 			goto cflash_ioctl_exit;
 		}
 
 		break;
 	case DK_CAPI_VLUN_RESIZE:
-		rc = cflash_mc_size(sdev, arg);
+		rc = cflash_vlun_resize(sdev, arg);
 		if (rc) {
-			cflash_err("ioctl 0x%x returned rc %d\n", cmd, rc);
 			goto cflash_ioctl_exit;
 		}
 
 		break;
 	case DK_CAPI_RELEASE:
-		rc = cflash_mc_close(sdev, arg);
+		rc = cflash_disk_release(sdev, arg);
 		if (rc) {
-			cflash_err("ioctl 0x%x returned rc %d\n", cmd, rc);
 			goto cflash_ioctl_exit;
 		}
 
@@ -475,7 +469,7 @@ static int cflash_ioctl(struct scsi_device *sdev, int cmd, void __user *arg)
 	}
 
 cflash_ioctl_exit:
-	/* XXX - TODO: trace here */
+	cflash_err("ioctl 0x%x returned rc %d\n", cmd, rc);
 	return rc;
 }
 
@@ -567,18 +561,11 @@ static void cflash_remove(struct pci_dev *pdev)
         cflash_t *p_cflash = pci_get_drvdata(pdev);
         ENTER;
 
-	/*
-	 * XXX: We need to study this, something doesn't add up here
-	 * because cflash currently hangs off of the host and is created
-	 * when we register via scsi_host_alloc. I would suspect that once
-	 * we destroy the host (either scsi_remove_host or scsi_host_put -
-	 * not sure which) that we can no longer reference p_cflash. Also, given
-	 * this, I'm also thinking we're deriving the p_cflash reference
-	 * incorrectly. We need to find out the difference between when to use
-	 * the pci drvdata and when to use the scsi hostdata.
-	 */
-
         dev_err(&pdev->dev, "enter cflash_remove!\n");
+
+	cflash_term_afu(p_cflash);
+        dev_err(&pdev->dev, "after cflash_term_afu!\n");
+
         scsi_remove_host(p_cflash->host);
         dev_err(&pdev->dev, "after scsi_remove_host!\n");
 
@@ -587,17 +574,14 @@ static void cflash_remove(struct pci_dev *pdev)
 	pci_release_regions(p_cflash->p_dev); 
 	*/
 
-
 	cflash_free_mem(p_cflash); 
 	scsi_host_put(p_cflash->host); 
         dev_err(&pdev->dev, "after scsi_host_put!\n");
 
 	/* XXX: Commented out for now
-	pci_disable_device(p_cflash->p_dev);
+	pci_disable_device(pdev);
 	*/
 
-	cflash_term_afu(p_cflash);
-        dev_err(&pdev->dev, "after cflash_term_afu!\n");
 
 	nbytes = sizeof(struct afu_alloc) * CFLASH_NAFU;
 	free_pages((unsigned long)p_cflash->p_afu_a, get_order(nbytes));
@@ -827,6 +811,7 @@ static int cflash_probe(struct pci_dev *pdev,
         ENTER;
 
 	dev_info(&pdev->dev, "Found CFLASH with IRQ: %d\n", pdev->irq);
+
 	host = scsi_host_alloc(&driver_template, sizeof(cflash_t));
 
         if (!host) {

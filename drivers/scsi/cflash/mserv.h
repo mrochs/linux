@@ -340,7 +340,7 @@ typedef struct afu
 #endif /* __KERNEL__ */
 
     /* LUN discovery: one lun_info per path */
-    lun_info_t             lun_info[NUM_FC_PORTS];
+    lun_info_t             lun_info[512];
 
     /* shared block allocator with other AFUs */
     blka_t             *p_blka;

@@ -154,6 +154,7 @@ int cflash_disk_attach(struct scsi_device *sdev, void __user *arg)
 		return -ENOMEM;
 	}
 
+	parg->return_flags = 0;
 	parg->adap_fd = fd;
 	/* XXX: Cannot get to the process element until Mikey's headers
 	 * are included
@@ -177,7 +178,7 @@ int do_mc_close(afu_t    *p_afu,
 
 
 /*
- * NAME:        cflash_mc_register
+ * NAME:        cflash_disk_uvirtual
  *
  * FUNCTION:    Unregister a user AFU context with master.
  *
@@ -202,14 +203,16 @@ int do_mc_close(afu_t    *p_afu,
  *               d. goes to rx_ready state
  *
  */
-int cflash_mc_register(struct scsi_device *sdev, void __user *arg)
+int cflash_disk_uvirtual(struct scsi_device *sdev, void __user *arg)
 {
 	cflash_t   *p_cflash   = (cflash_t *)sdev->host->hostdata;
 	afu_t      *p_afu      = &p_cflash->p_afu_a->afu;
 
 	struct dk_capi_uvirtual *parg = (struct dk_capi_uvirtual *)arg;
 
-	ctx_info_t *p_ctx_info;
+	int   rc;
+
+	ctx_info_t *p_ctx_info = &p_afu->ctx_info[parg->context_id]; 
 	int   mode             = (parg->flags & MODE_MASK);
 	__u64 challenge        = parg->challenge;
 	__u64 reg;
@@ -231,24 +234,26 @@ int cflash_mc_register(struct scsi_device *sdev, void __user *arg)
 
 		if (reg == 0 || /* zeroed mbox is a locked mbox */
 		    challenge != reg) {
-			return -EACCES; /* return Permission denied */
+			rc =  EACCES; /* return Permission denied */
+			goto out;
 		}
 
 		if (mode == MCREG_DUP_REG && 
 		    p_ctx_info->ref_cnt == 0) {
-			return -EINVAL; /* no prior registration to dup */
+			rc = EINVAL; /* no prior registration to dup */
+			goto out;
 		}
 
 		/* a fresh registration will cause all previous 
 		 * registrations, if any, to be forcefully canceled. 
 		 * This is important since a client can close the context 
 		 * (AFU) but not unregister the mc_handle. A new owner of 
-		 * the same context must be able to mc_register by 
+		 * the same context must be able to cflash_disk_uvirtual by 
 		 * forcefully unregistering the previous owner.  
 		 */
 		if (mode == MCREG_INITIAL_REG) {
 			/* XXX: Implicit unregister on new registration */
-			cflash_mc_unregister(sdev, arg);
+			cflash_disk_detach(sdev, arg);
 
 			if (p_ctx_info->ref_cnt != 0) {
 				cflash_err("%s: internal error: p_ctx_info->"
@@ -296,20 +301,26 @@ int cflash_mc_register(struct scsi_device *sdev, void __user *arg)
 			/* set up MMIO registers pointing to the RHT */
 			write_64(&p_ctx_info->p_ctrl_map->rht_start,
 				 (__u64)p_ctx_info->p_rht_info->rht_start);
-			write_64(&p_ctx_info->p_ctrl_map->rht_cnt_id,
-				 SISL_RHT_CNT_ID((__u64)MAX_RHT_PER_CONTEXT,
-						 (__u64)(p_afu->ctx_hndl)));
-		}
-		/* it is now registered, go to ready state */
-		return 0;
-	} else {
-		return -EINVAL;
+			write_64(&p_ctx_info->p_ctrl_map->rht_cnt_id, 
+				 SISL_RHT_CNT_ID((__u64)MAX_RHT_PER_CONTEXT, 
+						 (__u64)(p_afu->ctx_hndl))); 
+		} 
+		/* it is now registered, go to ready state */ 
+		rc =  0; 
+	} 
+	else { 
+		rc =  EINVAL; 
+		goto out;
 	}
+	parg->return_flags = 0;
+
+out:
+	return rc;
 }
 
 
 /*
- * NAME:        cflash_mc_close
+ * NAME:        cflash_disk_release
  *
  * FUNCTION:    Close a virtual LBA space setting it to 0 size and
  *              marking the res_hndl as free/closed.
@@ -328,7 +339,7 @@ int cflash_mc_register(struct scsi_device *sdev, void __user *arg)
  * NOTES:
  *              When successful, the RHT entry is cleared.
  */
-int cflash_mc_close(struct scsi_device *sdev, void __user *arg)
+int cflash_disk_release(struct scsi_device *sdev, void __user *arg)
 {
 	cflash_t *p_cflash = (cflash_t *)sdev->host->hostdata;
 	afu_t    *p_afu    = &p_cflash->p_afu_a->afu;
@@ -336,9 +347,11 @@ int cflash_mc_close(struct scsi_device *sdev, void __user *arg)
 	struct dk_capi_resize *parg     = (struct dk_capi_resize *)arg;
 	res_hndl_t             res_hndl = parg->rsrc_handle;
 
-	ctx_info_t       *p_ctx_info;
-	rht_info_t       *p_rht_info;
-	sisl_rht_entry_t *p_rht_entry;
+	int rc = 0;
+
+	ctx_info_t       *p_ctx_info = &p_afu->ctx_info[parg->context_id]; 
+	rht_info_t       *p_rht_info = p_ctx_info->p_rht_info; 
+	sisl_rht_entry_t *p_rht_entry; 
 
 	cflash_info("%s, context=0x%llx res_hndl=0x%llx, challenge=0x%llx\n",
 		    __func__, parg->context_id,
@@ -359,24 +372,26 @@ int cflash_mc_close(struct scsi_device *sdev, void __user *arg)
 
 		/* set size to 0, this will clear LXT_START and LXT_CNT 
 		 * fields in the RHT entry 
-		 */
-		cflash_mc_size(sdev, arg); // p_conn good ?  
-
-		p_rht_entry->nmask = 0;
-		p_rht_entry->fp = 0;
-
-		/* now the RHT entry is all cleared */
-	} else {
-		return -EINVAL;
+		 */ 
+		cflash_vlun_resize(sdev, arg); // p_conn good ?  
+		
+		p_rht_entry->nmask = 0; 
+		p_rht_entry->fp = 0; 
+		
+		/* now the RHT entry is all cleared */ 
+		rc = 0;
+	} 
+	else { 
+		rc =  EINVAL; 
 	}
 
-	return 0;
+	return rc;
 }
 
 
 
 /*
- * NAME:        cflash_mc_unregister
+ * NAME:        cflash_disk_detach
  *
  * FUNCTION:    Unregister a user AFU context with master.
  *
@@ -398,7 +413,7 @@ int cflash_mc_close(struct scsi_device *sdev, void __user *arg)
  *               b. There is no need to clear RHT entries since
  *                  RHT_CNT=0.
  */
-int cflash_mc_unregister(struct scsi_device *sdev, void __user *arg)
+int cflash_disk_detach(struct scsi_device *sdev, void __user *arg)
 {
 	cflash_t *p_cflash = (cflash_t *)sdev->host->hostdata;
 	afu_t    *p_afu    = &p_cflash->p_afu_a->afu;
@@ -430,7 +445,7 @@ int cflash_mc_unregister(struct scsi_device *sdev, void __user *arg)
 		if (p_ctx_info->p_rht_info->ref_cnt-- == 1) {
 			for (i = 0; i < MAX_RHT_PER_CONTEXT; i++) {
 				rel->rsrc_handle = i;
-				cflash_mc_close(sdev, arg);
+				cflash_disk_release(sdev, arg);
 			}
 		}
 
@@ -570,7 +585,7 @@ void cflash_undo_start_afu(afu_t *p_afu, enum undo_level level)
 	default:
 		break;
 	}
-        cflash_info("in %s returning \n", __func__);
+        cflash_info("in %s returning level=%d\n", __func__, level);
 }
 
 int cflash_terminate_afu(afu_t *p_afu)
@@ -957,7 +972,7 @@ int cflash_init_afu(cflash_t *p_cflash)
          */
 
 	/* Register AFU interrupt 4 for errors. */
-	rc = cxl_map_afu_irq(ctx, 4, cflash_dummy_irq_handler, ctx,
+	rc = cxl_map_afu_irq(ctx, 4, cflash_dummy_irq_handler, p_afu,
 			     "err3");
 	if (!rc) {
 		dev_err(&p_cflash->p_dev->dev, "call to map IRQ 4 failed!\n");
@@ -984,13 +999,13 @@ int cflash_init_afu(cflash_t *p_cflash)
 	return rc;
 err6:
 	cflash_stop_context(p_cflash);
-	cxl_unmap_afu_irq(ctx, 4, NULL);
+	cxl_unmap_afu_irq(ctx, 4, p_afu);
 err5:
-	cxl_unmap_afu_irq(ctx, 3, NULL);
+	cxl_unmap_afu_irq(ctx, 3, p_afu);
 err4:
-	cxl_unmap_afu_irq(ctx, 2, NULL);
+	cxl_unmap_afu_irq(ctx, 2, p_afu);
 err3:
-	cxl_unmap_afu_irq(ctx, 1, NULL);
+	cxl_unmap_afu_irq(ctx, 1, p_afu);
 err2:
 	cxl_free_afu_irqs(ctx);
 err1:
@@ -1002,17 +1017,17 @@ err1:
 
 void cflash_term_afu(cflash_t *p_cflash)
 {
-	afu_t *p_afu = &p_cflash->p_afu_a->afu;
+	afu_t		   *p_afu = &p_cflash->p_afu_a->afu;
 
 	cflash_stop_context(p_cflash);
         cflash_info("in %s before unmap 4 \n", __func__);
-	cxl_unmap_afu_irq(p_cflash->p_ctx, 4, NULL);
+	cxl_unmap_afu_irq(p_cflash->p_ctx, 4, p_afu);
         cflash_info("in %s before unmap 3 \n", __func__);
-	cxl_unmap_afu_irq(p_cflash->p_ctx, 3, NULL);
+	cxl_unmap_afu_irq(p_cflash->p_ctx, 3, p_afu);
         cflash_info("in %s before unmap 2 \n", __func__);
-	cxl_unmap_afu_irq(p_cflash->p_ctx, 2, NULL);
+	cxl_unmap_afu_irq(p_cflash->p_ctx, 2, p_afu);
         cflash_info("in %s before unmap 1 \n", __func__);
-	cxl_unmap_afu_irq(p_cflash->p_ctx, 1, NULL);
+	cxl_unmap_afu_irq(p_cflash->p_ctx, 1, p_afu);
         cflash_info("in %s before cxl_free_afu_irqs \n", __func__);
 	cxl_free_afu_irqs(p_cflash->p_ctx);
         cflash_info("in %s before cxl_release_context \n", __func__);
@@ -1188,7 +1203,7 @@ int afu_sync(afu_t	*p_afu,
 }
 
 /*
- * NAME:	cflash_mc_size()
+ * NAME:	cflash_vlun_resize()
  *
  * FUNCTION:	Resize a resource handle by changing the RHT entry and LXT
  *		Tbl it points to. Synchronize all contexts that refer to
@@ -1209,7 +1224,7 @@ int afu_sync(afu_t	*p_afu,
  *		Setting new_size=0 will clear LXT_START and LXT_CNT fields
  *		in the RHT entry.
  */
-int cflash_mc_size(struct scsi_device *sdev, void __user *arg)
+int cflash_vlun_resize(struct scsi_device *sdev, void __user *arg)
 {
 	cflash_t *p_cflash = (cflash_t *)sdev->host->hostdata;
 	afu_t    *p_afu    = &p_cflash->p_afu_a->afu;
@@ -1623,34 +1638,35 @@ int do_mc_clone(afu_t        *p_afu,
 
 	/* verify there is no open resource handle in the target context 
 	 * of the clone.  
-	 */
-
-	for (i = 0; i <  MAX_RHT_PER_CONTEXT; i++) {
-		if (p_rht_info->rht_start[i].nmask != 0) {
-			return -EINVAL;
-		}
-	}
-
-	/* do not clone yourself */
-	if (p_conn_info->ctx_hndl == ctx_hndl_src) {
-		return -EINVAL;
-	}
-
-	if (ctx_hndl_src < MAX_CONTEXT) {
-		p_ctx_info_src = &p_afu->ctx_info[ctx_hndl_src];
-		p_rht_info_src = &p_afu->rht_info[ctx_hndl_src];
-	} else {
-		return -EINVAL;
-	}
-
-	reg = read_64(&p_ctx_info_src->p_ctrl_map->mbox_r);
-
-	if (reg == 0 || /* zeroed mbox is a locked mbox */
-	    challenge != reg) {
-		return -EACCES; /* return Permission denied */
-	}
-
-	/* this loop is equivalent to do_mc_open & do_mc_size 
+	 */ 
+	
+	for (i = 0; i <  MAX_RHT_PER_CONTEXT; i++) { 
+		if (p_rht_info->rht_start[i].nmask != 0) { 
+			return EINVAL; 
+		} 
+	} 
+	
+	/* do not clone yourself */ 
+	if (p_conn_info->ctx_hndl == ctx_hndl_src) { 
+		return EINVAL; 
+	} 
+	
+	if (ctx_hndl_src < MAX_CONTEXT) { 
+		p_ctx_info_src = &p_afu->ctx_info[ctx_hndl_src]; 
+		p_rht_info_src = &p_afu->rht_info[ctx_hndl_src]; 
+	} 
+	else { 
+		return EINVAL; 
+	} 
+	
+	reg = read_64(&p_ctx_info_src->p_ctrl_map->mbox_r); 
+	
+	if (reg == 0 || /* zeroed mbox is a locked mbox */ 
+	    challenge != reg) { 
+		return EACCES; /* return Permission denied */ 
+	} 
+	
+	/* this loop is equivalent to do_mc_open & cflash_vlun_resize 
 	 * Not checking if the source context has anything open or whether 
 	 * it is even registered.  
 	 */
