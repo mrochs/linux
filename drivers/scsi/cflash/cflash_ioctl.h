@@ -1,141 +1,131 @@
 #ifndef _CFLASHIOCTL_H
 #define _CFLASHIOCTL_H
 
-/* XXX: Temporarily placed here. Needs to be moved to a file that is common
- * between AIX and Linux
+/* Header file to be included in the block library.
+ * Contains definitions of structures for ioctls sent from
+ * from the block library to the CAPI Flash Adapater Driver
  */
 
-struct dk_capi_path_info
-{
-    uint16_t path_id;        /* MPIO path identifier  */
-    dev_t    devno;          /* Device number of the parent adapter */
-    uint64_t reserved[4];    /* Space for future stuff */
+struct dk_capi_path_info { 
+	uint16_t path_id;        /* MPIO path identifier  */ 
+	dev_t    devno;          /* Device number of the parent adapter */ 
+	uint64_t reserved[4];    /* Space for future stuff */
 };
 
-struct dk_capi_paths
-{
-    uint16_t version;            /* SCSI_VERSION_0 */
-    uint8_t path_count;          /* Entries in passed in path_info array */
-    uint8_t returned_path_count; /* Total paths for this disk            */
-    struct dk_capi_path_info path_info[1];   /* Info about each path     */
+struct dk_capi_paths { 
+	uint16_t version;            /* SCSI_VERSION_0 */ 
+	uint8_t path_count;          /* Entries in passed in path_info array */ 
+	uint8_t returned_path_count; /* Total paths for this disk            */ 
+	struct dk_capi_path_info path_info[1];   /* Info about each path     */
 };
 
-struct dk_capi_attach
-{
-    uint16_t version;            /* SCSI_VERSION_0 */
-    uint16_t path_id;            /* Path number to attach */
-    uint16_t num_interrupts;     /* Requested number of interrupts */
-    uint16_t rsvd[1];
-    uint64_t flags;              /* Input flags for the attach */
-    uint64_t return_flags;       /* Returned flags */
-    uint64_t context_id;         /* Returned context ID */
-    void *mmio_start;            /* Returned address of MMIO area */
-    uint64_t mmio_size;          /* Returned size of MMIO area */
-    uint64_t block_size;         /* Returned block size, in bytes */
-    uint32_t adap_fd;            /* Returned adapter file descriptor */
+struct dk_capi_attach { 
+	uint16_t version;            /* SCSI_VERSION_0 */ 
+	uint16_t path_id;            /* Path number to attach */ 
+	uint16_t num_interrupts;     /* Requested number of interrupts */ 
+	uint16_t rsvd[1]; 
+	uint64_t flags;              /* Input flags for the attach */ 
+	uint64_t return_flags;       /* Returned flags */ 
+	uint64_t context_id;         /* Returned context ID */ 
+	void *mmio_start;            /* Returned address of MMIO area */ 
+	uint64_t mmio_size;          /* Returned size of MMIO area */ 
+	uint64_t block_size;         /* Returned block size, in bytes */ 
+	uint32_t adap_fd;            /* Returned adapter file descriptor */
 };
 
-struct dk_capi_detach
-{
-    uint16_t version;            /* SCSI_VERSION_0 */
-    uint16_t path_id;            /* Path number to detach */
-    uint16_t rsvd[2];
-    uint64_t flags;              /* Flags for detach operation */
-    uint64_t return_flags;       /* Returned flags from detach */
-    uint64_t context_id;         /* Context ID to detach */
+struct dk_capi_detach { 
+	uint16_t version;            /* SCSI_VERSION_0 */ 
+	uint16_t path_id;            /* Path number to detach */ 
+	uint16_t rsvd[2]; 
+	uint64_t flags;              /* Flags for detach operation */ 
+	uint64_t return_flags;       /* Returned flags from detach */ 
+	uint64_t context_id;         /* Context ID to detach */
 };
 
-struct dk_capi_udirect
-{
-    uint16_t version;            /* SCSI_VERSION_0 */
-    uint16_t path_id;            /* MPIO path ID for attach */
-    uint16_t rsvd[2];
-    uint64_t flags;              /* Flags for LUN creation */
-    uint64_t return_flags;       /* Returned flags */
-    uint64_t context_id;         /* Context ID for the attach */
-    uint64_t rsrc_handle;        /* Returned resource handle */
-    uint64_t challenge;          /* Validation cookie */
-    uint64_t block_size;         /* Returned block size, in bytes */
-    uint64_t last_lba;           /* Returned last LBA on the device */
+struct dk_capi_udirect { 
+	uint16_t version;            /* SCSI_VERSION_0 */ 
+	uint16_t path_id;            /* MPIO path ID for attach */ 
+	uint16_t rsvd[2]; 
+	uint64_t flags;              /* Flags for LUN creation */ 
+	uint64_t return_flags;       /* Returned flags */ 
+	uint64_t context_id;         /* Context ID for the attach */ 
+	uint64_t rsrc_handle;        /* Returned resource handle */ 
+	uint64_t challenge;          /* Validation cookie */ 
+	uint64_t block_size;         /* Returned block size, in bytes */ 
+	uint64_t last_lba;           /* Returned last LBA on the device */
 };
 
-struct dk_capi_uvirtual
-{
-    uint16_t version;            /* SCSI_VERSION_0 */
-    uint16_t path_id;            /* MPIO path ID for attach */
-    uint16_t rsvd[2];
-    uint64_t flags;              /* Flags for virtual LUN create */
-    uint64_t return_flags;       /* Returned flags */
-    uint64_t context_id;         /* Context ID for the attach */
-    uint64_t rsrc_handle;        /* Returned resource handle */
-    uint64_t challenge;          /* Validation cookie */
-    uint64_t block_size;         /* Returned block size, in bytes */
-    uint64_t last_lba;           /* Returned last LBA of LUN */
-    uint64_t lun_size;           /* Requested size, blocks */
+struct dk_capi_uvirtual { 
+	uint16_t version;            /* SCSI_VERSION_0 */ 
+	uint16_t path_id;            /* MPIO path ID for attach */ 
+	uint16_t rsvd[2]; 
+	uint64_t flags;              /* Flags for virtual LUN create */ 
+	uint64_t return_flags;       /* Returned flags */ 
+	uint64_t context_id;         /* Context ID for the attach */ 
+	uint64_t rsrc_handle;        /* Returned resource handle */ 
+	uint64_t challenge;          /* Validation cookie */ 
+	uint64_t block_size;         /* Returned block size, in bytes */ 
+	uint64_t last_lba;           /* Returned last LBA of LUN */ 
+	uint64_t lun_size;           /* Requested size, blocks */
 };
 
-struct dk_capi_release
-{
-    uint16_t version;            /* SCSI_VERSION_0 */
-    uint16_t path_id;            /* MPIO path ID */
-    uint16_t rsvd[2];
-    uint64_t flags;              /* Flags for the release op */
-    uint64_t return_flags;       /* Returned flags */
-    uint64_t context_id;         /* Context ID for the attach */
-    uint64_t rsrc_handle;        /* Resource handle to release */
-    uint64_t challenge;          /* Validation cookie */
+struct dk_capi_release { 
+	uint16_t version;            /* SCSI_VERSION_0 */ 
+	uint16_t path_id;            /* MPIO path ID */ 
+	uint16_t rsvd[2]; 
+	uint64_t flags;              /* Flags for the release op */ 
+	uint64_t return_flags;       /* Returned flags */ 
+	uint64_t context_id;         /* Context ID for the attach */ 
+	uint64_t rsrc_handle;        /* Resource handle to release */ 
+	uint64_t challenge;          /* Validation cookie */
 };
 
-struct dk_capi_resize
-{
-    uint16_t version;            /* SCSI_VERSION_0 */
-    uint16_t path_id;            /* MPIO path ID */
-    uint16_t rsvd[2];
-    uint64_t flags;              /* Flags for resize */
-    uint64_t return_flags;       /* Returned flags */
-    uint64_t context_id;         /* Context ID of LUN to resize */
-    uint64_t rsrc_handle;        /* Resource handle of LUN to resize */
-    uint64_t challenge;          /* Validation cookie */
-    uint64_t req_size;           /* New requested size, blocks */
-    uint64_t last_lba;           /* Returned last LBA of LUN */
+struct dk_capi_resize { 
+	uint16_t version;            /* SCSI_VERSION_0 */ 
+	uint16_t path_id;            /* MPIO path ID */ 
+	uint16_t rsvd[2]; 
+	uint64_t flags;              /* Flags for resize */ 
+	uint64_t return_flags;       /* Returned flags */ 
+	uint64_t context_id;         /* Context ID of LUN to resize */ 
+	uint64_t rsrc_handle;        /* Resource handle of LUN to resize */ 
+	uint64_t challenge;          /* Validation cookie */ 
+	uint64_t req_size;           /* New requested size, blocks */ 
+	uint64_t last_lba;           /* Returned last LBA of LUN */
 };
 
-struct dk_capi_verify
-{
-    uint16_t version;            /* SCSI_VERSION_0 */
-    uint16_t path_id;            /* ID of path to verify */
-    uint16_t rsvd[2];
-    uint64_t flags;              /* Flags for verification */
-    uint64_t return_flags;       /* Returned verification flags */
-    uint64_t rsrc_handle;        /* Resource handle of LUN */
-    uint64_t challenge;          /* Validation cookie */
-    uint64_t hint;               /* Reasons for verify */
-    uint64_t last_lba;           /* Returned last LBA of device */
+struct dk_capi_verify { 
+	uint16_t version;            /* SCSI_VERSION_0 */ 
+	uint16_t path_id;            /* ID of path to verify */ 
+	uint16_t rsvd[2]; 
+	uint64_t flags;              /* Flags for verification */ 
+	uint64_t return_flags;       /* Returned verification flags */ 
+	uint64_t rsrc_handle;        /* Resource handle of LUN */ 
+	uint64_t challenge;          /* Validation cookie */ 
+	uint64_t hint;               /* Reasons for verify */ 
+	uint64_t last_lba;           /* Returned last LBA of device */
 };
 
-struct dk_capi_log
-{
-    uint16_t version;            /* SCSI_VERSION_0 */
-    uint16_t path_id;            /* Path ID to log error against */
-    uint16_t log_rsvd[2];
-    uint64_t flags;              /* Flags for error log */
-    uint64_t return_flags;       /* Returned flags */
-    uint64_t rsrc_handle;        /* Resource handle to log error against */
-    uint64_t challenge;          /* Validation cookie */
-    uint64_t reason;             /* Reason code for error */
-    char sense_data[256];        /* Sense data to include in error */
+struct dk_capi_log { 
+	uint16_t version;            /* SCSI_VERSION_0 */ 
+	uint16_t path_id;            /* Path ID to log error against */ 
+	uint16_t log_rsvd[2]; 
+	uint64_t flags;              /* Flags for error log */ 
+	uint64_t return_flags;       /* Returned flags */ 
+	uint64_t rsrc_handle;        /* Resource handle to log error against */ 
+	uint64_t challenge;          /* Validation cookie */ 
+	uint64_t reason;             /* Reason code for error */ 
+	char sense_data[256];        /* Sense data to include in error */
 };
 
-struct dk_capi_recover_afu
-{
-    uint16_t version;            /* SCSI_VERSION_0 */
-    uint16_t path_id;            /* ID of path to recover */
-    uint16_t ver_rsvd[2];
-    uint64_t flags;              /* Flags for recovery */
-    uint64_t return_flags;       /* Returned flags */
-    uint64_t rsrc_handle;        /* Resource handle for LUN to recover */
-    uint64_t challenge;          /* Validation cookie */
-    uint64_t reason;             /* Reason for recovery request */
+struct dk_capi_recover_afu { 
+	uint16_t version;            /* SCSI_VERSION_0 */ 
+	uint16_t path_id;            /* ID of path to recover */ 
+	uint16_t ver_rsvd[2]; 
+	uint64_t flags;              /* Flags for recovery */ 
+	uint64_t return_flags;       /* Returned flags */ 
+	uint64_t rsrc_handle;        /* Resource handle for LUN to recover */ 
+	uint64_t challenge;          /* Validation cookie */ 
+	uint64_t reason;             /* Reason for recovery request */
 };
 
 
