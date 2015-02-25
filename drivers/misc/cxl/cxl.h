@@ -18,6 +18,7 @@
 #include <linux/pid.h>
 #include <linux/io.h>
 #include <linux/pci.h>
+#include <linux/fs.h>
 #include <asm/cputable.h>
 #include <asm/mmu.h>
 #include <asm/reg.h>
@@ -666,5 +667,7 @@ int cxl_pci_phb_probe(struct cxl_afu *afu);
 
 extern struct pci_driver cxl_pci_driver;
 int afu_allocate_irqs(struct cxl_context *ctx, u32 count);
+
+extern const struct file_operations afu_fops;
 
 #endif
