@@ -105,7 +105,8 @@ EXPORT_SYMBOL_GPL(cxl_unmap_afu_irq);
  * Start a context
  * Code here similar to afu_ioctl_start_work().
  */
-int cxl_start_context(struct cxl_context *ctx, u64 wed, struct pid *pid)
+int cxl_start_context(struct cxl_context *ctx, u64 wed,
+		      struct task_struct *task)
 {
 	int rc;
 	bool kernel = true;
@@ -117,12 +118,13 @@ int cxl_start_context(struct cxl_context *ctx, u64 wed, struct pid *pid)
 		rc = -EIO;
 		goto out;
 	}
-	if (pid) {
-		ctx->pid = pid;
+	if (task) {
+		ctx->pid = get_task_pid(task, PIDTYPE_PID);
+		get_pid(ctx->pid);
 		kernel = false;
 	}
 
-	/* FIXME: if PID userspace, then set amr here */
+	/* FIXME: if userspace, then set amr here */
 	if ((rc = cxl_attach_process(ctx, kernel, wed , 0)))
 		goto out;
 
