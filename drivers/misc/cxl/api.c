@@ -9,6 +9,8 @@
 
 #include <linux/pci.h>
 #include <linux/slab.h>
+#include <linux/anon_inodes.h>
+#include <linux/file.h>
 
 #include "cxl.h"
 
@@ -21,12 +23,14 @@ struct cxl_context *cxl_dev_context_init(struct pci_dev *dev)
 	afu = cxl_pci_to_afu(dev, NULL);
 
 	ctx = cxl_context_alloc();
+	if (IS_ERR(ctx))
+		return ctx;
 
 	/* Make it a slave context.  We can promote it later? */
 	rc = cxl_context_init(ctx, afu, false, NULL);
 	if (rc) {
 		kfree(ctx);
-		return NULL;
+		return ERR_PTR(-ENOMEM);
 	}
 
 	return ctx;
@@ -142,6 +146,48 @@ void cxl_stop_context(struct cxl_context *ctx)
 	___detach_context(ctx);
 }
 EXPORT_SYMBOL_GPL(cxl_stop_context);
+
+void cxl_set_master(struct cxl_context *ctx)
+{
+	ctx->master = true;
+}
+EXPORT_SYMBOL_GPL(cxl_set_master);
+
+int cxl_attach_fd(struct cxl_context *ctx, struct cxl_ioctl_start_work *work)
+{
+	struct file *file;
+	int rc, flags, fd;
+
+	flags = O_RDWR | O_CLOEXEC;
+
+	/* This code is similar to anon_inode_getfd() */
+	rc = get_unused_fd_flags(flags);
+	if (rc < 0)
+		return rc;
+	fd = rc;
+
+	file = anon_inode_getfile("cxl", &afu_fops, ctx, flags);
+	if (IS_ERR(file)) {
+		rc = PTR_ERR(file);
+		goto err;
+	}
+
+	rc = cxl_start_context(ctx, work->work_element_descriptor, current);
+	if (rc < 0)
+		goto err1;
+
+
+	fd_install(fd, file);
+	/* once we do fd_install we are not allowed to fail */
+	return fd;
+
+err1:
+	fput(file);
+err:
+	put_unused_fd(fd);
+	return rc;
+}
+EXPORT_SYMBOL_GPL(cxl_attach_fd);
 
 void __iomem *cxl_psa_map(struct cxl_context *ctx)
 {

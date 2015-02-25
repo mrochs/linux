@@ -12,6 +12,7 @@
 
 #include <linux/pci.h>
 #include <linux/interrupt.h>
+#include <uapi/misc/cxl.h>
 
 #ifdef CONFIG_CXL_BASE
 
@@ -116,6 +117,18 @@ int cxl_start_context(struct cxl_context *ctx, u64 wed,
  * Stop a context and remove it from the PSL
  */
 void cxl_stop_context(struct cxl_context *ctx);
+
+/*
+ * Set a context as a master context
+ * NOTE: no way to degrade back to slave, but do we need this?
+ */
+void cxl_set_master(struct cxl_context *ctx);
+
+/*
+ * Attach an fd to a context.  After this is run, the file descriptor will be
+ * visible to userspace, hence no additional error paths are allowed after this
+ */
+int cxl_attach_fd(struct cxl_context *ctx, struct cxl_ioctl_start_work *work);
 
 /* Map and unmap the AFU Problem Space area */
 void __iomem *cxl_psa_map(struct cxl_context *ctx);
