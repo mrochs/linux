@@ -20,6 +20,7 @@
 
 #include <misc/cxl.h>
 #include <uapi/misc/cxl.h>
+#include <uapi/cxl-memcpy.h>
 
 #include "cxl-memcpy.h"
 
@@ -278,12 +279,64 @@ static int device_open(struct inode *inode, struct file *file)
 	if (down_interruptible(&sem) != 0) {
 		return -1;
 	}
+	file->private_data = memcpy_afu_dev;
 	return 0;
 }
 
 static int device_close(struct inode *inode, struct file *file) {
 	up(&sem);
 	return 0;
+}
+
+static long device_ioctl_get_fd(struct pci_dev *dev,
+				struct cxl_memcpy_ioctl_get_fd __user *arg)
+{
+	struct cxl_memcpy_ioctl_get_fd work;
+	struct cxl_context *ctx = NULL;
+
+	int fd;
+
+	/* Copy the user info */
+	if (copy_from_user(&work, arg, sizeof(struct cxl_memcpy_ioctl_get_fd)))
+		return -EFAULT;
+
+	/* Init the context */
+	ctx = cxl_dev_context_init(dev);
+	if (IS_ERR(ctx))
+		return PTR_ERR(ctx);
+
+	/* Does the user want a master context? */
+	if (work.master & CXL_MEMCPY_IOCTL_GET_FD_MASTER)
+		cxl_set_master(ctx);
+
+	/*
+	 * Create and attach a new file descriptor.  This must be the last
+	 * statement as once this is run, the file descritor is visible to
+	 * userspace and can't be undone.  No error paths after this as we
+	 * can't free the fd safely.
+	 */
+	fd = cxl_attach_fd(ctx, &work.work);
+	if (fd < 0)
+		goto err;
+	return fd;
+
+err:
+	if (ctx)
+		kfree(ctx);
+	return -ENODEV;
+}
+
+static long device_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+{
+	struct pci_dev *dev = file->private_data;
+
+	pr_devel("device_ioctl\n");
+	switch (cmd) {
+	case CXL_MEMCPY_IOCTL_GET_FD:
+		return device_ioctl_get_fd(dev,
+				(struct cxl_memcpy_ioctl_get_fd __user *)arg);
+	}
+	return -EINVAL;
 }
 
 struct pci_driver cxl_memcpy_pci_driver = {
@@ -299,6 +352,7 @@ struct file_operations fops = {
 	.write = device_write,
 	.read = device_read,
 	.release = device_close,
+	.unlocked_ioctl = device_ioctl,
 };
 
 static int __init init_cxl_memcpy(void)
