@@ -557,7 +557,6 @@ static void cflash_free_mem(cflash_t *p_cflash)
  **/
 static void cflash_remove(struct pci_dev *pdev)
 {
-	int nbytes;
         cflash_t *p_cflash = pci_get_drvdata(pdev);
         ENTER;
 
@@ -581,10 +580,6 @@ static void cflash_remove(struct pci_dev *pdev)
 	/* XXX: Commented out for now
 	pci_disable_device(pdev);
 	*/
-
-
-	nbytes = sizeof(struct afu_alloc) * CFLASH_NAFU;
-	free_pages((unsigned long)p_cflash->p_afu_a, get_order(nbytes));
 
         LEAVE;
 }
@@ -765,6 +760,9 @@ static int cflash_init_ba(cflash_t *p_cflash)
 	p_afu->p_blka = p_blka;
 
 cflash_init_ba_exit:
+	if (rc && p_blka)
+		kfree(p_blka);
+
 	return(rc);
 }
 

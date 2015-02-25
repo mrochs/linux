@@ -1017,7 +1017,8 @@ err1:
 
 void cflash_term_afu(cflash_t *p_cflash)
 {
-	afu_t		   *p_afu = &p_cflash->p_afu_a->afu;
+	int	 nbytes;
+	afu_t	*p_afu = &p_cflash->p_afu_a->afu;
 
 	cflash_stop_context(p_cflash);
         cflash_info("in %s before unmap 4 \n", __func__);
@@ -1036,6 +1037,10 @@ void cflash_term_afu(cflash_t *p_cflash)
 
 	if (p_afu->p_blka)
 		kfree(p_afu->p_blka);
+
+	nbytes = sizeof(struct afu_alloc) * CFLASH_NAFU;
+        free_pages((unsigned long)p_cflash->p_afu_a, get_order(nbytes));
+	p_cflash->p_afu_a = NULL;
 }
 
 #endif /* NEWCXL */
