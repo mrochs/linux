@@ -107,9 +107,10 @@ void cxl_unmap_afu_irq(struct cxl_context *cxl, int num, void *cookie);
 
 /*
  * Start work on the AFU.  This starts an cxl context and associates it with a
- * memory context (ie PID).  pid == NULL will attach to the kernel context.
+ * task.  task == NULL will attach to the kernel context.
  */
-int cxl_start_context(struct cxl_context *ctx, u64 wed, struct pid *pid);
+int cxl_start_context(struct cxl_context *ctx, u64 wed,
+		      struct task_struct *task);
 
 /*
  * Stop a context and remove it from the PSL
