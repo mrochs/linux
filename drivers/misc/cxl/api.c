@@ -37,6 +37,16 @@ struct cxl_context *cxl_dev_context_init(struct pci_dev *dev)
 }
 EXPORT_SYMBOL_GPL(cxl_dev_context_init);
 
+struct device *cxl_get_phys_dev(struct pci_dev *dev)
+{
+	struct cxl_afu *afu;
+
+	afu = cxl_pci_to_afu(dev, NULL);
+
+	return afu->adapter->dev.parent;
+}
+EXPORT_SYMBOL_GPL(cxl_get_phys_dev);
+
 void cxl_release_context(struct cxl_context *ctx)
 {
 	cxl_context_free(ctx);
