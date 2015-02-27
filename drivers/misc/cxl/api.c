@@ -26,8 +26,8 @@ struct cxl_context *cxl_dev_context_init(struct pci_dev *dev)
 	if (IS_ERR(ctx))
 		return ctx;
 
-	/* Assume master context? */
-	rc = cxl_context_init(ctx, afu, true);
+	/* Make it a slave context.  We can promote it later? */
+	rc = cxl_context_init(ctx, afu, false);
 	if (rc) {
 		kfree(ctx);
 		return ERR_PTR(-ENOMEM);
