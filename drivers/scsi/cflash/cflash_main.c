@@ -469,7 +469,7 @@ static int cflash_ioctl(struct scsi_device *sdev, int cmd, void __user *arg)
 	}
 
 cflash_ioctl_exit:
-	cflash_err("ioctl 0x%x returned rc %d\n", cmd, rc);
+	cflash_info("ioctl 0x%x returned rc %d\n", cmd, rc);
 	return rc;
 }
 
@@ -727,18 +727,16 @@ static void cflash_scan_vsets(cflash_t *p_cflash)
 	}
 }
 
-static int cflash_init_ba(cflash_t *p_cflash)
+int cflash_init_ba(cflash_t *p_cflash, int lunindex)
 {
-	struct pci_dev *pdev  = p_cflash->p_dev;
 	afu_t      *p_afu     = &p_cflash->p_afu_a->afu;
-	lun_info_t *p_luninfo = &p_afu->lun_info[0];
+	lun_info_t *p_luninfo = &p_afu->lun_info[lunindex];
 	int rc = 0;
 	blka_t *p_blka = NULL;
 
-
 	p_blka = kzalloc(sizeof(*p_blka), GFP_KERNEL);
 	if (!p_blka) {
-		dev_err(&pdev->dev, "Failed to get memory for block alloc!\n");
+		cflash_err("Failed to get memory for block alloc!\n");
 		rc = -ENOMEM;
 		goto cflash_init_ba_exit;
 	}
@@ -748,21 +746,24 @@ static int cflash_init_ba(cflash_t *p_cflash)
 	p_blka->ba_lun.lun_id	= p_luninfo->lun_id;
 	p_blka->ba_lun.lsize	= p_luninfo->li.max_lba + 1;
 	p_blka->ba_lun.lba_size	= p_luninfo->li.blk_len;
+
 	p_blka->ba_lun.au_size	= MC_CHUNK_SIZE;
 	p_blka->nchunk		= p_blka->ba_lun.lsize/MC_CHUNK_SIZE;
 
 	rc = ba_init(&p_blka->ba_lun);
 	if (rc) {
-		dev_err(&pdev->dev, "cannot init block_alloc, rc %d\n", rc);
+		cflash_err("cannot init block_alloc, rc %d\n", rc);
 		goto cflash_init_ba_exit;
 	}
 
-	p_afu->p_blka = p_blka;
+	p_afu->p_blka[lunindex] = p_blka;
 
 cflash_init_ba_exit:
 	if (rc && p_blka)
 		kfree(p_blka);
 
+        cflash_info("in %s returning index %d p_blka %p rc=%d\n", 
+		    __func__, lunindex, p_afu->p_blka[lunindex], rc);
 	return(rc);
 }
 
@@ -862,13 +863,6 @@ static int cflash_probe(struct pci_dev *pdev,
 	rc = cflash_init_scsi(p_cflash);
 	if (rc) {
                 dev_err(&pdev->dev, "call to cflash_init_scsi failed rc=%d!\n",
-			rc);
-		goto out_remove;
-	}
-
-	rc = cflash_init_ba(p_cflash);
-	if (rc) {
-                dev_err(&pdev->dev, "call to cflash_init_ba failed rc=%d!\n",
 			rc);
 		goto out_remove;
 	}

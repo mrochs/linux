@@ -343,7 +343,7 @@ typedef struct afu
     lun_info_t             lun_info[512];
 
     /* shared block allocator with other AFUs */
-    blka_t             *p_blka;
+    blka_t             *p_blka[512];
 
     /* per AFU threads */
 #ifndef __KERNEL__

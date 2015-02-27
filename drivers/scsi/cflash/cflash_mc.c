@@ -35,6 +35,12 @@
 #include "afu_fc.h"
 #include "mserv.h"
 
+/* Until we figure out how to get the process element, need to include
+ * Mikey's header file
+ */
+#include "cxl.h"
+
+extern int cflash_init_ba(cflash_t *p_cflash, int lunindex);
 
 /* Mask off the low nibble of the length to ensure 16 byte multiple */
 #define SISLITE_LEN_MASK 0xFFFFFFF0
@@ -102,6 +108,82 @@ hexdump(void *data, long len, const char *hdr)
 }
 
 
+int cflash_afu_attach(cflash_t *p_cflash,  uint64_t context_id)
+{
+	afu_t      *p_afu             = &p_cflash->p_afu_a->afu;
+	ctx_info_t *p_ctx_info        = &p_afu->ctx_info[context_id]; 
+	int   rc                      = 0;
+	__u64 reg;
+
+	/* This code reads the mbox w/o knowing if the requester is 
+	 * the true owner of the context it wants to register. The 
+	 * read has no side effect and does not affect the true 
+	 * owner if this is a fraudulent registration attempt.
+	  */
+	reg = read_64(&p_ctx_info->p_ctrl_map->mbox_r);
+
+	/* zeroed mbox is a locked mbox */
+	if (reg == 0) {
+		cflash_info("zero mbox reg 0x%llx\n", reg);
+		rc = -EACCES;
+		goto out;
+	}
+
+	/* This context is not duped and is in a group by 
+	 * itself. 
+	 */
+	p_ctx_info->p_next = p_ctx_info;
+	p_ctx_info->p_forw = p_ctx_info;
+
+	/* restrict user to read/write cmds in translated 
+	 * mode. User has option to choose read and/or write 
+	 * permissions again in mc_open.  
+	 */
+	write_64(&p_ctx_info->p_ctrl_map->ctx_cap,
+		 SISL_CTX_CAP_READ_CMD |
+		 SISL_CTX_CAP_WRITE_CMD);
+
+	asm volatile ( "eieio" : : );
+	reg = read_64(&p_ctx_info->p_ctrl_map->ctx_cap);
+
+	/* if the write failed, the ctx must have been 
+	 * closed since the mbox read and the ctx_cap 
+	 * register locked up.  fail the registration 
+	 */
+	if (reg != (SISL_CTX_CAP_READ_CMD |
+		    SISL_CTX_CAP_WRITE_CMD)) {
+		cflash_err("%s: ctx may be closed reg=%llx\n", 
+			   p_afu->name, reg);
+		rc = -EAGAIN;
+		goto out;
+	}
+
+	/* the context gets a dedicated RHT tbl unless it 
+	 * is dup'ed later. 
+	 */
+	p_ctx_info->p_rht_info =
+		&p_afu->rht_info[context_id];
+	p_ctx_info->p_rht_info->ref_cnt = 1;
+	memset(p_ctx_info->p_rht_info->rht_start, 0,
+	       sizeof(sisl_rht_entry_t)*MAX_RHT_PER_CONTEXT);
+	/* make clearing of the RHT visible to AFU before 
+	 * MMIO 
+	 */
+	asm volatile ( "lwsync" : : );
+
+	/* set up MMIO registers pointing to the RHT */
+	write_64(&p_ctx_info->p_ctrl_map->rht_start,
+		 (__u64)p_ctx_info->p_rht_info->rht_start);
+	write_64(&p_ctx_info->p_ctrl_map->rht_cnt_id, 
+		 SISL_RHT_CNT_ID((__u64)MAX_RHT_PER_CONTEXT, 
+				 (__u64)(p_afu->ctx_hndl))); 
+out:
+        cflash_info("in %s returning rc=%d\n", __func__, rc);
+	return rc;
+
+}
+
+
 int cflash_disk_attach(struct scsi_device *sdev, void __user *arg)
 {
 	cflash_t   *p_cflash   = (cflash_t *)sdev->host->hostdata;
@@ -110,59 +192,50 @@ int cflash_disk_attach(struct scsi_device *sdev, void __user *arg)
 	struct dk_capi_attach *parg = (struct dk_capi_attach *)arg;
 	struct cxl_context *ctx;
 
-	/*
-	const char *name = p_cflash->afu->afu_cdev_m.kobj.name;
-	const char *mname = p_cflash->afu->afu_cdev_m.kobj.name;
-	*/
-	const char *name = "/dev/cxl/afu0.0s";
-	struct file *file;
 	int fd = 0;
-
-	/*
-	 * XXX: This would be ideal, but sys_open is not exported by the kernel
-	fd = sys_open(name, O_RDWR, 0);
-	 * XXX: So instead we have to allocate a descriptor, open a file
-	 * and then attach them.
-	*/
-	fd = get_unused_fd_flags(O_RDWR);
-	if (fd < 0) {
-		cflash_err("Could not allocate file descriptor for %s\n", name);
-		rc = -ENOMEM;
-		goto out;
-	}
-
-	cflash_info("in %s slave name=%s\n", __func__, name);
-
-	file = filp_open(name, O_RDWR, 0);
-	if (IS_ERR(file)) {
-		put_unused_fd(fd);
-		cflash_err("Could not open device special file %s\n", name);
-		rc = -ENODEV;
-		goto out;
-	}
-
-	fd_install(fd, file);
 
 	ctx = cxl_dev_context_init(p_cflash->p_dev);
 	if (!ctx) {
-		cflash_err("Could not initialize context for%s\n", name);
-		put_unused_fd(fd);
-		filp_close(file, NULL);
-		/*
-		sys_close(fd);
-		*/
-		return -ENOMEM;
+		cflash_err("in %s Could not initialize context\n", __func__);
+		rc = -ENODEV;
+		goto out;
+	} 
+
+	/* XXX: Cannot get to the process element until Mikey's headers
+	 * are included
+	*/
+	parg->context_id = (uint64_t)ctx->pe;
+
+	rc = cflash_afu_attach(p_cflash, parg->context_id);
+	if (rc)
+	{
+		cflash_err("in %s Could not attach AFU rc %d\n", __func__, rc);
+		cxl_release_context(ctx);
+		goto out;
+	}
+
+	/* 
+	 * Create and attach a new file descriptor. This must be the last 
+	 * statement as once this is run, the file descritor is visible to 
+	 * userspace and can't be undone. No error paths after this as we 
+	 * can't free the fd safely.
+	 */ 
+	
+	fd = cxl_attach_fd(ctx, & p_cflash->p_afu_a->afu.work); 
+	if (fd < 0) {
+		rc = -ENODEV;
+		cxl_release_context(ctx);
+		cflash_err("Could not attach file descriptor\n");
+		goto out; 
 	}
 
 	parg->return_flags = 0;
 	parg->adap_fd = fd;
-	/* XXX: Cannot get to the process element until Mikey's headers
-	 * are included
-	parg->context_id = (uint64_t)ctx->pe;
-	*/
+	parg->block_size = 4096;
+	parg->mmio_size = 0x10000;
 
 out:
-        cflash_info("in %s returning rc=%d\n", __func__, rc);
+        cflash_info("in %s returning fd=%d rc=%d\n", __func__, fd, rc);
 	return rc;
 }
 
@@ -211,11 +284,11 @@ int cflash_disk_uvirtual(struct scsi_device *sdev, void __user *arg)
 	struct dk_capi_uvirtual *parg = (struct dk_capi_uvirtual *)arg;
 
 	int   rc;
+	int i;
 
 	ctx_info_t *p_ctx_info = &p_afu->ctx_info[parg->context_id]; 
-	int   mode             = (parg->flags & MODE_MASK);
-	__u64 challenge        = parg->challenge;
-	__u64 reg;
+	rht_info_t *p_rht_info = NULL; 
+	sisl_rht_entry_t *p_rht_entry = NULL;
 
 	cflash_info("%s, context=0x%llx res_hndl=0x%llx, challenge=0x%llx\n",
 		    __func__, parg->context_id,
@@ -225,96 +298,50 @@ int cflash_disk_uvirtual(struct scsi_device *sdev, void __user *arg)
 	if (parg->context_id < MAX_CONTEXT) {
 		p_ctx_info = &p_afu->ctx_info[parg->context_id];
 
-		/* This code reads the mbox w/o knowing if the requester is 
-		 * the true owner of the context it wants to register. The 
-		 * read has no side effect and does not affect the true 
-		 * owner if this is a fraudulent registration attempt.
-	 	 */
-		reg = read_64(&p_ctx_info->p_ctrl_map->mbox_r);
+		p_rht_info = &p_afu->rht_info[parg->context_id];
+	
+		cflash_info("in %s ctx 0x%llx ctxinfo %p rhtinfo %p\n", 
+			    __func__, parg->context_id, 
+			    p_ctx_info, p_rht_info);
 
-		if (reg == 0 || /* zeroed mbox is a locked mbox */
-		    challenge != reg) {
-			rc =  EACCES; /* return Permission denied */
-			goto out;
-		}
-
-		if (mode == MCREG_DUP_REG && 
-		    p_ctx_info->ref_cnt == 0) {
-			rc = EINVAL; /* no prior registration to dup */
-			goto out;
-		}
-
-		/* a fresh registration will cause all previous 
-		 * registrations, if any, to be forcefully canceled. 
-		 * This is important since a client can close the context 
-		 * (AFU) but not unregister the mc_handle. A new owner of 
-		 * the same context must be able to cflash_disk_uvirtual by 
-		 * forcefully unregistering the previous owner.  
-		 */
-		if (mode == MCREG_INITIAL_REG) {
-			/* XXX: Implicit unregister on new registration */
-			cflash_disk_detach(sdev, arg);
-
-			if (p_ctx_info->ref_cnt != 0) {
-				cflash_err("%s: internal error: p_ctx_info->"
-					"ref_cnt != 0", p_afu->name);
-			}
-
-			/* This context is not duped and is in a group by 
-			 * itself. 
-			 */
-			p_ctx_info->p_next = p_ctx_info;
-			p_ctx_info->p_forw = p_ctx_info;
-
-			/* restrict user to read/write cmds in translated 
-			 * mode. User has option to choose read and/or write 
-			 * permissions again in mc_open.  
-			 */
-			write_64(&p_ctx_info->p_ctrl_map->ctx_cap,
-				 SISL_CTX_CAP_READ_CMD |
-				 SISL_CTX_CAP_WRITE_CMD);
-			asm volatile ( "eieio" : : );
-			reg = read_64(&p_ctx_info->p_ctrl_map->ctx_cap);
-
-			/* if the write failed, the ctx must have been 
-			 * closed since the mbox read and the ctx_cap 
-			 * register locked up.  fail the registration 
-			 */
-			if (reg != (SISL_CTX_CAP_READ_CMD |
-				    SISL_CTX_CAP_WRITE_CMD)) {
-				return -EAGAIN;
-			}
-
-			/* the context gets a dedicated RHT tbl unless it 
-			 * is dup'ed later. 
-			 */
-			p_ctx_info->p_rht_info =
-				&p_afu->rht_info[parg->context_id];
-			p_ctx_info->p_rht_info->ref_cnt = 1;
-			memset(p_ctx_info->p_rht_info->rht_start, 0,
-			       sizeof(sisl_rht_entry_t)*MAX_RHT_PER_CONTEXT);
-			/* make clearing of the RHT visible to AFU before 
-			 * MMIO 
-			 */
-			asm volatile ( "lwsync" : : );
-
-			/* set up MMIO registers pointing to the RHT */
-			write_64(&p_ctx_info->p_ctrl_map->rht_start,
-				 (__u64)p_ctx_info->p_rht_info->rht_start);
-			write_64(&p_ctx_info->p_ctrl_map->rht_cnt_id, 
-				 SISL_RHT_CNT_ID((__u64)MAX_RHT_PER_CONTEXT, 
-						 (__u64)(p_afu->ctx_hndl))); 
+		/* find a free RHT entry */ 
+		for (i = 0; i <  MAX_RHT_PER_CONTEXT; i++) { 
+			if (p_rht_info->rht_start[i].nmask == 0) { 
+				p_rht_entry = &p_rht_info->rht_start[i]; 
+				break; 
+			} 
 		} 
-		/* it is now registered, go to ready state */ 
+		cflash_info("in %s i %d rhti %p rhte %p\n", __func__, 
+			    i, p_rht_info, p_rht_entry);
+	
+		/* if we did not find a free entry, reached max opens allowed 
+		 * per context 
+		 */ 
+		
+		if (p_rht_entry == NULL) { 
+			cflash_err("in %s too many contexts open\n", __func__); 
+			rc = -EMFILE; // too many opens 
+			goto out; 
+		} 
+		
+		p_rht_entry->nmask = MC_RHT_NMASK; 
+		p_rht_entry->fp = SISL_RHT_FP(0u, parg->flags & 0x3); 
+		/* format 0 & perms */ 
+		
+		parg->rsrc_handle = (p_rht_entry - p_rht_info->rht_start);
+
 		rc =  0; 
 	} 
 	else { 
 		rc =  EINVAL; 
 		goto out;
 	}
+
 	parg->return_flags = 0;
 
 out:
+        cflash_info("in %s returning handle 0x%llx rc=%d rhti %p rhte %p\n", 
+		    __func__, parg->rsrc_handle, rc, p_rht_info, p_rht_entry);
 	return rc;
 }
 
@@ -362,13 +389,19 @@ int cflash_disk_release(struct scsi_device *sdev, void __user *arg)
 		p_ctx_info = &p_afu->ctx_info[parg->context_id];
 		p_rht_info = p_ctx_info->p_rht_info;
 	} else {
-		return -EINVAL;
+		cflash_info("in %s context id too large 0x%llx\n", __func__,
+			    parg->context_id);
+		rc = -EINVAL;
+		goto out;
 	}
 
 	if (res_hndl < MAX_RHT_PER_CONTEXT) {
 		p_rht_entry = &p_rht_info->rht_start[res_hndl];
-		if (p_rht_entry->nmask == 0) /* not open */
-			return -EINVAL;
+		if (p_rht_entry->nmask == 0) { /* not open */ 
+			rc = -EINVAL;
+			cflash_info("in %s not open\n", __func__);
+			goto out;
+		}
 
 		/* set size to 0, this will clear LXT_START and LXT_CNT 
 		 * fields in the RHT entry 
@@ -382,9 +415,13 @@ int cflash_disk_release(struct scsi_device *sdev, void __user *arg)
 		rc = 0;
 	} 
 	else { 
-		rc =  EINVAL; 
+		rc = -EINVAL; 
+		cflash_info("in %s resource handle invalid %d\n", __func__,
+			    res_hndl);
 	}
 
+out:
+        cflash_info("in %s returning rc=%d\n", __func__, rc);
 	return rc;
 }
 
@@ -703,13 +740,12 @@ static irqreturn_t cflash_rrq_irq(int irq, void *data)
 		p_cmd->sa.host_use_b[0] |= B_DONE;
 		spin_unlock_irqrestore(&p_cmd->slock, lock_flags);
 
-		timer_stop(&p_cmd->timer, FALSE); /* already stopped if timer fired */
+		/* already stopped if timer fired */
+		timer_stop(&p_cmd->timer, FALSE); 
 
 		/*
 		hexdump ((void *)&p_cmd->rcb, sizeof(sisl_ioarcb_t), "rcb");
 		hexdump ((void *)&p_cmd->sa, sizeof(sisl_ioasa_t), "sa");
-		*/
-		/*
 		hexdump ((void *)p_cmd->rcb.data_ea, 64, "data");
 		*/
 
@@ -805,7 +841,15 @@ int cflash_start_afu(cflash_t *p_cflash)
 
 	/* XXX: Hardcoded for now, How do you figure out WWPN */
 	wwpn[0] =  0x2C00072800000001;
-	wwpn[1] =  0x5C00072800000002;
+	wwpn[1] =  0x5C00072800000002; 
+	
+	for (i = 0; i < MAX_CONNS; i++) { 
+		p_afu->conn_tbl[i].fd = -1; 
+	} 
+	
+	for (i = 0; i < MAX_CONTEXT; i++) { 
+		p_afu->rht_info[i].rht_start = &p_afu->rht[i][0]; 
+	}
 
 	for (i = 0; i < NUM_CMDS; i++) {
 		struct timer_list *p_timer = &p_afu->cmd[i].timer;
@@ -837,8 +881,8 @@ int cflash_start_afu(cflash_t *p_cflash)
 
 	// copy frequently used fields into p_afu
 	/* XXX, why cannot we get at the process element 
-	p_afu->ctx_hndl =  (u16) (p_cflash->p_ctx->pe); 
 	*/
+	p_afu->ctx_hndl =  (u16) (p_cflash->p_ctx->pe); 
 	// ctx_hndl is 16 bits in CAIA
 	p_afu->p_host_map = &p_afu->p_afu_map->hosts[p_afu->ctx_hndl].host;
 	p_afu->p_ctrl_map = &p_afu->p_afu_map->ctrls[p_afu->ctx_hndl].ctrl;
@@ -932,6 +976,9 @@ int cflash_init_afu(cflash_t *p_cflash)
 		return -ENOMEM;
 	p_cflash->p_ctx = ctx;
 
+	/* Set it up as a master with the CXL */
+	cxl_set_master(ctx); 
+	
 	/* Allocate AFU generated interrupt handler */
 	rc = cxl_allocate_afu_irqs(ctx, 4);
 	if (rc) {
@@ -1035,8 +1082,8 @@ void cflash_term_afu(cflash_t *p_cflash)
 	cxl_release_context(p_cflash->p_ctx);
 	p_cflash->p_ctx = NULL;
 
-	if (p_afu->p_blka)
-		kfree(p_afu->p_blka);
+	if (p_afu->p_blka[0])
+		kfree(p_afu->p_blka[0]);
 
 	nbytes = sizeof(struct afu_alloc) * CFLASH_NAFU;
         free_pages((unsigned long)p_cflash->p_afu_a, get_order(nbytes));
@@ -1181,6 +1228,8 @@ int afu_sync(afu_t	*p_afu,
 	__u32 *p_u32;
 	struct afu_cmd *p_cmd = &p_afu->cmd[AFU_SYNC_INDEX];
 
+        cflash_info("in %s p_afu %p p_cmd %p\n", __func__, p_afu, p_cmd);
+
 	memset(&p_cmd->rcb.cdb[0], 0, sizeof(p_cmd->rcb.cdb));
 
 	p_cmd->rcb.req_flags = SISL_REQ_FLAGS_AFU_CMD;
@@ -1204,6 +1253,7 @@ int afu_sync(afu_t	*p_afu,
 	    (p_cmd->sa.host_use_b[0] & B_ERROR)) /* B_ERROR is set on timeout */
 		return -1;
 
+        cflash_info("in %s returning\n", __func__);
 	return 0;
 }
 
@@ -1243,6 +1293,8 @@ int cflash_vlun_resize(struct scsi_device *sdev, void __user *arg)
 	rht_info_t *p_rht_info;
 	sisl_rht_entry_t *p_rht_entry;
 
+	int rc = 0;
+
 	cflash_info("%s, context=0x%llx res_hndl=0x%llx, size=0x%llx\n",
 		    __func__, parg->context_id,
 		    parg->rsrc_handle,
@@ -1252,15 +1304,25 @@ int cflash_vlun_resize(struct scsi_device *sdev, void __user *arg)
 		p_ctx_info = &p_afu->ctx_info[parg->context_id];
 		p_rht_info = p_ctx_info->p_rht_info;
 	} else {
-		return -EINVAL;
+		cflash_err("in %s context id too large 0x%llx\n",  __func__,
+			   parg->context_id);
+		rc = -EINVAL;
+		goto out;
 	}
 
 	if (res_hndl < MAX_RHT_PER_CONTEXT) {
 		p_rht_entry = &p_rht_info->rht_start[res_hndl];
 
-		if (p_rht_entry->nmask == 0) /* not open */
-			return -EINVAL;
+		if (p_rht_entry->nmask == 0) { /* not open */
+			cflash_err("in %s not open rhti %p rhte %p\n",  
+				   __func__, p_rht_info, p_rht_entry);
+			rc = -EINVAL;
+			goto out;
+		}
 
+		cflash_info("in %s new_size %lld lext_cnt %d rhte %p\n", 
+			    __func__, new_size, p_rht_entry->lxt_cnt, 
+			    p_rht_entry);
 		if (new_size > p_rht_entry->lxt_cnt) {
 			grow_lxt(p_afu,
 				 parg->context_id,
@@ -1277,13 +1339,17 @@ int cflash_vlun_resize(struct scsi_device *sdev, void __user *arg)
 				   p_act_new_size);
 		} else {
 			*p_act_new_size = new_size;
-			return 0;
 		}
 	} else {
-		return -EINVAL;
+		cflash_err("in %s res_hndl %d invalid\n",  __func__, 
+			   res_hndl);
+		rc = -EINVAL;
 	}
 
-	return 0;
+out:
+        cflash_info("in %s resized to %lld returning rc=%d\n", __func__, 
+		    *p_act_new_size, rc);
+	return rc;
 }
 
 int grow_lxt(afu_t		*p_afu,
@@ -1293,7 +1359,7 @@ int grow_lxt(afu_t		*p_afu,
 	     __u64		 delta,
 	     __u64		*p_act_new_size)
 {
-	sisl_lxt_entry_t *p_lxt, *p_lxt_old;
+	sisl_lxt_entry_t *p_lxt = NULL, *p_lxt_old = NULL;
 	unsigned int av_size;
 	unsigned int ngrps, ngrps_old;
 	aun_t aun; /* chunk# allocated by block allocator */
@@ -1304,8 +1370,8 @@ int grow_lxt(afu_t		*p_afu,
 	 * LXT array. This is done up front under the mutex which must not be
 	 * released until after allocation is complete. 
 	 */
-	mutex_lock(&p_afu->p_blka->mutex);
-	av_size = ba_space(&p_afu->p_blka->ba_lun);
+	mutex_lock(&p_afu->p_blka[0]->mutex);
+	av_size = ba_space(&p_afu->p_blka[0]->ba_lun);
 	if (av_size < delta)
 		delta = av_size;
 
@@ -1318,7 +1384,7 @@ int grow_lxt(afu_t		*p_afu,
 		p_lxt = kzalloc((sizeof(*p_lxt) * LXT_GROUP_SIZE * ngrps),
 				GFP_KERNEL);
 		if (!p_lxt) {
-			mutex_unlock(&p_afu->p_blka->mutex);
+			mutex_unlock(&p_afu->p_blka[0]->mutex);
 			return -ENOMEM;
 		}
 
@@ -1332,28 +1398,32 @@ int grow_lxt(afu_t		*p_afu,
 	/* nothing can fail from now on */
 	*p_act_new_size = p_rht_entry->lxt_cnt + delta;
 
+        cflash_info("in %s new %lld p_rht %p delta %lld\n", __func__, 
+		    *p_act_new_size, p_rht_entry, delta);
+
 	/* add new entries to the end */
 	for (i = p_rht_entry->lxt_cnt; i < *p_act_new_size; i++) {
+		cflash_info("in %s i %d new %lld\n", __func__, 
+		    i, *p_act_new_size);
 		/*
 		 * Due to the earlier check of available space, ba_alloc
 		 * cannot fail here. If it did due to internal error,
 		 * leave a rlba_base of -1u which will likely be a
 		 * invalid LUN (too large).
 		 */
-		aun = ba_alloc(&p_afu->p_blka->ba_lun);
-		if ((aun == (aun_t)-1) || (aun >= p_afu->p_blka->nchunk)) {
+		aun = ba_alloc(&p_afu->p_blka[0]->ba_lun);
+		if ((aun == (aun_t)-1) || (aun >= p_afu->p_blka[0]->nchunk)) {
 			cflash_err("ba_alloc error: allocated chunk# %lX, "
-				   "max %llX", aun, p_afu->p_blka->nchunk - 1);
+				   "max %llX", aun, p_afu->p_blka[0]->nchunk - 1);
 		}
 
 		/* lun_indx = 0, select both ports, use r/w perms from RHT */
 		p_lxt[i].rlba_base = ((aun << MC_CHUNK_SHIFT) | 0x33);
 	}
 
-	mutex_unlock(&p_afu->p_blka->mutex);
+	mutex_unlock(&p_afu->p_blka[0]->mutex);
 
 	asm volatile ( "lwsync" : : );  /* make lxt updates visible */
-
 	/*
 	 * XXX - Do we really need 3 separate syncs here? The first one
 	 * for the lxt visibility updates make sense, as does having one
@@ -1378,6 +1448,7 @@ int grow_lxt(afu_t		*p_afu,
 
 	/* XXX - what is the significance of this comment? */
 	/* sync up AFU on each context in the doubly linked list */
+        cflash_info("in %s returning\n", __func__);
 	return 0;
 }
 
@@ -1429,19 +1500,19 @@ int shrink_lxt(afu_t		*p_afu,
 	afu_sync(p_afu, ctx_hndl_u, res_hndl_u, AFU_HW_SYNC);
 
 	/* free LBAs allocated to freed chunks */
-	mutex_lock(&p_afu->p_blka->mutex);
+	mutex_lock(&p_afu->p_blka[0]->mutex);
 	for (i = delta - 1; i >= 0; i--) {
 		aun = (p_lxt_old[*p_act_new_size + i].rlba_base >> MC_CHUNK_SHIFT);
-		ba_free(&p_afu->p_blka->ba_lun, aun);
+		ba_free(&p_afu->p_blka[0]->ba_lun, aun);
 	}
-	mutex_unlock(&p_afu->p_blka->mutex);
+	mutex_unlock(&p_afu->p_blka[0]->mutex);
 
 	/* free old lxt if reallocated */
 	if (p_lxt != p_lxt_old)
 		kfree(p_lxt_old);
-
 	/* XXX - what is the significance of this comment? */
 	/* sync up AFU on each context in the doubly linked list!!! */
+        cflash_info("in %s returning\n", __func__);
 	return 0;
 }
 
@@ -1490,23 +1561,23 @@ int clone_lxt(afu_t		*p_afu,
 		       (sizeof(*p_lxt) * p_rht_entry_src->lxt_cnt));
 
 		/* clone the LBAs in block allocator via ref_cnt */
-		mutex_lock(&p_afu->p_blka->mutex);
+		mutex_lock(&p_afu->p_blka[0]->mutex);
 		for (i = 0; i < p_rht_entry_src->lxt_cnt; i++) {
 			aun = (p_lxt[i].rlba_base >> MC_CHUNK_SHIFT);
-			if (ba_clone(&p_afu->p_blka->ba_lun, aun) == -1) {
+			if (ba_clone(&p_afu->p_blka[0]->ba_lun, aun) == -1) {
 				/* free the clones already made */
 				for (j = 0; j < i; j++) {
 					aun = (p_lxt[j].rlba_base >>
 					       MC_CHUNK_SHIFT);
-					ba_free(&p_afu->p_blka->ba_lun, aun);
+					ba_free(&p_afu->p_blka[0]->ba_lun, aun);
 				}
 
-				mutex_unlock(&p_afu->p_blka->mutex);
+				mutex_unlock(&p_afu->p_blka[0]->mutex);
 				kfree(p_lxt);
 				return -EIO;
 			}
 		}
-		mutex_unlock(&p_afu->p_blka->mutex);
+		mutex_unlock(&p_afu->p_blka[0]->mutex);
 	} else {
 		p_lxt = NULL;
 	}
@@ -1533,6 +1604,7 @@ int clone_lxt(afu_t		*p_afu,
 
 	/* XXX - what is the significance of this comment? */
 	/* sync up AFU on each context in the doubly linked list */
+        cflash_info("in %s returning\n", __func__);
 	return 0;
 }
 
@@ -1593,6 +1665,7 @@ int do_mc_xlate_lba(afu_t        *p_afu,
 		return -EINVAL;
 	}
 
+        cflash_info("in %s returning\n", __func__);
 	return 0;
 }
 
@@ -1698,6 +1771,7 @@ int do_mc_clone(afu_t        *p_afu,
 		}
 	}
 
+        cflash_info("in %s returning\n", __func__);
 	return 0;
 }
 
@@ -1760,6 +1834,7 @@ int do_mc_dup(afu_t		*p_afu,
 		return -EACCES; /* return Permission denied */
 
 	/* XXX - what does this mean? */
+        cflash_info("in %s returning\n", __func__);
 	return -EIO; // todo later!!!
 }
 
@@ -1802,7 +1877,7 @@ int do_mc_stat(afu_t		*p_afu,
 		if (p_rht_entry->nmask == 0)
 			return -EINVAL;
 
-		p_mc_stat->blk_len = p_afu->p_blka->ba_lun.lba_size;
+		p_mc_stat->blk_len = p_afu->p_blka[0]->ba_lun.lba_size;
 		p_mc_stat->nmask = p_rht_entry->nmask;
 		p_mc_stat->size = p_rht_entry->lxt_cnt;
 		p_mc_stat->flags = SISL_RHT_PERM(p_rht_entry->fp);
@@ -1810,6 +1885,58 @@ int do_mc_stat(afu_t		*p_afu,
 		return -EINVAL;
 	}
 
+        cflash_info("in %s returning\n", __func__);
+	return 0;
+}
+
+int read_cap16(afu_t *p_afu, lun_info_t *p_lun_info, __u32 port_sel) { 
+
+	__u32 *p_u32; 
+	__u64 *p_u64; 
+
+	struct afu_cmd *p_cmd = &p_afu->cmd[AFU_INIT_INDEX]; 
+	
+	memset(&p_afu->buf[0], 0, sizeof(p_afu->buf)); 
+	memset(&p_cmd->rcb.cdb[0], 0, sizeof(p_cmd->rcb.cdb)); 
+	
+	p_cmd->rcb.req_flags = (SISL_REQ_FLAGS_PORT_LUN_ID | 
+				SISL_REQ_FLAGS_SUP_UNDERRUN | 
+				SISL_REQ_FLAGS_HOST_READ); 
+	
+	p_cmd->rcb.port_sel = port_sel; 
+	p_cmd->rcb.lun_id = p_lun_info->lun_id; 
+	p_cmd->rcb.data_len = sizeof(p_afu->buf); 
+	p_cmd->rcb.data_ea = (__u64) &p_afu->buf[0]; 
+	p_cmd->rcb.timeout = MC_DISCOVERY_TIMEOUT; 
+	
+	p_cmd->rcb.cdb[0] = 0x9E; /* read cap(16) */ 
+	p_cmd->rcb.cdb[1] = 0x10; /* service action */ 
+	p_u32 = (__u32*)&p_cmd->rcb.cdb[10]; 
+	write_32(p_u32, sizeof(p_afu->buf)); /* allocation length */ 
+	p_cmd->sa.host_use_b[1] = 0; /* reset retry cnt */ 
+	
+	cflash_info("in %s: sending cmd(0x%x) with RCB EA=%p data EA=0x%llx\n", 
+		    __func__, p_cmd->rcb.cdb[0], &p_cmd->rcb, 
+		    p_cmd->rcb.data_ea); 
+	
+	do { 
+		cflash_send_cmd(p_afu, p_cmd); 
+		cflash_wait_resp(p_afu, p_cmd); 
+	} while (check_status(&p_cmd->sa)); 
+	
+	if (p_cmd->sa.host_use_b[0] & B_ERROR) { 
+		return -1; 
+	} 
+	
+	// read cap success 
+	p_u64 = (__u64*)&p_afu->buf[0]; 
+	p_lun_info->li.max_lba = read_64(p_u64); 
+	
+	p_u32 = (__u32*)&p_afu->buf[8]; 
+	p_lun_info->li.blk_len = read_32(p_u32); 
+
+        cflash_info("in %s maxlba=%lld blklen=%d\n", __func__,
+		    p_lun_info->li.max_lba, p_lun_info->li.blk_len);
 	return 0;
 }
 
@@ -1822,8 +1949,9 @@ int find_lun(cflash_t *p_cflash, __u32 port_sel)
 	afu_t      *p_afu     = &p_cflash->p_afu_a->afu;
 	struct afu_cmd *p_cmd = &p_afu->cmd[AFU_INIT_INDEX];
 	__u64 lunidarray[CFLASH_MAX_NUM_LUNS_PER_TARGET];
-	int i=0;
-	int j=0;
+	int i = 0;
+	int j = 0;
+	int rc = 0;
 
 	memset(&p_afu->buf[0], 0, sizeof(p_afu->buf));
 	memset(&p_cmd->rcb.cdb[0], 0, sizeof(p_cmd->rcb.cdb));
@@ -1883,10 +2011,22 @@ int find_lun(cflash_t *p_cflash, __u32 port_sel)
 
 		 // record the lun_id to be used in discovery later
 		 p_afu->lun_info[j].lun_id = lunidarray[j];
+
+		 read_cap16(p_afu, &p_afu->lun_info[j], port_sel); 
+		 
+		 rc = cflash_init_ba(p_cflash, j); 
+		 if (rc) { 
+			 cflash_err("call to cflash_init_ba failed rc=%d!\n", 
+				    rc); 
+			 goto out; 
+		 }
 	}
 
-	return 0;
+out:
+        cflash_info("in %s returning rc %d\n", __func__, rc);
+	return rc;
 }
+
 
 void cflash_send_scsi(afu_t *p_afu, struct scsi_cmnd *scp)
 {
