@@ -77,6 +77,12 @@ void cxl_pci_reset_secondary_bus(struct pci_dev *dev);
 struct cxl_afu *cxl_pci_to_afu(struct pci_dev *dev, unsigned int *cfg_record);
 
 /*
+ * Get the physical device which the AFU is attached.  We return a device here
+ * not a pci_dev.
+ */
+struct device *cxl_get_phys_dev(struct pci_dev *dev);
+
+/*
  * Initalise a context from a AFU PCI device
  * Should this take a pci_dev or cxl_afu?
  * FIXME: should we specify some context info here like the memory
