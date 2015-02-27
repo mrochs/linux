@@ -52,9 +52,32 @@ static char read_buf[BUFFER_SIZE] __aligned(128);
 #define MEMCPY_QUEUE_SIZE (MEMCPY_QUEUE_ENTRIES * sizeof(struct memcpy_work_element))
 static struct memcpy_work_element cxl_memcpy_queue[MEMCPY_QUEUE_ENTRIES] __aligned(PAGE_SIZE);
 
+static void cxl_memcpy_vpd_info(struct pci_dev *dev)
+{
+	struct device *phys_dev;
+	struct pci_dev *phys_pdev;
+	unsigned long buf;
+	int i;
+
+	/* Let's print out some VPD info from the physical device */
+	phys_dev = cxl_get_phys_dev(dev);
+	if (!dev_is_pci(phys_dev)) { /* make sure it's pci */
+		printk("not a pci dev\n");
+		return;
+	}
+	phys_pdev = to_pci_dev(phys_dev);
+
+	for (i = 0; i < 0x300; i += sizeof(buf)) {
+		pci_read_vpd(phys_pdev, i, sizeof(buf), &buf);
+		printk("%x: %016lx\n", i, buf);
+	}
+}
+
+
 static int cxl_memcpy_probe(struct pci_dev *dev, const struct pci_device_id *id)
 {
 	struct cxl_afu *afu;
+
 	int minor;
 
 	afu = cxl_pci_to_afu(dev, NULL);
@@ -68,6 +91,9 @@ static int cxl_memcpy_probe(struct pci_dev *dev, const struct pci_device_id *id)
 	       MAJOR(dev_num));
 	sema_init(&sem, 1);
 	memcpy_afu_dev = dev;
+
+	cxl_memcpy_vpd_info(dev);
+
 	return 0;
 }
 
