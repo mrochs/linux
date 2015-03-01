@@ -240,6 +240,21 @@ enum undo_level {
     UNDO_AFU_ALL /* must be last */
 };
 
+typedef struct afu_cmd { 
+	sisl_ioarcb_t rcb;  /* IOARCB (cache line aligned) */
+	sisl_ioasa_t sa;    /* IOASA must follow IOARCB */
+	spinlock_t slock;
+	struct mutex cmd_mutex; /* XXX - future remove */
+	wait_queue_head_t cv;  /* XXX - future remove; for signalling responses */
+	struct timer_list timer;
+} afu_cmd_t;
+
+typedef struct afu_cmd_all {
+	afu_cmd_t acmd;
+        __u8    align_pad[CL_SIZE - (sizeof(afu_cmd_t) & CL_SIZE_MASK)];
+} afu_cmd_all_t;
+
+
 typedef struct afu
 {
     /* Stuff requiring alignment go first. */
@@ -251,33 +266,7 @@ typedef struct afu
      */
     char buf[0x1000];    /* 4K AFU data buffer (page aligned) */
     __u64 rrq_entry[NUM_RRQ_ENTRY]; /* 128B RRQ (page aligned) */
-    struct afu_cmd {
-	sisl_ioarcb_t rcb;  /* IOARCB (cache line aligned) */
-	sisl_ioasa_t sa;    /* IOASA must follow IOARCB */
-#ifdef __KERNEL__
-	spinlock_t slock;
-	struct mutex cmd_mutex; /* XXX - future remove */
-	wait_queue_head_t cv;  /*  XXX - future remove; for signalling responses */
-#else
-        pthread_mutex_t mutex;
-	pthread_cond_t cv;  /* for signalling responses */
-#endif /* __KERNEL__ */
-	struct timer_list timer;
-
-	__u8 cl_pad[CL_SIZE - 
-		    ((sizeof(sisl_ioarcb_t) +
-		      sizeof(sisl_ioasa_t) +
-#ifdef __KERNEL__
-		      sizeof(spinlock_t) +
-		      sizeof(struct mutex) + /* XXX - future remove */
-		      sizeof(wait_queue_head_t) + /* XXX - future remove */
-#else
-                      sizeof(pthread_mutex_t) +
-                      sizeof(pthread_cond_t) +
-#endif /* __KERNEL__ */
-		      sizeof(struct timer_list)) & CL_SIZE_MASK)];
-
-    } cmd[NUM_CMDS];
+    afu_cmd_all_t cmd[NUM_CMDS];
 
 #define AFU_INIT_INDEX   0  // first cmd is used in init/discovery,
                             // free for other use thereafter

@@ -178,21 +178,18 @@ static int cflash_eh_host_reset_handler(struct scsi_cmnd *cmd)
  **/
 static int cflash_slave_alloc(struct scsi_device *sdev)
 {
-        int rc = -ENXIO;
+	lun_info_t *p_luninfo;
 	struct Scsi_Host *shost = sdev->host;
 	cflash_t *p_cflash = shost_priv(shost);
+        afu_t      *p_afu     = &p_cflash->p_afu_a->afu;
+        int rc = 0;
 
-	/* XXX: Figure out why this symbol is not available
-	struct fc_rport *rport = starget_to_rport(scsi_target(sdev));
+	p_luninfo = &p_afu->lun_info[p_cflash->task_set];
+	sdev->hostdata = p_luninfo;
+	p_cflash->task_set++;
 
-	if (!rport || fc_remote_port_chkready(rport)) 
-		rc = -ENXIO;
-	else
-	*/
-		rc = 0;
-
-	sdev->hostdata = (void *)(unsigned long)p_cflash->task_set++;
-        cflash_info("in %s returning rc=%d\n", __func__, rc);
+        cflash_info("in %s returning task_set %d luninfo %p sdev %p\n", 
+		    __func__, p_cflash->task_set, p_luninfo, sdev);
 	return rc;
 }
 
@@ -231,8 +228,7 @@ static int cflash_target_alloc(struct scsi_target *starget)
 	struct Scsi_Host *shost = dev_to_shost(starget->dev.parent);
 	cflash_t *p_cflash = shost_priv(shost);
 
-	starget->hostdata = (void *)(unsigned long)p_cflash->task_set++;
-        cflash_info("in %s returning rc=%d\n", __func__, rc);
+        cflash_info("in %s returning rc=%d ts%d\n", __func__, rc, p_cflash->task_set);
         return 0;
 }
 
@@ -836,6 +832,8 @@ static int cflash_probe(struct pci_dev *pdev,
 	}
 
 	p_cflash->p_dev = pdev;
+	p_cflash->last_lun_index = 0;
+	p_cflash->task_set = 0;
 	p_cflash->p_dev_id = (struct pci_device_id *)dev_id;
 	pci_set_drvdata(pdev, p_cflash);
 

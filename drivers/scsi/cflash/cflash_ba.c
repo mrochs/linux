@@ -165,9 +165,11 @@ static int find_free_range(uint32_t low,
                 if (lun_info->lun_alloc_map[i] != 0) {
                         bit_pos = find_free_bit(lun_info->lun_alloc_map[i]);
 
+#if 0
                         cflash_info("block_alloc: Found free bit %lX in lun "
 				    "map entry %llX at bitmap index = %X\n",
                                     bit_pos, lun_info->lun_alloc_map[i], i);
+#endif
 
                         *bit_word = i;
                         lun_info->free_aun_cnt--;
@@ -186,9 +188,11 @@ aun_t ba_alloc(ba_lun_t *ba_lun)
 
 	lun_info = (lun_info_t *)ba_lun->ba_lun_handle;
 
+#if 0
 	cflash_info("block_alloc: Received block allocation request: "
 		    "lun_id = %llX, free_aun_cnt = %llX\n", 
 		    ba_lun->lun_id, lun_info->free_aun_cnt);
+#endif
 
 	if (lun_info->free_aun_cnt == 0) {
 		cflash_err("block_alloc: No space left on LUN: lun_id = %llX\n",
@@ -220,10 +224,12 @@ aun_t ba_alloc(ba_lun_t *ba_lun)
 	else
 		lun_info->free_curr_idx = bit_word;
 
+#if 0
 	cflash_info("block_alloc: Allocating AU number %lX, on lun_id %llX, "
 		    "free_aun_cnt = %llX\n",
 		((bit_word * 64) + bit_pos), ba_lun->lun_id, 
 		lun_info->free_aun_cnt);
+#endif
 
 	return (aun_t)((bit_word * 64) + bit_pos);
 }

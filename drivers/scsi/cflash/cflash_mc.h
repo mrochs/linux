@@ -68,6 +68,7 @@ typedef struct {
 	int task_set;
 	struct pci_pool *cflash_cmd_pool;
 
+	int last_lun_index;
 } cflash_t;
 
 /* The write_nn or read_nn routines can be used to do byte reversed MMIO
