@@ -182,15 +182,27 @@ int cxl_attach_fd(struct cxl_context *ctx, struct cxl_ioctl_start_work *work)
 		goto err;
 	}
 
-	rc = cxl_start_context(ctx, work->work_element_descriptor, current);
-	if (rc < 0)
+	/* code taken from afu_ioctl_start_work */
+	if (!(work->flags & CXL_START_WORK_NUM_IRQS))
+		work->num_interrupts = ctx->afu->pp_irqs;
+	else if ((work->num_interrupts < ctx->afu->pp_irqs) ||
+		 (work->num_interrupts > ctx->afu->irqs_max)) {
+		rc = -EINVAL;
+		goto err1;
+	}
+	if ((rc = afu_register_irqs(ctx, work->num_interrupts)))
 		goto err1;
 
+	rc = cxl_start_context(ctx, work->work_element_descriptor, current);
+	if (rc < 0)
+		goto err2;
 
 	fd_install(fd, file);
 	/* once we do fd_install we are not allowed to fail */
 	return fd;
 
+err2:
+	afu_release_irqs(ctx, ctx);
 err1:
 	fput(file);
 err:
