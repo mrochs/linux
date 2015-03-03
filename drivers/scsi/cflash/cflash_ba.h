@@ -37,6 +37,7 @@ typedef struct ba_lun {
 } ba_lun_t;
 
 int ba_init(ba_lun_t *ba_lun);
+void ba_terminate(ba_lun_t *ba_lun);
 aun_t ba_alloc(ba_lun_t *ba_lun);
 int ba_free(ba_lun_t *ba_lun, aun_t to_free);
 int ba_clone(ba_lun_t *ba_lun, aun_t to_clone);

@@ -144,6 +144,19 @@ int ba_init(ba_lun_t *ba_lun)
 	return 0;
 }
 
+void ba_terminate(ba_lun_t *ba_lun)
+{
+	lun_info_t *p_lun_info = (lun_info_t *)ba_lun->ba_lun_handle;
+
+	if (p_lun_info) {
+		if (p_lun_info->aun_clone_map)
+			kfree(p_lun_info->aun_clone_map);
+		if (p_lun_info->lun_alloc_map)
+			kfree(p_lun_info->lun_alloc_map);
+		kfree(p_lun_info);
+		ba_lun->ba_lun_handle = NULL;
+	}
+}
 
 static int find_free_bit(uint64_t lun_map_entry)
 {

@@ -1099,7 +1099,7 @@ err1:
 
 void cflash_term_afu(cflash_t *p_cflash)
 {
-	int	 nbytes;
+	int	 i, nbytes;
 	afu_t	*p_afu = &p_cflash->p_afu_a->afu;
 
 	cflash_stop_context(p_cflash);
@@ -1117,8 +1117,13 @@ void cflash_term_afu(cflash_t *p_cflash)
 	cxl_release_context(p_cflash->p_ctx);
 	p_cflash->p_ctx = NULL;
 
-	if (p_afu->p_blka[0])
-		kfree(p_afu->p_blka[0]);
+	for (i = 0; i < CFLASH_MAX_LUNS; i++) {
+		if (p_afu->p_blka[i]) {
+			ba_terminate(&p_afu->p_blka[i]->ba_lun);
+			kfree(p_afu->p_blka[i]);
+			p_afu->p_blka[i] = NULL;
+		}
+	}
 
 	nbytes = sizeof(struct afu_alloc) * CFLASH_NAFU;
         free_pages((unsigned long)p_cflash->p_afu_a, get_order(nbytes));
@@ -1322,8 +1327,9 @@ int afu_sync(afu_t	*p_afu,
  */
 int cflash_vlun_resize(struct scsi_device *sdev, void __user *arg)
 {
-	cflash_t *p_cflash = (cflash_t *)sdev->host->hostdata;
-	afu_t    *p_afu    = &p_cflash->p_afu_a->afu;
+	cflash_t	*p_cflash = (cflash_t *)sdev->host->hostdata;
+	lun_info_t	*p_lun_info = sdev->hostdata;
+	afu_t		*p_afu = &p_cflash->p_afu_a->afu;
 
 	struct dk_capi_resize *parg  = (struct dk_capi_resize *)arg;
 	__u64         new_size       = parg->req_size;
@@ -1334,7 +1340,8 @@ int cflash_vlun_resize(struct scsi_device *sdev, void __user *arg)
 	rht_info_t *p_rht_info;
 	sisl_rht_entry_t *p_rht_entry;
 
-	int rc = 0;
+	int rc = 0,
+	    lun_index = p_lun_info - p_afu->lun_info;
 
 	cflash_info("%s, context=0x%llx res_hndl=0x%llx, size=0x%llx\n",
 		    __func__, parg->context_id,
@@ -1363,6 +1370,7 @@ int cflash_vlun_resize(struct scsi_device *sdev, void __user *arg)
 
 		if (new_size > p_rht_entry->lxt_cnt) {
 			grow_lxt(p_afu,
+				 lun_index,
 				 parg->context_id,
 				 res_hndl,
 				 p_rht_entry,
@@ -1370,6 +1378,7 @@ int cflash_vlun_resize(struct scsi_device *sdev, void __user *arg)
 				 p_act_new_size);
 		} else if (new_size < p_rht_entry->lxt_cnt) {
 			shrink_lxt(p_afu,
+				   lun_index,
 				   parg->context_id,
 				   res_hndl,
 				   p_rht_entry,
@@ -1391,6 +1400,7 @@ out:
 }
 
 int grow_lxt(afu_t		*p_afu,
+	     int		 lun_index,
 	     ctx_hndl_t		 ctx_hndl_u,
 	     res_hndl_t		 res_hndl_u,
 	     sisl_rht_entry_t	*p_rht_entry,
@@ -1398,6 +1408,7 @@ int grow_lxt(afu_t		*p_afu,
 	     __u64		*p_act_new_size)
 {
 	sisl_lxt_entry_t *p_lxt = NULL, *p_lxt_old = NULL;
+	blka_t *p_blka = p_afu->p_blka[lun_index];
 	unsigned int av_size;
 	unsigned int ngrps, ngrps_old;
 	aun_t aun; /* chunk# allocated by block allocator */
@@ -1408,8 +1419,8 @@ int grow_lxt(afu_t		*p_afu,
 	 * LXT array. This is done up front under the mutex which must not be
 	 * released until after allocation is complete. 
 	 */
-	mutex_lock(&p_afu->p_blka[0]->mutex);
-	av_size = ba_space(&p_afu->p_blka[0]->ba_lun);
+	mutex_lock(&p_blka->mutex);
+	av_size = ba_space(&p_blka->ba_lun);
 	if (av_size < delta)
 		delta = av_size;
 
@@ -1422,7 +1433,7 @@ int grow_lxt(afu_t		*p_afu,
 		p_lxt = kzalloc((sizeof(*p_lxt) * LXT_GROUP_SIZE * ngrps),
 				GFP_KERNEL);
 		if (!p_lxt) {
-			mutex_unlock(&p_afu->p_blka[0]->mutex);
+			mutex_unlock(&p_blka->mutex);
 			return -ENOMEM;
 		}
 
@@ -1444,18 +1455,18 @@ int grow_lxt(afu_t		*p_afu,
 		 * leave a rlba_base of -1u which will likely be a
 		 * invalid LUN (too large).
 		 */
-		aun = ba_alloc(&p_afu->p_blka[0]->ba_lun);
-		if ((aun == (aun_t)-1) || (aun >= p_afu->p_blka[0]->nchunk)) {
+		aun = ba_alloc(&p_blka->ba_lun);
+		if ((aun == (aun_t)-1) || (aun >= p_blka->nchunk)) {
 			cflash_err("ba_alloc error: allocated chunk# %lX, "
 				   "max %llX", aun, 
-				   p_afu->p_blka[0]->nchunk - 1);
+				   p_blka->nchunk - 1);
 		}
 
 		/* lun_indx = 0, select both ports, use r/w perms from RHT */
 		p_lxt[i].rlba_base = ((aun << MC_CHUNK_SHIFT) | 0x33);
 	}
 
-	mutex_unlock(&p_afu->p_blka[0]->mutex);
+	mutex_unlock(&p_blka->mutex);
 
 	asm volatile ( "lwsync" : : );  /* make lxt updates visible */
 	/*
@@ -1487,6 +1498,7 @@ int grow_lxt(afu_t		*p_afu,
 }
 
 int shrink_lxt(afu_t		*p_afu,
+	       int		 lun_index,
 	       ctx_hndl_t	 ctx_hndl_u,
 	       res_hndl_t	 res_hndl_u,
 	       sisl_rht_entry_t *p_rht_entry,
@@ -1494,6 +1506,7 @@ int shrink_lxt(afu_t		*p_afu,
 	       __u64		*p_act_new_size)
 {
 	sisl_lxt_entry_t *p_lxt, *p_lxt_old;
+	blka_t *p_blka = p_afu->p_blka[lun_index];
 	unsigned int ngrps, ngrps_old;
 	aun_t aun; /* chunk# allocated by block allocator */
 	int i;
@@ -1534,13 +1547,13 @@ int shrink_lxt(afu_t		*p_afu,
 	afu_sync(p_afu, ctx_hndl_u, res_hndl_u, AFU_HW_SYNC);
 
 	/* free LBAs allocated to freed chunks */
-	mutex_lock(&p_afu->p_blka[0]->mutex);
+	mutex_lock(&p_blka->mutex);
 	for (i = delta - 1; i >= 0; i--) {
 		aun = (p_lxt_old[*p_act_new_size + i].rlba_base >> 
 		       MC_CHUNK_SHIFT);
-		ba_free(&p_afu->p_blka[0]->ba_lun, aun);
+		ba_free(&p_blka->ba_lun, aun);
 	}
-	mutex_unlock(&p_afu->p_blka[0]->mutex);
+	mutex_unlock(&p_blka->mutex);
 
 	/* free old lxt if reallocated */
 	if (p_lxt != p_lxt_old)
@@ -1572,12 +1585,14 @@ int shrink_lxt(afu_t		*p_afu,
  * NOTES:
  */
 int clone_lxt(afu_t		*p_afu,
+	      int		 lun_index,
 	      ctx_hndl_t	 ctx_hndl_u,
 	      res_hndl_t	 res_hndl_u,
 	      sisl_rht_entry_t	*p_rht_entry,
 	      sisl_rht_entry_t	*p_rht_entry_src)
 {
 	sisl_lxt_entry_t *p_lxt;
+	blka_t *p_blka = p_afu->p_blka[lun_index];
 	unsigned int ngrps;
 	aun_t aun; /* chunk# allocated by block allocator */
 	int i, j;
@@ -1596,23 +1611,23 @@ int clone_lxt(afu_t		*p_afu,
 		       (sizeof(*p_lxt) * p_rht_entry_src->lxt_cnt));
 
 		/* clone the LBAs in block allocator via ref_cnt */
-		mutex_lock(&p_afu->p_blka[0]->mutex);
+		mutex_lock(&p_blka->mutex);
 		for (i = 0; i < p_rht_entry_src->lxt_cnt; i++) {
 			aun = (p_lxt[i].rlba_base >> MC_CHUNK_SHIFT);
-			if (ba_clone(&p_afu->p_blka[0]->ba_lun, aun) == -1) {
+			if (ba_clone(&p_blka->ba_lun, aun) == -1) {
 				/* free the clones already made */
 				for (j = 0; j < i; j++) {
 					aun = (p_lxt[j].rlba_base >>
 					       MC_CHUNK_SHIFT);
-					ba_free(&p_afu->p_blka[0]->ba_lun, aun);
+					ba_free(&p_blka->ba_lun, aun);
 				}
 
-				mutex_unlock(&p_afu->p_blka[0]->mutex);
+				mutex_unlock(&p_blka->mutex);
 				kfree(p_lxt);
 				return -EIO;
 			}
 		}
-		mutex_unlock(&p_afu->p_blka[0]->mutex);
+		mutex_unlock(&p_blka->mutex);
 	} else {
 		p_lxt = NULL;
 	}
@@ -1742,7 +1757,8 @@ int do_mc_clone(afu_t        *p_afu,
 	rht_info_t *p_rht_info_src;
 	__u64 reg;
 	int i, j;
-	int rc;
+	int rc,
+	    lun_index = 0; /* XXX - fix when routine is transitioned */
 
 	cflash_info("%s, client_pid=%d client_fd=%d ctx_hdl=%d\n",
 		    __func__, p_conn_info->client_pid,
@@ -1791,7 +1807,7 @@ int do_mc_clone(afu_t        *p_afu,
 			SISL_RHT_FP_CLONE(p_rht_info_src->rht_start[i].fp,
 					  flags & 0x3);
 
-		rc = clone_lxt(p_afu, p_conn_info->ctx_hndl, i,
+		rc = clone_lxt(p_afu, lun_index, p_conn_info->ctx_hndl, i,
 			       &p_rht_info->rht_start[i],
 			       &p_rht_info_src->rht_start[i]);
 
@@ -1899,6 +1915,9 @@ int do_mc_stat(afu_t		*p_afu,
 	ctx_info_t *p_ctx_info = p_conn_info->p_ctx_info;
 	rht_info_t *p_rht_info = p_ctx_info->p_rht_info;
 	sisl_rht_entry_t *p_rht_entry;
+	int lun_index = 0;
+	blka_t *p_blka = p_afu->p_blka[lun_index]; /* TODO - properly derive
+						      lun_index */
 
 	cflash_info("%s, client_pid=%d client_fd=%d ctx_hdl=%d\n",
 		__func__, p_conn_info->client_pid,
@@ -1912,7 +1931,7 @@ int do_mc_stat(afu_t		*p_afu,
 		if (p_rht_entry->nmask == 0)
 			return -EINVAL;
 
-		p_mc_stat->blk_len = p_afu->p_blka[0]->ba_lun.lba_size;
+		p_mc_stat->blk_len = p_blka->ba_lun.lba_size;
 		p_mc_stat->nmask = p_rht_entry->nmask;
 		p_mc_stat->size = p_rht_entry->lxt_cnt;
 		p_mc_stat->flags = SISL_RHT_PERM(p_rht_entry->fp);

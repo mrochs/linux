@@ -330,11 +330,13 @@ typedef struct afu
 #endif /* !_AIX */
 #endif /* __KERNEL__ */
 
+#define CFLASH_MAX_LUNS	512
+
     /* LUN discovery: one lun_info per path */
-    lun_info_t             lun_info[512];
+    lun_info_t             lun_info[CFLASH_MAX_LUNS];
 
     /* shared block allocator with other AFUs */
-    blka_t             *p_blka[512];
+    blka_t             *p_blka[CFLASH_MAX_LUNS];
 
     /* per AFU threads */
 #ifndef __KERNEL__
@@ -434,6 +436,7 @@ int do_mc_notify(afu_t        *p_afu,
 		 mc_notify_t    *p_mc_notify);
 
 int grow_lxt(afu_t            *p_afu, 
+	     int              lun_index,
 	     ctx_hndl_t       ctx_hndl_u,
 	     res_hndl_t       res_hndl_u,
 	     sisl_rht_entry_t *p_rht_entry,
@@ -441,6 +444,7 @@ int grow_lxt(afu_t            *p_afu,
 	     __u64            *p_act_new_size);
 
 int shrink_lxt(afu_t            *p_afu, 
+	       int              lun_index,
 	       ctx_hndl_t       ctx_hndl_u,
 	       res_hndl_t       res_hndl_u,
 	       sisl_rht_entry_t *p_rht_entry,
@@ -448,6 +452,7 @@ int shrink_lxt(afu_t            *p_afu,
 	       __u64            *p_act_new_size);
 
 int clone_lxt(afu_t            *p_afu, 
+	      int              lun_index,
 	      ctx_hndl_t       ctx_hndl_u,
 	      res_hndl_t       res_hndl_u,
 	      sisl_rht_entry_t *p_rht_entry,
