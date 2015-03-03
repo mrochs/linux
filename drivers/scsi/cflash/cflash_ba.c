@@ -257,16 +257,18 @@ int ba_free(ba_lun_t *ba_lun, aun_t to_free)
 	lun_info = (lun_info_t *)ba_lun->ba_lun_handle;
 
 	if (validate_alloc(lun_info, to_free)) {
-		cflash_err("block_alloc: The AUN %lX is not allocated on lun_id %llX\n",
+		cflash_err("block_free: The AUN %lX is not allocated on lun_id %llX\n",
 			to_free, ba_lun->lun_id);
 		return -1;
 	}
 
-	cflash_info("block_alloc: Received a request to free AU %lX on lun_id %llX, free_aun_cnt = %llX\n",
+#if 0
+	cflash_info("block_free: Received a request to free AU %lX on lun_id %llX, free_aun_cnt = %llX\n",
 		to_free, ba_lun->lun_id, lun_info->free_aun_cnt);
+#endif
 
 	if (lun_info->aun_clone_map[to_free] > 0) {
-		cflash_info("block_alloc: AU %lX on lun_id %llX has been cloned. Clone count = %X\n",
+		cflash_info("block_free: AU %lX on lun_id %llX has been cloned. Clone count = %X\n",
 			to_free, ba_lun->lun_id, lun_info->aun_clone_map[to_free]);
 		lun_info->aun_clone_map[to_free]--;
 		return 0;
@@ -283,8 +285,10 @@ int ba_free(ba_lun_t *ba_lun, aun_t to_free)
 	else if (idx > lun_info->free_high_idx)
 		lun_info->free_high_idx = idx;
 
-	cflash_info("block_alloc: Successfully freed AU at bit_pos %X, bit map index %X on lun_id %llX, free_aun_cnt = %llX\n",
+#if 0
+	cflash_info("block_free: Successfully freed AU at bit_pos %X, bit map index %X on lun_id %llX, free_aun_cnt = %llX\n",
 		bit_pos, idx, ba_lun->lun_id, lun_info->free_aun_cnt);
+#endif
 	return 0;
 }
 

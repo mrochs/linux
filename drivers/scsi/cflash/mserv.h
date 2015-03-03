@@ -207,6 +207,8 @@ typedef struct lun_info
 	__u64       max_lba;   /* from read cap(16) */
 	__u32       blk_len;   /* from read cap(16) */
     } li;
+    int lfd;
+    struct cxl_ioctl_start_work work;
 
 #define LUN_INFO_VALID   0x01
 } lun_info_t;

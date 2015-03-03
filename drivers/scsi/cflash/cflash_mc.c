@@ -219,14 +219,19 @@ int cflash_disk_attach(struct scsi_device *sdev, void __user *arg)
 	 * userspace and can't be undone. No error paths after this as we 
 	 * can't free the fd safely.
 	 */ 
-	
-	fd = cxl_attach_fd(ctx, & p_cflash->p_afu_a->afu.work); 
+
+	p_lun_info->work.num_interrupts = 4;
+	p_lun_info->work.flags = CXL_START_WORK_NUM_IRQS;
+
+	fd = cxl_attach_fd(ctx, &(p_lun_info->work)); 
 	if (fd < 0) {
 		rc = -ENODEV;
 		cxl_release_context(ctx);
 		cflash_err("Could not attach file descriptor\n");
 		goto out; 
 	}
+
+	p_lun_info->lfd = fd;
 
 	parg->return_flags = 0;
 	parg->adap_fd = fd;
@@ -835,17 +840,39 @@ static void send_cmd_timeout(struct afu_cmd *p_cmd)
 	spin_unlock_irqrestore(&p_cmd->slock, lock_flags);
 }
 
+int cflash_read_vpd(cflash_t *p_cflash, __u64 wwpn[]) {
+
+	int   rc = 0;
+
+	cflash_info("in %s pci_dev %p\n", __func__, 
+		    p_cflash->parent_dev);
+#ifdef LATER
+	char buf[0x100];
+	rc = pci_read_vpd(p_cflash->parent_dev, 0, sizeof(buf), &buf);
+	if (rc <=0) {
+		cflash_err("could not read VPD rc %d\n", rc);
+		goto out;
+	}
+	hexdump ((void *)buf, 0x100, "vpd");
+
+out:
+        cflash_info("in %s returning rc=%d\n", __func__, rc);
+#endif
+        return rc;
+}
+
 int cflash_start_afu(cflash_t *p_cflash)
 {
 	afu_t                 *p_afu = &p_cflash->p_afu_a->afu;
 	char version[16];
 	__u64 wwpn[SURELOCK_NUM_FC_PORTS]; // wwpn of AFU ports
 
-
 	int   i  = 0;
 	int   rc = 0;
 	__u64 reg;
 	enum undo_level level = UNDO_NONE;
+
+	rc = cflash_read_vpd(p_cflash, &wwpn[0]);
 
 	/* XXX: Hardcoded for now, How do you figure out WWPN */
 	wwpn[0] =  0x2C00072800000001;

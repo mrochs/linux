@@ -67,6 +67,7 @@ typedef struct {
 
 	int task_set;
 	struct pci_pool *cflash_cmd_pool;
+	struct pci_dev *parent_dev;
 
 	int last_lun_index;
 } cflash_t;

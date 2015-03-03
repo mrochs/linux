@@ -801,6 +801,7 @@ static int cflash_probe(struct pci_dev *pdev,
 {
 	struct Scsi_Host *host;
 	cflash_t *p_cflash = NULL;
+	struct device  *phys_dev;
 	int	rc = 0;
 
         ENTER;
@@ -857,6 +858,18 @@ static int cflash_probe(struct pci_dev *pdev,
 		goto out_remove;
 	}
 	*/
+
+	/* Use the special service provided to look up the physical
+         * PCI device, since we are called on the probe of the virtual
+         * PCI host bus (vphb)
+         */
+	phys_dev = cxl_get_phys_dev(pdev);
+	if (!dev_is_pci(phys_dev)) { /* make sure it's pci */
+		printk("not a pci dev\n");
+		rc = ENODEV;
+		goto out_remove;
+	}
+	p_cflash->parent_dev = to_pci_dev(phys_dev);
 
 	rc = cflash_init_scsi(p_cflash);
 	if (rc) {
