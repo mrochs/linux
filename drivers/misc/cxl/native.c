@@ -367,7 +367,7 @@ static int remove_process_element(struct cxl_context *ctx)
 }
 
 
-static void assign_psn_space(struct cxl_context *ctx)
+void assign_psn_space(struct cxl_context *ctx)
 {
 	if (!ctx->afu->pp_size || ctx->master) {
 		ctx->psn_phys = ctx->afu->psn_phys;

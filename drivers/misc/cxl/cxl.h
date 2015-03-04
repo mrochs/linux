@@ -630,6 +630,7 @@ struct cxl_irq_info {
 	u64 padding[3]; /* to match the expected retbuf size for plpar_hcall9 */
 };
 
+void assign_psn_space(struct cxl_context *ctx);
 int cxl_attach_process(struct cxl_context *ctx, bool kernel, u64 wed,
 			    u64 amr);
 int cxl_detach_process(struct cxl_context *ctx);
