@@ -77,8 +77,12 @@ static void cxl_memcpy_vpd_info(struct pci_dev *dev)
 static int cxl_memcpy_probe(struct pci_dev *dev, const struct pci_device_id *id)
 {
 	struct cxl_afu *afu;
-
+	int rc;
 	int minor;
+
+	rc = pci_enable_device(dev);
+	if (rc)
+		return rc;
 
 	afu = cxl_pci_to_afu(dev, NULL);
 
