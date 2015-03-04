@@ -41,8 +41,13 @@ int cxl_teardown_msi_irqs(struct pci_dev *pdev)
 
 int cxl_pci_enable_device_hook(struct pci_dev *dev)
 {
-	printk("WARNING %s", __func__);
-	return -ENODEV;
+        struct pci_controller *hose;
+	struct cxl_afu *afu;
+
+        hose = pci_bus_to_host(dev->bus);
+	afu = (struct cxl_afu *)hose->private_data;
+
+	return afu_check_and_enable(afu);
 }
 
 resource_size_t cxl_pci_window_alignment(struct pci_bus *bus,
