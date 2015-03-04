@@ -143,4 +143,5 @@ struct dk_capi_recover_afu {
 #define DK_CAPI_RECOVER_AFU       _IOW(CXL_MAGIC, 0x89, struct dk_capi_recover_afu)
 #define DK_CAPI_QUERY_EXCEPTIONS  _IOW(CXL_MAGIC, 0x8A, struct dk_capi_log)
 
+#define DK_CAPI_BLOCK		  0x1000
 #endif  /* ifndef _CFLASHIOCTL_H */

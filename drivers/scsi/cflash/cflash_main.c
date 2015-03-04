@@ -35,8 +35,8 @@
 #include "mserv.h"
 
 MODULE_DESCRIPTION("IBM CAPI Flash Adapter Driver");
-MODULE_AUTHOR("Manoj N. Kumar <kumarmn@us.ibm.com>");
-MODULE_AUTHOR("Matthew R. Ochs <mrochs@us.ibm.com>");
+MODULE_AUTHOR("Manoj N. Kumar <manoj@linux.vnet.ibm.com>");
+MODULE_AUTHOR("Matthew R. Ochs <mrochs@linux.vnet.ibm.com>");
 MODULE_LICENSE("GPL");
 
 extern void cflash_send_scsi(afu_t *, struct scsi_cmnd *);
@@ -838,7 +838,6 @@ static int cflash_probe(struct pci_dev *pdev,
 	p_cflash->p_dev_id = (struct pci_device_id *)dev_id;
 	pci_set_drvdata(pdev, p_cflash);
 
-#ifdef NEWCXL
 	/* XXX: How to adderess both the AFUs on the CORSA */
 	p_cflash->afu = cxl_pci_to_afu(pdev, NULL);
 	cflash_init_afu(p_cflash);
@@ -846,8 +845,6 @@ static int cflash_probe(struct pci_dev *pdev,
 	/* XXX: Add threads for afu_rrq_rx and afu_err_rx */
 	/* after creating afu_err_rx thread, unmask error interrupts */
 	afu_err_intr_init(&p_cflash->p_afu_a->afu);
-
-#endif /* NEWCXL */
 
 	/* XXX: Commented out for now, until Mikey's implementation is done 
 	rc = cflash_init_pci(p_cflash);

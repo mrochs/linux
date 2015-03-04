@@ -205,14 +205,6 @@ int cflash_disk_attach(struct scsi_device *sdev, void __user *arg)
 	*/
 	parg->context_id = (uint64_t)ctx->pe;
 
-	rc = cflash_afu_attach(p_cflash, parg->context_id);
-	if (rc)
-	{
-		cflash_err("in %s Could not attach AFU rc %d\n", __func__, rc);
-		cxl_release_context(ctx);
-		goto out;
-	}
-
 	/* 
 	 * Create and attach a new file descriptor. This must be the last 
 	 * statement as once this is run, the file descritor is visible to 
@@ -229,6 +221,20 @@ int cflash_disk_attach(struct scsi_device *sdev, void __user *arg)
 		cxl_release_context(ctx);
 		cflash_err("Could not attach file descriptor\n");
 		goto out; 
+	}
+
+	/* XXX: Currently there cannot be any error path after attach_fd.
+	 * However the AFU resets the context capabilities on start. 
+	 * Until a tear down service is provided this needs to 
+	 * not fail
+	rc = cflash_afu_attach(p_cflash, parg->context_id);
+	 */
+	cflash_afu_attach(p_cflash, parg->context_id);
+	if (rc)
+	{
+		cflash_err("in %s Could not attach AFU rc %d\n", __func__, rc);
+		cxl_release_context(ctx);
+		goto out;
 	}
 
 	p_lun_info->lfd = fd;
@@ -332,7 +338,7 @@ int cflash_disk_uvirtual(struct scsi_device *sdev, void __user *arg)
 		} 
 		
 		p_rht_entry->nmask = MC_RHT_NMASK; 
-		p_rht_entry->fp = SISL_RHT_FP(0u, parg->flags & 0x3); 
+		p_rht_entry->fp = SISL_RHT_FP(0u, 0x3); 
 		/* format 0 & perms */ 
 		
 		parg->rsrc_handle = (p_rht_entry - p_rht_info->rht_start);
@@ -416,6 +422,7 @@ int cflash_disk_release(struct scsi_device *sdev, void __user *arg)
 		/* set size to 0, this will clear LXT_START and LXT_CNT 
 		 * fields in the RHT entry 
 		 */ 
+		parg->req_size = 0;
 		cflash_vlun_resize(sdev, arg); // p_conn good ?  
 		
 		p_rht_entry->nmask = 0; 
@@ -697,7 +704,6 @@ void afu_err_intr_init(afu_t *p_afu)
 }
 
 
-#ifdef NEWCXL
 static irqreturn_t cflash_dummy_irq_handler(int irq, void *data)
 {
 	/* XXX - to be removed once we settle the 4th interrupt */
@@ -1130,8 +1136,6 @@ void cflash_term_afu(cflash_t *p_cflash)
 	p_cflash->p_afu_a = NULL;
 }
 
-#endif /* NEWCXL */
-
 void timer_start(struct timer_list *p_timer, unsigned long timeout_in_jiffies)
 {
 	p_timer->expires = (jiffies + timeout_in_jiffies);
@@ -1332,9 +1336,10 @@ int cflash_vlun_resize(struct scsi_device *sdev, void __user *arg)
 	afu_t		*p_afu = &p_cflash->p_afu_a->afu;
 
 	struct dk_capi_resize *parg  = (struct dk_capi_resize *)arg;
-	__u64         new_size       = parg->req_size;
-	__u64        *p_act_new_size = &parg->last_lba;
+	__u64         p_act_new_size = 0;
 	res_hndl_t    res_hndl       = parg->rsrc_handle;
+	__u64         new_size;
+	__u64         nsectors;
 
 	ctx_info_t *p_ctx_info;
 	rht_info_t *p_rht_info;
@@ -1343,12 +1348,22 @@ int cflash_vlun_resize(struct scsi_device *sdev, void __user *arg)
 	int rc = 0,
 	    lun_index = p_lun_info - p_afu->lun_info;
 
-	cflash_info("%s, context=0x%llx res_hndl=0x%llx, size=0x%llx\n",
+
+	/* req_size is always assumed to be in 4k blocks. So we have to convert	
+	 * it from 4k to chunk size
+	 */
+	nsectors = (parg->req_size * DK_CAPI_BLOCK) / (p_lun_info->li.blk_len);
+	new_size = (nsectors + MC_CHUNK_SIZE - 1)/MC_CHUNK_SIZE;
+
+	cflash_info("%s, context=0x%llx res_hndl=0x%llx, req_size=0x%llx,"
+		    "new_size=%llx\n",
 		    __func__, parg->context_id,
 		    parg->rsrc_handle,
-		    parg->req_size);
+		    parg->req_size, 
+		    new_size);
 
 	if (parg->context_id < MAX_CONTEXT) {
+
 		p_ctx_info = &p_afu->ctx_info[parg->context_id];
 		p_rht_info = p_ctx_info->p_rht_info;
 	} else {
@@ -1375,7 +1390,7 @@ int cflash_vlun_resize(struct scsi_device *sdev, void __user *arg)
 				 res_hndl,
 				 p_rht_entry,
 				 new_size - p_rht_entry->lxt_cnt,
-				 p_act_new_size);
+				 &p_act_new_size);
 		} else if (new_size < p_rht_entry->lxt_cnt) {
 			shrink_lxt(p_afu,
 				   lun_index,
@@ -1383,9 +1398,9 @@ int cflash_vlun_resize(struct scsi_device *sdev, void __user *arg)
 				   res_hndl,
 				   p_rht_entry,
 				   p_rht_entry->lxt_cnt - new_size,
-				   p_act_new_size);
+				   &p_act_new_size);
 		} else {
-			*p_act_new_size = new_size;
+			p_act_new_size = new_size;
 		}
 	} else {
 		cflash_err("in %s res_hndl %d invalid\n",  __func__, 
@@ -1393,9 +1408,12 @@ int cflash_vlun_resize(struct scsi_device *sdev, void __user *arg)
 		rc = -EINVAL;
 	}
 	parg->return_flags = 0;
+	parg->last_lba = (p_act_new_size *  MC_CHUNK_SIZE *
+		p_lun_info->li.blk_len)/ DK_CAPI_BLOCK;
+
 out:
         cflash_info("in %s resized to %lld returning rc=%d\n", __func__, 
-		    *p_act_new_size, rc);
+		    parg->last_lba, rc);
 	return rc;
 }
 
@@ -2047,7 +2065,7 @@ int find_lun(cflash_t *p_cflash, __u32 port_sel)
 	p_u64 = (__u64*)&p_afu->buf[8]; /* start of lun list */
 
 	while (len) {
-		lunidarray[i] =  (__u64)(*p_u64);
+		lunidarray[i] =  read_64(p_u64);
 		len -= 8;
 		p_u64++;
 		i++;

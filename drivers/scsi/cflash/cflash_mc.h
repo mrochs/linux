@@ -59,9 +59,7 @@ typedef struct {
 	wait_queue_head_t msi_wait_q; 
 	wait_queue_head_t eeh_wait_q;
 
-#ifdef NEWCXL 
 	struct cxl_afu *afu;
-#endif /* NEWCXL */ 
 	timer_t timer_hb; 
 	timer_t timer_fc;
 
