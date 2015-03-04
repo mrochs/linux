@@ -27,7 +27,7 @@
 #include <scsi/scsi_transport_fc.h>
 
 #include "cflash.h"
-#include "cflash.h"
+#include "afu_fc.h"
 #include "sislite.h"
 #include "cflash_mc.h"
 #include "cflash_ba.h"
@@ -294,6 +294,37 @@ static int cflash_change_queue_type(struct scsi_device *sdev, int tag_type)
 }
 
 
+static ssize_t cflash_show_port_status(struct device *dev,
+				       struct device_attribute *attr,
+				       char *buf)
+{
+	struct Scsi_Host *shost = class_to_shost(dev);
+        cflash_t	*p_cflash = (cflash_t *)shost->hostdata;
+	afu_t		*p_afu = &p_cflash->p_afu_a->afu;
+
+	char	*disp_status;
+	int	 rc;
+	u32	 port;
+	u64	 status;
+	volatile u64 *p_fc_regs;
+
+	rc = kstrtouint((attr->attr.name + 4), 10, &port);
+	if (rc || (port > SURELOCK_NUM_FC_PORTS))
+		return 0;
+
+	p_fc_regs = &p_afu->p_afu_map->global.fc_regs[port][0];
+	status = (read_64(&p_fc_regs[FC_MTIP_STATUS/8]) & FC_MTIP_STATUS_MASK);
+
+	if (status == FC_MTIP_STATUS_ONLINE)
+		disp_status = "online";
+	else if (status == FC_MTIP_STATUS_OFFLINE)
+		disp_status = "offline";
+	else
+		disp_status = "unknown";
+
+	return snprintf(buf, PAGE_SIZE, "%s\n", disp_status);
+}
+
 static ssize_t cflash_show_host_partition_name(struct device *dev,
 					       struct device_attribute *attr,
 					       char *buf)
@@ -484,8 +515,13 @@ static DEVICE_ATTR(npiv_version, S_IRUGO, cflash_show_host_npiv_version, NULL);
 static DEVICE_ATTR(capabilities, S_IRUGO, cflash_show_host_capabilities, NULL);
 static DEVICE_ATTR(log_level, S_IRUGO | S_IWUSR,
                    cflash_show_log_level, cflash_store_log_level);
+static DEVICE_ATTR(port0, S_IRUGO, cflash_show_port_status, NULL);
+static DEVICE_ATTR(port1, S_IRUGO, cflash_show_port_status, NULL);
+
 
 static struct device_attribute *cflash_attrs[] = {
+	&dev_attr_port0,
+	&dev_attr_port1,
         &dev_attr_partition_name,
         &dev_attr_device_name,
         &dev_attr_port_loc_code,
