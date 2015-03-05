@@ -8,7 +8,6 @@
 */
 #include <linux/pci.h>
 #include <linux/module.h>
-#include <linux/module.h>
 #include <linux/semaphore.h>
 #include <linux/fs.h>
 #include <linux/file.h>
@@ -18,6 +17,7 @@
 #include <uapi/misc/cxl.h>
 #include <misc/cxl.h>
 #include <linux/unistd.h>
+#include <linux/kernel.h>
 #include <asm/unistd.h>
 
 #include <scsi/scsi.h>
@@ -41,6 +41,10 @@
 #include "cxl.h"
 
 extern int cflash_init_ba(cflash_t *p_cflash, int lunindex);
+extern bool provFindVPDKw(const char* i_kw, const uint8_t* i_vpd_buffer,
+                   size_t i_vpd_buffer_length,
+                   uint8_t* o_kwdata,
+                   int* io_kwdata_length);
 
 /* Mask off the low nibble of the length to ensure 16 byte multiple */
 #define SISLITE_LEN_MASK 0xFFFFFFF0
@@ -843,24 +847,74 @@ static void send_cmd_timeout(struct afu_cmd *p_cmd)
 	spin_unlock_irqrestore(&p_cmd->slock, lock_flags);
 }
 
+#define WWPN_BUFFER_LENGTH 17
+
 int cflash_read_vpd(cflash_t *p_cflash, __u64 wwpn[]) {
 
+	char *buf  = NULL;
 	int   rc = 0;
+	int   bytes = 0;
+	bool  l_rc;
+	int l_kw_length;
+	char localwwpn[SURELOCK_NUM_FC_PORTS][WWPN_BUFFER_LENGTH];
 
 	cflash_info("in %s pci_dev %p\n", __func__, 
 		    p_cflash->parent_dev);
-#ifdef LATER
-	char buf[0x100];
-	rc = pci_read_vpd(p_cflash->parent_dev, 0, sizeof(buf), &buf);
-	if (rc <=0) {
-		cflash_err("could not read VPD rc %d\n", rc);
+
+	buf = kzalloc(KWDATA_SZ, GFP_KERNEL);
+	if (!buf)
+	{
+		cflash_err("in %s could not allocate mem\n", __func__);
+		rc = -ENOMEM;
 		goto out;
 	}
-	hexdump ((void *)buf, 0x100, "vpd");
+	bytes = pci_read_vpd(p_cflash->parent_dev, 0, KWDATA_SZ, buf);
+	if (bytes <=0) {
+		cflash_err("could not read VPD rc %d\n", rc);
+		rc = -ENODEV;
+		goto out;
+	}
+	hexdump ((void *)buf, KWDATA_SZ, "vpd");
+
+        l_kw_length = 16; 
+        l_rc = provFindVPDKw("V5", buf, KWDATA_SZ, (uint8_t*)&localwwpn[0],
+			     &l_kw_length); 
+	if(l_rc == false) { 
+		cflash_err("Error: Unable to find Port name VPD for Port 1 "
+			   "(VPD KW V5)") ; 
+		rc = ENODEV; 
+		goto out;
+	}
+
+	hexdump ((void *)localwwpn[0], 16, "wwpn0");
+	/* NULL terminate before calling kstrtoul */
+	localwwpn[0][16] = 0x0;
+
+	rc = kstrtoul(localwwpn[0], 16, (unsigned long *)&wwpn[0]);
+	if (rc)
+		goto out;
+
+        l_kw_length = 16; 
+	l_rc = provFindVPDKw("V6", buf, KWDATA_SZ, (uint8_t*)&localwwpn[1],
+			     &l_kw_length);
+        if(l_rc == false) { 
+		cflash_err("Error: Unable to find Port name VPD for Port 1 "
+			   "(VPD KW V5)") ; 
+		rc = ENODEV; 
+		goto out;
+	}
+
+	hexdump ((void *)localwwpn[1], 16, "wwpn1");
+	/* NULL terminate before calling kstrtoul */
+	localwwpn[1][16] = 0x0;
+	rc = kstrtoul(localwwpn[1], 16, (unsigned long *)&wwpn[1]);
+	if (rc)
+		goto out;
 
 out:
+	if (buf)
+		kfree(buf);
         cflash_info("in %s returning rc=%d\n", __func__, rc);
-#endif
         return rc;
 }
 
@@ -876,10 +930,12 @@ int cflash_start_afu(cflash_t *p_cflash)
 	enum undo_level level = UNDO_NONE;
 
 	rc = cflash_read_vpd(p_cflash, &wwpn[0]);
-
-	/* XXX: Hardcoded for now, How do you figure out WWPN */
-	wwpn[0] =  0x2C00072800000001;
-	wwpn[1] =  0x5C00072800000002;
+	if (rc) {
+		cflash_err("in %s could not read vpd rc=%d\n", __func__, rc);
+		goto out;
+	}
+	cflash_info("in %s wwpn0=0x%llx wwpn1=0x%llx\n", __func__, 
+		    wwpn[0], wwpn[1]);
 
 	for (i = 0; i < MAX_CONTEXT; i++) {
 		p_afu->rht_info[i].rht_start = &p_afu->rht[i][0];

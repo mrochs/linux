@@ -648,11 +648,7 @@ static int cflash_init_pci(cflash_t *p_cflash)
 		 goto out;
 	}
 
-	/* XXX: Ignore errors until Mikey's fix comes in.
 	rc = pci_enable_device(pdev);
-	*/
-	pci_enable_device(pdev);
-
 	if (rc || pci_channel_offline(pdev)) {
 		if (pci_channel_offline(pdev)) {
 			cflash_wait_for_pci_err_recovery(p_cflash);
@@ -666,7 +662,7 @@ static int cflash_init_pci(cflash_t *p_cflash)
 		}
 	}
 
-	/*
+	/* XXX: Wait for Mikey to wire pci_set_dma_mask correctly
 	p_cflash->cflash_regs = pci_ioremap_bar(pdev, 0);
 
 	if (!p_cflash->cflash_regs) {
@@ -675,7 +671,6 @@ static int cflash_init_pci(cflash_t *p_cflash)
 		rc = -ENOMEM;
 		goto out_disable;
 	} 
-	*/
 	
 	rc = pci_set_dma_mask(pdev, DMA_BIT_MASK(64)); 
 	if (rc < 0) { 
@@ -687,6 +682,7 @@ static int cflash_init_pci(cflash_t *p_cflash)
 		dev_err(&pdev->dev, "Failed to set PCI DMA mask\n");
 	       	goto out_disable; 
 	} 
+	*/
 	
 	rc = pci_write_config_byte(pdev, PCI_CACHE_LINE_SIZE, 0x20);
 	
@@ -700,6 +696,7 @@ static int cflash_init_pci(cflash_t *p_cflash)
 
 	pci_set_master(pdev);
 
+	/*
 	if (pci_channel_offline(pdev)) {
 		 cflash_wait_for_pci_err_recovery(p_cflash);
 		 pci_set_master(pdev);
@@ -707,9 +704,10 @@ static int cflash_init_pci(cflash_t *p_cflash)
 			 rc = -EIO;
 			 goto out_msi_disable;
 		 }
-	}
 
-	/* Save away PCI config space for use following CFLASH reset */
+	 */
+
+	/* Save away PCI config space for use following CFLASH reset 
 	rc = pci_save_state(pdev);
 
 	if (rc != PCIBIOS_SUCCESSFUL) {
@@ -717,8 +715,10 @@ static int cflash_init_pci(cflash_t *p_cflash)
 		rc = -EIO;
 		goto cleanup_nolog;
 	}
+	*/
 	
 out:
+	cflash_info("in %s returning rc %d\n", __func__, rc);
 	return rc;
 
 cleanup_nolog:
@@ -823,6 +823,7 @@ static int cflash_init_scsi(cflash_t *p_cflash)
 	*/
 
 out:
+	cflash_info("in %s returning rc %d\n", __func__, rc);
 	return rc;
 }
 
@@ -874,24 +875,6 @@ static int cflash_probe(struct pci_dev *pdev,
 	p_cflash->p_dev_id = (struct pci_device_id *)dev_id;
 	pci_set_drvdata(pdev, p_cflash);
 
-	/* XXX: How to adderess both the AFUs on the CORSA */
-	p_cflash->afu = cxl_pci_to_afu(pdev, NULL);
-	cflash_init_afu(p_cflash);
-
-	/* XXX: Add threads for afu_rrq_rx and afu_err_rx */
-	/* after creating afu_err_rx thread, unmask error interrupts */
-	afu_err_intr_init(p_cflash->p_afu);
-
-	/* XXX: Commented out for now, until Mikey's implementation is done 
-	rc = cflash_init_pci(p_cflash);
-	cflash_init_pci(p_cflash);
-	if (rc) {
-                dev_err(&pdev->dev, "call to cflash_init_pci failed rc=%d!\n",
-			rc);
-		goto out_remove;
-	}
-	*/
-
 	/* Use the special service provided to look up the physical
          * PCI device, since we are called on the probe of the virtual
          * PCI host bus (vphb)
@@ -904,6 +887,21 @@ static int cflash_probe(struct pci_dev *pdev,
 	}
 	p_cflash->parent_dev = to_pci_dev(phys_dev);
 
+	/* XXX: How to adderess both the AFUs on the CORSA */
+	p_cflash->afu = cxl_pci_to_afu(pdev, NULL);
+	cflash_init_afu(p_cflash);
+
+	/* XXX: Add threads for afu_rrq_rx and afu_err_rx */
+	/* after creating afu_err_rx thread, unmask error interrupts */
+	afu_err_intr_init(p_cflash->p_afu);
+
+	rc = cflash_init_pci(p_cflash);
+	if (rc) {
+                dev_err(&pdev->dev, "call to cflash_init_pci failed rc=%d!\n",
+			rc);
+		goto out_remove;
+	}
+
 	rc = cflash_init_scsi(p_cflash);
 	if (rc) {
                 dev_err(&pdev->dev, "call to cflash_init_scsi failed rc=%d!\n",
@@ -913,6 +911,7 @@ static int cflash_probe(struct pci_dev *pdev,
 
         LEAVE;
 out:
+	cflash_info("in %s returning rc %d\n", __func__, rc);
 	return rc;
 
 out_remove:

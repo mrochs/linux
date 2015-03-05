@@ -31,6 +31,7 @@ typedef unsigned int    useconds_t;     /* time in microseconds */
 #define MC_PATHLEN       64
 
 #define CFLASH_NAFU      2
+#define KWDATA_SZ  256 //max size of a VPD buffer
 
 
 /*----------------------------------------------------------------------------*/
