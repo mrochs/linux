@@ -110,7 +110,7 @@ hexdump(void *data, long len, const char *hdr)
 
 int cflash_afu_attach(cflash_t *p_cflash,  uint64_t context_id)
 {
-	afu_t      *p_afu             = &p_cflash->p_afu_a->afu;
+	afu_t      *p_afu             = p_cflash->p_afu;
 	ctx_info_t *p_ctx_info        = &p_afu->ctx_info[context_id]; 
 	int   rc                      = 0;
 	__u64 reg;
@@ -150,8 +150,7 @@ int cflash_afu_attach(cflash_t *p_cflash,  uint64_t context_id)
 	 */
 	if (reg != (SISL_CTX_CAP_READ_CMD |
 		    SISL_CTX_CAP_WRITE_CMD)) {
-		cflash_err("%s: ctx may be closed reg=%llx\n", 
-			   p_afu->name, reg);
+		cflash_err("ctx may be closed reg=%llx\n", reg);
 		rc = -EAGAIN;
 		goto out;
 	}
@@ -184,7 +183,8 @@ out:
 
 int cflash_disk_attach(struct scsi_device *sdev, void __user *arg)
 {
-	cflash_t   *p_cflash   = (cflash_t *)sdev->host->hostdata;
+	cflash_t	*p_cflash = (cflash_t *)sdev->host->hostdata;
+	afu_t		*p_afu = p_cflash->p_afu;
 	lun_info_t *p_lun_info = sdev->hostdata;
 	int rc = 0;
 
@@ -242,8 +242,7 @@ int cflash_disk_attach(struct scsi_device *sdev, void __user *arg)
 	parg->return_flags = 0;
 	parg->adap_fd = fd;
 	parg->block_size = p_lun_info->li.blk_len;
-	parg->mmio_size =
-		sizeof(p_cflash->p_afu_a->afu.p_afu_map->hosts[0].harea);
+	parg->mmio_size = sizeof(p_afu->p_afu_map->hosts[0].harea);
 
 out:
         cflash_info("in %s returning fd=%d bs=%lld rc=%d\n", 
@@ -291,7 +290,7 @@ int do_mc_close(afu_t    *p_afu,
 int cflash_disk_uvirtual(struct scsi_device *sdev, void __user *arg)
 {
 	cflash_t   *p_cflash   = (cflash_t *)sdev->host->hostdata;
-	afu_t      *p_afu      = &p_cflash->p_afu_a->afu;
+	afu_t      *p_afu      = p_cflash->p_afu;
 	lun_info_t *p_lun_info = sdev->hostdata;
 
 	struct dk_capi_uvirtual *parg = (struct dk_capi_uvirtual *)arg;
@@ -385,7 +384,7 @@ out:
 int cflash_disk_release(struct scsi_device *sdev, void __user *arg)
 {
 	cflash_t *p_cflash = (cflash_t *)sdev->host->hostdata;
-	afu_t    *p_afu    = &p_cflash->p_afu_a->afu;
+	afu_t    *p_afu    = p_cflash->p_afu;
 
 	struct dk_capi_resize *parg     = (struct dk_capi_resize *)arg;
 	res_hndl_t             res_hndl = parg->rsrc_handle;
@@ -470,7 +469,7 @@ out:
 int cflash_disk_detach(struct scsi_device *sdev, void __user *arg)
 {
 	cflash_t *p_cflash = (cflash_t *)sdev->host->hostdata;
-	afu_t    *p_afu    = &p_cflash->p_afu_a->afu;
+	afu_t    *p_afu    = p_cflash->p_afu;
 
 	struct dk_capi_detach  *parg = (struct dk_capi_detach *)arg;
 	struct dk_capi_release *rel  = (struct dk_capi_release *)parg;
@@ -594,8 +593,7 @@ int afu_set_wwpn(afu_t *p_afu, int port, volatile __u64 *p_fc_regs,
 
 	if (!wait_port_offline(p_fc_regs, FC_PORT_STATUS_RETRY_INTERVAL_US,
 			       FC_PORT_STATUS_RETRY_CNT)) {
-		 cflash_dbg("%s: wait on port %d to go offline timed out\n",
-			    p_afu->name, port);
+		 cflash_dbg("wait on port %d to go offline timed out\n", port);
 		 ret = -1; // but continue on to leave the port back online
 	}
 
@@ -607,8 +605,7 @@ int afu_set_wwpn(afu_t *p_afu, int port, volatile __u64 *p_fc_regs,
 
 	if (!wait_port_online(p_fc_regs, FC_PORT_STATUS_RETRY_INTERVAL_US,
 			      FC_PORT_STATUS_RETRY_CNT)) {
-		cflash_dbg("%s: wait on port %d to go online timed out\n",
-			   p_afu->name, port);
+		cflash_dbg("wait on port %d to go online timed out\n", port);
 		ret = -1;
 	}
 
@@ -652,7 +649,7 @@ int cflash_terminate_afu(afu_t *p_afu)
 
 	/* Ensure all timers are stopped before removing resources */
 	for (i = 0; i < NUM_CMDS; i++)
-		timer_stop(&p_afu->cmd[i].acmd.timer, TRUE);
+		timer_stop(&p_afu->cmd[i].timer, TRUE);
 
 	cflash_undo_start_afu(p_afu, UNDO_AFU_ALL);
 
@@ -819,8 +816,8 @@ int cflash_start_context(cflash_t *p_cflash)
         int rc = 0;
 
         rc =  cxl_start_context(p_cflash->p_ctx,
-				p_cflash->p_afu_a->afu.work.
-				work_element_descriptor, NULL);
+				p_cflash->p_afu->work.work_element_descriptor,
+				NULL);
 
         cflash_info("in %s returning rc=%d\n", __func__, rc);
         return rc;
@@ -869,7 +866,7 @@ out:
 
 int cflash_start_afu(cflash_t *p_cflash)
 {
-	afu_t                 *p_afu = &p_cflash->p_afu_a->afu;
+	afu_t *p_afu = p_cflash->p_afu;
 	char version[16];
 	__u64 wwpn[SURELOCK_NUM_FC_PORTS]; // wwpn of AFU ports
 
@@ -882,24 +879,20 @@ int cflash_start_afu(cflash_t *p_cflash)
 
 	/* XXX: Hardcoded for now, How do you figure out WWPN */
 	wwpn[0] =  0x2C00072800000001;
-	wwpn[1] =  0x5C00072800000002; 
-	
-	for (i = 0; i < MAX_CONNS; i++) { 
-		p_afu->conn_tbl[i].fd = -1; 
-	} 
-	
-	for (i = 0; i < MAX_CONTEXT; i++) { 
-		p_afu->rht_info[i].rht_start = &p_afu->rht[i][0]; 
+	wwpn[1] =  0x5C00072800000002;
+
+	for (i = 0; i < MAX_CONTEXT; i++) {
+		p_afu->rht_info[i].rht_start = &p_afu->rht[i][0];
 	}
 
 	for (i = 0; i < NUM_CMDS; i++) {
-		struct timer_list *p_timer = &p_afu->cmd[i].acmd.timer;
+		struct timer_list *p_timer = &p_afu->cmd[i].timer;
 
 		init_timer(p_timer);
-		p_timer->data = (unsigned long)&p_afu->cmd[i].acmd;
+		p_timer->data = (unsigned long)&p_afu->cmd[i];
 		p_timer->function = (void (*)(unsigned long))send_cmd_timeout;
 
-		spin_lock_init(&p_afu->cmd[i].acmd.slock);
+		spin_lock_init(&p_afu->cmd[i].slock);
 	}
 	level= UNDO_TIMER;
 
@@ -939,14 +932,13 @@ int cflash_start_afu(cflash_t *p_cflash)
 	//     will be backwards
 	reg = p_afu->p_afu_map->global.regs.afu_version;
 	memcpy(&version[0], &reg, 8);
-	cflash_dbg("%s: afu version %s, ctx_hndl %d\n", p_afu->name, version,
-		   p_afu->ctx_hndl);
+	cflash_dbg("afu version %s, ctx_hndl %d\n", version, p_afu->ctx_hndl);
 
 	// initialize cmd fields that never change
 	for (i = 0; i < NUM_CMDS; i++) {
-		p_afu->cmd[i].acmd.rcb.ctx_id = p_afu->ctx_hndl;
-		p_afu->cmd[i].acmd.rcb.msi = SISL_MSI_RRQ_UPDATED;
-		p_afu->cmd[i].acmd.rcb.rrq = 0x0;
+		p_afu->cmd[i].rcb.ctx_id = p_afu->ctx_hndl;
+		p_afu->cmd[i].rcb.msi = SISL_MSI_RRQ_UPDATED;
+		p_afu->cmd[i].rcb.rrq = 0x0;
 	}
 
 	// set up RRQ in AFU for master issued cmds
@@ -981,8 +973,7 @@ int cflash_start_afu(cflash_t *p_cflash)
 		if (wwpn[i] != 0 &&
 			afu_set_wwpn(p_afu, i,
 			&p_afu->p_afu_map->global.fc_regs[i][0], wwpn[i])) {
-			cflash_dbg("%s: failed to set WWPN on port %d\n", 
-				   p_afu->name, i);
+			cflash_dbg("failed to set WWPN on port %d\n", i);
 			cflash_undo_start_afu(p_afu, level);
 			return -1;
 		 }
@@ -1009,7 +1000,7 @@ out:
 int cflash_init_afu(cflash_t *p_cflash)
 {
 	int		    rc;
-	afu_t		   *p_afu = &p_cflash->p_afu_a->afu;
+	afu_t		   *p_afu = p_cflash->p_afu;
 	struct cxl_context *ctx;
 
 	ctx = cxl_dev_context_init(p_cflash->p_dev);
@@ -1106,7 +1097,7 @@ err1:
 void cflash_term_afu(cflash_t *p_cflash)
 {
 	int	 i, nbytes;
-	afu_t	*p_afu = &p_cflash->p_afu_a->afu;
+	afu_t	*p_afu = p_cflash->p_afu;
 
 	cflash_stop_context(p_cflash);
         cflash_info("in %s before unmap 4 \n", __func__);
@@ -1131,9 +1122,9 @@ void cflash_term_afu(cflash_t *p_cflash)
 		}
 	}
 
-	nbytes = sizeof(struct afu_alloc) * CFLASH_NAFU;
-        free_pages((unsigned long)p_cflash->p_afu_a, get_order(nbytes));
-	p_cflash->p_afu_a = NULL;
+	nbytes = sizeof(struct afu) * CFLASH_NAFU;
+        free_pages((unsigned long)p_cflash->p_afu, get_order(nbytes));
+	p_cflash->p_afu = NULL;
 }
 
 void timer_start(struct timer_list *p_timer, unsigned long timeout_in_jiffies)
@@ -1272,7 +1263,7 @@ int afu_sync(afu_t	*p_afu,
 {
 	__u16 *p_u16;
 	__u32 *p_u32;
-	struct afu_cmd *p_cmd = &p_afu->cmd[AFU_SYNC_INDEX].acmd;
+	struct afu_cmd *p_cmd = &p_afu->cmd[AFU_SYNC_INDEX];
 	int rc = 0;
 
         cflash_info("in %s p_afu %p p_cmd %p %d\n", 
@@ -1333,7 +1324,7 @@ int cflash_vlun_resize(struct scsi_device *sdev, void __user *arg)
 {
 	cflash_t	*p_cflash = (cflash_t *)sdev->host->hostdata;
 	lun_info_t	*p_lun_info = sdev->hostdata;
-	afu_t		*p_afu = &p_cflash->p_afu_a->afu;
+	afu_t		*p_afu = p_cflash->p_afu;
 
 	struct dk_capi_resize *parg  = (struct dk_capi_resize *)arg;
 	__u64         p_act_new_size = 0;
@@ -1966,7 +1957,7 @@ int read_cap16(afu_t *p_afu, lun_info_t *p_lun_info, __u32 port_sel) {
 	__u32 *p_u32; 
 	__u64 *p_u64; 
 
-	struct afu_cmd *p_cmd = &p_afu->cmd[AFU_INIT_INDEX].acmd; 
+	struct afu_cmd *p_cmd = &p_afu->cmd[AFU_INIT_INDEX]; 
 	
 	memset(&p_afu->buf[0], 0, sizeof(p_afu->buf)); 
 	memset(&p_cmd->rcb.cdb[0], 0, sizeof(p_cmd->rcb.cdb)); 
@@ -2018,8 +2009,8 @@ int find_lun(cflash_t *p_cflash, __u32 port_sel)
 	__u32 *p_u32;
 	__u32 len;
 	__u64 *p_u64;
-	afu_t      *p_afu     = &p_cflash->p_afu_a->afu;
-	struct afu_cmd *p_cmd = &p_afu->cmd[AFU_INIT_INDEX].acmd;
+	afu_t      *p_afu     = p_cflash->p_afu;
+	struct afu_cmd *p_cmd = &p_afu->cmd[AFU_INIT_INDEX];
 	__u64 lunidarray[CFLASH_MAX_NUM_LUNS_PER_TARGET];
 	int i = 0;
 	int j = 0;
@@ -2108,7 +2099,7 @@ out:
 
 void cflash_send_scsi(afu_t *p_afu, struct scsi_cmnd *scp)
 {
-	struct afu_cmd *p_cmd = &p_afu->cmd[AFU_INIT_INDEX].acmd;
+	struct afu_cmd *p_cmd = &p_afu->cmd[AFU_INIT_INDEX];
 
 	/* XXX: Decide how to select port */
 	__u64 port_sel = 0x1;

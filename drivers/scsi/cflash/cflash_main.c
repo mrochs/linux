@@ -79,7 +79,7 @@ static int cflash_queuecommand_lck(struct scsi_cmnd *scp,
 {
 	struct Scsi_Host *host = scp->device->host;
 	cflash_t *p_cflash     = (cflash_t *)host->hostdata;
-        afu_t    *p_afu        = &p_cflash->p_afu_a->afu;
+        afu_t    *p_afu        = p_cflash->p_afu;
 
 	/* XXX: Until the scsi_dma_map works, this stuff is meaningless
 	 * Make the queuecommand entry point a dummy one for now.
@@ -181,7 +181,7 @@ static int cflash_slave_alloc(struct scsi_device *sdev)
 	lun_info_t *p_luninfo;
 	struct Scsi_Host *shost = sdev->host;
 	cflash_t *p_cflash = shost_priv(shost);
-        afu_t      *p_afu     = &p_cflash->p_afu_a->afu;
+        afu_t    *p_afu = p_cflash->p_afu;
         int rc = 0;
 
 	p_luninfo = &p_afu->lun_info[p_cflash->task_set];
@@ -300,7 +300,7 @@ static ssize_t cflash_show_port_status(struct device *dev,
 {
 	struct Scsi_Host *shost = class_to_shost(dev);
         cflash_t	*p_cflash = (cflash_t *)shost->hostdata;
-	afu_t		*p_afu = &p_cflash->p_afu_a->afu;
+	afu_t		*p_afu = p_cflash->p_afu;
 
 	char	*disp_status;
 	int	 rc;
@@ -622,10 +622,10 @@ static int cflash_gb_alloc(cflash_t *p_cflash)
 	int nbytes;
 	int rc=0;
 
-	nbytes = sizeof(struct afu_alloc) * CFLASH_NAFU;
-	p_cflash->p_afu_a = (void *)__get_free_pages(GFP_KERNEL | __GFP_ZERO, 
-						     get_order(nbytes));
-	if (!p_cflash->p_afu_a) {
+	nbytes = sizeof(struct afu) * CFLASH_NAFU;
+	p_cflash->p_afu = (void *)__get_free_pages(GFP_KERNEL | __GFP_ZERO,
+						   get_order(nbytes));
+	if (!p_cflash->p_afu) {
 		cflash_err("cannot get %d free pages\n", get_order(nbytes));
 		rc = -ENOMEM;
 		goto out;
@@ -761,7 +761,7 @@ static void cflash_scan_vsets(cflash_t *p_cflash)
 
 int cflash_init_ba(cflash_t *p_cflash, int lunindex)
 {
-	afu_t      *p_afu     = &p_cflash->p_afu_a->afu;
+	afu_t      *p_afu     = p_cflash->p_afu;
 	lun_info_t *p_luninfo = &p_afu->lun_info[lunindex];
 	int rc = 0;
 	blka_t *p_blka = NULL;
@@ -880,7 +880,7 @@ static int cflash_probe(struct pci_dev *pdev,
 
 	/* XXX: Add threads for afu_rrq_rx and afu_err_rx */
 	/* after creating afu_err_rx thread, unmask error interrupts */
-	afu_err_intr_init(&p_cflash->p_afu_a->afu);
+	afu_err_intr_init(p_cflash->p_afu);
 
 	/* XXX: Commented out for now, until Mikey's implementation is done 
 	rc = cflash_init_pci(p_cflash);

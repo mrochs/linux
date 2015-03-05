@@ -45,7 +45,7 @@ typedef unsigned int    useconds_t;     /* time in microseconds */
 
 
 typedef struct { 
-	struct afu_alloc *p_afu_a; 
+	struct afu *p_afu; 
 	struct cxl_context *p_ctx; 
 	
 	struct pci_dev *p_dev; 

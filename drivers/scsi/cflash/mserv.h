@@ -23,25 +23,6 @@
 #ifndef _MSERVE_H
 #define _MSERVE_H
 
-
-#ifndef __KERNEL__
-#include <sislite.h>
-#include <cflash_ba.h>
-#include <mclient.h>
-#include <signal.h>
-#include <time.h> 
-
-#include <cxl.h>
-#ifndef _AIX
-#include <sys/epoll.h>
-#else
-#include <poll.h>
-#endif /* !_AIX */
-#include <sys/socket.h>
-#include <sys/un.h>
-
-#endif /* __KERNEL__ */
-
 /*
  * Terminology: use afu (and not adapter) to refer to the HW. 
  * Adapter is the entire slot and includes PSL out of which
@@ -201,7 +182,7 @@ typedef struct lun_info
 {
     __u64       lun_id;    /* from cmd line/cfg file */
     __u32       flags;     /* housekeeping */
-    
+
     struct {
 	__u8        wwid[16];  /* LUN WWID from page 0x83 (NAA-6) */
 	__u64       max_lba;   /* from read cap(16) */
@@ -219,11 +200,7 @@ typedef struct blka
 {
     ba_lun_t    ba_lun;    /* single LUN for SureLock */
     __u64       nchunk;    /* number of chunks */
-#ifdef __KERNEL__
     struct mutex mutex;
-#else
-    pthread_mutex_t mutex;
-#endif /* __KERNEL__ */
 } blka_t;
 
 
@@ -246,16 +223,8 @@ typedef struct afu_cmd {
 	sisl_ioarcb_t rcb;  /* IOARCB (cache line aligned) */
 	sisl_ioasa_t sa;    /* IOASA must follow IOARCB */
 	spinlock_t slock;
-	struct mutex cmd_mutex; /* XXX - future remove */
-	wait_queue_head_t cv;  /* XXX - future remove; for signalling responses */
 	struct timer_list timer;
-} afu_cmd_t;
-
-typedef struct afu_cmd_all {
-	afu_cmd_t acmd;
-        __u8    align_pad[CL_SIZE - (sizeof(afu_cmd_t) & CL_SIZE_MASK)];
-} afu_cmd_all_t;
-
+} __attribute__ ((aligned (0x80))) afu_cmd_t;
 
 typedef struct afu
 {
@@ -268,31 +237,19 @@ typedef struct afu
      */
     char buf[0x1000];    /* 4K AFU data buffer (page aligned) */
     __u64 rrq_entry[NUM_RRQ_ENTRY]; /* 128B RRQ (page aligned) */
-    afu_cmd_all_t cmd[NUM_CMDS];
+    afu_cmd_t cmd[NUM_CMDS];
 
 #define AFU_INIT_INDEX   0  // first cmd is used in init/discovery,
                             // free for other use thereafter
 #define AFU_SYNC_INDEX   (NUM_CMDS - 1) // last cmd is rsvd for afu sync
 
     /* Housekeeping data */
-    char master_dev_path[MC_PATHLEN]; /* e. g. /dev/cxl/afu1.0m */
-#ifndef __KERNEL
-    conn_info_t conn_tbl[MAX_CONNS]; /* conn_tbl[0] is rsvd for listening */
-#endif  /* __KERNEL__ */
     ctx_info_t ctx_info[MAX_CONTEXT];
     rht_info_t rht_info[MAX_CONTEXT];
-    char *name;  /* ptr to last component in master_dev_path, e.g. afu1.0m */
-#ifdef __KERNEL__
     struct mutex afu_mutex; /* for anything that needs serialization
 			      e. g. to access afu */
     struct mutex err_mutex; /* for signalling error thread */
     wait_queue_head_t err_cv;
-#else
-    pthread_mutex_t mutex; /* for anything that needs serialization
-                              e. g. to access afu */
-    pthread_mutex_t err_mutex; /* for signalling error thread */
-    pthread_cond_t err_cv;
-#endif /* __KERNEL__ */
     int err_flag;
 #define E_SYNC_INTR   0x1  /* synchronous error interrupt */
 #define E_ASYNC_INTR  0x2  /* asynchronous error interrupt */
@@ -317,19 +274,6 @@ typedef struct afu
     __u64 room;
     __u64 hb;
 
-    /* client IPC */
-    int                    listen_fd;
-    int                    epfd;
-#ifndef __KERNEL__
-    struct sockaddr_un     svr_addr;
-#ifndef _AIX
-    struct epoll_event     events[MAX_CONN_TO_POLL]; /* ready events */
-#else
-    struct pollfd          events[MAX_CONN_TO_POLL]; /* ready events */
-    int                    num_poll_events;
-#endif /* !_AIX */
-#endif /* __KERNEL__ */
-
 #define CFLASH_MAX_LUNS	512
 
     /* LUN discovery: one lun_info per path */
@@ -338,20 +282,7 @@ typedef struct afu
     /* shared block allocator with other AFUs */
     blka_t             *p_blka[CFLASH_MAX_LUNS];
 
-    /* per AFU threads */
-#ifndef __KERNEL__
-    pthread_t ipc_thread;
-    pthread_t rrq_thread;
-    pthread_t err_thread;
-#endif
-
 } __attribute__ ((aligned (0x1000))) afu_t;
-
-struct afu_alloc {
-    afu_t   afu;
-    __u8    page_pad[0x1000 - (sizeof(afu_t) & 0xFFF)];
-};
-
 
 typedef struct asyc_intr_info {
     __u64 status;
@@ -364,8 +295,6 @@ typedef struct asyc_intr_info {
 
 
 
-conn_info_t *alloc_connection(afu_t *p_afu, int fd);
-void free_connection(afu_t *p_afu, conn_info_t *p_conn_info);
 int afu_init(afu_t *p_afu, struct capikv_ini_elm *p_elm);
 void undo_afu_init(afu_t *p_afu, enum undo_level level);
 int afu_term(afu_t *p_afu);
@@ -387,27 +316,9 @@ void afu_link_reset(afu_t *p_afu, int port,
 		    volatile __u64 *p_fc_regs);
 
 
-int do_mc_register(afu_t        *p_afu, 
-		   conn_info_t  *p_conn_info,
-		   __u64        challenge);
-
-int do_mc_unregister(afu_t        *p_afu, 
-		     conn_info_t  *p_conn_info);
-
-int do_mc_open(afu_t        *p_afu, 
-	       conn_info_t  *p_conn_info, 
-	       __u64        flags,
-	       res_hndl_t   *p_res_hndl);
-
 int do_mc_close(afu_t        *p_afu, 
 		conn_info_t  *p_conn_info,
 		res_hndl_t   res_hndl);
-
-int do_mc_size(afu_t        *p_afu, 
-	       conn_info_t  *p_conn_info,
-	       res_hndl_t   res_hndl,
-	       __u64        new_size,
-	       __u64        *p_act_new_size);
 
 int do_mc_xlate_lba(afu_t        *p_afu, 
 		    conn_info_t* p_conn_info,
@@ -430,10 +341,6 @@ int do_mc_stat(afu_t        *p_afu,
 	       conn_info_t  *p_conn_info, 
 	       res_hndl_t   res_hndl,
 	       mc_stat_t    *p_mc_stat);
-
-int do_mc_notify(afu_t        *p_afu, 
-		 conn_info_t    *p_conn_info, 
-		 mc_notify_t    *p_mc_notify);
 
 int grow_lxt(afu_t            *p_afu, 
 	     int              lun_index,
@@ -460,14 +367,6 @@ int clone_lxt(afu_t            *p_afu,
 
 
 
-int xfer_data(int fd, int op, void *buf, ssize_t exp_size);
-
-int rx_mcreg(afu_t *p_afu, struct conn_info *p_conn_info, 
-	     mc_req_t *p_req, mc_resp_t *p_resp);
-int rx_ready(afu_t *p_afu, struct conn_info *p_conn_info, 
-	     mc_req_t *p_req, mc_resp_t *p_resp);
-
-
 asyc_intr_info_t *find_ainfo(__u64 status);
 void afu_rrq_intr(afu_t *p_afu);
 void afu_sync_intr(afu_t *p_afu);
@@ -478,22 +377,13 @@ void *afu_ipc_rx(void *arg);
 void *afu_rrq_rx(void *arg);
 void *afu_err_rx(void *arg);
 
-int mkdir_p(char *file_path);
 void send_cmd(afu_t *p_afu, struct afu_cmd *p_cmd);
 void wait_resp(afu_t *p_afu, struct afu_cmd *p_cmd);
 
-#ifdef __KERNEL__
-int find_lun(cflash_t *p_cflash,
-	     __u32 port_sel);
-#else
-int find_lun(afu_t *p_afu, lun_info_t *p_lun_info,
-	     __u32 port_sel);
-#endif
-int read_cap16(afu_t *p_afu, lun_info_t *p_lun_info,
-	       __u32 port_sel);
-int page83_inquiry(afu_t *p_afu, lun_info_t *p_lun_info,
-		   __u32 port_sel);
-int afu_sync(afu_t *p_afu, ctx_hndl_t ctx_hndl_u, 
+int find_lun(cflash_t *p_cflash, __u32 port_sel);
+int read_cap16(afu_t *p_afu, lun_info_t *p_lun_info, __u32 port_sel);
+int page83_inquiry(afu_t *p_afu, lun_info_t *p_lun_info, __u32 port_sel);
+int afu_sync(afu_t *p_afu, ctx_hndl_t ctx_hndl_u,
 	     res_hndl_t res_hndl_u, __u8 mode);
 
 void print_wwid(__u8 *p_wwid, char *ascii_buf);
@@ -510,12 +400,7 @@ void *sig_rx(void *arg);
 #define FALSE	0
 #endif
 
-#ifdef __KERNEL__
 void timer_start(struct timer_list *p_timer, unsigned long timeout_in_jiffies);
 void timer_stop(struct timer_list *p_timer, bool sync);
-#else
-void timer_start(timer_t timer, time_t sec, int rep);
-void timer_stop(timer_t timer);
-#endif /* __KERNEL__ */
 
 #endif /* _MSERVE_H */
