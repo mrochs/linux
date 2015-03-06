@@ -27,18 +27,18 @@
 
 #define MAX_AUN_CLONE_CNT    0xFF
 
-typedef struct lun_info {
-    uint64_t      *lun_alloc_map;
-    uint32_t       lun_bmap_size;
-    uint32_t       total_aus;
-    uint64_t       free_aun_cnt;
+struct ba_lun_info {
+	u64 *lun_alloc_map;
+	u32 lun_bmap_size;
+	u32 total_aus;
+	u64 free_aun_cnt;
 
-    /* indices to be used for elevator lookup of free map */
-    uint32_t       free_low_idx;
-    uint32_t       free_curr_idx;
-    uint32_t       free_high_idx;
+	/* indices to be used for elevator lookup of free map */
+	u32 free_low_idx;
+	u32 free_curr_idx;
+	u32 free_high_idx;
 
-    unsigned char *aun_clone_map;
-} lun_info_t;
+	unsigned char *aun_clone_map;
+};
 
 #endif /* ifndef _CFLASH_BA_INTERNAL_H */

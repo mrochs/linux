@@ -23,7 +23,6 @@
 #ifndef AFU_FC_H
 #define AFU_FC_H
 
-
 /**
  * @enum AFU_PORT_ID
  * @brief Typedef of the two supported error log levels.
@@ -31,19 +30,16 @@
  * be reported. All predictive errors MUST have a callout.
  * MAX_WWPNS_PER_ADAPTER must be the last item in the list!
  */
-typedef enum
-{
-    AFU_PORT_ID_TOP       = 0x00,
-    AFU_PORT_ID_BOTTOM    = 0x01,
-    MAX_WWPNS_PER_ADAPTER // This MUST be last
+typedef enum {
+	AFU_PORT_ID_TOP = 0x00,
+	AFU_PORT_ID_BOTTOM = 0x01,
+	MAX_WWPNS_PER_ADAPTER	// This MUST be last
 } AFU_PORT_ID;
-
 
 // FC module register address offset for each port (byte address)
 #define FC_PORT_REG_SIZE  0x1000
 #define FC_PORT_BASE_OFFSET  0x2012000
 #define FC_PORT_MMAP_SIZE ((FC_PORT_BASE_OFFSET) + (MAX_WWPNS_PER_ADAPTER) * (FC_PORT_REG_SIZE))
-
 
 // FC module register offset (byte address)
 #define FC_MTIP_REV 0x000

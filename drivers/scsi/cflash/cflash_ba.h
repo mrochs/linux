@@ -25,27 +25,25 @@
 
 #include <linux/types.h>
 
-typedef size_t aun_t;
+struct ba_lun {
+	u64 lun_id;
+	u64 wwpn;
+	size_t lsize;		/* Lun size in number of LBAs             */
+	size_t lba_size;	/* LBA size in number of bytes            */
+	size_t au_size;		/* Allocation Unit size in number of LBAs */
+	void *ba_lun_handle;
+};
 
-typedef struct ba_lun {
-	uint64_t	lun_id;
-	uint64_t	wwpn;
-	size_t		lsize;     /* Lun size in number of LBAs             */
-	size_t		lba_size;  /* LBA size in number of bytes            */
-	size_t		au_size;   /* Allocation Unit size in number of LBAs */
-	void	       *ba_lun_handle;
-} ba_lun_t;
-
-int ba_init(ba_lun_t *ba_lun);
-void ba_terminate(ba_lun_t *ba_lun);
-aun_t ba_alloc(ba_lun_t *ba_lun);
-int ba_free(ba_lun_t *ba_lun, aun_t to_free);
-int ba_clone(ba_lun_t *ba_lun, aun_t to_clone);
-uint64_t ba_space(ba_lun_t *ba_lun);
+int ba_init(struct ba_lun *ba_lun);
+void ba_terminate(struct ba_lun *ba_lun);
+u64 ba_alloc(struct ba_lun *ba_lun);
+int ba_free(struct ba_lun *ba_lun, u64 to_free);
+int ba_clone(struct ba_lun *ba_lun, u64 to_clone);
+u64 ba_space(struct ba_lun *ba_lun);
 
 #ifdef BA_DEBUG
-void dump_ba_map(ba_lun_t *ba_lun);
-void dump_ba_clone_map(ba_lun_t *ba_lun);
+void dump_ba_map(struct ba_lun *ba_lun);
+void dump_ba_clone_map(struct ba_lun *ba_lun);
 #endif
 
 #endif /* _CFLASH_BA_H */

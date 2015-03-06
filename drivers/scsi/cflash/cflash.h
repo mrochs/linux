@@ -24,7 +24,6 @@
 #ifndef _CFLASH_H
 #define _CFLASH_H
 
-
 #include <linux/list.h>
 #include <linux/types.h>
 #include <scsi/scsi.h>
@@ -62,21 +61,17 @@ extern unsigned int cflash_debug;
 #define cflash_info(...) printk(KERN_INFO CFLASH_NAME ": "__VA_ARGS__)
 #define cflash_dbg(...) CFLASH_DBG_CMD(printk(KERN_INFO CFLASH_NAME ": "__VA_ARGS__))
 
-
 #define ENTER CFLASH_DBG_CMD(printk(KERN_INFO CFLASH_NAME": Entering %s\n", __func__))
 #define LEAVE CFLASH_DBG_CMD(printk(KERN_INFO CFLASH_NAME": Leaving %s\n", __func__))
-
 
 /*
  * Prototypes
  */
-extern int cflash_disk_attach(struct scsi_device *sdev, void __user *arg);
-extern int cflash_disk_uvirtual(struct scsi_device *sdev, void __user *arg);
-extern int cflash_disk_detach(struct scsi_device *sdev, void __user *arg);
-extern int cflash_vlun_resize(struct scsi_device *sdev, void __user *arg);
-extern int cflash_disk_release(struct scsi_device *sdev, void __user *arg);
+extern int cflash_disk_attach(struct scsi_device *sdev, void __user * arg);
+extern int cflash_disk_uvirtual(struct scsi_device *sdev, void __user * arg);
+extern int cflash_disk_detach(struct scsi_device *sdev, void __user * arg);
+extern int cflash_vlun_resize(struct scsi_device *sdev, void __user * arg);
+extern int cflash_disk_release(struct scsi_device *sdev, void __user * arg);
 extern void hexdump(void *data, long len, const char *hdr);
-
-
 
 #endif
