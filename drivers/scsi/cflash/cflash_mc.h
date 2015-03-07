@@ -186,15 +186,4 @@ typedef struct mc_notify_s {
 int cflash_init_afu(struct cflash *);
 void cflash_term_afu(struct cflash *);
 
-#define CMD_MCREG         1	// Register an AFU + context handle with MC
-#define CMD_MCUNREG       2	// Unregister a context handle with MC
-
-/* 
- * XXX: Assume mode bits are passed in in the flags field. 
- *      Reserve a couple of bits for now
- */
-#define MODE_MASK 0x0000000000000003
-#define MCREG_INITIAL_REG         0x1	// fresh registration
-#define MCREG_DUP_REG             0x0	// dup
-
 #endif /* ifndef _CFLASHMC_H */

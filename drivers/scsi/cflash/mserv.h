@@ -146,19 +146,6 @@ struct ctx_info {
 /* forward decls */
 struct capikv_ini_elm;
 
-/* On accept, the server allocates a connection info. 
-   A connection can be associated with at most one AFU context.
- */
-typedef struct conn_info {
-	int fd;			/* accepted fd on server, -1 means entry is free */
-	pid_t client_pid;	/* client PID - trace use only */
-	int client_fd;		/* client's socket fd - trace use only */
-	ctx_hndl_t ctx_hndl;	/* AFU context this connection is bound to */
-	u8 mode;		/* registration mode - see cblk.h */
-	struct ctx_info *p_ctx_info;	/* ptr to bound context 
-					   or NULL if not registered */
-} conn_info_t;
-
 /* LUN discovery results are in lun_info */
 struct lun_info {
 	u64 lun_id;		/* from cmd line/cfg file */
@@ -284,25 +271,6 @@ int wait_port_offline(volatile u64 * p_fc_regs,
 int afu_set_wwpn(struct afu *p_afu, int port,
 		 volatile u64 * p_fc_regs, u64 wwpn);
 void afu_link_reset(struct afu *p_afu, int port, volatile u64 * p_fc_regs);
-
-int do_mc_close(struct afu *p_afu,
-		conn_info_t * p_conn_info, res_hndl_t res_hndl);
-
-int do_mc_xlate_lba(struct afu *p_afu,
-		    conn_info_t * p_conn_info,
-		    res_hndl_t res_hndl, u64 v_lba, u64 * p_p_lba);
-
-int do_mc_clone(struct afu *p_afu,
-		conn_info_t * p_conn_info,
-		ctx_hndl_t ctx_hndl_src, u64 challenge, u64 flags);
-
-int do_mc_dup(struct afu *p_afu,
-	      conn_info_t * p_conn_info,
-	      ctx_hndl_t ctx_hndl_cand, u64 challenge);
-
-int do_mc_stat(struct afu *p_afu,
-	       conn_info_t * p_conn_info,
-	       res_hndl_t res_hndl, mc_stat_t * p_mc_stat);
 
 int grow_lxt(struct afu *p_afu,
 	     int lun_index,

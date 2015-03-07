@@ -32,8 +32,8 @@
 extern unsigned int cflash_debug;
 
 #define CFLASH_NAME                      "cflash"
-#define CFLASH_DRIVER_VERSION           "1.0.0"
-#define CFLASH_DRIVER_DATE              "(January 16, 2015)"
+#define CFLASH_DRIVER_VERSION           "1.0.1"
+#define CFLASH_DRIVER_DATE              "(March 6, 2015)"
 
 #define PCI_DEVICE_ID_IBM_CORSA		0x04F0
 #define CFLASH_SUBS_DEV_ID		0x04F0
@@ -64,11 +64,19 @@ extern unsigned int cflash_debug;
 #define ENTER CFLASH_DBG_CMD(printk(KERN_INFO CFLASH_NAME": Entering %s\n", __func__))
 #define LEAVE CFLASH_DBG_CMD(printk(KERN_INFO CFLASH_NAME": Leaving %s\n", __func__))
 
+
+enum open_mode_type {
+	MODE_NONE = 0, 
+	MODE_VIRTUAL, 
+	MODE_PHYSICAL
+};
+
 /*
  * Prototypes
  */
 extern int cflash_disk_attach(struct scsi_device *sdev, void __user * arg);
-extern int cflash_disk_uvirtual(struct scsi_device *sdev, void __user * arg);
+extern int cflash_disk_open(struct scsi_device *sdev, void __user * arg, 
+			    enum open_mode_type mode);
 extern int cflash_disk_detach(struct scsi_device *sdev, void __user * arg);
 extern int cflash_vlun_resize(struct scsi_device *sdev, void __user * arg);
 extern int cflash_disk_release(struct scsi_device *sdev, void __user * arg);

@@ -458,8 +458,12 @@ static int cflash_ioctl(struct scsi_device *sdev, int cmd, void __user * arg)
 
 		break;
 	case DK_CAPI_USER_DIRECT:
+		rc = cflash_disk_open(sdev, arg, MODE_PHYSICAL);
+		if (rc) {
+			goto cflash_ioctl_exit;
+		}
 	case DK_CAPI_USER_VIRTUAL:
-		rc = cflash_disk_uvirtual(sdev, arg);
+		rc = cflash_disk_open(sdev, arg, MODE_VIRTUAL);
 		if (rc) {
 			goto cflash_ioctl_exit;
 		}
