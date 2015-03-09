@@ -7,21 +7,22 @@
 * 2 of the License, or (at your option) any later version.
 */
 #include "cflash.h"
-#include "cflash_prov.h"
+#include "cflash_util.h"
+#include "cflash_ioctl.h"
 
 bool prov_find_vpd_kw(const char *i_kw,
 		      const u8 * i_vpd_buffer,
 		      size_t i_vpd_buffer_length,
 		      u8 * o_kwdata, int *io_kwdata_length)
 {
-	//Locals 
+	/* Locals  */
 	bool l_rc = false;
 	bool l_found_kw = false;
 	prov_pci_vpd_header_t *l_vpd_header = NULL;
 	int l_section_length = 0;
 	u8 *l_buffer_ptr = NULL;
 
-	//+1 b/c we want a terminating null 
+	/* 1 b/c we want a terminating null  */
 	char l_curr_kw_name[KWNAME_SZ + 1] = { 0 };
 
 	char l_curr_kw_data[KWDATA_SZ] = { 0 };
@@ -29,12 +30,14 @@ bool prov_find_vpd_kw(const char *i_kw,
 	int l_vpd_name_sz = 0;
 	prov_pci_vpd_segment_t *l_vpd_section = NULL;
 
-	//get the address of the end of the buffer. note this is the 
-	//1st byte PAST the end of the array 
+	/* get the address of the end of the buffer. note this is the 
+	 * 1st byte PAST the end of the array 
+	 */
+
 	const u8 *l_end_of_buffer = &i_vpd_buffer[i_vpd_buffer_length];
 	u8 l_curr_kw_sz = 0;
 
-	//Code 
+	/* Code  */
 	cflash_dbg("Entry\n");
 
 	do {
@@ -46,11 +49,12 @@ bool prov_find_vpd_kw(const char *i_kw,
 			l_rc = false;
 			break;
 		}
-		//hope for the best 
+		/* hope for the best  */
 		l_vpd_header = (prov_pci_vpd_header_t *) i_vpd_buffer;
 
-		//validate if we have a real PCI VPD or not 
-		//we expect read-only data to come first 
+		/* validate if we have a real PCI VPD or not 
+		 * we expect read-only data to come first 
+		 */
 
 		if (l_vpd_header->pci_eyecatcher != PCI_FORMAT_EYECATCHER) {
 			cflash_err
@@ -80,13 +84,14 @@ bool prov_find_vpd_kw(const char *i_kw,
 
 		cflash_info("Parsing VPD for '%s'\n", l_vpd_name);
 
-		//get the address of the VPD section that follows the name 
-		//by relying on the fact that the name section is an "array" 
-		//in the struct, and that we can index into the array for 
-		//the length of the KW. For example - a 0-length name 
-		//would technically mean that the "name" byte of the struct 
-		//represents the next segment of data. A 1-byte name would 
-		//get the 2nd byte after, etc.  
+		/* get the address of the VPD section that follows the name 
+		 * by relying on the fact that the name section is an "array" 
+		 * in the struct, and that we can index into the array for 
+		 * the length of the KW. For example - a 0-length name 
+		 * would technically mean that the "name" byte of the struct 
+		 * represents the next segment of data. A 1-byte name would 
+		 * get the 2nd byte after, etc.  
+		 */
 
 		l_vpd_section =
 		    (prov_pci_vpd_segment_t *) &
@@ -100,10 +105,10 @@ bool prov_find_vpd_kw(const char *i_kw,
 		cflash_dbg("Got %d bytes of RO section data.\n",
 			   l_section_length);
 
-		//set up the pointer to the beginning of the keyword data 
+		/* set up the pointer to the beginning of the keyword data */
 		l_buffer_ptr = l_vpd_section->keywords;
 
-		//l_buffer_pt 
+		/* l_buffer_pt */
 		while ((l_buffer_ptr < l_end_of_buffer) &&
 		       (*l_buffer_ptr != PCI_DATA_ENDTAG)) {
 
@@ -119,31 +124,34 @@ bool prov_find_vpd_kw(const char *i_kw,
 				cflash_info("RW Data section found of "
 					    "length %d bytes, starting a "
 					    "new section.\n", l_section_length);
-				continue;	//new section found, so continue 
-				//processing 
+				continue;	/* new section found, so 
+						 * continue processing 
+						 */
 			}
-			//get the name of the KW + its size 
+			/* get the name of the KW + its size */
 			l_curr_kw_name[0] = *l_buffer_ptr++;
 			l_curr_kw_name[1] = *l_buffer_ptr++;
 			l_curr_kw_sz = *l_buffer_ptr++;
 			cflash_dbg("Current KW: '%s' size = %d\n",
 				   l_curr_kw_name, l_curr_kw_sz);
 
-			//copy the data out. note this may copy zero bytes 
-			//if the KW is zero length (which seems to be 
-			//allowed by the spec).  
+			/* copy the data out. note this may copy zero bytes 
+			 * if the KW is zero length (which seems to be 
+			 * allowed by the spec).  
+			 */
 			memcpy(l_curr_kw_data, l_buffer_ptr, l_curr_kw_sz);
 
-			//check to see if we found the desired KW!  
+			/* check to see if we found the desired KW!   */
 			if (0 == strcmp(i_kw, l_curr_kw_name)) {
 				l_found_kw = true;
 				break;
 			}
-			//advance the pointer by the size of the KW and 
-			//loop again...  
+			/* advance the pointer by the size of the KW and 
+			 * loop again...  
+			 */
 			l_buffer_ptr += l_curr_kw_sz;
 
-		}		//end inner while that is searching the buffer for KW data 
+		}/* end inner while that is searching the buffer for KW data */
 
 		if (l_found_kw) {
 			cflash_info("Found VPD for keyword '%s' "
@@ -168,10 +176,52 @@ bool prov_find_vpd_kw(const char *i_kw,
 		}
 	} while (0);
 
-	//all paths exit via the same return path 
+	/* all paths exit via the same return path */
 	if (l_rc == false) {
-		//set the output size to 0 for consistency 
+		/* set the output size to 0 for consistency  */
 		*io_kwdata_length = 0;
 	}
 	return l_rc;
+}
+
+void marshall_virt_to_resize(struct dk_capi_uvirtual *pvirt, 
+			     struct dk_capi_resize *psize)
+{
+	psize->version = pvirt->version;
+	psize->path_id = pvirt->path_id;
+	psize->rsvd[0] = pvirt->rsvd[0];
+	psize->rsvd[1] = pvirt->rsvd[1];
+	psize->flags = pvirt->flags;
+	psize->return_flags = pvirt->return_flags;
+	psize->context_id = pvirt->context_id;
+	psize->rsrc_handle = pvirt->rsrc_handle;
+	psize->challenge = pvirt->challenge;
+	psize->req_size = pvirt->lun_size;
+	psize->last_lba = pvirt->last_lba;
+}
+
+void marshall_rele_to_resize(struct dk_capi_release *prele, 
+			     struct dk_capi_resize *psize)
+{
+	psize->version = prele->version;
+	psize->path_id = prele->path_id;
+	psize->rsvd[0] = prele->rsvd[0];
+	psize->rsvd[1] = prele->rsvd[1];
+	psize->flags = prele->flags;
+	psize->return_flags = prele->return_flags;
+	psize->context_id = prele->context_id;
+	psize->rsrc_handle = prele->rsrc_handle;
+	psize->challenge = prele->challenge;
+}
+
+void marshall_det_to_rele(struct dk_capi_detach *pdet, 
+			  struct dk_capi_release *prel)
+{
+	prel->version = pdet->version;
+	prel->path_id = pdet->path_id;
+	prel->rsvd[0] = pdet->rsvd[0];
+	prel->rsvd[1] = pdet->rsvd[1];
+	prel->flags = pdet->flags;
+	prel->return_flags = pdet->return_flags;
+	prel->context_id = pdet->context_id;
 }

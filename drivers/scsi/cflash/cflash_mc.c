@@ -32,7 +32,7 @@
 #include "cflash_mc.h"
 #include "cflash_ba.h"
 #include "cflash_ioctl.h"
-#include "cflash_prov.h"
+#include "cflash_util.h"
 #include "afu_fc.h"
 #include "mserv.h"
 
@@ -291,6 +291,7 @@ int cflash_disk_open(struct scsi_device *sdev, void __user * arg,
 
 	struct dk_capi_uvirtual *pvirt = (struct dk_capi_uvirtual *)arg;
 	struct dk_capi_udirect *pphys = (struct dk_capi_udirect *)arg;
+	struct dk_capi_resize  resize;
 
 	u64 context_id;
 	u64 lun_size = 0;
@@ -315,6 +316,15 @@ int cflash_disk_open(struct scsi_device *sdev, void __user * arg,
 		pphys->rsrc_handle = -1;
 	} else {
 		cflash_err("in %s, unknown mode %d\n", __func__, mode);
+		rc = -EINVAL;
+		goto out;
+	}
+	if (p_lun_info->mode == MODE_NONE) { 
+		p_lun_info->mode = mode;
+	} else  if (p_lun_info->mode != mode) {
+		cflash_err("in %s, disk already opened in mode %d "
+			   "mode requested %d\n", 
+			   __func__, p_lun_info->mode, mode);
 		rc = -EINVAL;
 		goto out;
 	}
@@ -358,7 +368,6 @@ int cflash_disk_open(struct scsi_device *sdev, void __user * arg,
 
 		rsrc_handle = (p_rht_entry - p_rht_info->rht_start);
 		block_size = p_lun_info->li.blk_len;
-		last_lba = p_lun_info->li.max_lba;
 
 		rc = 0;
 	} else {
@@ -367,16 +376,28 @@ int cflash_disk_open(struct scsi_device *sdev, void __user * arg,
 	}
 
 	if (mode == MODE_VIRTUAL) {
+		if (lun_size != 0) {
+			marshall_virt_to_resize (pvirt, &resize);
+			rc = cflash_vlun_resize(sdev, &resize);
+			if (rc) { 
+				cflash_err("in %s resize failed rc %d\n", 
+					   __func__, rc);
+				goto out;
+			}
+			last_lba = resize.last_lba;
+		}
 		pvirt->return_flags = 0;
 		pvirt->block_size = block_size;
 		pvirt->last_lba = last_lba;
 		pvirt->rsrc_handle = rsrc_handle;
 	} else if (mode == MODE_PHYSICAL) {
+		last_lba = p_lun_info->li.max_lba;
 		pphys->return_flags = 0;
 		pphys->block_size = block_size;
 		pphys->last_lba = last_lba;
 		pphys->rsrc_handle = rsrc_handle;
 	}
+	p_lun_info->mode = mode;
 
 out:
 	cflash_info("in %s returning handle 0x%llx rc=%d bs %lld llba %lld\n",
@@ -408,26 +429,28 @@ int cflash_disk_release(struct scsi_device *sdev, void __user * arg)
 {
 	struct cflash *p_cflash = (struct cflash *)sdev->host->hostdata;
 	struct afu *p_afu = p_cflash->p_afu;
+	struct lun_info *p_lun_info = sdev->hostdata;
 
-	struct dk_capi_resize *parg = (struct dk_capi_resize *)arg;
-	res_hndl_t res_hndl = parg->rsrc_handle;
+	struct dk_capi_release *prele = (struct dk_capi_release *)arg;
+	struct dk_capi_resize size;
+	res_hndl_t res_hndl = prele->rsrc_handle;
 
 	int rc = 0;
 
-	struct ctx_info *p_ctx_info = &p_afu->ctx_info[parg->context_id];
+	struct ctx_info *p_ctx_info = &p_afu->ctx_info[prele->context_id];
 	struct rht_info *p_rht_info = p_ctx_info->p_rht_info;
 	struct sisl_rht_entry *p_rht_entry;
 
 	cflash_info("%s, context=0x%llx res_hndl=0x%llx, challenge=0x%llx\n",
-		    __func__, parg->context_id,
-		    parg->rsrc_handle, parg->challenge);
+		    __func__, prele->context_id,
+		    prele->rsrc_handle, prele->challenge);
 
-	if (parg->context_id < MAX_CONTEXT) {
-		p_ctx_info = &p_afu->ctx_info[parg->context_id];
+	if (prele->context_id < MAX_CONTEXT) {
+		p_ctx_info = &p_afu->ctx_info[prele->context_id];
 		p_rht_info = p_ctx_info->p_rht_info;
 	} else {
-		cflash_info("in %s context id too large 0x%llx\n", __func__,
-			    parg->context_id);
+		cflash_err("in %s context id too large 0x%llx\n", __func__,
+			    prele->context_id);
 		rc = -EINVAL;
 		goto out;
 	}
@@ -436,15 +459,24 @@ int cflash_disk_release(struct scsi_device *sdev, void __user * arg)
 		p_rht_entry = &p_rht_info->rht_start[res_hndl];
 		if (p_rht_entry->nmask == 0) {	/* not open */
 			rc = -EINVAL;
-			cflash_info("in %s not open\n", __func__);
+			cflash_err("in %s not open\n", __func__);
 			goto out;
 		}
 
-		/* set size to 0, this will clear LXT_START and LXT_CNT 
+		/* Resize to 0 for virtual LUNS.
+		 * set size to 0, this will clear LXT_START and LXT_CNT 
 		 * fields in the RHT entry 
 		 */
-		parg->req_size = 0;
-		cflash_vlun_resize(sdev, arg);	// p_conn good ?  
+		if (p_lun_info->mode ==  MODE_VIRTUAL) { 
+			marshall_rele_to_resize (prele, &size); 
+			size.req_size = 0; 
+			rc = cflash_vlun_resize(sdev, &size);/* p_conn good ? */
+			if (rc) {
+				cflash_err("in %s resize failed rc %d\n", 
+					   __func__, rc);
+				goto out;
+			}
+		}
 
 		p_rht_entry->nmask = 0;
 		p_rht_entry->fp = 0;
@@ -489,19 +521,20 @@ int cflash_disk_detach(struct scsi_device *sdev, void __user * arg)
 {
 	struct cflash *p_cflash = (struct cflash *)sdev->host->hostdata;
 	struct afu *p_afu = p_cflash->p_afu;
+	struct lun_info *p_lun_info = sdev->hostdata;
 
-	struct dk_capi_detach *parg = (struct dk_capi_detach *)arg;
-	struct dk_capi_release *rel = (struct dk_capi_release *)parg;
+	struct dk_capi_detach *pdet = (struct dk_capi_detach *)arg;
+	struct dk_capi_release rel;
 
 	struct ctx_info *p_ctx_info;
 
 	int i;
 	int rc = 0;
 
-	cflash_info("%s, context=0x%llx\n", __func__, parg->context_id);
+	cflash_info("%s, context=0x%llx\n", __func__, pdet->context_id);
 
-	if (parg->context_id < MAX_CONTEXT)
-		p_ctx_info = &p_afu->ctx_info[parg->context_id];
+	if (pdet->context_id < MAX_CONTEXT)
+		p_ctx_info = &p_afu->ctx_info[pdet->context_id];
 	else {
 		rc = -EINVAL;
 		goto out;
@@ -515,9 +548,12 @@ int cflash_disk_detach(struct scsi_device *sdev, void __user * arg)
 		 */
 
 		if (p_ctx_info->p_rht_info->ref_cnt-- == 1) {
-			for (i = 0; i < MAX_RHT_PER_CONTEXT; i++) {
-				rel->rsrc_handle = i;
-				cflash_disk_release(sdev, arg);
+			if (p_lun_info->mode ==  MODE_VIRTUAL) { 
+				marshall_det_to_rele(pdet, &rel);
+				for (i = 0; i < MAX_RHT_PER_CONTEXT; i++) {
+					rel.rsrc_handle = i;
+					cflash_disk_release(sdev, &rel);
+				}
 			}
 		}
 
@@ -527,6 +563,7 @@ int cflash_disk_detach(struct scsi_device *sdev, void __user * arg)
 		/* drop all capabilities */
 		write_64(&p_ctx_info->p_ctrl_map->ctx_cap, 0);
 	}
+	p_lun_info->mode = MODE_NONE;
 
 out:
 	cflash_info("in %s returning rc=%d\n", __func__, rc);
@@ -584,8 +621,15 @@ int cflash_vlun_resize(struct scsi_device *sdev, void __user * arg)
 		    __func__, parg->context_id,
 		    parg->rsrc_handle, parg->req_size, new_size);
 
-	if (parg->context_id < MAX_CONTEXT) {
+	if (p_lun_info->mode != MODE_VIRTUAL) {
+		cflash_err("in %s cannot resize lun that is not virtual %d\n", 
+			   __func__, p_lun_info->mode);
+		rc = -EINVAL;
+		goto out;
 
+	}
+
+	if (parg->context_id < MAX_CONTEXT) {
 		p_ctx_info = &p_afu->ctx_info[parg->context_id];
 		p_rht_info = p_ctx_info->p_rht_info;
 	} else {

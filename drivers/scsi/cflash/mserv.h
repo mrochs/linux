@@ -159,6 +159,7 @@ struct lun_info {
 	int lfd;
 	struct cxl_ioctl_start_work work;
 
+	enum open_mode_type mode;
 #define LUN_INFO_VALID   0x01
 };
 

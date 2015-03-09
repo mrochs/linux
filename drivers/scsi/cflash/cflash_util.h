@@ -10,6 +10,8 @@
 #ifndef _CFLASHPROV_H
 #define _CFLASHPROV_H
 
+#include "cflash_ioctl.h"
+
 #define KWDATA_SZ  256		//max size of a VPD buffer
 #define KWNAME_SZ 3
 #define PROV_CONVERT_UINT8_ARRAY_UINT16(lo,hi) \
@@ -40,4 +42,12 @@ bool prov_find_vpd_kw(const char *i_kw,
 		      size_t i_vpd_buffer_length,
 		      u8 * o_kwdata, int *io_kwdata_length);
 
+
+void marshall_virt_to_resize(struct dk_capi_uvirtual *pvirt, 
+			     struct dk_capi_resize *psize);
+
+void marshall_rele_to_resize(struct dk_capi_release *prele, 
+			     struct dk_capi_resize *psize);
+void marshall_det_to_rele(struct dk_capi_detach *pdet, 
+			  struct dk_capi_release *prel);
 #endif /* ifndef _CFLASHPROV_H */
