@@ -225,3 +225,15 @@ void marshall_det_to_rele(struct dk_capi_detach *pdet,
 	prel->return_flags = pdet->return_flags;
 	prel->context_id = pdet->context_id;
 }
+
+void marshall_clone_to_rele(struct dk_capi_clone *pclone,
+			    struct dk_capi_release *prel)
+{
+	prel->version = pclone->version;
+	prel->path_id = pclone->path_id;
+	prel->rsvd[0] = pclone->rsvd[0];
+	prel->rsvd[1] = pclone->rsvd[1];
+	prel->flags = pclone->flags;
+	prel->context_id = pclone->context_id_dst;
+	prel->challenge = pclone->challenge_dst;
+}

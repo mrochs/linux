@@ -93,6 +93,17 @@ struct dk_capi_resize {
 	u64 last_lba;		/* Returned last LBA of LUN */
 };
 
+struct dk_capi_clone {
+	u16 version;		/* SCSI_VERSION_0 */
+	u16 path_id;		/* MPIO path ID */
+	u16 rsvd[2];
+	u64 flags;		/* Flags for clone */
+	u64 context_id_src;	/* Context ID to clone from */
+	u64 context_id_dst;	/* Context ID to clone to */
+	u64 challenge_src;	/* Validation cookie to access source context */
+	u64 challenge_dst;	/* Validation cookie to access dest context */
+};
+
 struct dk_capi_verify {
 	u16 version;		/* SCSI_VERSION_0 */
 	u16 path_id;		/* ID of path to verify */
@@ -141,6 +152,7 @@ struct dk_capi_recover_afu {
 #define DK_CAPI_LOG_EVENT         _IOW(CXL_MAGIC, 0x88, struct dk_capi_log)
 #define DK_CAPI_RECOVER_AFU       _IOW(CXL_MAGIC, 0x89, struct dk_capi_recover_afu)
 #define DK_CAPI_QUERY_EXCEPTIONS  _IOW(CXL_MAGIC, 0x8A, struct dk_capi_log)
+#define DK_CAPI_CLONE		  _IOW(CXL_MAGIC, 0x8B, struct dk_capi_clone)
 
 #define DK_CAPI_BLOCK		  0x1000
 #endif /* ifndef _CFLASHIOCTL_H */

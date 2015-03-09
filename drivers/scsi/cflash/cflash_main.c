@@ -490,10 +490,14 @@ static int cflash_ioctl(struct scsi_device *sdev, int cmd, void __user * arg)
 		}
 
 		break;
+	case DK_CAPI_CLONE:
+		rc = cflash_disk_clone(sdev, arg);
+		if (rc) {
+			goto cflash_ioctl_exit;
+		}
+
+		break;
 	default:
-		/* XXX - TODO: MRO - do we pass along to another handler (ie:
-		 * ata_sas_scsi_ioctl() a la ipr.c) ?
-		 */
 		rc = -EINVAL;
 		break;
 	}

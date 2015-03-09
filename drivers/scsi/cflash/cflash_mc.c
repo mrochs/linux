@@ -1823,17 +1823,18 @@ int cflash_xlate_lba(struct scsi_device *sdev, void __user * arg)
 }
 
 /*
- * NAME:        do_mc_clone
+ * NAME:        cflash_disk_clone
  *
- * FUNCTION:    clone by making a snapshot copy of another context
+ * FUNCTION:    Clone a context by making a snapshot copy of another, specified
+ *		context. This routine effectively performs cflash_disk_open
+ *		operations for each in-use virtual resource in the source
+ *		context. Note that the destination context must be in pristine
+ *		state and cannot have any resource handles open at the time
+ *		of the clone.
  *
  * INPUTS:
- *              p_afu        - Pointer to afu struct
- *              p_conn_info  - Pointer to connection the request came in
- *                             This is also the target of the clone.
- *              src_context - AFU context to clone from
- *              challenge    - used to validate access to ctx_hndl_src
- *              flags        - permissions for the cloned copy
+ *              sdev       - Pointer to scsi device structure
+ *              arg        - Pointer to ioctl specific structure
  *
  * OUTPUTS:
  *              None
@@ -1841,88 +1842,74 @@ int cflash_xlate_lba(struct scsi_device *sdev, void __user * arg)
  * RETURNS:
  *              0           - Success
  *              errno       - Failure
- *
- * clone effectively does what open and size do. The destination
- * context must be in pristine state with no resource handles open.
- *
  */
-// todo dest ctx must be unduped
 int cflash_disk_clone(struct scsi_device *sdev, void __user * arg)
 {
 	struct cflash *p_cflash = (struct cflash *)sdev->host->hostdata;
+	struct lun_info *p_lun_info = sdev->hostdata;
 	struct afu *p_afu = p_cflash->p_afu;
+	struct dk_capi_clone *pclone = (struct dk_capi_clone *)arg;
+	struct dk_capi_release release = { 0 };
 
-	/* XXX: Input arguments */
-	u64 src_context = 0;
-	u64 challenge = 0;
-	u64 flags;
-
-	/* XXX: How to set p_ctx_info */
-	struct ctx_info *p_ctx_info = NULL;
-	struct rht_info *p_rht_info = p_ctx_info->p_rht_info;
-	u64 context_id = 0;
-
-	struct ctx_info *p_ctx_info_src;
-	struct rht_info *p_rht_info_src;
+	struct ctx_info *p_ctx_info_src,
+			*p_ctx_info_dst;
+	struct rht_info *p_rht_info_src,
+			*p_rht_info_dst;
 	u64 reg;
 	int i, j;
-	int rc, lun_index = 0;	/* XXX - fix when routine is transitioned */
+	int rc,
+	    lun_index = p_lun_info - p_afu->lun_info;
 
 	cflash_info("%s, challenge=%lld ctx_hdl=%lld\n",
-		    __func__, challenge, src_context);
+		    __func__, pclone->challenge_src, pclone->context_id_src);
 
-	/* verify there is no open resource handle in the target context 
-	 * of the clone.  
-	 */
+	/* Do not clone yourself */
+	if (pclone->context_id_src == pclone->context_id_dst)
+		return -EINVAL;
 
-	for (i = 0; i < MAX_RHT_PER_CONTEXT; i++) {
-		if (p_rht_info->rht_start[i].nmask != 0) {
-			return EINVAL;
-		}
-	}
-
-	/* do not clone yourself */
-	if (context_id == src_context) {
-		return EINVAL;
-	}
-
-	if (src_context < MAX_CONTEXT) {
-		p_ctx_info_src = &p_afu->ctx_info[src_context];
-		p_rht_info_src = &p_afu->rht_info[src_context];
+	if ((pclone->context_id_src < MAX_CONTEXT) &&
+	    (pclone->context_id_dst < MAX_CONTEXT)) {
+		p_ctx_info_src = &p_afu->ctx_info[pclone->context_id_src];
+		p_rht_info_src = &p_afu->rht_info[pclone->context_id_src];
+		p_ctx_info_dst = &p_afu->ctx_info[pclone->context_id_dst];
+		p_rht_info_dst = &p_afu->rht_info[pclone->context_id_dst];
 	} else {
-		return EINVAL;
+		return -EINVAL;
 	}
+
+	/* Verify there is no open resource handle in the destination context */
+	for (i = 0; i < MAX_RHT_PER_CONTEXT; i++)
+		if (p_rht_info_dst->rht_start[i].nmask != 0)
+			return -EINVAL;
 
 	reg = read_64(&p_ctx_info_src->p_ctrl_map->mbox_r);
+	if (reg == 0)		/* zeroed mbox is a locked mbox */
+		return -EACCES;	/* return Permission denied */
 
-	if (reg == 0 ||		/* zeroed mbox is a locked mbox */
-	    challenge != reg) {
-		return EACCES;	/* return Permission denied */
-	}
-
-	/* this loop is equivalent to do_mc_open & cflash_vlun_resize 
+	/*
+	 * This loop is equivalent to cflash_disk_open & cflash_vlun_resize.
 	 * Not checking if the source context has anything open or whether 
-	 * it is even registered.  
+	 * it is even registered. Cleanup when the clone fails.
 	 */
-
 	for (i = 0; i < MAX_RHT_PER_CONTEXT; i++) {
-		p_rht_info->rht_start[i].nmask =
+		p_rht_info_dst->rht_start[i].nmask =
 		    p_rht_info_src->rht_start[i].nmask;
-		p_rht_info->rht_start[i].fp =
+		p_rht_info_dst->rht_start[i].fp =
 		    SISL_RHT_FP_CLONE(p_rht_info_src->rht_start[i].fp,
-				      flags & 0x3);
+				      pclone->flags & 0x3);
 
-		rc = clone_lxt(p_afu, lun_index, context_id, i,
-			       &p_rht_info->rht_start[i],
+		rc = clone_lxt(p_afu, lun_index, pclone->context_id_dst, i,
+			       &p_rht_info_dst->rht_start[i],
 			       &p_rht_info_src->rht_start[i]);
-
-		if (rc != 0) {
+		if (rc) {
+			marshall_clone_to_rele(pclone, &release);
 			for (j = 0; j < i; j++) {
-				cflash_disk_release(sdev, arg);
+				release.rsrc_handle = j;
+				cflash_disk_release(sdev, &release);
 			}
 
-			p_rht_info->rht_start[i].nmask = 0;
-			p_rht_info->rht_start[i].fp = 0;
+			p_rht_info_dst->rht_start[i].nmask = 0;
+			p_rht_info_dst->rht_start[i].fp = 0;
 			return rc;
 		}
 	}

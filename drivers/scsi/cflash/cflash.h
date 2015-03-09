@@ -80,6 +80,7 @@ extern int cflash_disk_open(struct scsi_device *sdev, void __user * arg,
 extern int cflash_disk_detach(struct scsi_device *sdev, void __user * arg);
 extern int cflash_vlun_resize(struct scsi_device *sdev, void __user * arg);
 extern int cflash_disk_release(struct scsi_device *sdev, void __user * arg);
+extern int cflash_disk_clone(struct scsi_device *sdev, void __user * arg);
 extern void hexdump(void *data, long len, const char *hdr);
 
 #endif

@@ -7,8 +7,8 @@
 * 2 of the License, or (at your option) any later version.
 */
 
-#ifndef _CFLASHPROV_H
-#define _CFLASHPROV_H
+#ifndef _CFLASHUTIL_H
+#define _CFLASHUTIL_H
 
 #include "cflash_ioctl.h"
 
@@ -50,4 +50,6 @@ void marshall_rele_to_resize(struct dk_capi_release *prele,
 			     struct dk_capi_resize *psize);
 void marshall_det_to_rele(struct dk_capi_detach *pdet, 
 			  struct dk_capi_release *prel);
-#endif /* ifndef _CFLASHPROV_H */
+void marshall_clone_to_rele(struct dk_capi_clone *pclone,
+			    struct dk_capi_release *prel);
+#endif /* ifndef _CFLASHUTIL_H */
