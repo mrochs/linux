@@ -247,7 +247,9 @@ int cflash_disk_attach(struct scsi_device *sdev, void __user * arg)
 		goto out;
 	}
 
+	spin_lock(&p_lun_info->_lock);
 	p_lun_info->lfd = fd;
+	spin_unlock(&p_lun_info->_lock);
 
 	parg->return_flags = 0;
 	parg->adap_fd = fd;
@@ -319,6 +321,8 @@ int cflash_disk_open(struct scsi_device *sdev, void __user * arg,
 		rc = -EINVAL;
 		goto out;
 	}
+
+	spin_lock(&p_lun_info->_lock);
 	if (p_lun_info->mode == MODE_NONE) { 
 		p_lun_info->mode = mode;
 	} else  if (p_lun_info->mode != mode) {
@@ -326,8 +330,10 @@ int cflash_disk_open(struct scsi_device *sdev, void __user * arg,
 			   "mode requested %d\n", 
 			   __func__, p_lun_info->mode, mode);
 		rc = -EINVAL;
+		spin_unlock(&p_lun_info->_lock);
 		goto out;
 	}
+	spin_unlock(&p_lun_info->_lock);
 
 	p_ctx_info = &p_afu->ctx_info[context_id];
 
@@ -397,7 +403,6 @@ int cflash_disk_open(struct scsi_device *sdev, void __user * arg,
 		pphys->last_lba = last_lba;
 		pphys->rsrc_handle = rsrc_handle;
 	}
-	p_lun_info->mode = mode;
 
 out:
 	cflash_info("in %s returning handle 0x%llx rc=%d bs %lld llba %lld\n",
@@ -563,7 +568,9 @@ int cflash_disk_detach(struct scsi_device *sdev, void __user * arg)
 		/* drop all capabilities */
 		write_64(&p_ctx_info->p_ctrl_map->ctx_cap, 0);
 	}
+	spin_lock(&p_lun_info->_lock);
 	p_lun_info->mode = MODE_NONE;
+	spin_unlock(&p_lun_info->_lock);
 
 out:
 	cflash_info("in %s returning rc=%d\n", __func__, rc);
@@ -1633,10 +1640,12 @@ int afu_sync(struct afu *p_afu,
 	u32 *p_u32;
 	struct afu_cmd *p_cmd = &p_afu->cmd[AFU_SYNC_INDEX];
 	int rc = 0;
+	unsigned long lock_flags = 0;
 
 	cflash_info("in %s p_afu %p p_cmd %p %d\n",
 		    __func__, p_afu, p_cmd, ctx_hndl_u);
 
+	spin_lock_irqsave(&p_cmd->slock, lock_flags);
 	memset(&p_cmd->rcb.cdb[0], 0, sizeof(p_cmd->rcb.cdb));
 
 	p_cmd->rcb.req_flags = SISL_REQ_FLAGS_AFU_CMD;
@@ -1654,6 +1663,7 @@ int afu_sync(struct afu *p_afu,
 	write_32(p_u32, res_hndl_u);	/* res_hndl to sync up */
 
 	cflash_send_cmd(p_afu, p_cmd);
+	spin_unlock_irqrestore(&p_cmd->slock, lock_flags);
 	cflash_wait_resp(p_afu, p_cmd);
 
 	if ((p_cmd->sa.ioasc != 0) || (p_cmd->sa.host_use_b[0] & B_ERROR)) {
@@ -2087,9 +2097,11 @@ int read_cap16(struct afu *p_afu, struct lun_info *p_lun_info, u32 port_sel)
 
 	u32 *p_u32;
 	u64 *p_u64;
+	unsigned long lock_flags = 0;
 
 	struct afu_cmd *p_cmd = &p_afu->cmd[AFU_INIT_INDEX];
 
+	spin_lock_irqsave(&p_cmd->slock, lock_flags);
 	memset(&p_afu->buf[0], 0, sizeof(p_afu->buf));
 	memset(&p_cmd->rcb.cdb[0], 0, sizeof(p_cmd->rcb.cdb));
 
@@ -2115,18 +2127,23 @@ int read_cap16(struct afu *p_afu, struct lun_info *p_lun_info, u32 port_sel)
 
 	do {
 		cflash_send_cmd(p_afu, p_cmd);
+		spin_unlock_irqrestore(&p_cmd->slock, lock_flags);
 		cflash_wait_resp(p_afu, p_cmd);
+		spin_lock_irqsave(&p_cmd->slock, lock_flags);
 	} while (check_status(&p_cmd->sa));
+	spin_unlock_irqrestore(&p_cmd->slock, lock_flags);
 
 	if (p_cmd->sa.host_use_b[0] & B_ERROR) {
 		return -1;
 	}
 	// read cap success 
+	spin_lock(&p_lun_info->_lock);
 	p_u64 = (u64 *) & p_afu->buf[0];
 	p_lun_info->li.max_lba = read_64(p_u64);
 
 	p_u32 = (u32 *) & p_afu->buf[8];
 	p_lun_info->li.blk_len = read_32(p_u32);
+	spin_unlock(&p_lun_info->_lock);
 
 	cflash_info("in %s maxlba=%lld blklen=%d pcmd %p\n", __func__,
 		    p_lun_info->li.max_lba, p_lun_info->li.blk_len, p_cmd);
@@ -2147,7 +2164,9 @@ int find_lun(struct cflash *p_cflash, u32 port_sel)
 	int i = 0;
 	int j = 0;
 	int rc = 0;
+	unsigned long lock_flags = 0;
 
+	spin_lock_irqsave(&p_cmd->slock, lock_flags);
 	memset(&p_afu->buf[0], 0, sizeof(p_afu->buf));
 	memset(&p_cmd->rcb.cdb[0], 0, sizeof(p_cmd->rcb.cdb));
 
@@ -2172,8 +2191,11 @@ int find_lun(struct cflash *p_cflash, u32 port_sel)
 
 	do {
 		cflash_send_cmd(p_afu, p_cmd);
+		spin_unlock_irqrestore(&p_cmd->slock, lock_flags);
 		cflash_wait_resp(p_afu, p_cmd);
+		spin_lock_irqsave(&p_cmd->slock, lock_flags);
 	} while (check_status(&p_cmd->sa));
+	spin_unlock_irqrestore(&p_cmd->slock, lock_flags);
 
 	if (p_cmd->sa.host_use_b[0] & B_ERROR) {
 		return -1;
@@ -2232,7 +2254,9 @@ void cflash_send_scsi(struct afu *p_afu, struct scsi_cmnd *scp)
 	int nseg, i, ncount;
 	struct scatterlist *sg;
 	short lflag = 0;
+	unsigned long lock_flags = 0;
 
+	spin_lock_irqsave(&p_cmd->slock, lock_flags);
 	memset(&p_afu->buf[0], 0, sizeof(p_afu->buf));
 	memset(&p_cmd->rcb.cdb[0], 0, sizeof(p_cmd->rcb.cdb));
 
@@ -2267,4 +2291,6 @@ void cflash_send_scsi(struct afu *p_afu, struct scsi_cmnd *scp)
 
 	/* Send the command */
 	cflash_send_cmd(p_afu, p_cmd);
+	spin_unlock_irqrestore(&p_cmd->slock, lock_flags);
+
 }

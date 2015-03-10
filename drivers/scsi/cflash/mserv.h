@@ -158,6 +158,8 @@ struct lun_info {
 	} li;
 	int lfd;
 	struct cxl_ioctl_start_work work;
+	spinlock_t _lock;
+	spinlock_t *lock;
 
 	enum open_mode_type mode;
 #define LUN_INFO_VALID   0x01

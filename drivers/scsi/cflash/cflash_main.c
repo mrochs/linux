@@ -165,6 +165,17 @@ static int cflash_eh_host_reset_handler(struct scsi_cmnd *cmd)
 	return rc;
 }
 
+void init_lun_info(struct lun_info *p_lun_info)
+{
+	memset (p_lun_info, 0, sizeof(struct lun_info));
+
+	p_lun_info->lun_id = -1ULL;
+	p_lun_info->lfd = -1;
+
+	spin_lock_init(&p_lun_info->_lock);
+	p_lun_info->lock = &p_lun_info->_lock;
+}
+
 /**
  * cflash_slave_alloc - Setup the device's task set value
  * @sdev:       struct scsi_device device to configure
@@ -181,11 +192,16 @@ static int cflash_slave_alloc(struct scsi_device *sdev)
 	struct Scsi_Host *shost = sdev->host;
 	struct cflash *p_cflash = shost_priv(shost);
 	struct afu *p_afu = p_cflash->p_afu;
+	unsigned long flags = 0;
 	int rc = 0;
+
+	spin_lock_irqsave(shost->host_lock, flags);
 
 	p_luninfo = &p_afu->lun_info[p_cflash->task_set];
 	sdev->hostdata = p_luninfo;
 	p_cflash->task_set++;
+
+	spin_unlock_irqrestore(shost->host_lock, flags);
 
 	cflash_info("in %s returning task_set %d luninfo %p sdev %p\n",
 		    __func__, p_cflash->task_set, p_luninfo, sdev);
