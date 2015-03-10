@@ -191,7 +191,8 @@ int cxl_attach_fd(struct cxl_context *ctx, struct cxl_ioctl_start_work *work)
 		rc = -EINVAL;
 		goto err1;
 	}
-	if ((rc = afu_register_irqs(ctx, work->num_interrupts)))
+	rc = afu_register_irqs(ctx, work->num_interrupts);
+	if (rc)
 		goto err1;
 
 	rc = cxl_start_context(ctx, work->work_element_descriptor, current);
