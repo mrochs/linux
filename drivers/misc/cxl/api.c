@@ -144,6 +144,7 @@ int cxl_start_context(struct cxl_context *ctx, u64 wed,
 
 	ctx->status = STARTED;
 	rc = 0;
+	get_device(&ctx->afu->dev);
 out:
 	mutex_unlock(&ctx->status_mutex);
 	return rc;
@@ -153,6 +154,7 @@ EXPORT_SYMBOL_GPL(cxl_start_context);
 /* Stop a context */
 void cxl_stop_context(struct cxl_context *ctx)
 {
+	put_device(&ctx->afu->dev);
 	___detach_context(ctx);
 }
 EXPORT_SYMBOL_GPL(cxl_stop_context);
