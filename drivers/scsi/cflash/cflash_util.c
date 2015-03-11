@@ -1,8 +1,8 @@
 /*
  * CAPI Flash Device Driver
  *
- * Written by: Manoj N. Kumar <kumarmn@us.ibm.com>, IBM Corporation
- *             Matthew R. Ochs <mrochs@us.ibm.com>, IBM Corporation
+ * Written by: Manoj N. Kumar <manoj@linux.vnet.ibm.com>, IBM Corporation
+ *             Matthew R. Ochs <mrochs@linux.vnet.ibm.com>, IBM Corporation
  *
  * Copyright (C) 2015 IBM Corporation
  *
@@ -36,8 +36,8 @@ bool prov_find_vpd_kw(const char *i_kw,
 	int l_vpd_name_sz = 0;
 	prov_pci_vpd_segment_t *l_vpd_section = NULL;
 
-	/* get the address of the end of the buffer. note this is the 
-	 * 1st byte PAST the end of the array 
+	/* get the address of the end of the buffer. note this is the
+	 * 1st byte PAST the end of the array
 	 */
 
 	const u8 *l_end_of_buffer = &i_vpd_buffer[i_vpd_buffer_length];
@@ -58,8 +58,8 @@ bool prov_find_vpd_kw(const char *i_kw,
 		/* hope for the best  */
 		l_vpd_header = (prov_pci_vpd_header_t *) i_vpd_buffer;
 
-		/* validate if we have a real PCI VPD or not 
-		 * we expect read-only data to come first 
+		/* validate if we have a real PCI VPD or not
+		 * we expect read-only data to come first
 		 */
 
 		if (l_vpd_header->pci_eyecatcher != PCI_FORMAT_EYECATCHER) {
@@ -90,13 +90,13 @@ bool prov_find_vpd_kw(const char *i_kw,
 
 		cflash_info("Parsing VPD for '%s'\n", l_vpd_name);
 
-		/* get the address of the VPD section that follows the name 
-		 * by relying on the fact that the name section is an "array" 
-		 * in the struct, and that we can index into the array for 
-		 * the length of the KW. For example - a 0-length name 
-		 * would technically mean that the "name" byte of the struct 
-		 * represents the next segment of data. A 1-byte name would 
-		 * get the 2nd byte after, etc.  
+		/* get the address of the VPD section that follows the name
+		 * by relying on the fact that the name section is an "array"
+		 * in the struct, and that we can index into the array for
+		 * the length of the KW. For example - a 0-length name
+		 * would technically mean that the "name" byte of the struct
+		 * represents the next segment of data. A 1-byte name would
+		 * get the 2nd byte after, etc.
 		 */
 
 		l_vpd_section =
@@ -130,8 +130,8 @@ bool prov_find_vpd_kw(const char *i_kw,
 				cflash_info("RW Data section found of "
 					    "length %d bytes, starting a "
 					    "new section.\n", l_section_length);
-				continue;	/* new section found, so 
-						 * continue processing 
+				continue;	/* new section found, so
+						 * continue processing
 						 */
 			}
 			/* get the name of the KW + its size */
@@ -141,9 +141,9 @@ bool prov_find_vpd_kw(const char *i_kw,
 			cflash_dbg("Current KW: '%s' size = %d\n",
 				   l_curr_kw_name, l_curr_kw_sz);
 
-			/* copy the data out. note this may copy zero bytes 
-			 * if the KW is zero length (which seems to be 
-			 * allowed by the spec).  
+			/* copy the data out. note this may copy zero bytes
+			 * if the KW is zero length (which seems to be
+			 * allowed by the spec).
 			 */
 			memcpy(l_curr_kw_data, l_buffer_ptr, l_curr_kw_sz);
 
@@ -152,8 +152,8 @@ bool prov_find_vpd_kw(const char *i_kw,
 				l_found_kw = true;
 				break;
 			}
-			/* advance the pointer by the size of the KW and 
-			 * loop again...  
+			/* advance the pointer by the size of the KW and
+			 * loop again...
 			 */
 			l_buffer_ptr += l_curr_kw_sz;
 
@@ -190,7 +190,7 @@ bool prov_find_vpd_kw(const char *i_kw,
 	return l_rc;
 }
 
-void marshall_virt_to_resize(struct dk_capi_uvirtual *pvirt, 
+void marshall_virt_to_resize(struct dk_capi_uvirtual *pvirt,
 			     struct dk_capi_resize *psize)
 {
 	psize->version = pvirt->version;
@@ -206,7 +206,7 @@ void marshall_virt_to_resize(struct dk_capi_uvirtual *pvirt,
 	psize->last_lba = pvirt->last_lba;
 }
 
-void marshall_rele_to_resize(struct dk_capi_release *prele, 
+void marshall_rele_to_resize(struct dk_capi_release *prele,
 			     struct dk_capi_resize *psize)
 {
 	psize->version = prele->version;
@@ -220,7 +220,7 @@ void marshall_rele_to_resize(struct dk_capi_release *prele,
 	psize->challenge = prele->challenge;
 }
 
-void marshall_det_to_rele(struct dk_capi_detach *pdet, 
+void marshall_det_to_rele(struct dk_capi_detach *pdet,
 			  struct dk_capi_release *prel)
 {
 	prel->version = pdet->version;

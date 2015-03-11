@@ -1,8 +1,8 @@
 /*
  * CAPI Flash Device Driver
  *
- * Written by: Manoj N. Kumar <kumarmn@us.ibm.com>, IBM Corporation
- *             Matthew R. Ochs <mrochs@us.ibm.com>, IBM Corporation
+ * Written by: Manoj N. Kumar <manoj@linux.vnet.ibm.com>, IBM Corporation
+ *             Matthew R. Ochs <mrochs@linux.vnet.ibm.com>, IBM Corporation
  *
  * Copyright (C) 2015 IBM Corporation
  *
@@ -128,7 +128,7 @@ struct sisl_rc {
 #define SISL_AFU_RC_NOT_XLATE_HOST        0x1au	/* possible when master exited */
 
 	/* NO_CHANNELS means the FC ports selected by dest_port in
-	 * IOARCB or in the LXT entry are down when the AFU tried to select 
+	 * IOARCB or in the LXT entry are down when the AFU tried to select
 	 * a FC port. If the port went down on an active IO, it will set
 	 * fc_rc to =0x54(NOLOGI) or 0x57(LINKDOWN) instead.
 	 */
@@ -148,17 +148,17 @@ struct sisl_rc {
 	u8 fc_rc;		/* retry */
 	/*
 	 * We should only see fc_rc=0x57 (LINKDOWN) or 0x54(NOLOGI)
-	 * for commands that are in flight when a link goes down or is logged out. 
-	 * If the link is down or logged out before AFU selects the port, either 
+	 * for commands that are in flight when a link goes down or is logged out.
+	 * If the link is down or logged out before AFU selects the port, either
 	 * it will choose the other port or we will get afu_rc=0x20 (no_channel)
 	 * if there is no valid port to use.
 	 *
-	 * ABORTPEND/ABORTOK/ABORTFAIL/TGTABORT can be retried, typically these 
-	 * would happen if a frame is dropped and something times out.  
-	 * NOLOGI or LINKDOWN can be retried if the other port is up.  
+	 * ABORTPEND/ABORTOK/ABORTFAIL/TGTABORT can be retried, typically these
+	 * would happen if a frame is dropped and something times out.
+	 * NOLOGI or LINKDOWN can be retried if the other port is up.
 	 * RESIDERR can be retried as well.
 	 *
-	 * ABORTFAIL might indicate that lots of frames are getting CRC errors.  
+	 * ABORTFAIL might indicate that lots of frames are getting CRC errors.
 	 * So it maybe retried once and reset the link if it happens again.
 	 * The link can also be reset on the CRC error threshold interrupt.
 	 */
@@ -241,13 +241,13 @@ struct sisl_host_map {
 #define SISL_ISTATUS_PERM_ERR_RCB_READ   0x0008ull	/* b60, user error */
 #define SISL_ISTATUS_PERM_ERR_SA_WRITE   0x0004ull	/* b61, user error */
 #define SISL_ISTATUS_PERM_ERR_RRQ_WRITE  0x0002ull	/* b62, user error */
-	/* Page in wait accessing RCB/IOASA/RRQ is reported in b63. 
+	/* Page in wait accessing RCB/IOASA/RRQ is reported in b63.
 	 * Same error in data/LXT/RHT access is reported via IOASA.
 	 */
 #define SISL_ISTATUS_TEMP_ERR_PAGEIN     0x0001ull	/* b63,  can be generated
-							 * only when AFU auto retry is 
+							 * only when AFU auto retry is
 							 * disabled. If user can determine
-							 * the command that caused the error, 
+							 * the command that caused the error,
 							 * it can be retried.
 							 */
 #define SISL_ISTATUS_UNMASK  (0x001Full)	/* 1 means unmasked */
@@ -338,17 +338,17 @@ struct sisl_global_map {
 struct surelock_afu_map {
 	union {
 		struct sisl_host_map host;
-		char harea[0x10000];	// 64KB each
+		char harea[0x10000];	/* 64KB each */
 	} hosts[SURELOCK_MAX_CONTEXT];
 
 	union {
 		struct sisl_ctrl_map ctrl;
-		char carea[128];	// 128B each
+		char carea[128];	/* 128B each */
 	} ctrls[SURELOCK_MAX_CONTEXT];
 
 	union {
 		struct sisl_global_map global;
-		char garea[0x10000];	// 64KB single block
+		char garea[0x10000];	/* 64KB single block */
 	};
 };
 
@@ -378,7 +378,7 @@ typedef struct sisl_rht_entry {
 #define SISL_RHT_FP(fmt, perm) (((fmt) << 4) | (perm))
 
 /* make the fp byte for a clone from a source fp and clone flags
- * flags must be only 2 LSB bits. 
+ * flags must be only 2 LSB bits.
  */
 #define SISL_RHT_FP_CLONE(src_fp, clone_flags) ((src_fp) & (0xFC | (clone_flags)))
 
@@ -388,7 +388,7 @@ typedef struct sisl_rht_entry {
 #define RHT_PERM_READ  0x01u
 #define RHT_PERM_WRITE 0x02u
 
-// AFU Sync Mode byte
+/* AFU Sync Mode byte */
 #define AFU_LW_SYNC 0x0u
 #define AFU_HW_SYNC 0x1u
 #define AFU_GSYNC   0x2u

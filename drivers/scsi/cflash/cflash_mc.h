@@ -1,8 +1,8 @@
 /*
  * CAPI Flash Device Driver
  *
- * Written by: Manoj N. Kumar <kumarmn@us.ibm.com>, IBM Corporation
- *             Matthew R. Ochs <mrochs@us.ibm.com>, IBM Corporation
+ * Written by: Manoj N. Kumar <manoj@linux.vnet.ibm.com>, IBM Corporation
+ *             Matthew R. Ochs <mrochs@linux.vnet.ibm.com>, IBM Corporation
  *
  * Copyright (C) 2015 IBM Corporation
  *
@@ -119,7 +119,7 @@ static inline u16 read_16(volatile u16 * addr)
  *                     output data
  */
 typedef struct mc_stat_s {
-	u32 blk_len;		/* length of 1 block in bytes as reported by 
+	u32 blk_len;		/* length of 1 block in bytes as reported by
 				   device */
 	u8 nmask;		/* chunk_size = (1 << nmask) in device blocks */
 	u8 rsvd[3];

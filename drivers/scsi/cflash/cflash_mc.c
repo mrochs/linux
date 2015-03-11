@@ -1,8 +1,8 @@
 /*
  * CAPI Flash Device Driver
  *
- * Written by: Manoj N. Kumar <kumarmn@us.ibm.com>, IBM Corporation
- *             Matthew R. Ochs <mrochs@us.ibm.com>, IBM Corporation
+ * Written by: Manoj N. Kumar <manoj@linux.vnet.ibm.com>, IBM Corporation
+ *             Matthew R. Ochs <mrochs@linux.vnet.ibm.com>, IBM Corporation
  *
  * Copyright (C) 2015 IBM Corporation
  *
@@ -57,9 +57,9 @@ int cflash_afu_attach(struct cflash *p_cflash, u64 context_id)
 	int rc = 0;
 	u64 reg;
 
-	/* This code reads the mbox w/o knowing if the requester is 
-	 * the true owner of the context it wants to register. The 
-	 * read has no side effect and does not affect the true 
+	/* This code reads the mbox w/o knowing if the requester is
+	 * the true owner of the context it wants to register. The
+	 * read has no side effect and does not affect the true
 	 * owner if this is a fraudulent registration attempt.
 	 */
 	reg = read_64(&p_ctx_info->p_ctrl_map->mbox_r);
@@ -69,15 +69,15 @@ int cflash_afu_attach(struct cflash *p_cflash, u64 context_id)
 		cflash_err("zero mbox reg 0x%llx\n", reg);
 	}
 
-	/* This context is not duped and is in a group by 
-	 * itself. 
+	/* This context is not duped and is in a group by
+	 * itself.
 	 */
 	p_ctx_info->p_next = p_ctx_info;
 	p_ctx_info->p_forw = p_ctx_info;
 
-	/* restrict user to read/write cmds in translated 
-	 * mode. User has option to choose read and/or write 
-	 * permissions again in mc_open.  
+	/* restrict user to read/write cmds in translated
+	 * mode. User has option to choose read and/or write
+	 * permissions again in mc_open.
 	 */
 	write_64(&p_ctx_info->p_ctrl_map->ctx_cap,
 		 SISL_CTX_CAP_READ_CMD | SISL_CTX_CAP_WRITE_CMD);
@@ -85,9 +85,9 @@ int cflash_afu_attach(struct cflash *p_cflash, u64 context_id)
 	asm volatile ("eieio"::);
 	reg = read_64(&p_ctx_info->p_ctrl_map->ctx_cap);
 
-	/* if the write failed, the ctx must have been 
-	 * closed since the mbox read and the ctx_cap 
-	 * register locked up.  fail the registration 
+	/* if the write failed, the ctx must have been
+	 * closed since the mbox read and the ctx_cap
+	 * register locked up.  fail the registration
 	 */
 	if (reg != (SISL_CTX_CAP_READ_CMD | SISL_CTX_CAP_WRITE_CMD)) {
 		cflash_err("ctx may be closed reg=%llx\n", reg);
@@ -95,15 +95,15 @@ int cflash_afu_attach(struct cflash *p_cflash, u64 context_id)
 		goto out;
 	}
 
-	/* the context gets a dedicated RHT tbl unless it 
-	 * is dup'ed later. 
+	/* the context gets a dedicated RHT tbl unless it
+	 * is dup'ed later.
 	 */
 	p_ctx_info->p_rht_info = &p_afu->rht_info[context_id];
 	p_ctx_info->p_rht_info->ref_cnt = 1;
 	memset(p_ctx_info->p_rht_info->rht_start, 0,
 	       sizeof(struct sisl_rht_entry) * MAX_RHT_PER_CONTEXT);
-	/* make clearing of the RHT visible to AFU before 
-	 * MMIO 
+	/* make clearing of the RHT visible to AFU before
+	 * MMIO
 	 */
 	asm volatile ("lwsync"::);
 
@@ -165,10 +165,10 @@ int cflash_disk_attach(struct scsi_device *sdev, void __user * arg)
 	 */
 	parg->context_id = (u64) ctx->pe;
 
-	/* 
-	 * Create and attach a new file descriptor. This must be the last 
-	 * statement as once this is run, the file descritor is visible to 
-	 * userspace and can't be undone. No error paths after this as we 
+	/*
+	 * Create and attach a new file descriptor. This must be the last
+	 * statement as once this is run, the file descritor is visible to
+	 * userspace and can't be undone. No error paths after this as we
 	 * can't free the fd safely.
 	 */
 
@@ -184,8 +184,8 @@ int cflash_disk_attach(struct scsi_device *sdev, void __user * arg)
 	}
 
 	/* XXX: Currently there cannot be any error path after attach_fd.
-	 * However the AFU resets the context capabilities on start. 
-	 * Until a tear down service is provided this needs to 
+	 * However the AFU resets the context capabilities on start.
+	 * Until a tear down service is provided this needs to
 	 * not fail
 	 rc = cflash_afu_attach(p_cflash, parg->context_id);
 	 */
@@ -232,7 +232,7 @@ out:
  *               a. find a free RHT entry
  *
  */
-int cflash_disk_open(struct scsi_device *sdev, void __user * arg, 
+int cflash_disk_open(struct scsi_device *sdev, void __user * arg,
 		     enum open_mode_type mode)
 {
 	struct cflash *p_cflash = (struct cflash *)sdev->host->hostdata;
@@ -272,11 +272,11 @@ int cflash_disk_open(struct scsi_device *sdev, void __user * arg,
 	}
 
 	spin_lock(&p_lun_info->_lock);
-	if (p_lun_info->mode == MODE_NONE) { 
+	if (p_lun_info->mode == MODE_NONE) {
 		p_lun_info->mode = mode;
 	} else  if (p_lun_info->mode != mode) {
 		cflash_err("in %s, disk already opened in mode %d "
-			   "mode requested %d\n", 
+			   "mode requested %d\n",
 			   __func__, p_lun_info->mode, mode);
 		rc = -EINVAL;
 		spin_unlock(&p_lun_info->_lock);
@@ -307,13 +307,13 @@ int cflash_disk_open(struct scsi_device *sdev, void __user * arg,
 		cflash_info("in %s i %d rhti %p rhte %p\n", __func__,
 			    i, p_rht_info, p_rht_entry);
 
-		/* if we did not find a free entry, reached max opens allowed 
-		 * per context 
+		/* if we did not find a free entry, reached max opens allowed
+		 * per context
 		 */
 
 		if (p_rht_entry == NULL) {
 			cflash_err("in %s too many contexts open\n", __func__);
-			rc = -EMFILE;	// too many opens 
+			rc = -EMFILE;	/* too many opens  */
 			goto out;
 		}
 
@@ -334,8 +334,8 @@ int cflash_disk_open(struct scsi_device *sdev, void __user * arg,
 		if (lun_size != 0) {
 			marshall_virt_to_resize (pvirt, &resize);
 			rc = cflash_vlun_resize(sdev, &resize);
-			if (rc) { 
-				cflash_err("in %s resize failed rc %d\n", 
+			if (rc) {
+				cflash_err("in %s resize failed rc %d\n",
 					   __func__, rc);
 				goto out;
 			}
@@ -418,15 +418,15 @@ int cflash_disk_release(struct scsi_device *sdev, void __user * arg)
 		}
 
 		/* Resize to 0 for virtual LUNS.
-		 * set size to 0, this will clear LXT_START and LXT_CNT 
-		 * fields in the RHT entry 
+		 * set size to 0, this will clear LXT_START and LXT_CNT
+		 * fields in the RHT entry
 		 */
-		if (p_lun_info->mode ==  MODE_VIRTUAL) { 
-			marshall_rele_to_resize (prele, &size); 
-			size.req_size = 0; 
+		if (p_lun_info->mode ==  MODE_VIRTUAL) {
+			marshall_rele_to_resize (prele, &size);
+			size.req_size = 0;
 			rc = cflash_vlun_resize(sdev, &size);/* p_conn good ? */
 			if (rc) {
-				cflash_err("in %s resize failed rc %d\n", 
+				cflash_err("in %s resize failed rc %d\n",
 					   __func__, rc);
 				goto out;
 			}
@@ -497,12 +497,12 @@ int cflash_disk_detach(struct scsi_device *sdev, void __user * arg)
 	if (p_ctx_info->ref_cnt-- == 1) {
 
 		/* close the context */
-		/* for any resource still open, dealloate LBAs and close 
-		 * if nobody else is using it. 
+		/* for any resource still open, dealloate LBAs and close
+		 * if nobody else is using it.
 		 */
 
 		if (p_ctx_info->p_rht_info->ref_cnt-- == 1) {
-			if (p_lun_info->mode ==  MODE_VIRTUAL) { 
+			if (p_lun_info->mode ==  MODE_VIRTUAL) {
 				marshall_det_to_rele(pdet, &rel);
 				for (i = 0; i < MAX_RHT_PER_CONTEXT; i++) {
 					rel.rsrc_handle = i;
@@ -566,7 +566,7 @@ int cflash_vlun_resize(struct scsi_device *sdev, void __user * arg)
 
 	int rc = 0, lun_index = p_lun_info - p_afu->lun_info;
 
-	/* req_size is always assumed to be in 4k blocks. So we have to convert 
+	/* req_size is always assumed to be in 4k blocks. So we have to convert
 	 * it from 4k to chunk size
 	 */
 	nsectors = (parg->req_size * DK_CAPI_BLOCK) / (p_lun_info->li.blk_len);
@@ -578,7 +578,7 @@ int cflash_vlun_resize(struct scsi_device *sdev, void __user * arg)
 		    parg->rsrc_handle, parg->req_size, new_size);
 
 	if (p_lun_info->mode != MODE_VIRTUAL) {
-		cflash_err("in %s cannot resize lun that is not virtual %d\n", 
+		cflash_err("in %s cannot resize lun that is not virtual %d\n",
 			   __func__, p_lun_info->mode);
 		rc = -EINVAL;
 		goto out;
@@ -655,7 +655,7 @@ int grow_lxt(struct afu *p_afu,
 	/*
 	 * Check what is available in the block allocator before re-allocating
 	 * LXT array. This is done up front under the mutex which must not be
-	 * released until after allocation is complete. 
+	 * released until after allocation is complete.
 	 */
 	mutex_lock(&p_blka->mutex);
 	av_size = ba_space(&p_blka->ba_lun);
@@ -800,7 +800,7 @@ int shrink_lxt(struct afu *p_afu,
 	return 0;
 }
 
-/* online means the FC link layer has sync and has completed the link 
+/* online means the FC link layer has sync and has completed the link
  * layer handshake. It is ready for login to start.
  */
 void set_port_online(volatile u64 * p_fc_regs)
@@ -808,8 +808,8 @@ void set_port_online(volatile u64 * p_fc_regs)
 	u64 cmdcfg;
 
 	cmdcfg = read_64(&p_fc_regs[FC_MTIP_CMDCONFIG / 8]);
-	cmdcfg &= (~FC_MTIP_CMDCONFIG_OFFLINE);	// clear OFF_LINE
-	cmdcfg |= (FC_MTIP_CMDCONFIG_ONLINE);	// set ON_LINE
+	cmdcfg &= (~FC_MTIP_CMDCONFIG_OFFLINE);	/* clear OFF_LINE */
+	cmdcfg |= (FC_MTIP_CMDCONFIG_ONLINE);	/* set ON_LINE */
 	write_64(&p_fc_regs[FC_MTIP_CMDCONFIG / 8], cmdcfg);
 }
 
@@ -818,13 +818,13 @@ void set_port_offline(volatile u64 * p_fc_regs)
 	u64 cmdcfg;
 
 	cmdcfg = read_64(&p_fc_regs[FC_MTIP_CMDCONFIG / 8]);
-	cmdcfg &= (~FC_MTIP_CMDCONFIG_ONLINE);	// clear ON_LINE
-	cmdcfg |= (FC_MTIP_CMDCONFIG_OFFLINE);	// set OFF_LINE
+	cmdcfg &= (~FC_MTIP_CMDCONFIG_ONLINE);	/* clear ON_LINE */
+	cmdcfg |= (FC_MTIP_CMDCONFIG_OFFLINE);	/* set OFF_LINE */
 	write_64(&p_fc_regs[FC_MTIP_CMDCONFIG / 8], cmdcfg);
 }
 
-// returns 1 - went online
-// wait_port_xxx will timeout when cable is not pluggd in
+/* returns 1 - went online */
+/* wait_port_xxx will timeout when cable is not pluggd in */
 int wait_port_online(volatile u64 * p_fc_regs,
 		     useconds_t delay_us, unsigned int nretry)
 {
@@ -844,7 +844,7 @@ int wait_port_online(volatile u64 * p_fc_regs,
 	return ((status & FC_MTIP_STATUS_MASK) == FC_MTIP_STATUS_ONLINE);
 }
 
-// returns 1 - went offline
+/* returns 1 - went offline */
 int wait_port_offline(volatile u64 * p_fc_regs,
 		      useconds_t delay_us, unsigned int nretry)
 {
@@ -864,7 +864,7 @@ int wait_port_offline(volatile u64 * p_fc_regs,
 	return ((status & FC_MTIP_STATUS_MASK) == FC_MTIP_STATUS_OFFLINE);
 }
 
-// this function can block up to a few seconds
+/* this function can block up to a few seconds */
 int afu_set_wwpn(struct afu *p_afu, int port, volatile u64 * p_fc_regs,
 		 u64 wwpn)
 {
@@ -875,7 +875,7 @@ int afu_set_wwpn(struct afu *p_afu, int port, volatile u64 * p_fc_regs,
 	if (!wait_port_offline(p_fc_regs, FC_PORT_STATUS_RETRY_INTERVAL_US,
 			       FC_PORT_STATUS_RETRY_CNT)) {
 		cflash_dbg("wait on port %d to go offline timed out\n", port);
-		ret = -1;	// but continue on to leave the port back online
+		ret = -1; /* but continue on to leave the port back online */
 	}
 
 	if (ret == 0) {
@@ -948,21 +948,21 @@ void afu_err_intr_init(struct afu *p_afu)
 	 * nobody to receive them.
 	 */
 
-	// mask all
+	/* mask all */
 	write_64(&p_afu->p_afu_map->global.regs.aintr_mask, -1ull);
-	// set LISN# to send and point to master context
+	/* set LISN# to send and point to master context */
 	reg = ((u64)(((p_afu->ctx_hndl << 8) | SISL_MSI_ASYNC_ERROR)) << 40);
 
 	if (internal_lun)
 		reg |= 1; /* Bit 63 indicates local lun */
 	write_64(&p_afu->p_afu_map->global.regs.afu_ctrl, reg);
-	// clear all
+	/* clear all */
 	write_64(&p_afu->p_afu_map->global.regs.aintr_clear, -1ull);
-	// unmask bits that are of interest
-	// note: afu can send an interrupt after this step
+	/* unmask bits that are of interest */
+	/* note: afu can send an interrupt after this step */
 	write_64(&p_afu->p_afu_map->global.regs.aintr_mask, SISL_ASTATUS_MASK);
-	// clear again in case a bit came on after previous clear but before
-	// unmask
+	/* clear again in case a bit came on after previous clear but before */
+	/* unmask */
 	write_64(&p_afu->p_afu_map->global.regs.aintr_clear, -1ull);
 
 	/* Clear/Set internal lun bits */
@@ -974,7 +974,7 @@ void afu_err_intr_init(struct afu *p_afu)
 	cflash_info("ilun p0 = %016llX\n", reg);
 	write_64(&p_afu->p_afu_map->global.fc_regs[0][FC_CONFIG2 / 8], reg);
 
-	// now clear FC errors
+	/* now clear FC errors */
 	for (i = 0; i < NUM_FC_PORTS; i++) {
 		write_64(&p_afu->p_afu_map->global.fc_regs[i][FC_ERROR / 8],
 			 (u32) - 1);
@@ -982,12 +982,12 @@ void afu_err_intr_init(struct afu *p_afu)
 			 0);
 	}
 
-	// sync interrupts for master's IOARRIN write
-	// note that unlike asyncs, there can be no pending sync interrupts
-	// at this time (this is a fresh context and master has not written
-	// IOARRIN yet), so there is nothing to clear.
-	//
-	// set LISN#, it is always sent to the context that wrote IOARRIN
+	/* sync interrupts for master's IOARRIN write */
+	/* note that unlike asyncs, there can be no pending sync interrupts */
+	/* at this time (this is a fresh context and master has not written */
+	/* IOARRIN yet), so there is nothing to clear. */
+
+	/* set LISN#, it is always sent to the context that wrote IOARRIN */
 	write_64(&p_afu->p_host_map->ctx_ctrl, SISL_MSI_SYNC_ERROR);
 	write_64(&p_afu->p_host_map->intr_mask, SISL_ISTATUS_MASK);
 }
@@ -1212,7 +1212,7 @@ int cflash_start_afu(struct cflash *p_cflash)
 {
 	struct afu *p_afu = p_cflash->p_afu;
 	char version[16];
-	u64 wwpn[SURELOCK_NUM_FC_PORTS];	// wwpn of AFU ports
+	u64 wwpn[SURELOCK_NUM_FC_PORTS];	/* wwpn of AFU ports */
 
 	int i = 0;
 	int rc = 0;
@@ -1242,7 +1242,7 @@ int cflash_start_afu(struct cflash *p_cflash)
 	}
 	level = UNDO_TIMER;
 
-	/* Map the entire MMIO space of the AFU. 
+	/* Map the entire MMIO space of the AFU.
 	 */
 	p_afu->p_afu_map = cxl_psa_map(p_cflash->p_ctx);
 	if (!p_afu->p_afu_map)
@@ -1251,65 +1251,65 @@ int cflash_start_afu(struct cflash *p_cflash)
 	for (i = 0; i < MAX_CONTEXT; i++) {
 		p_afu->ctx_info[i].p_ctrl_map =
 		    &p_afu->p_afu_map->ctrls[i].ctrl;
-		// disrupt any clients that could be running
-		// e. g. clients that survived a master restart
+		/* disrupt any clients that could be running */
+		/* e. g. clients that survived a master restart */
 		write_64(&p_afu->ctx_info[i].p_ctrl_map->rht_start, 0);
 		write_64(&p_afu->ctx_info[i].p_ctrl_map->rht_cnt_id, 0);
 		write_64(&p_afu->ctx_info[i].p_ctrl_map->ctx_cap, 0);
 	}
 	level = UNDO_AFU_MMAP;
 
-	// copy frequently used fields into p_afu
-	/* XXX, why cannot we get at the process element 
+	/* copy frequently used fields into p_afu */
+	/* XXX, why cannot we get at the process element
 	 */
 	p_afu->ctx_hndl = (u16) (p_cflash->p_ctx->pe);
-	// ctx_hndl is 16 bits in CAIA
+	/* ctx_hndl is 16 bits in CAIA */
 	p_afu->p_host_map = &p_afu->p_afu_map->hosts[p_afu->ctx_hndl].host;
 	p_afu->p_ctrl_map = &p_afu->p_afu_map->ctrls[p_afu->ctx_hndl].ctrl;
 
-	// initialize RRQ pointers
+	/* initialize RRQ pointers */
 	p_afu->p_hrrq_start = &p_afu->rrq_entry[0];
 	p_afu->p_hrrq_end = &p_afu->rrq_entry[NUM_RRQ_ENTRY - 1];
 	p_afu->p_hrrq_curr = p_afu->p_hrrq_start;
 	p_afu->toggle = 1;
 
 	memset(&version[0], 0, sizeof(version));
-	// don't byte reverse on reading afu_version, else the string form
-	//     will be backwards
+	/* don't byte reverse on reading afu_version, else the string form */
+	/*     will be backwards */
 	reg = p_afu->p_afu_map->global.regs.afu_version;
 	memcpy(&version[0], &reg, 8);
 	cflash_dbg("afu version %s, ctx_hndl %d\n", version, p_afu->ctx_hndl);
 
-	// initialize cmd fields that never change
+	/* initialize cmd fields that never change */
 	for (i = 0; i < NUM_CMDS; i++) {
 		p_afu->cmd[i].rcb.ctx_id = p_afu->ctx_hndl;
 		p_afu->cmd[i].rcb.msi = SISL_MSI_RRQ_UPDATED;
 		p_afu->cmd[i].rcb.rrq = 0x0;
 	}
 
-	// set up RRQ in AFU for master issued cmds
+	/* set up RRQ in AFU for master issued cmds */
 	write_64(&p_afu->p_host_map->rrq_start, (u64) p_afu->p_hrrq_start);
 	write_64(&p_afu->p_host_map->rrq_end, (u64) p_afu->p_hrrq_end);
 
-	// AFU configuration
+	/* AFU configuration */
 	reg = read_64(&p_afu->p_afu_map->global.regs.afu_config);
 	reg |= 0x7F20; /* enable all auto retry options and LE */
-	// leave others at default:
-	// CTX_CAP write protected, mbox_r does not clear on read and
-	// checker on if dual afu
+	/* leave others at default: */
+	/* CTX_CAP write protected, mbox_r does not clear on read and */
+	/* checker on if dual afu */
 	write_64(&p_afu->p_afu_map->global.regs.afu_config, reg);
 
-	// global port select: select either port
+	/* global port select: select either port */
 	if (internal_lun)
 		write_64(&p_afu->p_afu_map->global.regs.afu_port_sel, 0x1);
 	else
 		write_64(&p_afu->p_afu_map->global.regs.afu_port_sel, 0x3);
 
 	for (i = 0; i < NUM_FC_PORTS; i++) {
-		// unmask all errors (but they are still masked at AFU)
+		/* unmask all errors (but they are still masked at AFU) */
 		write_64(&p_afu->p_afu_map->global.fc_regs[i][FC_ERRMSK / 8],
 			 0);
-		// clear CRC error cnt & set a threshold
+		/* clear CRC error cnt & set a threshold */
 		(void)read_64(&p_afu->p_afu_map->
 			      global.fc_regs[i][FC_CNT_CRCERR / 8]);
 		write_64(&p_afu->p_afu_map->global.fc_regs[i]
@@ -1327,16 +1327,15 @@ int cflash_start_afu(struct cflash *p_cflash)
 
 	}
 
-	// set up master's own CTX_CAP to allow real mode, host translation
-	// tbls, afu cmds and non-read/write GSCSI cmds.
-	// First, unlock ctx_cap write by reading mbox
-	//
-	(void)read_64(&p_afu->p_ctrl_map->mbox_r);	// unlock ctx_cap
+	/* set up master's own CTX_CAP to allow real mode, host translation */
+	/* tbls, afu cmds and non-read/write GSCSI cmds. */
+	/* First, unlock ctx_cap write by reading mbox */
+	(void)read_64(&p_afu->p_ctrl_map->mbox_r);	/* unlock ctx_cap */
 	asm volatile ("eieio"::);
 	write_64(&p_afu->p_ctrl_map->ctx_cap,
 		 SISL_CTX_CAP_REAL_MODE | SISL_CTX_CAP_HOST_XLATE |
 		 SISL_CTX_CAP_AFU_CMD | SISL_CTX_CAP_GSCSI_CMD);
-	// init heartbeat
+	/* init heartbeat */
 	p_afu->hb = read_64(&p_afu->p_afu_map->global.regs.afu_hb);
 
 out:
@@ -1405,7 +1404,7 @@ int cflash_init_afu(struct cflash *p_cflash)
 	}
 
 	/* Register for PSL errors. TODO: implement this */
-	//cxl_register_error_irq(dev, flags??, callback function, private data);
+	/* cxl_register_error_irq(dev,... ,callback function, private data); */
 
 	/* This performs the equivalent of the CXL_IOCTL_START_WORK.
 	 * The CXL_IOCTL_GET_PROCESS_ELEMENT is implicit in the process
@@ -1487,11 +1486,11 @@ void timer_stop(struct timer_list *p_timer, bool sync)
 		del_timer(p_timer);
 }
 
-// do we need to retry AFU_CMDs (sync) on afu_rc = 0x30 ?
-// can we not avoid that ?
-// not retrying afu timeouts (B_TIMEOUT)
-// returns 1 if the cmd should be retried, 0 otherwise
-// sets B_ERROR flag based on IOASA
+/* do we need to retry AFU_CMDs (sync) on afu_rc = 0x30 ? */
+/* can we not avoid that ? */
+/* not retrying afu timeouts (B_TIMEOUT) */
+/* returns 1 if the cmd should be retried, 0 otherwise */
+/* sets B_ERROR flag based on IOASA */
 int check_status(struct sisl_ioasa_s *p_ioasa)
 {
 	if (p_ioasa->ioasc == 0) {
@@ -1507,13 +1506,13 @@ int check_status(struct sisl_ioasa_s *p_ioasa)
 	switch (p_ioasa->rc.afu_rc) {
 	case SISL_AFU_RC_NO_CHANNELS:
 	case SISL_AFU_RC_OUT_OF_DATA_BUFS:
-		msleep(1);	// 1 msec
+		msleep(1);	/* 1 msec */
 		return 1;
 
 	case 0:
-		// no afu_rc, but either scsi_rc and/or fc_rc is set
-		// retry all scsi_rc and fc_rc after a small delay
-		msleep(1);	// 1 msec
+		/* no afu_rc, but either scsi_rc and/or fc_rc is set */
+		/* retry all scsi_rc and fc_rc after a small delay */
+		msleep(1);	/* 1 msec */
 		return 1;
 	}
 
@@ -1861,7 +1860,7 @@ int cflash_disk_clone(struct scsi_device *sdev, void __user * arg)
 
 	/*
 	 * This loop is equivalent to cflash_disk_open & cflash_vlun_resize.
-	 * Not checking if the source context has anything open or whether 
+	 * Not checking if the source context has anything open or whether
 	 * it is even registered. Cleanup when the clone fails.
 	 */
 	for (i = 0; i < MAX_RHT_PER_CONTEXT; i++) {
@@ -1911,7 +1910,7 @@ int cflash_disk_clone(struct scsi_device *sdev, void __user * arg)
  *		errno	- Failure
  */
 /* XXX - what is the significance of this comment? */
-// dest ctx must be unduped and with no open res_hndls
+/* dest ctx must be unduped and with no open res_hndls */
 int cflash_disk_dup(struct scsi_device *sdev, void __user * arg)
 {
 	struct cflash *p_cflash = (struct cflash *)sdev->host->hostdata;
@@ -1954,7 +1953,7 @@ int cflash_disk_dup(struct scsi_device *sdev, void __user * arg)
 
 	/* XXX - what does this mean? */
 	cflash_info("in %s returning\n", __func__);
-	return -EIO;		// todo later!!!
+	return -EIO;		/* todo later!!! */
 }
 
 /*
@@ -1991,7 +1990,7 @@ int cflash_disk_stat(struct scsi_device *sdev, void __user * arg)
 
 	/* TODO - properly derive lun_index */
 	int lun_index = 0;
-	struct blka *p_blka = p_afu->p_blka[lun_index];	
+	struct blka *p_blka = p_afu->p_blka[lun_index];
 
 	cflash_info("%s, context_id=%lld\n",
 		    __func__, context_id);
@@ -2103,7 +2102,7 @@ int read_cap16(struct afu *p_afu, struct lun_info *p_lun_info, u32 port_sel)
 			   __func__);
 		return -1;
 	}
-	// read cap success 
+	/* read cap success  */
 	spin_lock(&p_lun_info->_lock);
 	p_u64 = (u64 *) & p_cmd->buf[0];
 	p_lun_info->li.max_lba = read_64(p_u64);
@@ -2170,7 +2169,7 @@ int find_lun(struct cflash *p_cflash, u32 port_sel)
 		release_cmd(p_cmd);
 		return -1;
 	}
-	// report luns success 
+	/* report luns success  */
 	len = read_32((u32 *) & p_cmd->buf[0]);
 	hexdump((void *)p_cmd->buf, len + 8, "report luns data");
 
@@ -2193,11 +2192,11 @@ int find_lun(struct cflash *p_cflash, u32 port_sel)
 
 		scsi_add_device(p_cflash->host, CFLASH_BUS,
 				port_sel, lunidarray[j]);
-		// program FC_PORT LUN Tbl
+		/* program FC_PORT LUN Tbl */
 		write_64(&p_afu->p_afu_map->global.fc_port[port_sel - 1]
 			 [p_cflash->last_lun_index], lunidarray[j]);
 
-		// record the lun_id to be used in discovery later
+		/* record the lun_id to be used in discovery later */
 		p_afu->lun_info[p_cflash->last_lun_index].lun_id =
 		    lunidarray[j];
 

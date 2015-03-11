@@ -1,8 +1,8 @@
 /*
  * CAPI Flash Device Driver
  *
- * Written by: Manoj N. Kumar <kumarmn@us.ibm.com>, IBM Corporation
- *             Matthew R. Ochs <mrochs@us.ibm.com>, IBM Corporation
+ * Written by: Manoj N. Kumar <manoj@linux.vnet.ibm.com>, IBM Corporation
+ *             Matthew R. Ochs <mrochs@linux.vnet.ibm.com>, IBM Corporation
  *
  * Copyright (C) 2015 IBM Corporation
  *
@@ -17,23 +17,21 @@
 
 /**
  * @enum AFU_PORT_ID
- * @brief Typedef of the two supported error log levels.
- * Informational logs will be hidden from the user. Predictive logs will
- * be reported. All predictive errors MUST have a callout.
+ * @brief Typedef to define AFU ports.
  * MAX_WWPNS_PER_ADAPTER must be the last item in the list!
  */
 typedef enum {
 	AFU_PORT_ID_TOP = 0x00,
 	AFU_PORT_ID_BOTTOM = 0x01,
-	MAX_WWPNS_PER_ADAPTER	// This MUST be last
+	MAX_WWPNS_PER_ADAPTER	/* This MUST be last*/
 } AFU_PORT_ID;
 
-// FC module register address offset for each port (byte address)
+/* FC module register address offset for each port (byte address) */
 #define FC_PORT_REG_SIZE  0x1000
 #define FC_PORT_BASE_OFFSET  0x2012000
 #define FC_PORT_MMAP_SIZE ((FC_PORT_BASE_OFFSET) + (MAX_WWPNS_PER_ADAPTER) * (FC_PORT_REG_SIZE))
 
-// FC module register offset (byte address)
+/* FC module register offset (byte address) */
 #define FC_MTIP_REV 0x000
 #define FC_MTIP_SCRATCH 0x008
 #define FC_MTIP_CMDCONFIG 0x010

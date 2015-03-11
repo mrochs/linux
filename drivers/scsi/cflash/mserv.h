@@ -1,8 +1,8 @@
 /*
  * CAPI Flash Device Driver
  *
- * Written by: Manoj N. Kumar <kumarmn@us.ibm.com>, IBM Corporation
- *             Matthew R. Ochs <mrochs@us.ibm.com>, IBM Corporation
+ * Written by: Manoj N. Kumar <manoj@linux.vnet.ibm.com>, IBM Corporation
+ *             Matthew R. Ochs <mrochs@linux.vnet.ibm.com>, IBM Corporation
  *
  * Copyright (C) 2015 IBM Corporation
  *
@@ -16,7 +16,7 @@
 #define _MSERVE_H
 
 /*
- * Terminology: use afu (and not adapter) to refer to the HW. 
+ * Terminology: use afu (and not adapter) to refer to the HW.
  * Adapter is the entire slot and includes PSL out of which
  * only the AFU is visible to user space.
  */
@@ -27,10 +27,10 @@
 #define MC_RHT_NMASK      16	/* in bits */
 #define MC_CHUNK_SIZE     (1 << MC_RHT_NMASK)	/* in LBAs, see mclient.h */
 #define MC_CHUNK_SHIFT    MC_RHT_NMASK	/* shift to go from LBA to chunk# */
-#define MC_CHUNK_OFF_MASK (MC_CHUNK_SIZE - 1)	/* apply to LBA get offset 
+#define MC_CHUNK_OFF_MASK (MC_CHUNK_SIZE - 1)	/* apply to LBA get offset
 						   into a chunk */
 
-/* Sizing parms: same context can be registered multiple times. 
+/* Sizing parms: same context can be registered multiple times.
    Therefore we allow MAX_CONNS > MAX_CONTEXT.
 */
 #define MAX_CONTEXT  SURELOCK_MAX_CONTEXT	/* num contexts per afu */
@@ -45,19 +45,19 @@
    avoid a malloc/free overhead each time the LXT has to grow
    or shrink.
 
-   Based on the current lxt_cnt (used), it is always possible to 
-   know how many are allocated (used+free). The number of allocated 
+   Based on the current lxt_cnt (used), it is always possible to
+   know how many are allocated (used+free). The number of allocated
    entries is not stored anywhere.
 
-   The LXT table is re-allocated whenever it needs to cross into 
+   The LXT table is re-allocated whenever it needs to cross into
    another group.
 */
 #define LXT_GROUP_SIZE          8
 #define LXT_NUM_GROUPS(lxt_cnt) (((lxt_cnt) + 7)/8)	/* alloc'ed groups */
 
 /* port online retry intervals */
-#define FC_PORT_STATUS_RETRY_CNT 100	// 100 100ms retries = 10 seconds
-#define FC_PORT_STATUS_RETRY_INTERVAL_US 100000	// microseconds
+#define FC_PORT_STATUS_RETRY_CNT 100	/* 100 100ms retries = 10 seconds */
+#define FC_PORT_STATUS_RETRY_INTERVAL_US 100000	/* microseconds */
 
 /* flags in IOA status area for host use */
 #define B_DONE       0x01
@@ -102,10 +102,10 @@ struct scsi_inquiry_p83_id_desc_hdr {
 	/* Identifier Data */
 };
 
-/* 
+/*
  * A resource handle table (RHT) can be pointed to by multiple contexts.
- * This happens when one context is duped to another. 
- * W/o dup, each context has its own resource handles that is visible 
+ * This happens when one context is duped to another.
+ * W/o dup, each context has its own resource handles that is visible
  * only from that context.
  *
  * The rht_info refers to all resource handles of a context and not to
@@ -116,14 +116,14 @@ struct rht_info {
 	int ref_cnt;		/* num ctx_infos pointing to me */
 };
 
-/* Single AFU context can be pointed to by multiple client connections. 
- * The client can create multiple endpoints (mc_hndl_t) to the same 
+/* Single AFU context can be pointed to by multiple client connections.
+ * The client can create multiple endpoints (mc_hndl_t) to the same
  * (context + AFU).
  */
 struct ctx_info {
 	volatile struct sisl_ctrl_map *p_ctrl_map;	/* initialized at startup */
 
-	/* The rht_info pointer is initialized when the context is first 
+	/* The rht_info pointer is initialized when the context is first
 	   registered, can be changed on dup.
 	 */
 	struct rht_info *p_rht_info;
@@ -180,7 +180,7 @@ enum undo_level {
 };
 
 #define AFU_INIT_INDEX   0	/* first cmd is used in init/discovery,
-	                         * free for other use thereafter 
+	                         * free for other use thereafter
 				 */
 #define AFU_SYNC_INDEX   (NUM_CMDS - 1)	/* last cmd is rsvd for afu sync */
 

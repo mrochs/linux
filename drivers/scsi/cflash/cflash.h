@@ -1,8 +1,8 @@
 /*
  * CAPI Flash Device Driver
  *
- * Written by: Manoj N. Kumar <kumarmn@us.ibm.com>, IBM Corporation
- *             Matthew R. Ochs <mrochs@us.ibm.com>, IBM Corporation
+ * Written by: Manoj N. Kumar <manoj@linux.vnet.ibm.com>, IBM Corporation
+ *             Matthew R. Ochs <mrochs@linux.vnet.ibm.com>, IBM Corporation
  *
  * Copyright (C) 2015 IBM Corporation
  *
@@ -58,8 +58,8 @@ extern u32 internal_lun;
 
 
 enum open_mode_type {
-	MODE_NONE = 0, 
-	MODE_VIRTUAL, 
+	MODE_NONE = 0,
+	MODE_VIRTUAL,
 	MODE_PHYSICAL
 };
 
@@ -67,7 +67,7 @@ enum open_mode_type {
  * Prototypes
  */
 extern int cflash_disk_attach(struct scsi_device *sdev, void __user * arg);
-extern int cflash_disk_open(struct scsi_device *sdev, void __user * arg, 
+extern int cflash_disk_open(struct scsi_device *sdev, void __user * arg,
 			    enum open_mode_type mode);
 extern int cflash_disk_detach(struct scsi_device *sdev, void __user * arg);
 extern int cflash_vlun_resize(struct scsi_device *sdev, void __user * arg);

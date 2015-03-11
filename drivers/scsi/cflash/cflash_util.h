@@ -1,8 +1,8 @@
 /*
  * CAPI Flash Device Driver
  *
- * Written by: Manoj N. Kumar <kumarmn@us.ibm.com>, IBM Corporation
- *             Matthew R. Ochs <mrochs@us.ibm.com>, IBM Corporation
+ * Written by: Manoj N. Kumar <manoj@linux.vnet.ibm.com>, IBM Corporation
+ *             Matthew R. Ochs <mrochs@linux.vnet.ibm.com>, IBM Corporation
  *
  * Copyright (C) 2015 IBM Corporation
  *
@@ -17,7 +17,7 @@
 
 #include "cflash_ioctl.h"
 
-#define KWDATA_SZ  256		//max size of a VPD buffer
+#define KWDATA_SZ  256		/*max size of a VPD buffer */
 #define KWNAME_SZ 3
 #define PROV_CONVERT_UINT8_ARRAY_UINT16(lo,hi) \
 	(((hi)<<8) | (lo))
@@ -28,18 +28,18 @@
 #define PCI_DATA_ENDTAG         0x78
 
 typedef struct __attribute__ ((__packed__)) prov_pci_vpd_header {
-	char pci_eyecatcher;	//must be 0x82 
-	u8 name_sz[2];		//length of the name field. byte 0 is lo, 
-	//byte 1 is hi.  
+	char pci_eyecatcher;	/*must be 0x82  */
+	u8 name_sz[2];		/*length of the name field. byte 0 is lo,  */
+	/*byte 1 is hi.   */
 	char name[1];
 } prov_pci_vpd_header_t;
 
 typedef struct __attribute__ ((__packed__)) prov_pci_vpd_segment {
-	char segment_eyecatcher;	//must be 0x90 or 0x91 
-	u8 segment_sz[2];	//TOTAL length of the fields. byte 
-	// 0 is lo, byt e 1 is hi.  
+	char segment_eyecatcher;	/*must be 0x90 or 0x91  */
+	u8 segment_sz[2];	/*TOTAL length of the fields. byte  */
+	/* 0 is lo, byt e 1 is hi.   */
 
-	u8 keywords[1];		//variable length VPD data!
+	u8 keywords[1];		/*variable length VPD data! */
 } prov_pci_vpd_segment_t;
 
 bool prov_find_vpd_kw(const char *i_kw,
@@ -48,12 +48,12 @@ bool prov_find_vpd_kw(const char *i_kw,
 		      u8 * o_kwdata, int *io_kwdata_length);
 
 
-void marshall_virt_to_resize(struct dk_capi_uvirtual *pvirt, 
+void marshall_virt_to_resize(struct dk_capi_uvirtual *pvirt,
 			     struct dk_capi_resize *psize);
 
-void marshall_rele_to_resize(struct dk_capi_release *prele, 
+void marshall_rele_to_resize(struct dk_capi_release *prele,
 			     struct dk_capi_resize *psize);
-void marshall_det_to_rele(struct dk_capi_detach *pdet, 
+void marshall_det_to_rele(struct dk_capi_detach *pdet,
 			  struct dk_capi_release *prel);
 void marshall_clone_to_rele(struct dk_capi_clone *pclone,
 			    struct dk_capi_release *prel);

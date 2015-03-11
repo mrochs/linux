@@ -1,8 +1,8 @@
 /*
  * CAPI Flash Device Driver
  *
- * Written by: Manoj N. Kumar <kumarmn@us.ibm.com>, IBM Corporation
- *             Matthew R. Ochs <mrochs@us.ibm.com>, IBM Corporation
+ * Written by: Manoj N. Kumar <manoj@linux.vnet.ibm.com>, IBM Corporation
+ *             Matthew R. Ochs <mrochs@linux.vnet.ibm.com>, IBM Corporation
  *
  * Copyright (C) 2015 IBM Corporation
  *
@@ -91,14 +91,14 @@ struct afu_cmd *get_next_cmd(struct afu *p_afu)
 		if (p_cmd->flag == CMD_FREE) {
 			p_cmd->flag = CMD_IN_USE;
 			spin_unlock_irqrestore(&p_cmd->slock, lock_flags);
-			cflash_info("in %s returning found index=%d\n", 
+			cflash_info("in %s returning found index=%d\n",
 				    __func__, p_cmd->slot);
 			return p_cmd;
-		}       
+		}
 		spin_unlock_irqrestore(&p_cmd->slock, lock_flags);
 	}
 	return  NULL;
-	
+
 }
 
 void release_cmd(struct afu_cmd *p_cmd)
@@ -483,7 +483,7 @@ static ssize_t cflash_store_log_level(struct device *dev,
  * cflash_wait_for_pci_err_recovery - Wait for any PCI error recovery to
  *					complete during probe time
  * @p_cflash:    cflash config struct
- * 
+ *
  * Return value:
  *	None
  */
@@ -533,7 +533,7 @@ static int cflash_ioctl(struct scsi_device *sdev, int cmd, void __user * arg)
 
 	p_cflash = (struct cflash *)sdev->hostdata;
 
-	/* Restrict command set to physical support only for internal LUN */ 
+	/* Restrict command set to physical support only for internal LUN */
 	if (internal_lun)
 	{
 		switch (cmd) {
@@ -661,7 +661,7 @@ static void cflash_free_mem(struct cflash *p_cflash)
 		for (i=0; i<NUM_CMDS; i++) {
 			buf = p_cflash->p_afu->cmd[i].buf;
 			if (buf)
-				free_pages((unsigned long)buf, 
+				free_pages((unsigned long)buf,
 					   get_order(CMD_BUFSIZE));
 		}
 	}
@@ -695,9 +695,9 @@ static void cflash_remove(struct pci_dev *pdev)
 	scsi_remove_host(p_cflash->host);
 	dev_err(&pdev->dev, "after scsi_remove_host!\n");
 
-	/* XXX: Commented out for now 
+	/* XXX: Commented out for now
 	   iounmap(p_cflash->cflash_regs);
-	   pci_release_regions(p_cflash->p_dev); 
+	   pci_release_regions(p_cflash->p_dev);
 	 */
 
 	cflash_free_mem(p_cflash);
@@ -722,7 +722,7 @@ static int cflash_gb_alloc(struct cflash *p_cflash)
 	p_cflash->p_afu = (void *)__get_free_pages(GFP_KERNEL | __GFP_ZERO,
 						   get_order(nbytes));
 	if (!p_cflash->p_afu) {
-		cflash_err("in %s cannot get %d free pages\n", __func__, 
+		cflash_err("in %s cannot get %d free pages\n", __func__,
 			   get_order(nbytes));
 		rc = -ENOMEM;
 		goto out;
@@ -783,18 +783,18 @@ static int cflash_init_pci(struct cflash *p_cflash)
 	   "Couldn't map memory range of registers\n");
 	   rc = -ENOMEM;
 	   goto out_disable;
-	   } 
+	   }
 
-	   rc = pci_set_dma_mask(pdev, DMA_BIT_MASK(64)); 
-	   if (rc < 0) { 
-	   dev_dbg(&pdev->dev, "Failed to set 64 bit PCI DMA mask\n"); 
-	   rc = pci_set_dma_mask(pdev, DMA_BIT_MASK(32)); 
-	   } 
+	   rc = pci_set_dma_mask(pdev, DMA_BIT_MASK(64));
+	   if (rc < 0) {
+	   dev_dbg(&pdev->dev, "Failed to set 64 bit PCI DMA mask\n");
+	   rc = pci_set_dma_mask(pdev, DMA_BIT_MASK(32));
+	   }
 
-	   if (rc < 0) { 
+	   if (rc < 0) {
 	   dev_err(&pdev->dev, "Failed to set PCI DMA mask\n");
-	   goto out_disable; 
-	   } 
+	   goto out_disable;
+	   }
 	 */
 
 	rc = pci_write_config_byte(pdev, PCI_CACHE_LINE_SIZE, 0x20);
@@ -820,7 +820,7 @@ static int cflash_init_pci(struct cflash *p_cflash)
 
 	 */
 
-	/* Save away PCI config space for use following CFLASH reset 
+	/* Save away PCI config space for use following CFLASH reset
 	   rc = pci_save_state(pdev);
 
 	   if (rc != PCIBIOS_SUCCESSFUL) {
