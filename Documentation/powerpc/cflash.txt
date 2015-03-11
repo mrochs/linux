@@ -1,24 +1,24 @@
 Introduction
 ============
 
-    The CAPI Flash Adapter Driver is a 64 bit kernel module that sits 
-    in the SCSI stack as an adapter driver (below the SCSI disk and 
-    protocol drivers) for the IBM CAPI Flash Adapter. This driver 
-    performs initialization of the adapter, performs LUN discovery 
-    and does error recovery. It also communicates directly the Flash 
-    Accelerator Functional Unit (AFU) as described in 
+    The CAPI Flash Adapter Driver is a kernel module that sits in
+    the SCSI stack as an adapter driver (below the SCSI disk and
+    protocol drivers) for the IBM CAPI Flash Adapter. This driver
+    performs initialization of the adapter, performs LUN discovery
+    and does error recovery. It also communicates directly the Flash
+    Accelerator Functional Unit (AFU) as described in
     Documentation/powerpc/cxl.txt. It also provides block allocation
     services and special ioctls to a special user space block library.
 
 Overview
 ========
 
-    The Coherent Accerlerator Interface Architecture (CAIA) introduces
-    a concept of a master context. A master typically has special 
+    The Coherent Accelerator Interface Architecture (CAIA) introduces
+    a concept of a master context. A master typically has special
     privileges granted to it by the kernel or hypervisor allowing
     it to perform AFU wide management and control. The master may or
     may not be involved directly in each user I/O, but at the minimum
-    is involved in the initial setup before the user application is 
+    is involved in the initial setup before the user application is
     allowed to send requests directly to the AFU.
 
     The CAPI Flash Adapter Driver establishes a master context with
@@ -28,7 +28,7 @@ Overview
                      +-------------------------------+
                      |    512 * 64 KB User MMIO      |
                      |        (per context)          |
-                     |       User Acceissble         |
+                     |       User Accessible         |
                      +-------------------------------+
                      |    512 * 128 B per context    |
                      |    Provisioning and Control   |
@@ -40,10 +40,10 @@ Overview
 
     This Driver configures itself into the SCSI software stack
     as an adapter driver. It discovers all LUNs attached to the
-    CAPI Flash adapter and instantiates scsi block devices 
+    CAPI Flash adapter and instantiates scsi block devices
     (/dev/sdb, /dev/sdc etc.) for each unique LUN seen from each path.
 
-    Once these scsi block devices are instantiated, an application 
+    Once these scsi block devices are instantiated, an application
     written to a specification provided by the block library may
     get access to the Flash from user space (without requiring
     a system call).
@@ -55,13 +55,12 @@ Overview
     The first mode is called a virtual mode. In this mode a single
     scsi block device (/dev/sdb) may be carved up into any number
     of distinct virtual LUNs. The virtual LUNs may be resized as long
-
     as the sum of the sizes of all the virtual LUNs, along with
     the meta-data associated with it does not exceed the physical
-    capacity. T
-   
+    capacity.
+
     The second mode is called the physical mode. IN this mode a
-    single block device (/dev/sdb) may be opened directly by 
+    single block device (/dev/sdb) may be opened directly by
     the block library and the entire space for the LUN is available
     to the application.
 
@@ -76,7 +75,7 @@ Block library API
 =================
 
     For applications intending to get access to the CAPI Flash from
-    user space through the block library, the following services are 
+    user space through the block library, the following services are
     provided by the CAPI Flash Adapter Driver.
 
     The structure definitions are available in:
@@ -101,19 +100,14 @@ attach
     file descriptor (fd2) associated with the Adapter. This new
     descriptor is used by the block library to then mmap() and initiate
     memory mapped I/O to the CAPI flash device. This attach ioctl
-    also provides a context handle (ctx).
-
-detach
-------
-
-    The detach ioctl specifies the context handle (ctx) that is no
-    longer needed.
+    also provides a context handle (ctx). When the context is no longer
+    needed, a close (fd2) should be performed.
 
 udirect
 -------
-   This ioctl returns the block size and last Logical Block Address (LBA) 
+   This ioctl returns the block size and last Logical Block Address (LBA)
    on LUN.
- 
+
 uvirtual
 --------
    This ioctl requests a virtual LUN of a specified size.

@@ -1,11 +1,17 @@
 /*
-* Copyright 2015 IBM Corp.
-*
-* This program is free software; you can redistribute it and/or
-* modify it under the terms of the GNU General Public License
-* as published by the Free Software Foundation; either version
-* 2 of the License, or (at your option) any later version.
-*/
+ * CAPI Flash Device Driver
+ *
+ * Written by: Manoj N. Kumar <kumarmn@us.ibm.com>, IBM Corporation
+ *             Matthew R. Ochs <mrochs@us.ibm.com>, IBM Corporation
+ *
+ * Copyright (C) 2015 IBM Corporation
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version
+ * 2 of the License, or (at your option) any later version.
+ */
+
 #include "cflash.h"
 #include "cflash_util.h"
 #include "cflash_ioctl.h"

@@ -1,9 +1,0 @@
-#We don't want git to see these build artifacts
-*.o
-*.ko
-*.cmd
-*.swp
-*.mod.c
-.tmp_versions
-Module.symvers
-modules.order
