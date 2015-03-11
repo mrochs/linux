@@ -1065,8 +1065,9 @@ static irqreturn_t cflash_rrq_irq(int irq, void *data)
 			scsi_set_resid(scp, p_cmd->sa.resid);
 			scp->scsi_done(scp);
 			scsi_dma_unmap(scp);
+			release_cmd(p_cmd);
+			p_cmd->rcb.rsvd2 = 0ULL;
 		}
-		release_cmd(p_cmd);
 
 		/* Advance to next entry or wrap and flip the toggle bit */
 		if (p_afu->p_hrrq_curr < p_afu->p_hrrq_end) {
@@ -1466,10 +1467,6 @@ void cflash_term_afu(struct cflash *p_cflash)
 			p_afu->p_blka[i] = NULL;
 		}
 	}
-
-	nbytes = sizeof(struct afu) * CFLASH_NAFU;
-	free_pages((unsigned long)p_cflash->p_afu, get_order(nbytes));
-	p_cflash->p_afu = NULL;
 }
 
 void timer_start(struct timer_list *p_timer, unsigned long timeout_in_jiffies)
