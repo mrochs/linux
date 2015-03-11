@@ -2095,9 +2095,9 @@ int read_cap16(struct afu *p_afu, struct lun_info *p_lun_info, u32 port_sel)
 		cflash_send_cmd(p_afu, p_cmd);
 		cflash_wait_resp(p_afu, p_cmd);
 	} while (check_status(&p_cmd->sa));
-	release_cmd(p_cmd);
 
 	if (p_cmd->sa.host_use_b[0] & B_ERROR) {
+		release_cmd(p_cmd);
 		cflash_err("in %s command failed \n",
 			   __func__);
 		return -1;
@@ -2110,6 +2110,7 @@ int read_cap16(struct afu *p_afu, struct lun_info *p_lun_info, u32 port_sel)
 	p_u32 = (u32 *) & p_cmd->buf[8];
 	p_lun_info->li.blk_len = read_32(p_u32);
 	spin_unlock(&p_lun_info->_lock);
+	release_cmd(p_cmd);
 
 	cflash_info("in %s maxlba=%lld blklen=%d pcmd %p\n", __func__,
 		    p_lun_info->li.max_lba, p_lun_info->li.blk_len, p_cmd);
