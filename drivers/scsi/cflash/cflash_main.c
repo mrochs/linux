@@ -458,6 +458,24 @@ static void cflash_wait_for_pci_err_recovery(struct cflash *p_cflash)
 	}
 }
 
+static char *
+decode_ioctl(int cmd)
+{
+	#define _CASE2STR(_x) case _x: return #_x
+
+	switch (cmd) {
+	_CASE2STR(DK_CAPI_ATTACH);
+	_CASE2STR(DK_CAPI_USER_DIRECT);
+	_CASE2STR(DK_CAPI_USER_VIRTUAL);
+	_CASE2STR(DK_CAPI_DETACH);
+	_CASE2STR(DK_CAPI_VLUN_RESIZE);
+	_CASE2STR(DK_CAPI_RELEASE);
+	_CASE2STR(DK_CAPI_CLONE);
+	}
+
+	return("UNKNOWN");
+}
+
 /**
  * cflash_ioctl - IOCTL handler
  * @sdev:       scsi device struct
@@ -474,61 +492,53 @@ static int cflash_ioctl(struct scsi_device *sdev, int cmd, void __user * arg)
 
 	p_cflash = (struct cflash *)sdev->hostdata;
 
+	/* Restrict command set to physical support only for internal LUN */ 
+	if (internal_lun)
+	{
+		switch (cmd) {
+		case DK_CAPI_USER_VIRTUAL:
+		case DK_CAPI_VLUN_RESIZE:
+		case DK_CAPI_RELEASE:
+		case DK_CAPI_CLONE:
+			cflash_err("%s not supported for lun_mode=%d\n",
+				   decode_ioctl(cmd), internal_lun);
+			rc = -EOPNOTSUPP;
+			goto cflash_ioctl_exit;
+		}
+	}
+
 	switch (cmd) {
 	case DK_CAPI_ATTACH:
 		rc = cflash_disk_attach(sdev, arg);
-		if (rc) {
-			goto cflash_ioctl_exit;
-		}
-
 		break;
 	case DK_CAPI_USER_DIRECT:
 		rc = cflash_disk_open(sdev, arg, MODE_PHYSICAL);
-		if (rc) {
-			goto cflash_ioctl_exit;
-		}
+		break;
 	case DK_CAPI_USER_VIRTUAL:
 		rc = cflash_disk_open(sdev, arg, MODE_VIRTUAL);
-		if (rc) {
-			goto cflash_ioctl_exit;
-		}
-
 		break;
 	case DK_CAPI_DETACH:
 		rc = cflash_disk_detach(sdev, arg);
-		if (rc) {
-			goto cflash_ioctl_exit;
-		}
-
 		break;
 	case DK_CAPI_VLUN_RESIZE:
 		rc = cflash_vlun_resize(sdev, arg);
-		if (rc) {
-			goto cflash_ioctl_exit;
-		}
-
 		break;
 	case DK_CAPI_RELEASE:
 		rc = cflash_disk_release(sdev, arg);
-		if (rc) {
-			goto cflash_ioctl_exit;
-		}
-
 		break;
 	case DK_CAPI_CLONE:
 		rc = cflash_disk_clone(sdev, arg);
-		if (rc) {
-			goto cflash_ioctl_exit;
-		}
-
 		break;
 	default:
-		rc = -EINVAL;
+		rc = -EOPNOTSUPP;
 		break;
 	}
 
+	/* fall thru to exit */
+
 cflash_ioctl_exit:
-	cflash_info("ioctl 0x%x returned rc %d\n", cmd, rc);
+	cflash_info("ioctl %s (%08X) returned rc %d\n",
+		    decode_ioctl(cmd), cmd, rc);
 	return rc;
 }
 
@@ -1051,6 +1061,13 @@ static int __init init_cflash(void)
 {
 	cflash_info("IBM Power CAPI Flash Adapter version: %s %s\n",
 		    CFLASH_DRIVER_VERSION, CFLASH_DRIVER_DATE);
+
+	/* Validate module parameters */
+	if (internal_lun > 4) {
+		cflash_err("Invalid internal_lun parameter! (%d > 4)\n",
+			   internal_lun);
+		return(-EINVAL);
+	}
 
 	register_reboot_notifier(&cflash_notifier);
 	return pci_register_driver(&cflash_driver);
