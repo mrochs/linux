@@ -187,28 +187,33 @@ enum undo_level {
 	UNDO_AFU_ALL		/* must be last */
 };
 
+#define AFU_INIT_INDEX   0	/* first cmd is used in init/discovery,
+	                         * free for other use thereafter 
+				 */
+#define AFU_SYNC_INDEX   (NUM_CMDS - 1)	/* last cmd is rsvd for afu sync */
+
+#define CMD_FREE   0x0
+#define CMD_IN_USE 0x1
+#define CMD_BUFSIZE 0x1000
+
 struct afu_cmd {
 	struct sisl_ioarcb_s rcb;	/* IOARCB (cache line aligned) */
-	struct sisl_ioasa_s sa;	/* IOASA must follow IOARCB */
+	struct sisl_ioasa_s sa;		/* IOASA must follow IOARCB */
 	spinlock_t slock;
 	struct timer_list timer;
+	char *buf;                      /* per command buffer */
+	int slot;
+	int flag;
 } __attribute__ ((aligned(0x80)));
 
 struct afu {
 	/* Stuff requiring alignment go first. */
 
+	u64 rrq_entry[NUM_RRQ_ENTRY];	/* 128B RRQ (page aligned) */
 	/*
 	 * Command & data for AFU commands.
-	 * master sends only 1 command at a time except WRITE SAME.
-	 * Therefore, only 1 data buffer shared by all commands suffice.
 	 */
-	char buf[0x1000];	/* 4K AFU data buffer (page aligned) */
-	u64 rrq_entry[NUM_RRQ_ENTRY];	/* 128B RRQ (page aligned) */
 	struct afu_cmd cmd[NUM_CMDS];
-
-#define AFU_INIT_INDEX   0	// first cmd is used in init/discovery,
-	// free for other use thereafter
-#define AFU_SYNC_INDEX   (NUM_CMDS - 1)	// last cmd is rsvd for afu sync
 
 	/* Housekeeping data */
 	struct ctx_info ctx_info[MAX_CONTEXT];

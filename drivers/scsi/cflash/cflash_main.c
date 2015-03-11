@@ -71,6 +71,41 @@ static const char *cflash_driver_info(struct Scsi_Host *host)
 	return buffer;
 }
 
+struct afu_cmd *get_next_cmd(struct afu *p_afu)
+{
+	int i;
+	struct afu_cmd *p_cmd;
+	unsigned long lock_flags = 0;
+
+	/* The last command structure is reserved for SYNC */
+	for (i=0; i<NUM_CMDS-1; i++) {
+		p_cmd = &p_afu->cmd[i];
+		spin_lock_irqsave(&p_cmd->slock, lock_flags);
+
+		if (p_cmd->flag == CMD_FREE) {
+			p_cmd->flag = CMD_IN_USE;
+			spin_unlock_irqrestore(&p_cmd->slock, lock_flags);
+			cflash_info("in %s returning found index=%d\n", 
+				    __func__, p_cmd->slot);
+			return p_cmd;
+		}       
+		spin_unlock_irqrestore(&p_cmd->slock, lock_flags);
+	}
+	return  NULL;
+	
+}
+
+void release_cmd(struct afu_cmd *p_cmd)
+{
+	unsigned long lock_flags = 0;
+
+	spin_lock_irqsave(&p_cmd->slock, lock_flags);
+	p_cmd->flag = CMD_FREE;
+	spin_unlock_irqrestore(&p_cmd->slock, lock_flags);
+	cflash_info("in %s releasing cmd index=%d\n", __func__, p_cmd->slot);
+
+}
+
 /**
  * cflash_queuecommand_lck - Queue a mid-layer request
  * @shost:               scsi host struct
@@ -606,14 +641,29 @@ static struct pci_device_id cflash_pci_table[] = {
 
 /**
  * cflash_free_mem - Frees memory allocated for an adapter
- * @ioa_cfg:    ioa cfg struct
+ * @p_cflash:    struct cflash reference
  *
  * Return value:
  *      nothing
  **/
 static void cflash_free_mem(struct cflash *p_cflash)
 {
-	/* XXX: Dummy */
+	int i, nbytes;
+	char *buf = NULL;
+
+	if (p_cflash->p_afu) {
+		for (i=0; i<NUM_CMDS; i++) {
+			buf = p_cflash->p_afu->cmd[i].buf;
+			if (buf)
+				free_pages((unsigned long)buf, 
+					   get_order(CMD_BUFSIZE));
+		}
+	}
+
+	nbytes = sizeof(struct afu) * CFLASH_NAFU;
+	free_pages((unsigned long)p_cflash->p_afu, get_order(nbytes));
+	p_cflash->p_afu = NULL;
+
 	return;
 }
 
@@ -659,14 +709,33 @@ static int cflash_gb_alloc(struct cflash *p_cflash)
 {
 	int nbytes;
 	int rc = 0;
+	int i;
+	char *buf = NULL;
 
 	nbytes = sizeof(struct afu) * CFLASH_NAFU;
 	p_cflash->p_afu = (void *)__get_free_pages(GFP_KERNEL | __GFP_ZERO,
 						   get_order(nbytes));
 	if (!p_cflash->p_afu) {
-		cflash_err("cannot get %d free pages\n", get_order(nbytes));
+		cflash_err("in %s cannot get %d free pages\n", __func__, 
+			   get_order(nbytes));
 		rc = -ENOMEM;
 		goto out;
+	}
+
+	/* Allocate one extra, just in case the SYNC command needs a buffer */
+	for (i=0; i<NUM_CMDS; i++) {
+		buf = (void *)__get_free_pages (GFP_KERNEL | __GFP_ZERO,
+						get_order(CMD_BUFSIZE));
+		if (!buf) {
+			cflash_err("in %s cannot allocate command buffers %d\n",
+				  __func__, CMD_BUFSIZE);
+			rc = -ENOMEM;
+			cflash_free_mem(p_cflash);
+			goto out;
+		}
+		p_cflash->p_afu->cmd[i].buf = buf;
+		p_cflash->p_afu->cmd[i].flag = CMD_FREE;
+		p_cflash->p_afu->cmd[i].slot = i;
 	}
 
 out:

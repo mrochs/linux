@@ -185,5 +185,6 @@ typedef struct mc_notify_s {
 
 int cflash_init_afu(struct cflash *);
 void cflash_term_afu(struct cflash *);
-
+struct afu_cmd *get_next_cmd(struct afu *p_afu);
+void release_cmd(struct afu_cmd *p_cmd);
 #endif /* ifndef _CFLASHMC_H */

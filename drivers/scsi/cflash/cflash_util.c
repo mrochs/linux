@@ -237,3 +237,61 @@ void marshall_clone_to_rele(struct dk_capi_clone *pclone,
 	prel->context_id = pclone->context_id_dst;
 	prel->challenge = pclone->challenge_dst;
 }
+
+void hexdump(void *data, long len, const char *hdr)
+{
+
+	int i, j, k;
+	char str[18];
+	char *p = (char *)data;
+
+	i = j = k = 0;
+	printk("%s: length=%ld\n", hdr ? hdr : "hexdump()", len);
+
+	/* Print each 16 byte line of data */
+	while (i < len) {
+		if (!(i % 16))	/* Print offset at 16 byte bndry */
+			printk("%03x  ", i);
+
+		/* Get next data byte, save ascii, print hex */
+		j = (int)p[i++];
+		if (j >= 32 && j <= 126)
+			str[k++] = (char)j;
+		else
+			str[k++] = '.';
+		printk("%02x ", j);
+
+		/* Add an extra space at 8 byte bndry */
+		if (!(i % 8)) {
+			printk(" ");
+			str[k++] = ' ';
+		}
+
+		/* Print the ascii at 16 byte bndry */
+		if (!(i % 16)) {
+			str[k] = '\0';
+			printk(" %s\n", str);
+			k = 0;
+		}
+	}
+
+	/* If we didn't end on an even 16 byte bndry, print ascii for partial
+	 * line. */
+	if ((j = i % 16)) {
+		/* First, space over to ascii region */
+		while (i % 16) {
+			/* Extra space at 8 byte bndry--but not if we
+			 * started there (was already inserted) */
+			if (!(i % 8) && j != 8)
+				printk(" ");
+			printk("   ");
+			i++;
+		}
+		/* Terminate the ascii and print it */
+		str[k] = '\0';
+		printk("  %s\n", str);
+	}
+
+	return;
+}
+

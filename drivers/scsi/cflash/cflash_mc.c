@@ -44,63 +44,6 @@
 /* Mask off the low nibble of the length to ensure 16 byte multiple */
 #define SISLITE_LEN_MASK 0xFFFFFFF0
 
-void hexdump(void *data, long len, const char *hdr)
-{
-
-	int i, j, k;
-	char str[18];
-	char *p = (char *)data;
-
-	i = j = k = 0;
-	printk("%s: length=%ld\n", hdr ? hdr : "hexdump()", len);
-
-	/* Print each 16 byte line of data */
-	while (i < len) {
-		if (!(i % 16))	/* Print offset at 16 byte bndry */
-			printk("%03x  ", i);
-
-		/* Get next data byte, save ascii, print hex */
-		j = (int)p[i++];
-		if (j >= 32 && j <= 126)
-			str[k++] = (char)j;
-		else
-			str[k++] = '.';
-		printk("%02x ", j);
-
-		/* Add an extra space at 8 byte bndry */
-		if (!(i % 8)) {
-			printk(" ");
-			str[k++] = ' ';
-		}
-
-		/* Print the ascii at 16 byte bndry */
-		if (!(i % 16)) {
-			str[k] = '\0';
-			printk(" %s\n", str);
-			k = 0;
-		}
-	}
-
-	/* If we didn't end on an even 16 byte bndry, print ascii for partial
-	 * line. */
-	if ((j = i % 16)) {
-		/* First, space over to ascii region */
-		while (i % 16) {
-			/* Extra space at 8 byte bndry--but not if we
-			 * started there (was already inserted) */
-			if (!(i % 8) && j != 8)
-				printk(" ");
-			printk("   ");
-			i++;
-		}
-		/* Terminate the ascii and print it */
-		str[k] = '\0';
-		printk("  %s\n", str);
-	}
-
-	return;
-}
-
 int cflash_afu_attach(struct cflash *p_cflash, u64 context_id)
 {
 	struct afu *p_afu = p_cflash->p_afu;
@@ -1117,6 +1060,7 @@ static irqreturn_t cflash_rrq_irq(int irq, void *data)
 			scp->scsi_done(scp);
 			scsi_dma_unmap(scp);
 		}
+		release_cmd(p_cmd);
 
 		/* Advance to next entry or wrap and flip the toggle bit */
 		if (p_afu->p_hrrq_curr < p_afu->p_hrrq_end) {
@@ -1656,12 +1600,10 @@ int afu_sync(struct afu *p_afu,
 	u32 *p_u32;
 	struct afu_cmd *p_cmd = &p_afu->cmd[AFU_SYNC_INDEX];
 	int rc = 0;
-	unsigned long lock_flags = 0;
 
 	cflash_info("in %s p_afu %p p_cmd %p %d\n",
 		    __func__, p_afu, p_cmd, ctx_hndl_u);
 
-	spin_lock_irqsave(&p_cmd->slock, lock_flags);
 	memset(&p_cmd->rcb.cdb[0], 0, sizeof(p_cmd->rcb.cdb));
 
 	p_cmd->rcb.req_flags = SISL_REQ_FLAGS_AFU_CMD;
@@ -1679,7 +1621,6 @@ int afu_sync(struct afu *p_afu,
 	write_32(p_u32, res_hndl_u);	/* res_hndl to sync up */
 
 	cflash_send_cmd(p_afu, p_cmd);
-	spin_unlock_irqrestore(&p_cmd->slock, lock_flags);
 	cflash_wait_resp(p_afu, p_cmd);
 
 	if ((p_cmd->sa.ioasc != 0) || (p_cmd->sa.host_use_b[0] & B_ERROR)) {
@@ -2113,12 +2054,16 @@ int read_cap16(struct afu *p_afu, struct lun_info *p_lun_info, u32 port_sel)
 
 	u32 *p_u32;
 	u64 *p_u64;
-	unsigned long lock_flags = 0;
+	struct afu_cmd *p_cmd;
 
-	struct afu_cmd *p_cmd = &p_afu->cmd[AFU_INIT_INDEX];
+	p_cmd =  get_next_cmd(p_afu);
+	if (!p_cmd) {
+		cflash_err("in %s could not get a free command\n",
+			   __func__);
+		return -1;
+	}
 
-	spin_lock_irqsave(&p_cmd->slock, lock_flags);
-	memset(&p_afu->buf[0], 0, sizeof(p_afu->buf));
+	memset(p_cmd->buf, 0, CMD_BUFSIZE);
 	memset(&p_cmd->rcb.cdb[0], 0, sizeof(p_cmd->rcb.cdb));
 
 	p_cmd->rcb.req_flags = (SISL_REQ_FLAGS_PORT_LUN_ID |
@@ -2127,14 +2072,14 @@ int read_cap16(struct afu *p_afu, struct lun_info *p_lun_info, u32 port_sel)
 
 	p_cmd->rcb.port_sel = port_sel;
 	p_cmd->rcb.lun_id = p_lun_info->lun_id;
-	p_cmd->rcb.data_len = sizeof(p_afu->buf);
-	p_cmd->rcb.data_ea = (u64) & p_afu->buf[0];
+	p_cmd->rcb.data_len = CMD_BUFSIZE;
+	p_cmd->rcb.data_ea = (u64) p_cmd->buf;
 	p_cmd->rcb.timeout = MC_DISCOVERY_TIMEOUT;
 
 	p_cmd->rcb.cdb[0] = 0x9E;	/* read cap(16) */
 	p_cmd->rcb.cdb[1] = 0x10;	/* service action */
 	p_u32 = (u32 *) & p_cmd->rcb.cdb[10];
-	write_32(p_u32, sizeof(p_afu->buf));	/* allocation length */
+	write_32(p_u32, CMD_BUFSIZE);
 	p_cmd->sa.host_use_b[1] = 0;	/* reset retry cnt */
 
 	cflash_info("in %s: sending cmd(0x%x) with RCB EA=%p data EA=0x%llx\n",
@@ -2143,21 +2088,21 @@ int read_cap16(struct afu *p_afu, struct lun_info *p_lun_info, u32 port_sel)
 
 	do {
 		cflash_send_cmd(p_afu, p_cmd);
-		spin_unlock_irqrestore(&p_cmd->slock, lock_flags);
 		cflash_wait_resp(p_afu, p_cmd);
-		spin_lock_irqsave(&p_cmd->slock, lock_flags);
 	} while (check_status(&p_cmd->sa));
-	spin_unlock_irqrestore(&p_cmd->slock, lock_flags);
+	release_cmd(p_cmd);
 
 	if (p_cmd->sa.host_use_b[0] & B_ERROR) {
+		cflash_err("in %s command failed \n",
+			   __func__);
 		return -1;
 	}
 	// read cap success 
 	spin_lock(&p_lun_info->_lock);
-	p_u64 = (u64 *) & p_afu->buf[0];
+	p_u64 = (u64 *) & p_cmd->buf[0];
 	p_lun_info->li.max_lba = read_64(p_u64);
 
-	p_u32 = (u32 *) & p_afu->buf[8];
+	p_u32 = (u32 *) & p_cmd->buf[8];
 	p_lun_info->li.blk_len = read_32(p_u32);
 	spin_unlock(&p_lun_info->_lock);
 
@@ -2175,15 +2120,20 @@ int find_lun(struct cflash *p_cflash, u32 port_sel)
 	u32 len;
 	u64 *p_u64;
 	struct afu *p_afu = p_cflash->p_afu;
-	struct afu_cmd *p_cmd = &p_afu->cmd[AFU_INIT_INDEX];
+	struct afu_cmd *p_cmd;
 	u64 lunidarray[CFLASH_MAX_NUM_LUNS_PER_TARGET];
 	int i = 0;
 	int j = 0;
 	int rc = 0;
-	unsigned long lock_flags = 0;
 
-	spin_lock_irqsave(&p_cmd->slock, lock_flags);
-	memset(&p_afu->buf[0], 0, sizeof(p_afu->buf));
+	p_cmd = get_next_cmd(p_afu);
+	if (!p_cmd) {
+		cflash_err("in %s could not get a free command\n",
+			   __func__);
+		return -1;
+	}
+
+	memset(p_cmd->buf, 0, CMD_BUFSIZE);
 	memset(&p_cmd->rcb.cdb[0], 0, sizeof(p_cmd->rcb.cdb));
 
 	p_cmd->rcb.req_flags = (SISL_REQ_FLAGS_PORT_LUN_ID |
@@ -2192,13 +2142,13 @@ int find_lun(struct cflash *p_cflash, u32 port_sel)
 
 	p_cmd->rcb.port_sel = port_sel;
 	p_cmd->rcb.lun_id = 0x0;	/* use lun_id=0 w/report luns */
-	p_cmd->rcb.data_len = sizeof(p_afu->buf);
-	p_cmd->rcb.data_ea = (u64) & p_afu->buf[0];
+	p_cmd->rcb.data_len = CMD_BUFSIZE;
+	p_cmd->rcb.data_ea = (u64) p_cmd->buf;
 	p_cmd->rcb.timeout = MC_DISCOVERY_TIMEOUT;
 
 	p_cmd->rcb.cdb[0] = 0xA0;	/* report luns */
 	p_u32 = (u32 *) & p_cmd->rcb.cdb[6];
-	write_32(p_u32, sizeof(p_afu->buf));	/* allocaiton length */
+	write_32(p_u32, CMD_BUFSIZE);	/* allocaiton length */
 	p_cmd->sa.host_use_b[1] = 0;	/* reset retry cnt */
 
 	cflash_info("%s: sending cmd(0x%x) with RCB EA=%p data EA=0x%p\n",
@@ -2207,20 +2157,18 @@ int find_lun(struct cflash *p_cflash, u32 port_sel)
 
 	do {
 		cflash_send_cmd(p_afu, p_cmd);
-		spin_unlock_irqrestore(&p_cmd->slock, lock_flags);
 		cflash_wait_resp(p_afu, p_cmd);
-		spin_lock_irqsave(&p_cmd->slock, lock_flags);
 	} while (check_status(&p_cmd->sa));
-	spin_unlock_irqrestore(&p_cmd->slock, lock_flags);
 
 	if (p_cmd->sa.host_use_b[0] & B_ERROR) {
+		release_cmd(p_cmd);
 		return -1;
 	}
 	// report luns success 
-	len = read_32((u32 *) & p_afu->buf[0]);
-	hexdump((void *)p_afu->buf, len + 8, "report luns data");
+	len = read_32((u32 *) & p_cmd->buf[0]);
+	hexdump((void *)p_cmd->buf, len + 8, "report luns data");
 
-	p_u64 = (u64 *) & p_afu->buf[8];	/* start of lun list */
+	p_u64 = (u64 *) & p_cmd->buf[8];	/* start of lun list */
 
 	while (len) {
 		lunidarray[i] = read_64(p_u64);
@@ -2229,6 +2177,9 @@ int find_lun(struct cflash *p_cflash, u32 port_sel)
 		i++;
 	}
 	cflash_info("%s: found %d luns\n", __func__, i);
+
+	/* Release the CMD only after looking through the response */
+	release_cmd(p_cmd);
 	for (j = 0; j < i; j++) {
 		cflash_info("%s: adding i=%d lun_id %llx last_index %d\n",
 			    __func__, j, lunidarray[j],
@@ -2263,17 +2214,22 @@ out:
 
 void cflash_send_scsi(struct afu *p_afu, struct scsi_cmnd *scp)
 {
-	struct afu_cmd *p_cmd = &p_afu->cmd[AFU_INIT_INDEX];
+	struct afu_cmd *p_cmd;
 
 	/* XXX: Decide how to select port */
 	u64 port_sel = 0x1;
 	int nseg, i, ncount;
 	struct scatterlist *sg;
 	short lflag = 0;
-	unsigned long lock_flags = 0;
 
-	spin_lock_irqsave(&p_cmd->slock, lock_flags);
-	memset(&p_afu->buf[0], 0, sizeof(p_afu->buf));
+	p_cmd = get_next_cmd(p_afu);
+	if (!p_cmd) {
+		cflash_err("in %s could not get a free command\n",
+			   __func__);
+		return;
+	}
+
+	memset(p_cmd->buf, 0, CMD_BUFSIZE);
 	memset(&p_cmd->rcb.cdb[0], 0, sizeof(p_cmd->rcb.cdb));
 
 	p_cmd->rcb.ctx_id = p_afu->ctx_hndl;
@@ -2307,6 +2263,5 @@ void cflash_send_scsi(struct afu *p_afu, struct scsi_cmnd *scp)
 
 	/* Send the command */
 	cflash_send_cmd(p_afu, p_cmd);
-	spin_unlock_irqrestore(&p_cmd->slock, lock_flags);
 
 }
