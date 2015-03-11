@@ -39,6 +39,15 @@ MODULE_AUTHOR("Manoj N. Kumar <manoj@linux.vnet.ibm.com>");
 MODULE_AUTHOR("Matthew R. Ochs <mrochs@linux.vnet.ibm.com>");
 MODULE_LICENSE("GPL");
 
+u32 internal_lun = 0;
+module_param_named(lun_mode, internal_lun, uint, 0);
+MODULE_PARM_DESC(lun_mode, " 0 = external LUN[s](default),\n"
+			   " 1 = internal LUN (1 x 64K, 512B blocks, id 0),\n"
+			   " 2 = internal LUN (1 x 64K, 4K blocks, id 0),\n"
+			   " 3 = internal LUN (2 x 32K, 512B blocks, ids 0,1),\n"
+			   " 4 = internal LUN (2 x 32K, 4K blocks, ids 0,1)");
+
+
 extern void cflash_send_scsi(struct afu *, struct scsi_cmnd *);
 
 unsigned int cflash_debug = 0;

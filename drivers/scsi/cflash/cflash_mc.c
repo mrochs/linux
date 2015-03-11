@@ -990,6 +990,7 @@ int cflash_terminate_afu(struct afu *p_afu)
 void afu_err_intr_init(struct afu *p_afu)
 {
 	int i;
+	volatile u64 reg;
 
 	/* global async interrupts: AFU clears afu_ctrl on context exit
 	 * if async interrupts were sent to that context. This prevents
@@ -1001,8 +1002,11 @@ void afu_err_intr_init(struct afu *p_afu)
 	// mask all
 	write_64(&p_afu->p_afu_map->global.regs.aintr_mask, -1ull);
 	// set LISN# to send and point to master context
-	write_64(&p_afu->p_afu_map->global.regs.afu_ctrl,
-		 ((u64) ((p_afu->ctx_hndl << 8) | SISL_MSI_ASYNC_ERROR)) << 40);
+	reg = ((u64)(((p_afu->ctx_hndl << 8) | SISL_MSI_ASYNC_ERROR)) << 40);
+
+	if (internal_lun)
+		reg |= 1; /* Bit 63 indicates local lun */
+	write_64(&p_afu->p_afu_map->global.regs.afu_ctrl, reg);
 	// clear all
 	write_64(&p_afu->p_afu_map->global.regs.aintr_clear, -1ull);
 	// unmask bits that are of interest
@@ -1011,6 +1015,15 @@ void afu_err_intr_init(struct afu *p_afu)
 	// clear again in case a bit came on after previous clear but before
 	// unmask
 	write_64(&p_afu->p_afu_map->global.regs.aintr_clear, -1ull);
+
+	/* Clear/Set internal lun bits */
+	reg = read_64(&p_afu->p_afu_map->global.fc_regs[0][FC_CONFIG2 / 8]);
+	cflash_info("ilun p0 = %016llX\n", reg);
+	reg &= ~((u64)0x3 << 32);
+	if (internal_lun)
+		reg |= ((u64)(internal_lun - 1) << 32);
+	cflash_info("ilun p0 = %016llX\n", reg);
+	write_64(&p_afu->p_afu_map->global.fc_regs[0][FC_CONFIG2 / 8], reg);
 
 	// now clear FC errors
 	for (i = 0; i < NUM_FC_PORTS; i++) {
@@ -1330,14 +1343,17 @@ int cflash_start_afu(struct cflash *p_cflash)
 
 	// AFU configuration
 	reg = read_64(&p_afu->p_afu_map->global.regs.afu_config);
-	reg |= 0x7F00;		// enable auto retry
+	reg |= 0x7F20; /* enable all auto retry options and LE */
 	// leave others at default:
 	// CTX_CAP write protected, mbox_r does not clear on read and
 	// checker on if dual afu
 	write_64(&p_afu->p_afu_map->global.regs.afu_config, reg);
 
 	// global port select: select either port
-	write_64(&p_afu->p_afu_map->global.regs.afu_port_sel, 0x3);
+	if (internal_lun)
+		write_64(&p_afu->p_afu_map->global.regs.afu_port_sel, 0x1);
+	else
+		write_64(&p_afu->p_afu_map->global.regs.afu_port_sel, 0x3);
 
 	for (i = 0; i < NUM_FC_PORTS; i++) {
 		// unmask all errors (but they are still masked at AFU)
