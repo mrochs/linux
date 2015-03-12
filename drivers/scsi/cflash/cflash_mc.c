@@ -152,7 +152,7 @@ int cflash_disk_attach(struct scsi_device *sdev, void __user * arg)
 	struct dk_capi_attach *parg = (struct dk_capi_attach *)arg;
 	struct cxl_context *ctx;
 
-	int fd = 0;
+	int fd = -1;
 
 	ctx = cxl_dev_context_init(p_cflash->p_dev);
 	if (!ctx) {
@@ -186,7 +186,8 @@ int cflash_disk_attach(struct scsi_device *sdev, void __user * arg)
 
 	rc = cxl_start_work(ctx, &(p_lun_info->work));
 	if (rc) {
-		cflash_err("in %s Could not start context %d\n", __func__, rc);
+		cflash_err("in %s Could not start context rc %d\n", 
+			   __func__, rc);
 		cxl_release_context(ctx);
 		fput(file);
 		put_unused_fd(fd);
@@ -197,6 +198,8 @@ int cflash_disk_attach(struct scsi_device *sdev, void __user * arg)
 	if (rc) {
 		cflash_err("in %s Could not attach AFU rc %d\n", __func__, rc);
 		cxl_release_context(ctx);
+		fput(file);
+		put_unused_fd(fd);
 		goto out;
 	}
 
@@ -208,11 +211,12 @@ int cflash_disk_attach(struct scsi_device *sdev, void __user * arg)
 	spin_unlock(&p_lun_info->_lock);
 
 	parg->return_flags = 0;
-	parg->adap_fd = fd;
 	parg->block_size = p_lun_info->li.blk_len;
 	parg->mmio_size = sizeof(p_afu->p_afu_map->hosts[0].harea);
 
 out:
+	parg->adap_fd = fd;
+
 	cflash_info("in %s returning fd=%d bs=%lld rc=%d\n",
 		    __func__, fd, parg->block_size, rc);
 	return rc;

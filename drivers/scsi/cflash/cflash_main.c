@@ -133,10 +133,10 @@ static int cflash_queuecommand_lck(struct scsi_cmnd *scp,
 
 	/* XXX: Until the scsi_dma_map works, this stuff is meaningless
 	 * Make the queuecommand entry point a dummy one for now.
-	 */
 	scp->scsi_done = done;
 	scp->scsi_done(scp);
 	return 0;
+	 */
 	cflash_info("in %s (scp=%p) %d/%d/%d/%llu "
 		    "cdb=(%08x-%08x-%08x-%08x)\n",
 		    __func__, scp,
@@ -162,13 +162,27 @@ static DEF_SCSI_QCMD(cflash_queuecommand)
  * Return value:
  *      SUCCESS / FAILED
  **/
-static int cflash_eh_abort_handler(struct scsi_cmnd *scsi_cmd)
+static int cflash_eh_abort_handler(struct scsi_cmnd *scp)
 {
 	int rc = FAILED;
+	struct Scsi_Host *host = scp->device->host;
+	struct cflash *p_cflash = (struct cflash *)host->hostdata;
+	struct afu *p_afu = p_cflash->p_afu;
 
-	ENTER;
-	/* XXX: Dummy */
-	LEAVE;
+	cflash_info("in %s (scp=%p) %d/%d/%d/%llu "
+		    "cdb=(%08x-%08x-%08x-%08x)\n",
+		    __func__, scp,
+		    host->host_no, scp->device->channel,
+		    scp->device->id, scp->device->lun,
+		    cpu_to_be32(((u32 *) scp->cmnd)[0]),
+		    cpu_to_be32(((u32 *) scp->cmnd)[1]),
+		    cpu_to_be32(((u32 *) scp->cmnd)[2]),
+		    cpu_to_be32(((u32 *) scp->cmnd)[3]));
+
+	scp->result = (DID_OK << 16);;
+	cflash_send_scsi(p_afu, scp);
+
+	/* XXX: Return FAILED until we know the AFU reset works */
 	cflash_info("in %s returning rc=%d\n", __func__, rc);
 	return rc;
 }
@@ -180,10 +194,27 @@ static int cflash_eh_abort_handler(struct scsi_cmnd *scsi_cmd)
  * Returns:
  *      SUCCESS / FAST_IO_FAIL / FAILED
  **/
-static int cflash_eh_device_reset_handler(struct scsi_cmnd *cmd)
+static int cflash_eh_device_reset_handler(struct scsi_cmnd *scp)
 {
 	int rc = FAILED;
-	/* XXX: Dummy */
+	struct Scsi_Host *host = scp->device->host;
+	struct cflash *p_cflash = (struct cflash *)host->hostdata;
+	struct afu *p_afu = p_cflash->p_afu;
+
+	cflash_info("in %s (scp=%p) %d/%d/%d/%llu "
+		    "cdb=(%08x-%08x-%08x-%08x)\n",
+		    __func__, scp,
+		    host->host_no, scp->device->channel,
+		    scp->device->id, scp->device->lun,
+		    cpu_to_be32(((u32 *) scp->cmnd)[0]),
+		    cpu_to_be32(((u32 *) scp->cmnd)[1]),
+		    cpu_to_be32(((u32 *) scp->cmnd)[2]),
+		    cpu_to_be32(((u32 *) scp->cmnd)[3]));
+
+	scp->result = (DID_OK << 16);;
+	cflash_send_scsi(p_afu, scp);
+
+	/* XXX: Return FAILED until we know the AFU reset works */
 	cflash_info("in %s returning rc=%d\n", __func__, rc);
 	return rc;
 }
@@ -195,10 +226,27 @@ static int cflash_eh_device_reset_handler(struct scsi_cmnd *cmd)
  * Returns:
  *      SUCCESS / FAST_IO_FAIL / FAILED
  **/
-static int cflash_eh_target_reset_handler(struct scsi_cmnd *cmd)
+static int cflash_eh_target_reset_handler(struct scsi_cmnd *scp)
 {
 	int rc = FAILED;
-	/* XXX: Dummy */
+	struct Scsi_Host *host = scp->device->host;
+	struct cflash *p_cflash = (struct cflash *)host->hostdata;
+	struct afu *p_afu = p_cflash->p_afu;
+
+	cflash_info("in %s (scp=%p) %d/%d/%d/%llu "
+		    "cdb=(%08x-%08x-%08x-%08x)\n",
+		    __func__, scp,
+		    host->host_no, scp->device->channel,
+		    scp->device->id, scp->device->lun,
+		    cpu_to_be32(((u32 *) scp->cmnd)[0]),
+		    cpu_to_be32(((u32 *) scp->cmnd)[1]),
+		    cpu_to_be32(((u32 *) scp->cmnd)[2]),
+		    cpu_to_be32(((u32 *) scp->cmnd)[3]));
+
+	scp->result = (DID_OK << 16);;
+	cflash_send_scsi(p_afu, scp);
+
+	/* XXX: Return FAILED until we know the AFU reset works */
 	cflash_info("in %s returning rc=%d\n", __func__, rc);
 	return rc;
 }
@@ -208,10 +256,27 @@ static int cflash_eh_target_reset_handler(struct scsi_cmnd *cmd)
  * @cmd:        struct scsi_cmnd having problems
  *
  **/
-static int cflash_eh_host_reset_handler(struct scsi_cmnd *cmd)
+static int cflash_eh_host_reset_handler(struct scsi_cmnd *scp)
 {
 	int rc = SUCCESS;
-	/* XXX: Dummy */
+	struct Scsi_Host *host = scp->device->host;
+	struct cflash *p_cflash = (struct cflash *)host->hostdata;
+	struct afu *p_afu = p_cflash->p_afu;
+
+	cflash_info("in %s (scp=%p) %d/%d/%d/%llu "
+		    "cdb=(%08x-%08x-%08x-%08x)\n",
+		    __func__, scp,
+		    host->host_no, scp->device->channel,
+		    scp->device->id, scp->device->lun,
+		    cpu_to_be32(((u32 *) scp->cmnd)[0]),
+		    cpu_to_be32(((u32 *) scp->cmnd)[1]),
+		    cpu_to_be32(((u32 *) scp->cmnd)[2]),
+		    cpu_to_be32(((u32 *) scp->cmnd)[3]));
+
+	scp->result = (DID_OK << 16);;
+	cflash_send_scsi(p_afu, scp);
+
+	cflash_info("in %s returning rc=%d\n", __func__, rc);
 	return rc;
 }
 
@@ -689,11 +754,11 @@ static void cflash_remove(struct pci_dev *pdev)
 
 	dev_err(&pdev->dev, "enter cflash_remove!\n");
 
-	cflash_term_afu(p_cflash);
-	dev_err(&pdev->dev, "after struct cflasherm_afu!\n");
-
 	scsi_remove_host(p_cflash->host);
 	dev_err(&pdev->dev, "after scsi_remove_host!\n");
+
+	cflash_term_afu(p_cflash);
+	dev_err(&pdev->dev, "after struct cflash_term_afu !\n");
 
 	/* XXX: Commented out for now
 	   iounmap(p_cflash->cflash_regs);
