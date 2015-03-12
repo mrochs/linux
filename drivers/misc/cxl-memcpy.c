@@ -13,6 +13,7 @@
 #include <linux/semaphore.h>
 #include <linux/fs.h>
 #include <linux/cdev.h>
+#include <linux/file.h>
 
 #include <asm/atomic.h>
 #include <asm/uaccess.h>
@@ -318,13 +319,24 @@ static int device_close(struct inode *inode, struct file *file) {
 	return 0;
 }
 
+static int device_afu_release(struct inode *inode, struct file *file)
+{
+	/* just call the AFU one for now */
+	return cxl_fd_release(inode, file);
+}
+
+const struct file_operations cxl_memcpy_fops = {
+	.owner		= THIS_MODULE,
+	.release        = device_afu_release,
+};
+
 static long device_ioctl_get_fd(struct pci_dev *dev,
 				struct cxl_memcpy_ioctl_get_fd __user *arg)
 {
 	struct cxl_memcpy_ioctl_get_fd work;
 	struct cxl_context *ctx = NULL;
-
-	int fd;
+	struct file *file;
+	int rc, fd;
 
 	/* Copy the user info */
 	if (copy_from_user(&work, arg, sizeof(struct cxl_memcpy_ioctl_get_fd)))
@@ -339,21 +351,18 @@ static long device_ioctl_get_fd(struct pci_dev *dev,
 	if (work.master & CXL_MEMCPY_IOCTL_GET_FD_MASTER)
 		cxl_set_master(ctx);
 
-	/*
-	 * Create and attach a new file descriptor.  This must be the last
-	 * statement as once this is run, the file descritor is visible to
-	 * userspace and can't be undone.  No error paths after this as we
-	 * can't free the fd safely.
-	 */
-	fd = cxl_attach_fd(ctx, &work.work);
-	if (fd < 0)
-		goto err;
-	return fd;
+	/* Create and attach a new file descriptor */
+	file = cxl_get_fd(ctx, &cxl_memcpy_fops, &fd);
 
-err:
-	if (ctx)
-		kfree(ctx);
-	return -ENODEV;
+	rc = cxl_start_work(ctx, &work.work);
+	if (rc) {
+		fput(file);
+		put_unused_fd(fd);
+		return -ENODEV;
+	}
+	/* No error paths after installing the fd */
+	fd_install(fd, file);
+	return fd;
 }
 
 static long device_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
