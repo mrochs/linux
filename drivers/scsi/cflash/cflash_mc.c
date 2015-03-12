@@ -147,6 +147,7 @@ int cflash_disk_attach(struct scsi_device *sdev, void __user * arg)
 	struct afu *p_afu = p_cflash->p_afu;
 	struct lun_info *p_lun_info = sdev->hostdata;
 	int rc = 0;
+	struct file *file;
 
 	struct dk_capi_attach *parg = (struct dk_capi_attach *)arg;
 	struct cxl_context *ctx;
@@ -175,26 +176,32 @@ int cflash_disk_attach(struct scsi_device *sdev, void __user * arg)
 	p_lun_info->work.num_interrupts = 4;
 	p_lun_info->work.flags = CXL_START_WORK_NUM_IRQS;
 
-	fd = cxl_attach_fd(ctx, &(p_lun_info->work));
+	file = cxl_get_fd(ctx, NULL, &fd);
 	if (fd < 0) {
 		rc = -ENODEV;
 		cxl_release_context(ctx);
-		cflash_err("Could not attach file descriptor\n");
+		cflash_err("Could not get file descriptor\n");
 		goto out;
 	}
 
-	/* XXX: Currently there cannot be any error path after attach_fd.
-	 * However the AFU resets the context capabilities on start.
-	 * Until a tear down service is provided this needs to
-	 * not fail
-	 rc = cflash_afu_attach(p_cflash, parg->context_id);
-	 */
-	cflash_afu_attach(p_cflash, parg->context_id);
+	rc = cxl_start_work(ctx, &(p_lun_info->work));
+	if (rc) {
+		cflash_err("in %s Could not start context %d\n", __func__, rc);
+		cxl_release_context(ctx);
+		fput(file);
+		put_unused_fd(fd);
+		goto out;
+	}
+
+	rc = cflash_afu_attach(p_cflash, parg->context_id);
 	if (rc) {
 		cflash_err("in %s Could not attach AFU rc %d\n", __func__, rc);
 		cxl_release_context(ctx);
 		goto out;
 	}
+
+	/* No error paths after installing the fd */
+	fd_install(fd, file);
 
 	spin_lock(&p_lun_info->_lock);
 	p_lun_info->lfd = fd;
@@ -1442,7 +1449,7 @@ err1:
 
 void cflash_term_afu(struct cflash *p_cflash)
 {
-	int i, nbytes;
+	int i;
 	struct afu *p_afu = p_cflash->p_afu;
 
 	cflash_stop_context(p_cflash);
