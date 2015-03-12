@@ -999,9 +999,13 @@ static int cflash_probe(struct pci_dev *pdev,
 	}
 	p_cflash->parent_dev = to_pci_dev(phys_dev);
 
-	/* XXX: How to adderess both the AFUs on the CORSA */
 	p_cflash->afu = cxl_pci_to_afu(pdev, NULL);
-	cflash_init_afu(p_cflash);
+	rc = cflash_init_afu(p_cflash);
+	if (rc) {
+		dev_err(&pdev->dev, "call to cflash_init_afu failed rc=%d!\n",
+			rc);
+		goto out_remove;
+	}
 
 	/* XXX: Add threads for afu_rrq_rx and afu_err_rx */
 	/* after creating afu_err_rx thread, unmask error interrupts */
