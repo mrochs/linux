@@ -166,54 +166,104 @@ void cxl_set_master(struct cxl_context *ctx)
 }
 EXPORT_SYMBOL_GPL(cxl_set_master);
 
-int cxl_attach_fd(struct cxl_context *ctx, struct cxl_ioctl_start_work *work)
+/* wrappers around afu_* file ops which are EXPORTED */
+int cxl_fd_open(struct inode *inode, struct file *file)
+{
+	return afu_open(inode, file);
+}
+EXPORT_SYMBOL_GPL(cxl_fd_open);
+int cxl_fd_release(struct inode *inode, struct file *file)
+{
+	return afu_release(inode, file);
+}
+EXPORT_SYMBOL_GPL(cxl_fd_release);
+long cxl_fd_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+{
+	return afu_ioctl(file, cmd, arg);
+}
+EXPORT_SYMBOL_GPL(cxl_fd_ioctl);
+int cxl_fd_mmap(struct file *file, struct vm_area_struct *vm)
+{
+	return afu_mmap(file, vm);
+}
+EXPORT_SYMBOL_GPL(cxl_fd_mmap);
+unsigned int cxl_fd_poll(struct file *file, struct poll_table_struct *poll)
+{
+	return afu_poll(file, poll);
+}
+EXPORT_SYMBOL_GPL(cxl_fd_poll);
+ssize_t cxl_fd_read(struct file *file, char __user *buf, size_t count,
+			loff_t *off)
+{
+	return afu_read(file, buf, count, off);
+}
+EXPORT_SYMBOL_GPL(cxl_fd_read);
+
+#define PATCH_FOPS(NAME) if (!fops->NAME) fops->NAME = afu_fops.NAME
+
+/* Get a struct file and fd for a context and attach the ops */
+struct file *cxl_get_fd(struct cxl_context *ctx, struct file_operations *fops,
+			int *fd)
 {
 	struct file *file;
-	int rc, flags, fd;
+	int rc, flags, fdtmp;
 
 	flags = O_RDWR | O_CLOEXEC;
 
 	/* This code is similar to anon_inode_getfd() */
 	rc = get_unused_fd_flags(flags);
 	if (rc < 0)
-		return rc;
-	fd = rc;
+		return ERR_PTR(rc);
+	fdtmp = rc;
 
-	file = anon_inode_getfile("cxl", &afu_fops, ctx, flags);
-	if (IS_ERR(file)) {
-		rc = PTR_ERR(file);
-		goto err;
-	}
+	/*
+	 * Patch the file ops.  Needs to be careful that this is rentrant safe.
+	 */
+	if (fops) {
+		PATCH_FOPS(open);
+		PATCH_FOPS(poll);
+		PATCH_FOPS(read);
+		PATCH_FOPS(release);
+		PATCH_FOPS(unlocked_ioctl);
+		PATCH_FOPS(compat_ioctl);
+		PATCH_FOPS(mmap);
+	} else /* use default ops */
+		fops = (struct file_operations *)&afu_fops;
+
+	file = anon_inode_getfile("cxl", fops, ctx, flags);
+	if (IS_ERR(file))
+		put_unused_fd(fdtmp);
+	*fd = fdtmp;
+	return file;
+}
+EXPORT_SYMBOL_GPL(cxl_get_fd);
+
+/* */
+int cxl_start_work(struct cxl_context *ctx,
+		   struct cxl_ioctl_start_work *work)
+{
+	int rc;
 
 	/* code taken from afu_ioctl_start_work */
 	if (!(work->flags & CXL_START_WORK_NUM_IRQS))
 		work->num_interrupts = ctx->afu->pp_irqs;
 	else if ((work->num_interrupts < ctx->afu->pp_irqs) ||
-		 (work->num_interrupts > ctx->afu->irqs_max)) {
-		rc = -EINVAL;
-		goto err1;
-	}
+		 (work->num_interrupts > ctx->afu->irqs_max))
+		return -EINVAL;
+
 	rc = afu_register_irqs(ctx, work->num_interrupts);
 	if (rc)
-		goto err1;
+		return rc;
 
 	rc = cxl_start_context(ctx, work->work_element_descriptor, current);
-	if (rc < 0)
-		goto err2;
+	if (rc < 0) {
+		afu_release_irqs(ctx, ctx);
+		return rc;
+	}
 
-	fd_install(fd, file);
-	/* once we do fd_install we are not allowed to fail */
-	return fd;
-
-err2:
-	afu_release_irqs(ctx, ctx);
-err1:
-	fput(file);
-err:
-	put_unused_fd(fd);
-	return rc;
+	return 0;
 }
-EXPORT_SYMBOL_GPL(cxl_attach_fd);
+EXPORT_SYMBOL_GPL(cxl_start_work);
 
 void __iomem *cxl_psa_map(struct cxl_context *ctx)
 {
