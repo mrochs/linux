@@ -11,6 +11,7 @@
 #define _MISC_CXL_H
 
 #include <linux/pci.h>
+#include <linux/poll.h>
 #include <linux/interrupt.h>
 #include <uapi/misc/cxl.h>
 
@@ -130,11 +131,20 @@ void cxl_stop_context(struct cxl_context *ctx);
  */
 void cxl_set_master(struct cxl_context *ctx);
 
-/*
- * Attach an fd to a context.  After this is run, the file descriptor will be
- * visible to userspace, hence no additional error paths are allowed after this
- */
-int cxl_attach_fd(struct cxl_context *ctx, struct cxl_ioctl_start_work *work);
+/* Attach an fd to a context. */
+/* Export all the existing fops so drivers can use them */
+int cxl_fd_open(struct inode *inode, struct file *file);
+int cxl_fd_release(struct inode *inode, struct file *file);
+long cxl_fd_ioctl(struct file *file, unsigned int cmd, unsigned long arg);
+int cxl_fd_mmap(struct file *file, struct vm_area_struct *vm);
+unsigned int cxl_fd_poll(struct file *file, struct poll_table_struct *poll);
+ssize_t cxl_fd_read(struct file *file, char __user *buf, size_t count,
+			   loff_t *off);
+
+struct file *cxl_get_fd(struct cxl_context *ctx, struct file_operations *fops,
+			int *fd);
+int cxl_start_work(struct cxl_context *ctx,
+		   struct cxl_ioctl_start_work *work);
 
 /* Map and unmap the AFU Problem Space area */
 void __iomem *cxl_psa_map(struct cxl_context *ctx);
