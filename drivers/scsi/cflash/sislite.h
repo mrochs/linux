@@ -318,6 +318,7 @@ struct sisl_global_regs {
 	u64 afu_config;
 	u64 rsvd[0xf8];
 	u64 afu_version;
+	u64 interface_version;
 };
 
 #define SURELOCK_NUM_FC_PORTS   2

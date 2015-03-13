@@ -133,10 +133,10 @@ static int cflash_queuecommand_lck(struct scsi_cmnd *scp,
 
 	/* XXX: Until the scsi_dma_map works, this stuff is meaningless
 	 * Make the queuecommand entry point a dummy one for now.
+	 */
 	scp->scsi_done = done;
 	scp->scsi_done(scp);
 	return 0;
-	 */
 	cflash_info("in %s (scp=%p) %d/%d/%d/%llu "
 		    "cdb=(%08x-%08x-%08x-%08x)\n",
 		    __func__, scp,

@@ -42,11 +42,6 @@
 #include "afu_fc.h"
 #include "mserv.h"
 
-/* Until we figure out how to get the process element, need to include
- * Mikey's header file
- */
-#include "cxl.h"
-
 /* Mask off the low nibble of the length to ensure 16 byte multiple */
 #define SISLITE_LEN_MASK 0xFFFFFFF0
 
@@ -161,10 +156,7 @@ int cflash_disk_attach(struct scsi_device *sdev, void __user * arg)
 		goto out;
 	}
 
-	/* XXX: Cannot get to the process element until Mikey's headers
-	 * are included
-	 */
-	parg->context_id = (u64) ctx->pe;
+	parg->context_id = (u64) cxl_process_element(ctx);
 
 	/*
 	 * Create and attach a new file descriptor. This must be the last
@@ -1272,9 +1264,7 @@ int cflash_start_afu(struct cflash *p_cflash)
 	level = UNDO_AFU_MMAP;
 
 	/* copy frequently used fields into p_afu */
-	/* XXX, why cannot we get at the process element
-	 */
-	p_afu->ctx_hndl = (u16) (p_cflash->p_ctx->pe);
+	p_afu->ctx_hndl = (u16) cxl_process_element(p_cflash->p_ctx);
 	/* ctx_hndl is 16 bits in CAIA */
 	p_afu->p_host_map = &p_afu->p_afu_map->hosts[p_afu->ctx_hndl].host;
 	p_afu->p_ctrl_map = &p_afu->p_afu_map->ctrls[p_afu->ctx_hndl].ctrl;
@@ -1290,7 +1280,9 @@ int cflash_start_afu(struct cflash *p_cflash)
 	/*     will be backwards */
 	reg = p_afu->p_afu_map->global.regs.afu_version;
 	memcpy(&version[0], &reg, 8);
-	cflash_dbg("afu version %s, ctx_hndl %d\n", version, p_afu->ctx_hndl);
+	reg = read_64(&p_afu->p_afu_map->global.regs.interface_version);
+	cflash_info("afu version %s, interface version 0x%llx\n", version, 
+		   reg);
 
 	/* initialize cmd fields that never change */
 	for (i = 0; i < NUM_CMDS; i++) {
