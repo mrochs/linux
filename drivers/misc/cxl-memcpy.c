@@ -325,7 +325,7 @@ static int device_afu_release(struct inode *inode, struct file *file)
 	return cxl_fd_release(inode, file);
 }
 
-const struct file_operations cxl_memcpy_fops = {
+struct file_operations cxl_memcpy_fops = {
 	.owner		= THIS_MODULE,
 	.release        = device_afu_release,
 };
