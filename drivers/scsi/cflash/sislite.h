@@ -375,6 +375,19 @@ typedef struct sisl_rht_entry {
 	u8 nmask;
 } sisl_rht_entry_t __attribute__ ((aligned(16)));
 
+typedef struct sisl_rht_entry_f1 {
+	u64 lun_id;
+	u64 dw;
+#if 0
+	u64	lun_valid: 1,
+		reserved1: 47,
+		format: 4,
+		perm: 4,
+		reserved2: 6,
+		portsel: 2;
+#endif
+} sisl_rht_entry_f1_t __attribute__ ((aligned(16)));
+
 /* make the fp byte */
 #define SISL_RHT_FP(fmt, perm) (((fmt) << 4) | (perm))
 

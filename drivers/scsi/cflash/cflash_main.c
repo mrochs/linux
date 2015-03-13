@@ -52,6 +52,8 @@ MODULE_PARM_DESC(lun_mode, " 0 = external LUN[s](default),\n"
 			   " 2 = internal LUN (1 x 64K, 4K blocks, id 0),\n"
 			   " 3 = internal LUN (2 x 32K, 512B blocks, ids 0,1),\n"
 			   " 4 = internal LUN (2 x 32K, 4K blocks, ids 0,1)");
+module_param_named(debug, cflash_debug, uint, 0);
+MODULE_PARM_DESC(debug, " 1 = enabled");
 
 
 extern void cflash_send_scsi(struct afu *, struct scsi_cmnd *);
@@ -754,8 +756,11 @@ static void cflash_remove(struct pci_dev *pdev)
 
 	dev_err(&pdev->dev, "enter cflash_remove!\n");
 
-	scsi_remove_host(p_cflash->host);
-	dev_err(&pdev->dev, "after scsi_remove_host!\n");
+	/* Use this for now to indicate that scsi_add_host() was performed */
+	if (p_cflash->host->cmd_pool) {
+		scsi_remove_host(p_cflash->host);
+		dev_err(&pdev->dev, "after scsi_remove_host!\n");
+	}
 
 	cflash_term_afu(p_cflash);
 	dev_err(&pdev->dev, "after struct cflash_term_afu !\n");
@@ -932,7 +937,8 @@ static void cflash_scan_vsets(struct cflash *p_cflash)
 		if ((rc = find_lun(p_cflash, 1u << j)) == 0) {
 			cflash_info("Found valid lun on port=%d\n", j);
 		} else {
-			cflash_err("find_lun returned rc=%d\n", rc);
+			cflash_err("find_lun returned rc=%d on port=%d\n",
+				   rc, j);
 		}
 	}
 }
@@ -985,7 +991,8 @@ static int cflash_init_scsi(struct cflash *p_cflash)
 	dev_info(&pdev->dev, "in %s before scsi_add_host\n", __func__);
 	rc = scsi_add_host(p_cflash->host, &pdev->dev);
 	if (rc) {
-		cflash_remove(pdev);
+		dev_err(&pdev->dev, "in %s, scsi_add_host() failed (rc=%d)\n",
+			__func__, rc);
 		goto out;
 	}
 
@@ -1097,7 +1104,6 @@ out:
 
 out_remove:
 	cflash_remove(pdev);
-	scsi_host_put(host);
 	goto out;
 }
 
@@ -1208,8 +1214,13 @@ static int __init init_cflash(void)
 
 	/* Validate module parameters */
 	if (internal_lun > 4) {
-		cflash_err("Invalid internal_lun parameter! (%d > 4)\n",
+		cflash_err("Invalid lun_mode parameter! (%d > 4)\n",
 			   internal_lun);
+		return(-EINVAL);
+	}
+	if (cflash_debug > 1) {
+		cflash_err("Invalid debug parameter! (%d > 1)\n",
+			   cflash_debug);
 		return(-EINVAL);
 	}
 

@@ -349,6 +349,35 @@ int cflash_disk_open(struct scsi_device *sdev, void __user * arg,
 		pvirt->last_lba = last_lba;
 		pvirt->rsrc_handle = rsrc_handle;
 	} else if (mode == MODE_PHYSICAL) {
+		/*
+		 * Reconfigure RHT entry for format 1 using
+		 * sequence described in the SISLITE spec
+		 */
+		u64 val;
+		struct sisl_rht_entry_f1 *p_rht_entry_f1 =
+			(struct p_rht_entry_f1 *)p_rht_entry;
+
+		memset(p_rht_entry_f1, 0, sizeof(struct sisl_rht_entry_f1));
+		val = 1 << 12;
+		p_rht_entry_f1->dw = val;
+		asm volatile ("lwsync"::);
+
+		p_rht_entry_f1->lun_id = p_lun_info->lun_id;
+		asm volatile ("lwsync"::);
+
+		/* Adding onto where we already set the format... */
+		val |= (u64)1 << 63;
+		val |= 3 << 8;
+		val |= 3;
+		p_rht_entry_f1->dw = val;
+		asm volatile ("lwsync"::);
+		afu_sync(p_afu, context_id, rsrc_handle, AFU_LW_SYNC);
+
+		cflash_info("p_rht_entry_f1 = %016llX\n",
+			    p_rht_entry_f1->lun_id);
+		cflash_info("p_rht_entry_f1 = %016llX\n",
+			    p_rht_entry_f1->dw);
+
 		last_lba = p_lun_info->li.max_lba;
 		pphys->return_flags = 0;
 		pphys->block_size = block_size;
@@ -891,6 +920,16 @@ int afu_set_wwpn(struct afu *p_afu, int port, volatile u64 * p_fc_regs,
 			      FC_PORT_STATUS_RETRY_CNT)) {
 		cflash_dbg("wait on port %d to go online timed out\n", port);
 		ret = -1;
+
+		/*
+		 * Override for internal lun!!!
+		 * XXX - is a wrap plug mandatory?
+		 */
+		if (internal_lun) {
+			cflash_info("Overriding port %d online timeout!!!\n",
+				    port);
+			ret = 0;
+		}
 	}
 
 	cflash_info("In %s returning rc=%d\n", __func__, ret);
@@ -1448,20 +1487,22 @@ void cflash_term_afu(struct cflash *p_cflash)
 	int i;
 	struct afu *p_afu = p_cflash->p_afu;
 
-	cflash_stop_context(p_cflash);
-	cflash_info("in %s before unmap 4 \n", __func__);
-	cxl_unmap_afu_irq(p_cflash->p_ctx, 4, p_afu);
-	cflash_info("in %s before unmap 3 \n", __func__);
-	cxl_unmap_afu_irq(p_cflash->p_ctx, 3, p_afu);
-	cflash_info("in %s before unmap 2 \n", __func__);
-	cxl_unmap_afu_irq(p_cflash->p_ctx, 2, p_afu);
-	cflash_info("in %s before unmap 1 \n", __func__);
-	cxl_unmap_afu_irq(p_cflash->p_ctx, 1, p_afu);
-	cflash_info("in %s before cxl_free_afu_irqs \n", __func__);
-	cxl_free_afu_irqs(p_cflash->p_ctx);
-	cflash_info("in %s before cxl_release_context \n", __func__);
-	cxl_release_context(p_cflash->p_ctx);
-	p_cflash->p_ctx = NULL;
+	if (p_cflash->p_ctx) {
+		cflash_stop_context(p_cflash);
+		cflash_info("in %s before unmap 4 \n", __func__);
+		cxl_unmap_afu_irq(p_cflash->p_ctx, 4, p_afu);
+		cflash_info("in %s before unmap 3 \n", __func__);
+		cxl_unmap_afu_irq(p_cflash->p_ctx, 3, p_afu);
+		cflash_info("in %s before unmap 2 \n", __func__);
+		cxl_unmap_afu_irq(p_cflash->p_ctx, 2, p_afu);
+		cflash_info("in %s before unmap 1 \n", __func__);
+		cxl_unmap_afu_irq(p_cflash->p_ctx, 1, p_afu);
+		cflash_info("in %s before cxl_free_afu_irqs \n", __func__);
+		cxl_free_afu_irqs(p_cflash->p_ctx);
+		cflash_info("in %s before cxl_release_context \n", __func__);
+		cxl_release_context(p_cflash->p_ctx);
+		p_cflash->p_ctx = NULL;
+	}
 
 	for (i = 0; i < CFLASH_MAX_LUNS; i++) {
 		if (p_afu->p_blka[i]) {
