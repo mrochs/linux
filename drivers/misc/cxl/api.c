@@ -151,6 +151,15 @@ out:
 }
 EXPORT_SYMBOL_GPL(cxl_start_context);
 
+int cxl_process_element(struct cxl_context *ctx)
+{
+	if (ctx->status == CLOSED)
+		return -EINVAL;
+
+	return ctx->pe;
+}
+EXPORT_SYMBOL_GPL(cxl_process_element);
+
 /* Stop a context */
 void cxl_stop_context(struct cxl_context *ctx)
 {
