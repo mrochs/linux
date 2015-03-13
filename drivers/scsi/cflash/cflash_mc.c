@@ -108,6 +108,7 @@ int cflash_afu_attach(struct cflash *p_cflash, u64 context_id)
 	write_64(&p_ctx_info->p_ctrl_map->rht_cnt_id,
 		 SISL_RHT_CNT_ID((u64) MAX_RHT_PER_CONTEXT,
 				 (u64) (p_afu->ctx_hndl)));
+	p_ctx_info->ref_cnt = 1;
 out:
 	cflash_info("in %s returning rc=%d\n", __func__, rc);
 	return rc;
@@ -258,6 +259,7 @@ int cflash_disk_open(struct scsi_device *sdev, void __user * arg,
 
 	struct rht_info *p_rht_info = NULL;
 	struct sisl_rht_entry *p_rht_entry = NULL;
+	struct sisl_rht_entry_f1 *p_rht_entry_f1 = NULL;
 
 	if (mode == MODE_VIRTUAL) {
 		context_id = pvirt->context_id;
@@ -304,6 +306,8 @@ int cflash_disk_open(struct scsi_device *sdev, void __user * arg,
 		for (i = 0; i < MAX_RHT_PER_CONTEXT; i++) {
 			if (p_rht_info->rht_start[i].nmask == 0) {
 				p_rht_entry = &p_rht_info->rht_start[i];
+				p_rht_entry_f1 =(struct p_rht_entry_f1 *)
+					&p_rht_info->rht_start[i];
 				break;
 			}
 		}
@@ -320,10 +324,6 @@ int cflash_disk_open(struct scsi_device *sdev, void __user * arg,
 			goto out;
 		}
 
-		p_rht_entry->nmask = MC_RHT_NMASK;
-		p_rht_entry->fp = SISL_RHT_FP(0u, 0x3);
-		/* format 0 & perms */
-
 		rsrc_handle = (p_rht_entry - p_rht_info->rht_start);
 		block_size = p_lun_info->li.blk_len;
 
@@ -334,6 +334,10 @@ int cflash_disk_open(struct scsi_device *sdev, void __user * arg,
 	}
 
 	if (mode == MODE_VIRTUAL) {
+		p_rht_entry->nmask = MC_RHT_NMASK;
+		p_rht_entry->fp = SISL_RHT_FP(0u, 0x3);
+		/* format 0 & perms */
+
 		if (lun_size != 0) {
 			marshall_virt_to_resize (pvirt, &resize);
 			rc = cflash_vlun_resize(sdev, &resize);
@@ -353,9 +357,7 @@ int cflash_disk_open(struct scsi_device *sdev, void __user * arg,
 		 * Reconfigure RHT entry for format 1 using
 		 * sequence described in the SISLITE spec
 		 */
-		u64 val;
-		struct sisl_rht_entry_f1 *p_rht_entry_f1 =
-			(struct p_rht_entry_f1 *)p_rht_entry;
+		volatile u64 val;
 
 		memset(p_rht_entry_f1, 0, sizeof(struct sisl_rht_entry_f1));
 		val = 1 << 12;
@@ -368,7 +370,10 @@ int cflash_disk_open(struct scsi_device *sdev, void __user * arg,
 		/* Adding onto where we already set the format... */
 		val |= (u64)1 << 63;
 		val |= 3 << 8;
-		val |= 3;
+		if (internal_lun)
+			val |= 1;
+		else
+			val |= 3;
 		p_rht_entry_f1->dw = val;
 		asm volatile ("lwsync"::);
 		afu_sync(p_afu, context_id, rsrc_handle, AFU_LW_SYNC);
@@ -449,9 +454,11 @@ int cflash_disk_release(struct scsi_device *sdev, void __user * arg)
 			goto out;
 		}
 
-		/* Resize to 0 for virtual LUNS.
-		 * set size to 0, this will clear LXT_START and LXT_CNT
-		 * fields in the RHT entry
+		/*
+		 * Resize to 0 for virtual LUNS by setting the size
+		 * to 0. This will clear LXT_START and LXT_CNT fields
+		 * in the RHT entry and properly sync with the AFU.
+		 * Afterwards we clear the remaining fields.
 		 */
 		if (p_lun_info->mode ==  MODE_VIRTUAL) {
 			marshall_rele_to_resize (prele, &size);
@@ -462,10 +469,32 @@ int cflash_disk_release(struct scsi_device *sdev, void __user * arg)
 					   __func__, rc);
 				goto out;
 			}
-		}
 
-		p_rht_entry->nmask = 0;
-		p_rht_entry->fp = 0;
+			p_rht_entry->nmask = 0;
+			p_rht_entry->fp = 0;
+		} else if (p_lun_info->mode ==  MODE_PHYSICAL) {
+			volatile u64 val;
+			struct sisl_rht_entry_f1 *p_rht_entry_f1 =
+				(struct sisl_rht_entry_f1 *)p_rht_entry;
+
+			val = p_rht_entry_f1->dw;
+			cflash_info("p_rht_entry_f1->dw = %016llX\n",
+				    p_rht_entry_f1->dw);
+			val &= ~((u64)1 << 63);
+			p_rht_entry_f1->dw = val;
+			cflash_info("p_rht_entry_f1->dw = %016llX\n",
+				    p_rht_entry_f1->dw);
+
+			asm volatile ("lwsync"::);
+
+			p_rht_entry_f1->lun_id = 0ULL;
+			asm volatile ("lwsync"::);
+
+			p_rht_entry_f1->dw = 0ULL;
+			asm volatile ("lwsync"::);
+			afu_sync(p_afu, prele->context_id, res_hndl,
+				 AFU_HW_SYNC);
+		}
 
 		/* now the RHT entry is all cleared */
 		rc = 0;
@@ -534,12 +563,10 @@ int cflash_disk_detach(struct scsi_device *sdev, void __user * arg)
 		 */
 
 		if (p_ctx_info->p_rht_info->ref_cnt-- == 1) {
-			if (p_lun_info->mode ==  MODE_VIRTUAL) {
-				marshall_det_to_rele(pdet, &rel);
-				for (i = 0; i < MAX_RHT_PER_CONTEXT; i++) {
-					rel.rsrc_handle = i;
-					cflash_disk_release(sdev, &rel);
-				}
+			marshall_det_to_rele(pdet, &rel);
+			for (i = 0; i < MAX_RHT_PER_CONTEXT; i++) {
+				rel.rsrc_handle = i;
+				cflash_disk_release(sdev, &rel);
 			}
 		}
 
@@ -738,14 +765,6 @@ int grow_lxt(struct afu *p_afu,
 	mutex_unlock(&p_blka->mutex);
 
 	asm volatile ("lwsync"::);	/* make lxt updates visible */
-	/*
-	 * XXX - Do we really need 3 separate syncs here? The first one
-	 * for the lxt visibility updates make sense, as does having one
-	 * after we update the p_rht_entry fields. But having one after
-	 * updating lxt_start and then again after updating lxt_cnt seems
-	 * overkill unless there is a dependency (and if there is one, why
-	 * isn't it noted here in a BIG comment).
-	 */
 
 	/* Now sync up AFU - this can take a while */
 	p_rht_entry->lxt_start = p_lxt;	/* even if p_lxt didn't change */
@@ -1747,15 +1766,6 @@ int clone_lxt(struct afu *p_afu,
 	}
 
 	asm volatile ("lwsync"::);	/* make lxt updates visible */
-
-	/*
-	 * XXX - Do we really need 3 separate syncs here? The first one
-	 * for the lxt visibility updates make sense, as does having one
-	 * after we update the p_rht_entry fields. But having one after
-	 * updating lxt_start and then again after updating lxt_cnt seems
-	 * overkill unless there is a dependency (and if there is one, why
-	 * isn't it noted here in a BIG comment).
-	 */
 
 	/* Now sync up AFU - this can take a while */
 	p_rht_entry->lxt_start = p_lxt;	/* even if p_lxt is NULL */
