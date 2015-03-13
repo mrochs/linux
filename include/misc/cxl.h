@@ -121,6 +121,12 @@ int cxl_start_context(struct cxl_context *ctx, u64 wed,
 		      struct task_struct *task);
 
 /*
+ * Get the process element for this context.  May return a error code if the
+ * context is not currently valid.
+ */
+int cxl_process_element(struct cxl_context *ctx);
+
+/*
  * Stop a context and remove it from the PSL
  */
 void cxl_stop_context(struct cxl_context *ctx);
