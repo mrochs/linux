@@ -150,8 +150,8 @@ struct lun_info {
 	} li;
 	int lfd;
 	struct cxl_ioctl_start_work work;
-	spinlock_t _lock;
-	spinlock_t *lock;
+	spinlock_t _slock;
+	spinlock_t *slock;
 
 	enum open_mode_type mode;
 #define LUN_INFO_VALID   0x01
@@ -191,7 +191,8 @@ enum undo_level {
 struct afu_cmd {
 	struct sisl_ioarcb_s rcb;	/* IOARCB (cache line aligned) */
 	struct sisl_ioasa_s sa;		/* IOASA must follow IOARCB */
-	spinlock_t slock;
+	spinlock_t _slock;
+	spinlock_t *slock;
 	struct timer_list timer;
 	char *buf;                      /* per command buffer */
 	int slot;

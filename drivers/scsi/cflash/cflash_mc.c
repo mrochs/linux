@@ -184,6 +184,7 @@ int cflash_disk_attach(struct scsi_device *sdev, void __user * arg)
 		cxl_release_context(ctx);
 		fput(file);
 		put_unused_fd(fd);
+		fd = -1;
 		goto out;
 	}
 
@@ -193,15 +194,16 @@ int cflash_disk_attach(struct scsi_device *sdev, void __user * arg)
 		cxl_release_context(ctx);
 		fput(file);
 		put_unused_fd(fd);
+		fd = -1;
 		goto out;
 	}
 
 	/* No error paths after installing the fd */
 	fd_install(fd, file);
 
-	spin_lock(&p_lun_info->_lock);
+	spin_lock(p_lun_info->slock);
 	p_lun_info->lfd = fd;
-	spin_unlock(&p_lun_info->_lock);
+	spin_unlock(p_lun_info->slock);
 
 	parg->return_flags = 0;
 	parg->block_size = p_lun_info->li.blk_len;
@@ -276,7 +278,7 @@ int cflash_disk_open(struct scsi_device *sdev, void __user * arg,
 		goto out;
 	}
 
-	spin_lock(&p_lun_info->_lock);
+	spin_lock(p_lun_info->slock);
 	if (p_lun_info->mode == MODE_NONE) {
 		p_lun_info->mode = mode;
 	} else  if (p_lun_info->mode != mode) {
@@ -284,10 +286,10 @@ int cflash_disk_open(struct scsi_device *sdev, void __user * arg,
 			   "mode requested %d\n",
 			   __func__, p_lun_info->mode, mode);
 		rc = -EINVAL;
-		spin_unlock(&p_lun_info->_lock);
+		spin_unlock(p_lun_info->slock);
 		goto out;
 	}
-	spin_unlock(&p_lun_info->_lock);
+	spin_unlock(p_lun_info->slock);
 
 	p_ctx_info = &p_afu->ctx_info[context_id];
 
@@ -576,9 +578,9 @@ int cflash_disk_detach(struct scsi_device *sdev, void __user * arg)
 		/* drop all capabilities */
 		write_64(&p_ctx_info->p_ctrl_map->ctx_cap, 0);
 	}
-	spin_lock(&p_lun_info->_lock);
+	spin_lock(p_lun_info->slock);
 	p_lun_info->mode = MODE_NONE;
-	spin_unlock(&p_lun_info->_lock);
+	spin_unlock(p_lun_info->slock);
 
 out:
 	cflash_info("in %s returning rc=%d\n", __func__, rc);
@@ -1103,9 +1105,9 @@ static irqreturn_t cflash_rrq_irq(int irq, void *data)
 		p_cmd = (struct afu_cmd *)
 		    ((*p_afu->p_hrrq_curr) & (~SISL_RESP_HANDLE_T_BIT));
 
-		spin_lock_irqsave(&p_cmd->slock, lock_flags);
+		spin_lock_irqsave(p_cmd->slock, lock_flags);
 		p_cmd->sa.host_use_b[0] |= B_DONE;
-		spin_unlock_irqrestore(&p_cmd->slock, lock_flags);
+		spin_unlock_irqrestore(p_cmd->slock, lock_flags);
 
 		/* already stopped if timer fired */
 		timer_stop(&p_cmd->timer, FALSE);
@@ -1126,8 +1128,8 @@ static irqreturn_t cflash_rrq_irq(int irq, void *data)
 			scsi_set_resid(scp, p_cmd->sa.resid);
 			scp->scsi_done(scp);
 			scsi_dma_unmap(scp);
-			release_cmd(p_cmd);
 			p_cmd->rcb.rsvd2 = 0ULL;
+			release_cmd(p_cmd);
 		}
 
 		/* Advance to next entry or wrap and flip the toggle bit */
@@ -1191,9 +1193,9 @@ static void send_cmd_timeout(struct afu_cmd *p_cmd)
 
 	cflash_err("command timeout, opcode 0x%X\n", p_cmd->rcb.cdb[0]);
 
-	spin_lock_irqsave(&p_cmd->slock, lock_flags);
+	spin_lock_irqsave(p_cmd->slock, lock_flags);
 	p_cmd->sa.host_use_b[0] |= (B_DONE | B_ERROR | B_TIMEOUT);
-	spin_unlock_irqrestore(&p_cmd->slock, lock_flags);
+	spin_unlock_irqrestore(p_cmd->slock, lock_flags);
 }
 
 #define WWPN_LEN	16
@@ -1300,7 +1302,8 @@ int cflash_start_afu(struct cflash *p_cflash)
 		p_timer->data = (unsigned long)&p_afu->cmd[i];
 		p_timer->function = (void (*)(unsigned long))send_cmd_timeout;
 
-		spin_lock_init(&p_afu->cmd[i].slock);
+		spin_lock_init(&p_afu->cmd[i]._slock);
+		p_afu->cmd[i].slock = &p_afu->cmd[i]._slock;
 	}
 	level = UNDO_TIMER;
 
@@ -1624,7 +1627,7 @@ void cflash_wait_resp(struct afu *p_afu, struct afu_cmd *p_cmd)
 {
 	unsigned long lock_flags = 0;
 
-	spin_lock_irqsave(&p_cmd->slock, lock_flags);
+	spin_lock_irqsave(p_cmd->slock, lock_flags);
 	while (!(p_cmd->sa.host_use_b[0] & B_DONE)) {
 
 		/*
@@ -1633,11 +1636,11 @@ void cflash_wait_resp(struct afu *p_afu, struct afu_cmd *p_cmd)
 		 * is used in interrupt context.
 		 */
 
-		spin_unlock_irqrestore(&p_cmd->slock, lock_flags);
+		spin_unlock_irqrestore(p_cmd->slock, lock_flags);
 		udelay(10);
-		spin_lock_irqsave(&p_cmd->slock, lock_flags);
+		spin_lock_irqsave(p_cmd->slock, lock_flags);
 	}
-	spin_unlock_irqrestore(&p_cmd->slock, lock_flags);
+	spin_unlock_irqrestore(p_cmd->slock, lock_flags);
 
 	timer_stop(&p_cmd->timer, FALSE);	/* already stopped if timer fired */
 
@@ -2154,13 +2157,13 @@ int read_cap16(struct afu *p_afu, struct lun_info *p_lun_info, u32 port_sel)
 		return -1;
 	}
 	/* read cap success  */
-	spin_lock(&p_lun_info->_lock);
+	spin_lock(p_lun_info->slock);
 	p_u64 = (u64 *) & p_cmd->buf[0];
 	p_lun_info->li.max_lba = read_64(p_u64);
 
 	p_u32 = (u32 *) & p_cmd->buf[8];
 	p_lun_info->li.blk_len = read_32(p_u32);
-	spin_unlock(&p_lun_info->_lock);
+	spin_unlock(p_lun_info->slock);
 	release_cmd(p_cmd);
 
 	cflash_info("in %s maxlba=%lld blklen=%d pcmd %p\n", __func__,

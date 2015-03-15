@@ -88,16 +88,16 @@ struct afu_cmd *get_next_cmd(struct afu *p_afu)
 	/* The last command structure is reserved for SYNC */
 	for (i=0; i<NUM_CMDS-1; i++) {
 		p_cmd = &p_afu->cmd[i];
-		spin_lock_irqsave(&p_cmd->slock, lock_flags);
+		spin_lock_irqsave(p_cmd->slock, lock_flags);
 
 		if (p_cmd->flag == CMD_FREE) {
 			p_cmd->flag = CMD_IN_USE;
-			spin_unlock_irqrestore(&p_cmd->slock, lock_flags);
+			spin_unlock_irqrestore(p_cmd->slock, lock_flags);
 			cflash_info("in %s returning found index=%d\n",
 				    __func__, p_cmd->slot);
 			return p_cmd;
 		}
-		spin_unlock_irqrestore(&p_cmd->slock, lock_flags);
+		spin_unlock_irqrestore(p_cmd->slock, lock_flags);
 	}
 	return  NULL;
 
@@ -107,9 +107,9 @@ void release_cmd(struct afu_cmd *p_cmd)
 {
 	unsigned long lock_flags = 0;
 
-	spin_lock_irqsave(&p_cmd->slock, lock_flags);
+	spin_lock_irqsave(p_cmd->slock, lock_flags);
 	p_cmd->flag = CMD_FREE;
-	spin_unlock_irqrestore(&p_cmd->slock, lock_flags);
+	spin_unlock_irqrestore(p_cmd->slock, lock_flags);
 	cflash_info("in %s releasing cmd index=%d\n", __func__, p_cmd->slot);
 
 }
@@ -284,13 +284,13 @@ static int cflash_eh_host_reset_handler(struct scsi_cmnd *scp)
 
 void init_lun_info(struct lun_info *p_lun_info)
 {
-	memset (p_lun_info, 0, sizeof(struct lun_info));
+	memset(p_lun_info, 0, sizeof(struct lun_info));
 
 	p_lun_info->lun_id = -1ULL;
 	p_lun_info->lfd = -1;
 
-	spin_lock_init(&p_lun_info->_lock);
-	p_lun_info->lock = &p_lun_info->_lock;
+	spin_lock_init(&p_lun_info->_slock);
+	p_lun_info->slock = &p_lun_info->_slock;
 }
 
 /**
