@@ -503,6 +503,7 @@ int cflash_disk_release(struct scsi_device *sdev, void __user * arg)
 
 		/* now the RHT entry is all cleared */
 		rc = 0;
+		p_rht_info->ref_cnt--;
 	} else {
 		rc = -EINVAL;
 		cflash_info("in %s resource handle invalid %d\n", __func__,
@@ -985,21 +986,6 @@ void cflash_undo_start_afu(struct afu *p_afu, enum undo_level level)
 		break;
 	}
 	cflash_info("in %s returning level=%d\n", __func__, level);
-}
-
-int cflash_terminate_afu(struct afu *p_afu)
-{
-	int i;
-	int rc = 0;
-
-	/* Ensure all timers are stopped before removing resources */
-	for (i = 0; i < NUM_CMDS; i++)
-		timer_stop(&p_afu->cmd[i].timer, TRUE);
-
-	cflash_undo_start_afu(p_afu, UNDO_AFU_ALL);
-
-	cflash_info("in %s returning rc=%d\n", __func__, rc);
-	return rc;
 }
 
 void afu_err_intr_init(struct afu *p_afu)
@@ -1542,20 +1528,9 @@ void cflash_term_afu(struct cflash *p_cflash)
 			p_afu->p_blka[i] = NULL;
 		}
 	}
-}
+	cflash_undo_start_afu(p_afu, UNDO_AFU_ALL);
 
-void timer_start(struct timer_list *p_timer, unsigned long timeout_in_jiffies)
-{
-	p_timer->expires = (jiffies + timeout_in_jiffies);
-	add_timer(p_timer);
-}
-
-void timer_stop(struct timer_list *p_timer, bool sync)
-{
-	if (unlikely(sync))
-		del_timer_sync(p_timer);
-	else
-		del_timer(p_timer);
+	cflash_info("in %s returning\n", __func__);
 }
 
 /* do we need to retry AFU_CMDs (sync) on afu_rc = 0x30 ? */
@@ -1643,9 +1618,7 @@ void cflash_send_cmd(struct afu *p_afu, struct afu_cmd *p_cmd)
 	 * XXX - find out why this code originally (and still does)
 	 * have a doubler (*2) for the timeout value
 	 */
-#if 0
-	timer_start(&p_cmd->timer, (p_cmd->rcb.timeout * 2 * HZ));
-#endif
+	timer_start(&p_cmd->timer, (p_cmd->rcb.timeout * 2 * HZ), p_afu);
 
 	/* Write IOARRIN */
 	if (p_afu->room)
@@ -1679,7 +1652,7 @@ void cflash_wait_resp(struct afu *p_afu, struct afu_cmd *p_cmd)
 	}
 	spin_unlock_irqrestore(p_cmd->slock, lock_flags);
 
-	timer_stop(&p_cmd->timer, FALSE);	/* already stopped if timer fired */
+	timer_stop(&p_cmd->timer, FALSE); /* already stopped if timer fired */
 
 	if (p_cmd->sa.ioasc != 0)
 		cflash_err("CMD 0x%x failed, IOASC: flags 0x%x, afu_rc 0x%x, "
@@ -1688,6 +1661,23 @@ void cflash_wait_resp(struct afu *p_afu, struct afu_cmd *p_cmd)
 			   p_cmd->sa.rc.flags,
 			   p_cmd->sa.rc.afu_rc,
 			   p_cmd->sa.rc.scsi_rc, p_cmd->sa.rc.fc_rc);
+}
+
+void timer_start(struct timer_list *p_timer, unsigned long timeout_in_jiffies,
+		 struct afu *p_afu)
+{
+	p_timer->expires = (jiffies + timeout_in_jiffies);
+	p_timer->data = (unsigned long)p_afu;
+	p_timer->function  = (void  (*)(unsigned long))cflash_context_reset;
+	add_timer(p_timer);
+}
+
+void timer_stop(struct timer_list *p_timer, bool sync)
+{
+	if (unlikely(sync))
+		del_timer_sync(p_timer);
+	else
+		del_timer(p_timer);
 }
 
 /*

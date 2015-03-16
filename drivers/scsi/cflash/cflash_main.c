@@ -725,6 +725,7 @@ static void cflash_free_mem(struct cflash *p_cflash)
 
 	if (p_cflash->p_afu) {
 		for (i=0; i<NUM_CMDS; i++) {
+			timer_stop(&p_cflash->p_afu->cmd[i].timer, TRUE);
 			buf = p_cflash->p_afu->cmd[i].buf;
 			if (buf)
 				free_pages((unsigned long)buf,
