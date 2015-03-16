@@ -1135,6 +1135,7 @@ static irqreturn_t cflash_rrq_irq(int irq, void *data)
 			scsi_dma_unmap(scp);
 			p_cmd->rcb.rsvd2 = 0ULL;
 			if (p_cmd->special) {
+				p_cflash->tmf_active = 0;
 				wake_up_all(&p_cflash->tmf_wait_q);
 			}
 			release_cmd(p_cmd);
@@ -2330,6 +2331,7 @@ void cflash_send_scsi(struct afu *p_afu, struct scsi_cmnd *scp)
 		wait_event(p_cflash->tmf_wait_q, !p_cflash->tmf_active);
 		spin_lock_irqsave(host->host_lock, lock_flags);
 	}
+	spin_unlock_irqrestore(host->host_lock, lock_flags);
 
 	p_cmd = get_next_cmd(p_afu);
 	if (!p_cmd) {
@@ -2392,7 +2394,7 @@ void cflash_send_tmf(struct afu *p_afu, struct scsi_cmnd *scp, u64 cmd)
 		wait_event(p_cflash->tmf_wait_q, !p_cflash->tmf_active);
 		spin_lock_irqsave(host->host_lock, lock_flags);
 	}
-
+	spin_unlock_irqrestore(host->host_lock, lock_flags);
 
 	p_cmd = get_next_cmd(p_afu);
 	if (!p_cmd) {
@@ -2418,6 +2420,7 @@ void cflash_send_tmf(struct afu *p_afu, struct scsi_cmnd *scp, u64 cmd)
 	/* Stash the scp in the reserved field, for reuse during interrupt */
 	p_cmd->rcb.rsvd2 = (u64) scp;
 	p_cmd->special = 0x1;
+	p_cflash->tmf_active = 0x1;
 
 	p_cmd->sa.host_use_b[1] = 0;	/* reset retry cnt */
 
