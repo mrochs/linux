@@ -56,8 +56,6 @@ module_param_named(debug, cflash_debug, uint, 0);
 MODULE_PARM_DESC(debug, " 1 = enabled");
 
 
-extern void cflash_send_scsi(struct afu *, struct scsi_cmnd *);
-
 unsigned int cflash_debug = 0;
 
 /**
@@ -109,6 +107,7 @@ void release_cmd(struct afu_cmd *p_cmd)
 
 	spin_lock_irqsave(p_cmd->slock, lock_flags);
 	p_cmd->flag = CMD_FREE;
+	p_cmd->special = 0;
 	spin_unlock_irqrestore(p_cmd->slock, lock_flags);
 	cflash_info("in %s releasing cmd index=%d\n", __func__, p_cmd->slot);
 
@@ -214,7 +213,7 @@ static int cflash_eh_device_reset_handler(struct scsi_cmnd *scp)
 		    cpu_to_be32(((u32 *) scp->cmnd)[3]));
 
 	scp->result = (DID_OK << 16);;
-	cflash_send_scsi(p_afu, scp);
+	cflash_send_tmf(p_afu, scp, TMF_LUN_RESET);
 
 	/* XXX: Return FAILED until we know the AFU reset works */
 	cflash_info("in %s returning rc=%d\n", __func__, rc);
@@ -812,6 +811,7 @@ static int cflash_gb_alloc(struct cflash *p_cflash)
 		p_cflash->p_afu->cmd[i].buf = buf;
 		p_cflash->p_afu->cmd[i].flag = CMD_FREE;
 		p_cflash->p_afu->cmd[i].slot = i;
+		p_cflash->p_afu->cmd[i].special = 0;
 	}
 
 out:
@@ -1057,6 +1057,10 @@ static int cflash_probe(struct pci_dev *pdev,
 	p_cflash->last_lun_index = 0;
 	p_cflash->task_set = 0;
 	p_cflash->p_dev_id = (struct pci_device_id *)dev_id;
+	p_cflash->tmf_active = 0;
+        init_waitqueue_head(&p_cflash->tmf_wait_q);
+	p_cflash->context_reset_active = 0;
+
 	pci_set_drvdata(pdev, p_cflash);
 
 	/* Use the special service provided to look up the physical

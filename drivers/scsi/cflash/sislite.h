@@ -65,6 +65,8 @@ typedef struct sisl_ioarcb_s {
 #define SISL_REQ_FLAGS_TIMEOUT_USECS  0x0080u
 #define SISL_REQ_FLAGS_TIMEOUT_CYCLES 0x00C0u
 
+#define SISL_REQ_FLAGS_TMF_CMD        0x0004u   /* bit 13 */
+
 #define SISL_REQ_FLAGS_AFU_CMD        0x0002u	/* bit 14 */
 
 #define SISL_REQ_FLAGS_HOST_WRITE     0x0001u	/* bit 15 (LSB) */
@@ -406,5 +408,9 @@ typedef struct sisl_rht_entry_f1 {
 #define AFU_LW_SYNC 0x0u
 #define AFU_HW_SYNC 0x1u
 #define AFU_GSYNC   0x2u
+
+/* Special Task Management Function CDB */
+#define TMF_LUN_RESET  0x1u
+#define TMF_CLEAR_ACA  0x2u
 
 #endif /* _SISLITE_H */

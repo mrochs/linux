@@ -56,6 +56,10 @@ struct cflash {
 	struct pci_dev *parent_dev;
 
 	int last_lun_index;
+
+        wait_queue_head_t tmf_wait_q;
+	u8 context_reset_active:1;
+	u8 tmf_active:1;
 };
 
 /* The write_nn or read_nn routines can be used to do byte reversed MMIO
@@ -178,4 +182,6 @@ int cflash_init_afu(struct cflash *);
 void cflash_term_afu(struct cflash *);
 struct afu_cmd *get_next_cmd(struct afu *p_afu);
 void release_cmd(struct afu_cmd *p_cmd);
+void cflash_send_scsi(struct afu *, struct scsi_cmnd *);
+void cflash_send_tmf(struct afu *, struct scsi_cmnd *, u64);
 #endif /* ifndef _CFLASHMC_H */

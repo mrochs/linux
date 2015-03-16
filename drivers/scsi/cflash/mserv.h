@@ -196,7 +196,9 @@ struct afu_cmd {
 	struct timer_list timer;
 	char *buf;                      /* per command buffer */
 	int slot;
-	int flag;
+	u8 flag:1;
+	u8 special:1;
+
 } __attribute__ ((aligned(0x80)));
 
 struct afu {

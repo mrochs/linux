@@ -42,6 +42,9 @@
 #include "afu_fc.h"
 #include "mserv.h"
 
+extern void init_lun_info(struct lun_info *);
+
+
 /* Mask off the low nibble of the length to ensure 16 byte multiple */
 #define SISLITE_LEN_MASK 0xFFFFFFF0
 
@@ -1090,9 +1093,11 @@ cflash_sync_err_irq_exit:
 static irqreturn_t cflash_rrq_irq(int irq, void *data)
 {
 	struct afu *p_afu = (struct afu *)data;
+	struct cflash *p_cflash;
 	struct afu_cmd *p_cmd;
 	unsigned long lock_flags = 0UL;
 
+       	p_cflash = (struct cflash *) (p_afu - offsetof(struct cflash, p_afu));
 	/*
 	 * XXX - might want to look at using locals for loop control
 	 * as an optimizaion
@@ -1129,6 +1134,9 @@ static irqreturn_t cflash_rrq_irq(int irq, void *data)
 			scp->scsi_done(scp);
 			scsi_dma_unmap(scp);
 			p_cmd->rcb.rsvd2 = 0ULL;
+			if (p_cmd->special) {
+				wake_up_all(&p_cflash->tmf_wait_q);
+			}
 			release_cmd(p_cmd);
 		}
 
@@ -1580,6 +1588,34 @@ int check_status(struct sisl_ioasa_s *p_ioasa)
 	}
 
 	return 0;
+}
+
+void cflash_context_reset(struct afu *p_afu)
+{
+	int nretry = 0;
+	u64 rrin = 0x1;
+
+	cflash_info("in %s p_afu %p\n", __func__, p_afu);
+
+	if (p_afu->room == 0) {
+		asm volatile ("eieio"::); /* let IOARRIN writes complete */
+		do {
+			p_afu->room = read_64(&p_afu->p_host_map->cmd_room);
+			udelay(nretry);
+		} while ((p_afu->room == 0) && (nretry++ < MC_ROOM_RETRY_CNT));
+	}
+
+	if (p_afu->room) {
+		write_64(&p_afu->p_host_map->ioarrin, (u64) rrin);
+		asm volatile ("eieio"::); /* let IOARRIN writes complete */
+		do {
+			rrin = read_64(&p_afu->p_host_map->ioarrin);
+			/* Double delay each time */
+			udelay(2^nretry);
+		} while ((rrin == 0x1) && (nretry++ < MC_ROOM_RETRY_CNT));
+	}
+	else
+		cflash_err("in %s no cmd_room to send reset\n", __func__);
 }
 
 void cflash_send_cmd(struct afu *p_afu, struct afu_cmd *p_cmd)
@@ -2181,6 +2217,7 @@ int find_lun(struct cflash *p_cflash, u32 port_sel)
 	u64 *p_u64;
 	struct afu *p_afu = p_cflash->p_afu;
 	struct afu_cmd *p_cmd;
+	struct lun_info *p_lun_info;
 	u64 lunidarray[CFLASH_MAX_NUM_LUNS_PER_TARGET];
 	int i = 0;
 	int j = 0;
@@ -2245,6 +2282,9 @@ int find_lun(struct cflash *p_cflash, u32 port_sel)
 			    __func__, j, lunidarray[j],
 			    p_cflash->last_lun_index);
 
+		p_lun_info = &p_afu->lun_info[p_cflash->last_lun_index];
+		init_lun_info(p_lun_info);
+
 		scsi_add_device(p_cflash->host, CFLASH_BUS,
 				port_sel, lunidarray[j]);
 		/* program FC_PORT LUN Tbl */
@@ -2252,11 +2292,9 @@ int find_lun(struct cflash *p_cflash, u32 port_sel)
 			 [p_cflash->last_lun_index], lunidarray[j]);
 
 		/* record the lun_id to be used in discovery later */
-		p_afu->lun_info[p_cflash->last_lun_index].lun_id =
-		    lunidarray[j];
+		p_lun_info->lun_id = lunidarray[j];
 
-		read_cap16(p_afu, &p_afu->lun_info[p_cflash->last_lun_index],
-			   port_sel);
+		read_cap16(p_afu, p_lun_info, port_sel);
 
 		rc = cflash_init_ba(p_cflash, p_cflash->last_lun_index);
 		if (rc) {
@@ -2281,6 +2319,17 @@ void cflash_send_scsi(struct afu *p_afu, struct scsi_cmnd *scp)
 	int nseg, i, ncount;
 	struct scatterlist *sg;
 	short lflag = 0;
+
+	unsigned long lock_flags = 0;
+	struct Scsi_Host *host = scp->device->host;
+	struct cflash *p_cflash = (struct cflash *)host->hostdata;
+
+	spin_lock_irqsave(host->host_lock, lock_flags);
+	while (p_cflash->tmf_active) {
+		spin_unlock_irqrestore(host->host_lock, lock_flags);
+		wait_event(p_cflash->tmf_wait_q, !p_cflash->tmf_active);
+		spin_lock_irqsave(host->host_lock, lock_flags);
+	}
 
 	p_cmd = get_next_cmd(p_afu);
 	if (!p_cmd) {
@@ -2320,6 +2369,60 @@ void cflash_send_scsi(struct afu *p_afu, struct scsi_cmnd *scp)
 
 	/* Copy the CDB from the scsi_cmnd passed in */
 	memcpy(p_cmd->rcb.cdb, scp->cmnd, sizeof(p_cmd->rcb.cdb));
+
+	/* Send the command */
+	cflash_send_cmd(p_afu, p_cmd);
+
+}
+
+void cflash_send_tmf(struct afu *p_afu, struct scsi_cmnd *scp, u64 cmd)
+{
+	struct afu_cmd *p_cmd;
+
+	/* XXX: Decide how to select port */
+	u64 port_sel = 0x1;
+	short lflag = 0;
+	unsigned long lock_flags = 0;
+	struct Scsi_Host *host = scp->device->host;
+	struct cflash *p_cflash = (struct cflash *)host->hostdata;
+
+	spin_lock_irqsave(host->host_lock, lock_flags);
+	while (p_cflash->tmf_active) {
+		spin_unlock_irqrestore(host->host_lock, lock_flags);
+		wait_event(p_cflash->tmf_wait_q, !p_cflash->tmf_active);
+		spin_lock_irqsave(host->host_lock, lock_flags);
+	}
+
+
+	p_cmd = get_next_cmd(p_afu);
+	if (!p_cmd) {
+		cflash_err("in %s could not get a free command\n",
+			   __func__);
+		return;
+	}
+
+	memset(p_cmd->buf, 0, CMD_BUFSIZE);
+	memset(&p_cmd->rcb.cdb[0], 0, sizeof(p_cmd->rcb.cdb));
+
+	p_cmd->rcb.ctx_id = p_afu->ctx_hndl;
+
+	p_cmd->rcb.port_sel = port_sel;
+	p_cmd->rcb.lun_id = scp->device->lun;
+
+	lflag = SISL_REQ_FLAGS_TMF_CMD;
+
+	p_cmd->rcb.req_flags = (SISL_REQ_FLAGS_PORT_LUN_ID |
+				SISL_REQ_FLAGS_SUP_UNDERRUN | lflag);
+	p_cmd->rcb.timeout = MC_DISCOVERY_TIMEOUT;
+
+	/* Stash the scp in the reserved field, for reuse during interrupt */
+	p_cmd->rcb.rsvd2 = (u64) scp;
+	p_cmd->special = 0x1;
+
+	p_cmd->sa.host_use_b[1] = 0;	/* reset retry cnt */
+
+	/* Copy the CDB from the cmd passed in */
+	memcpy(p_cmd->rcb.cdb, &cmd, sizeof(cmd));
 
 	/* Send the command */
 	cflash_send_cmd(p_afu, p_cmd);
