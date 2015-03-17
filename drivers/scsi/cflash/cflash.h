@@ -30,17 +30,16 @@ extern u32 internal_lun;
 #define PCI_DEVICE_ID_IBM_CORSA		0x04F0
 #define CFLASH_SUBS_DEV_ID		0x04F0
 
-#define CFLASH_BUS                      0xff
-#define CFLASH_TARGET                   0xff
-#define CFLASH_LUN                      0x00
+/* Since there is only one target, make it 0 */
+#define CFLASH_TARGET                   0x0
 #define CFLASH_MAX_CDB_LEN		16
 
-#define CFLASH_MAX_REQUESTS_DEFAULT     100
-#define CFLASH_MAX_CMDS_PER_LUN         64
+#define CFLASH_MAX_CMDS                 16
+#define CFLASH_MAX_CMDS_PER_LUN         16
 #define CFLASH_MAX_SECTORS              0xffffu
+/* Really only one target per bus since the Texan is directly attached */
 #define CFLASH_MAX_NUM_TARGETS_PER_BUS                     256
-#define CFLASH_MAX_NUM_LUNS_PER_TARGET                     256
-#define CFLASH_MAX_NUM_VSET_LUNS_PER_TARGET        8
+#define CFLASH_MAX_NUM_LUNS_PER_TARGET                     65536
 
 #define CFLASH_PCI_ERROR_RECOVERY_TIMEOUT  (120 * HZ)
 

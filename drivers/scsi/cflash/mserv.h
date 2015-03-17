@@ -38,7 +38,6 @@
 #define MAX_CONNS (MAX_CONTEXT*2)	/* num client connections per AFU */
 #define MAX_CONN_TO_POLL 64	/* num fds to poll once */
 #define NUM_RRQ_ENTRY    16	/* for master issued cmds */
-#define NUM_CMDS         16	/* must be <= NUM_RRQ_ENTRY */
 #define NUM_FC_PORTS     SURELOCK_NUM_FC_PORTS	/* ports per AFU */
 
 /* LXT tables are allocated dynamically in groups. This is done to
@@ -182,7 +181,7 @@ enum undo_level {
 #define AFU_INIT_INDEX   0	/* first cmd is used in init/discovery,
 	                         * free for other use thereafter
 				 */
-#define AFU_SYNC_INDEX   (NUM_CMDS - 1)	/* last cmd is rsvd for afu sync */
+#define AFU_SYNC_INDEX  (CFLASH_MAX_CMDS - 1)/* last cmd is rsvd for afu sync */
 
 #define CMD_FREE   0x0
 #define CMD_IN_USE 0x1
@@ -208,7 +207,7 @@ struct afu {
 	/*
 	 * Command & data for AFU commands.
 	 */
-	struct afu_cmd cmd[NUM_CMDS];
+	struct afu_cmd cmd[CFLASH_MAX_CMDS];
 
 	/* Housekeeping data */
 	struct ctx_info ctx_info[MAX_CONTEXT];

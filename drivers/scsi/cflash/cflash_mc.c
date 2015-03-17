@@ -564,7 +564,7 @@ int cflash_disk_detach(struct scsi_device *sdev, void __user * arg)
 	if (p_ctx_info->ref_cnt-- == 1) {
 
 		/* close the context */
-		/* for any resource still open, dealloate LBAs and close
+		/* for any resource still open, deallocate LBAs and close
 		 * if nobody else is using it.
 		 */
 
@@ -732,7 +732,7 @@ int grow_lxt(struct afu *p_afu,
 	ngrps = LXT_NUM_GROUPS(p_rht_entry->lxt_cnt + delta);
 
 	if (ngrps != ngrps_old) {
-		/* realloate to fit new size */
+		/* reallocate to fit new size */
 		p_lxt = kzalloc((sizeof(*p_lxt) * LXT_GROUP_SIZE * ngrps),
 				GFP_KERNEL);
 		if (!p_lxt) {
@@ -809,7 +809,7 @@ int shrink_lxt(struct afu *p_afu,
 	ngrps = LXT_NUM_GROUPS(p_rht_entry->lxt_cnt - delta);
 
 	if (ngrps != ngrps_old) {
-		/* realloate to fit new size unless new size is 0 */
+		/* reallocate to fit new size unless new size is 0 */
 		if (ngrps) {
 			p_lxt = kzalloc((sizeof(*p_lxt) * LXT_GROUP_SIZE *
 					 ngrps), GFP_KERNEL);
@@ -1086,7 +1086,7 @@ static irqreturn_t cflash_rrq_irq(int irq, void *data)
        	p_cflash = (struct cflash *) (p_afu - offsetof(struct cflash, p_afu));
 	/*
 	 * XXX - might want to look at using locals for loop control
-	 * as an optimizaion
+	 * as an optimization
 	 */
 
 	/* Process however many RRQ entries that are ready */
@@ -1193,7 +1193,7 @@ int cflash_read_vpd(struct cflash *p_cflash, u64 wwpn[])
 	int bytes = 0;
 	bool l_rc;
 	int l_kw_length;
-	char localwwpn[SURELOCK_NUM_FC_PORTS][WWPN_BUF_LEN];
+	char localwwpn[NUM_FC_PORTS][WWPN_BUF_LEN];
 
 	cflash_info("in %s pci_dev %p\n", __func__, p_cflash->parent_dev);
 
@@ -1289,7 +1289,7 @@ int cflash_start_afu(struct cflash *p_cflash)
 {
 	struct afu *p_afu = p_cflash->p_afu;
 	char version[16];
-	u64 wwpn[SURELOCK_NUM_FC_PORTS];	/* wwpn of AFU ports */
+	u64 wwpn[NUM_FC_PORTS];	/* wwpn of AFU ports */
 
 	int i = 0;
 	int rc = 0;
@@ -1308,7 +1308,7 @@ int cflash_start_afu(struct cflash *p_cflash)
 		p_afu->rht_info[i].rht_start = &p_afu->rht[i][0];
 	}
 
-	for (i = 0; i < NUM_CMDS; i++) {
+	for (i = 0; i < CFLASH_MAX_CMDS; i++) {
 		struct timer_list *p_timer = &p_afu->cmd[i].timer;
 
 		init_timer(p_timer);
@@ -1359,7 +1359,7 @@ int cflash_start_afu(struct cflash *p_cflash)
 		   reg);
 
 	/* initialize cmd fields that never change */
-	for (i = 0; i < NUM_CMDS; i++) {
+	for (i = 0; i < CFLASH_MAX_CMDS; i++) {
 		p_afu->cmd[i].rcb.ctx_id = p_afu->ctx_hndl;
 		p_afu->cmd[i].rcb.msi = SISL_MSI_RRQ_UPDATED;
 		p_afu->cmd[i].rcb.rrq = 0x0;
@@ -1549,7 +1549,7 @@ void cflash_term_afu(struct cflash *p_cflash)
 
 	/* Need to stop timers before unmapping */
 	if (p_cflash->p_afu) { 
-		for (i=0; i<NUM_CMDS; i++) { 
+		for (i=0; i<CFLASH_MAX_CMDS; i++) { 
 			timer_stop(&p_cflash->p_afu->cmd[i].timer, TRUE);
 		}
 	}
@@ -1758,7 +1758,7 @@ int clone_lxt(struct afu *p_afu,
 	ngrps = LXT_NUM_GROUPS(p_rht_entry_src->lxt_cnt);
 
 	if (ngrps) {
-		/* alloate new LXTs for clone */
+		/* allocate new LXTs for clone */
 		p_lxt = kzalloc((sizeof(*p_lxt) * LXT_GROUP_SIZE * ngrps),
 				GFP_KERNEL);
 		if (!p_lxt)
@@ -2204,10 +2204,11 @@ int find_lun(struct cflash *p_cflash, u32 port_sel)
 	struct afu *p_afu = p_cflash->p_afu;
 	struct afu_cmd *p_cmd;
 	struct lun_info *p_lun_info;
-	u64 lunidarray[CFLASH_MAX_NUM_LUNS_PER_TARGET];
+	u64 *p_currid;
 	int i = 0;
 	int j = 0;
 	int rc = 0;
+	u64 *lunidarray = NULL;
 
 	p_cmd = get_next_cmd(p_afu);
 	if (!p_cmd) {
@@ -2231,7 +2232,7 @@ int find_lun(struct cflash *p_cflash, u32 port_sel)
 
 	p_cmd->rcb.cdb[0] = 0xA0;	/* report luns */
 	p_u32 = (u32 *) & p_cmd->rcb.cdb[6];
-	write_32(p_u32, CMD_BUFSIZE);	/* allocaiton length */
+	write_32(p_u32, CMD_BUFSIZE);	/* allocation length */
 	p_cmd->sa.host_use_b[1] = 0;	/* reset retry cnt */
 
 	cflash_info("%s: sending cmd(0x%x) with RCB EA=%p data EA=0x%p\n",
@@ -2253,32 +2254,39 @@ int find_lun(struct cflash *p_cflash, u32 port_sel)
 
 	p_u64 = (u64 *) & p_cmd->buf[8];	/* start of lun list */
 
+	p_currid = lunidarray = kzalloc(len, GFP_KERNEL);
+
 	while (len) {
-		lunidarray[i] = read_64(p_u64);
+		*p_currid = read_64(p_u64);
 		len -= 8;
 		p_u64++;
 		i++;
+		p_currid++;
 	}
 	cflash_info("%s: found %d luns\n", __func__, i);
 
 	/* Release the CMD only after looking through the response */
 	release_cmd(p_cmd);
+
+	p_currid = lunidarray;
+
 	for (j = 0; j < i; j++) {
 		cflash_info("%s: adding i=%d lun_id %llx last_index %d\n",
-			    __func__, j, lunidarray[j],
+			    __func__, j, *p_currid,
 			    p_cflash->last_lun_index);
 
 		p_lun_info = &p_afu->lun_info[p_cflash->last_lun_index];
 		init_lun_info(p_lun_info);
 
-		scsi_add_device(p_cflash->host, CFLASH_BUS,
-				port_sel, lunidarray[j]);
+		scsi_add_device(p_cflash->host, port_sel,
+				CFLASH_TARGET, *p_currid);
 		/* program FC_PORT LUN Tbl */
 		write_64(&p_afu->p_afu_map->global.fc_port[port_sel - 1]
-			 [p_cflash->last_lun_index], lunidarray[j]);
+			 [p_cflash->last_lun_index], *p_currid);
 
 		/* record the lun_id to be used in discovery later */
-		p_lun_info->lun_id = lunidarray[j];
+		p_lun_info->lun_id = *p_currid;
+		p_currid++;
 
 		read_cap16(p_afu, p_lun_info, port_sel);
 
@@ -2292,6 +2300,8 @@ int find_lun(struct cflash *p_cflash, u32 port_sel)
 	}
 
 out:
+	if (lunidarray)
+		kfree(lunidarray);
 	cflash_info("in %s returning rc %d pcmd%p\n", __func__, rc, p_cmd);
 	return rc;
 }

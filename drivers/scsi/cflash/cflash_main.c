@@ -84,7 +84,7 @@ struct afu_cmd *get_next_cmd(struct afu *p_afu)
 	unsigned long lock_flags = 0;
 
 	/* The last command structure is reserved for SYNC */
-	for (i=0; i<NUM_CMDS-1; i++) {
+	for (i=0; i<CFLASH_MAX_CMDS-1; i++) {
 		p_cmd = &p_afu->cmd[i];
 		spin_lock_irqsave(p_cmd->slock, lock_flags);
 
@@ -439,7 +439,7 @@ static ssize_t cflash_show_port_status(struct device *dev,
 	volatile u64 *p_fc_regs;
 
 	rc = kstrtouint((attr->attr.name + 4), 10, &port);
-	if (rc || (port > SURELOCK_NUM_FC_PORTS))
+	if (rc || (port > NUM_FC_PORTS))
 		return 0;
 
 	p_fc_regs = &p_afu->p_afu_map->global.fc_regs[port][0];
@@ -698,7 +698,7 @@ static struct scsi_host_template driver_template = {
 	.change_queue_depth = cflash_change_queue_depth,
 	.change_queue_type = cflash_change_queue_type,
 	.cmd_per_lun = 16,
-	.can_queue = CFLASH_MAX_REQUESTS_DEFAULT,
+	.can_queue = CFLASH_MAX_CMDS,
 	.this_id = -1,
 	.sg_tablesize = SG_NONE,	/* No scatter gather support. */
 	.max_sectors = CFLASH_MAX_SECTORS,
@@ -724,7 +724,7 @@ static void cflash_free_mem(struct cflash *p_cflash)
 	char *buf = NULL;
 
 	if (p_cflash->p_afu) {
-		for (i=0; i<NUM_CMDS; i++) {
+		for (i=0; i<CFLASH_MAX_CMDS; i++) {
 			timer_stop(&p_cflash->p_afu->cmd[i].timer, TRUE);
 			buf = p_cflash->p_afu->cmd[i].buf;
 			if (buf)
@@ -799,7 +799,7 @@ static int cflash_gb_alloc(struct cflash *p_cflash)
 	}
 
 	/* Allocate one extra, just in case the SYNC command needs a buffer */
-	for (i=0; i<NUM_CMDS; i++) {
+	for (i=0; i<CFLASH_MAX_CMDS; i++) {
 		buf = (void *)__get_free_pages (GFP_KERNEL | __GFP_ZERO,
 						get_order(CMD_BUFSIZE));
 		if (!buf) {
@@ -921,16 +921,16 @@ out_release_regions:
 }
 
 /**
- * cflash_scan_vsets - Scans for VSET devices
+ * cflash_scan_luns - Scans For all LUNs on all Ports
  * @p_cflash:    struct cflash config struct
  *
- * Description: Since the VSET resources do not follow SAM in that we can have
- * sparse LUNs with no LUN 0, we have to scan for these ourselves.
+ * Description: This will be deprecated when the kernel services
+ * are ready.
  *
  * Return value:
  *      none
  **/
-static void cflash_scan_vsets(struct cflash *p_cflash)
+static void cflash_scan_luns(struct cflash *p_cflash)
 {
 	int j, rc;
 
@@ -1000,13 +1000,7 @@ static int cflash_init_scsi(struct cflash *p_cflash)
 	dev_info(&pdev->dev, "in %s before scsi_scan_host\n", __func__);
 	scsi_scan_host(p_cflash->host);
 
-	cflash_scan_vsets(p_cflash);
-
-	/*
-	   dev_info(&pdev->dev, "in %s before scsi_add_device\n", __func__);
-	   scsi_add_device(p_cflash->host, CFLASH_BUS, CFLASH_TARGET,
-	   CFLASH_LUN);
-	 */
+	cflash_scan_luns(p_cflash);
 
 out:
 	cflash_info("in %s returning rc %d\n", __func__, rc);
@@ -1040,8 +1034,8 @@ static int cflash_probe(struct pci_dev *pdev,
 	}
 	/* XXX: Need to double check with the sislite spec */
 	host->max_id = CFLASH_MAX_NUM_TARGETS_PER_BUS;
-	host->max_lun = CFLASH_MAX_NUM_VSET_LUNS_PER_TARGET;
-	host->max_channel = CFLASH_BUS;
+	host->max_lun = CFLASH_MAX_NUM_LUNS_PER_TARGET;
+	host->max_channel = NUM_FC_PORTS;
 	host->unique_id = host->host_no;
 	host->max_cmd_len = CFLASH_MAX_CDB_LEN;
 
