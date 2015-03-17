@@ -967,8 +967,8 @@ int cflash_init_ba(struct cflash *p_cflash, int lunindex)
 	mutex_init(&p_blka->mutex);
 
 	p_blka->ba_lun.lun_id = p_luninfo->lun_id;
-	p_blka->ba_lun.lsize = p_luninfo->li.max_lba + 1;
-	p_blka->ba_lun.lba_size = p_luninfo->li.blk_len;
+	p_blka->ba_lun.lsize = p_luninfo->max_lba + 1;
+	p_blka->ba_lun.lba_size = p_luninfo->blk_len;
 
 	p_blka->ba_lun.au_size = MC_CHUNK_SIZE;
 	p_blka->nchunk = p_blka->ba_lun.lsize / MC_CHUNK_SIZE;

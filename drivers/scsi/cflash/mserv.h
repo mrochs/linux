@@ -139,20 +139,16 @@ struct capikv_ini_elm;
 
 /* LUN discovery results are in lun_info */
 struct lun_info {
-	u64 lun_id;		/* from cmd line/cfg file */
-	u32 flags;		/* housekeeping */
+	u64 lun_id;	/* from REPORT_LUNS */
+	u64 max_lba;	/* from read cap(16) */
+	u32 blk_len;	/* from read cap(16) */
+	enum open_mode_type mode;
 
-	struct {
-		u8 wwid[16];	/* LUN WWID from page 0x83 (NAA-6) */
-		u64 max_lba;	/* from read cap(16) */
-		u32 blk_len;	/* from read cap(16) */
-	} li;
-	int lfd[MAX_CONTEXT];
-	struct cxl_ioctl_start_work work[MAX_CONTEXT];
 	spinlock_t _slock;
 	spinlock_t *slock;
 
-	enum open_mode_type mode;
+	int lfd[MAX_CONTEXT];
+	struct cxl_ioctl_start_work work[MAX_CONTEXT];
 };
 
 /* Block Alocator can be shared between AFUs */
@@ -313,8 +309,6 @@ int page83_inquiry(struct afu *p_afu, struct lun_info *p_lun_info,
 		   u32 port_sel);
 int afu_sync(struct afu *p_afu, ctx_hndl_t ctx_hndl_u, res_hndl_t res_hndl_u,
 	     u8 mode);
-
-void print_wwid(u8 * p_wwid, char *ascii_buf);
 
 void periodic_hb(void);
 void periodic_fc(void);

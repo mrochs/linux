@@ -217,7 +217,7 @@ int cflash_disk_attach(struct scsi_device *sdev, void __user * arg)
 	spin_unlock(p_lun_info->slock);
 
 	parg->return_flags = 0;
-	parg->block_size = p_lun_info->li.blk_len;
+	parg->block_size = p_lun_info->blk_len;
 	parg->mmio_size = sizeof(p_afu->p_afu_map->hosts[0].harea);
 
 out:
@@ -332,7 +332,7 @@ int cflash_disk_open(struct scsi_device *sdev, void __user * arg,
 		}
 
 		rsrc_handle = (p_rht_entry - p_rht_info->rht_start);
-		block_size = p_lun_info->li.blk_len;
+		block_size = p_lun_info->blk_len;
 
 		rc = 0;
 	} else {
@@ -393,7 +393,7 @@ int cflash_disk_open(struct scsi_device *sdev, void __user * arg,
 		asm volatile ("lwsync"::);
 		afu_sync(p_afu, context_id, rsrc_handle, AFU_LW_SYNC);
 
-		last_lba = p_lun_info->li.max_lba;
+		last_lba = p_lun_info->max_lba;
 		pphys->return_flags = 0;
 		pphys->block_size = block_size;
 		pphys->last_lba = last_lba;
@@ -636,7 +636,7 @@ int cflash_vlun_resize(struct scsi_device *sdev, void __user * arg)
 	/* req_size is always assumed to be in 4k blocks. So we have to convert
 	 * it from 4k to chunk size
 	 */
-	nsectors = (parg->req_size * DK_CAPI_BLOCK) / (p_lun_info->li.blk_len);
+	nsectors = (parg->req_size * DK_CAPI_BLOCK) / (p_lun_info->blk_len);
 	new_size = (nsectors + MC_CHUNK_SIZE - 1) / MC_CHUNK_SIZE;
 
 	cflash_info("%s, context=0x%llx res_hndl=0x%llx, req_size=0x%llx,"
@@ -697,7 +697,7 @@ int cflash_vlun_resize(struct scsi_device *sdev, void __user * arg)
 	}
 	parg->return_flags = 0;
 	parg->last_lba = (p_act_new_size * MC_CHUNK_SIZE *
-			  p_lun_info->li.blk_len) / DK_CAPI_BLOCK;
+			  p_lun_info->blk_len) / DK_CAPI_BLOCK;
 
 out:
 	cflash_info("in %s resized to %lld returning rc=%d\n", __func__,
@@ -2111,8 +2111,8 @@ static int cflash_init_ba(struct cflash *p_cflash, int lunindex)
 	mutex_init(&p_blka->mutex);
 
 	p_blka->ba_lun.lun_id = p_luninfo->lun_id;
-	p_blka->ba_lun.lsize = p_luninfo->li.max_lba + 1;
-	p_blka->ba_lun.lba_size = p_luninfo->li.blk_len;
+	p_blka->ba_lun.lsize = p_luninfo->max_lba + 1;
+	p_blka->ba_lun.lba_size = p_luninfo->blk_len;
 
 	p_blka->ba_lun.au_size = MC_CHUNK_SIZE;
 	p_blka->nchunk = p_blka->ba_lun.lsize / MC_CHUNK_SIZE;
@@ -2182,15 +2182,15 @@ int read_cap16(struct afu *p_afu, struct lun_info *p_lun_info, u32 port_sel)
 	/* read cap success  */
 	spin_lock(p_lun_info->slock);
 	p_u64 = (u64 *) & p_cmd->buf[0];
-	p_lun_info->li.max_lba = read_64(p_u64);
+	p_lun_info->max_lba = read_64(p_u64);
 
 	p_u32 = (u32 *) & p_cmd->buf[8];
-	p_lun_info->li.blk_len = read_32(p_u32);
+	p_lun_info->blk_len = read_32(p_u32);
 	spin_unlock(p_lun_info->slock);
 	release_cmd(p_cmd);
 
 	cflash_info("in %s maxlba=%lld blklen=%d pcmd %p\n", __func__,
-		    p_lun_info->li.max_lba, p_lun_info->li.blk_len, p_cmd);
+		    p_lun_info->max_lba, p_lun_info->blk_len, p_cmd);
 	return 0;
 }
 
