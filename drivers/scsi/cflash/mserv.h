@@ -147,13 +147,12 @@ struct lun_info {
 		u64 max_lba;	/* from read cap(16) */
 		u32 blk_len;	/* from read cap(16) */
 	} li;
-	int lfd;
-	struct cxl_ioctl_start_work work;
+	int lfd[MAX_CONTEXT];
+	struct cxl_ioctl_start_work work[MAX_CONTEXT];
 	spinlock_t _slock;
 	spinlock_t *slock;
 
 	enum open_mode_type mode;
-#define LUN_INFO_VALID   0x01
 };
 
 /* Block Alocator can be shared between AFUs */
@@ -227,7 +226,6 @@ struct afu {
 	/* AFU HW */
 	int afu_fd;
 	struct cxl_ioctl_start_work work;
-	char event_buf[0x1000];	/* Linux cxl event buffer (interrupts) */
 	volatile struct surelock_afu_map *p_afu_map;	/* entire MMIO map */
 	volatile struct sisl_host_map *p_host_map;	/* master's sislite host map */
 	volatile struct sisl_ctrl_map *p_ctrl_map;	/* master's control map */
@@ -240,7 +238,8 @@ struct afu {
 	u64 room;
 	u64 hb;
 
-#define CFLASH_MAX_LUNS	512
+//#define CFLASH_MAX_LUNS	512
+#define CFLASH_MAX_LUNS 8
 
 	/* LUN discovery: one lun_info per path */
 	struct lun_info lun_info[CFLASH_MAX_LUNS];

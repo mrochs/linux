@@ -145,6 +145,7 @@ int cflash_disk_attach(struct scsi_device *sdev, void __user * arg)
 	struct cflash *p_cflash = (struct cflash *)sdev->host->hostdata;
 	struct afu *p_afu = p_cflash->p_afu;
 	struct lun_info *p_lun_info = sdev->hostdata;
+	struct cxl_ioctl_start_work *p_work;
 	int rc = 0;
 	struct file *file;
 
@@ -161,6 +162,12 @@ int cflash_disk_attach(struct scsi_device *sdev, void __user * arg)
 	}
 
 	parg->context_id = (u64) cxl_process_element(ctx);
+	if (parg->context_id > MAX_CONTEXT) {
+		cflash_err("in %s context_id (%llu) is too large!\n", __func__,
+			   parg->context_id);
+		rc = -EPERM;
+		goto out;
+	}
 
 	/*
 	 * Create and attach a new file descriptor. This must be the last
@@ -168,9 +175,10 @@ int cflash_disk_attach(struct scsi_device *sdev, void __user * arg)
 	 * userspace and can't be undone. No error paths after this as we
 	 * can't free the fd safely.
 	 */
-
-	p_lun_info->work.num_interrupts = 4;
-	p_lun_info->work.flags = CXL_START_WORK_NUM_IRQS;
+	p_work = &p_lun_info->work[parg->context_id];
+	memset(p_work, 0, sizeof(*p_work));
+	p_work->num_interrupts = 4;
+	p_work->flags = CXL_START_WORK_NUM_IRQS;
 
 	file = cxl_get_fd(ctx, NULL, &fd);
 	if (fd < 0) {
@@ -180,7 +188,7 @@ int cflash_disk_attach(struct scsi_device *sdev, void __user * arg)
 		goto out;
 	}
 
-	rc = cxl_start_work(ctx, &(p_lun_info->work));
+	rc = cxl_start_work(ctx, p_work);
 	if (rc) {
 		cflash_err("in %s Could not start context rc %d\n", 
 			   __func__, rc);
@@ -205,7 +213,7 @@ int cflash_disk_attach(struct scsi_device *sdev, void __user * arg)
 	fd_install(fd, file);
 
 	spin_lock(p_lun_info->slock);
-	p_lun_info->lfd = fd;
+	p_lun_info->lfd[parg->context_id] = fd;
 	spin_unlock(p_lun_info->slock);
 
 	parg->return_flags = 0;
@@ -264,7 +272,6 @@ int cflash_disk_open(struct scsi_device *sdev, void __user * arg,
 
 	struct rht_info *p_rht_info = NULL;
 	struct sisl_rht_entry *p_rht_entry = NULL;
-	struct sisl_rht_entry_f1 *p_rht_entry_f1 = NULL;
 
 	if (mode == MODE_VIRTUAL) {
 		context_id = pvirt->context_id;
@@ -294,15 +301,12 @@ int cflash_disk_open(struct scsi_device *sdev, void __user * arg,
 	}
 	spin_unlock(p_lun_info->slock);
 
-	p_ctx_info = &p_afu->ctx_info[context_id];
-
 	cflash_info("%s, context=0x%llx ls=0x%llx\n",
 		    __func__, context_id, lun_size);
 
 	if (context_id < MAX_CONTEXT) {
 		p_ctx_info = &p_afu->ctx_info[context_id];
-
-		p_rht_info = &p_afu->rht_info[context_id];
+		p_rht_info = p_ctx_info->p_rht_info;
 
 		cflash_info("in %s ctx 0x%llx ctxinfo %p rhtinfo %p\n",
 			    __func__, context_id, p_ctx_info, p_rht_info);
@@ -311,8 +315,6 @@ int cflash_disk_open(struct scsi_device *sdev, void __user * arg,
 		for (i = 0; i < MAX_RHT_PER_CONTEXT; i++) {
 			if (p_rht_info->rht_start[i].nmask == 0) {
 				p_rht_entry = &p_rht_info->rht_start[i];
-				p_rht_entry_f1 =(struct p_rht_entry_f1 *)
-					&p_rht_info->rht_start[i];
 				break;
 			}
 		}
@@ -359,34 +361,37 @@ int cflash_disk_open(struct scsi_device *sdev, void __user * arg,
 		pvirt->rsrc_handle = rsrc_handle;
 	} else if (mode == MODE_PHYSICAL) {
 		/*
-		 * Reconfigure RHT entry for format 1 using
-		 * sequence described in the SISLITE spec
+		 * Populate the Format 1 RHT entry for direct access (physical
+		 * LUN) using the synchronization sequence defined in the
+		 * SISLite specification.
 		 */
-		volatile u64 val;
-
+		struct sisl_rht_entry_f1 dummy = { 0 };
+		struct sisl_rht_entry_f1 *p_rht_entry_f1 =
+			(struct sisl_rht_entry_f1 *)p_rht_entry;
 		memset(p_rht_entry_f1, 0, sizeof(struct sisl_rht_entry_f1));
-		val = 1 << 12;
-		p_rht_entry_f1->dw = val;
+		p_rht_entry_f1->fp = SISL_RHT_FP(1U, 0x3);
 		asm volatile ("lwsync"::);
 
 		p_rht_entry_f1->lun_id = p_lun_info->lun_id;
 		asm volatile ("lwsync"::);
 
-		/* Adding onto where we already set the format... */
-		val |= (u64)1 << 63;
-		val |= 3 << 8;
+		/*
+		 * Use a dummy RHT Format 1 entry to build the second dword
+		 * of the entry that must be populated in a single write when
+		 * enabled (valid bit set to TRUE).
+		 */
+		dummy.valid = 0x80;
+		dummy.fp = SISL_RHT_FP(1U, 0x3);
+#if 0		/* XXX - check with Andy/Todd b/c this doesn't work */
 		if (internal_lun)
-			val |= 1;
+			dummy.port_sel = 0x1;
 		else
-			val |= 3;
-		p_rht_entry_f1->dw = val;
+#endif
+			dummy.port_sel = 0x3;
+		p_rht_entry_f1->dw = dummy.dw;
+
 		asm volatile ("lwsync"::);
 		afu_sync(p_afu, context_id, rsrc_handle, AFU_LW_SYNC);
-
-		cflash_info("p_rht_entry_f1 = %016llX\n",
-			    p_rht_entry_f1->lun_id);
-		cflash_info("p_rht_entry_f1 = %016llX\n",
-			    p_rht_entry_f1->dw);
 
 		last_lba = p_lun_info->li.max_lba;
 		pphys->return_flags = 0;
@@ -478,18 +483,15 @@ int cflash_disk_release(struct scsi_device *sdev, void __user * arg)
 			p_rht_entry->nmask = 0;
 			p_rht_entry->fp = 0;
 		} else if (p_lun_info->mode ==  MODE_PHYSICAL) {
-			volatile u64 val;
+			/*
+			 * Clear the Format 1 RHT entry for direct access (physical
+			 * LUN) using the synchronization sequence defined in the
+			 * SISLite specification.
+			 */
 			struct sisl_rht_entry_f1 *p_rht_entry_f1 =
 				(struct sisl_rht_entry_f1 *)p_rht_entry;
 
-			val = p_rht_entry_f1->dw;
-			cflash_info("p_rht_entry_f1->dw = %016llX\n",
-				    p_rht_entry_f1->dw);
-			val &= ~((u64)1 << 63);
-			p_rht_entry_f1->dw = val;
-			cflash_info("p_rht_entry_f1->dw = %016llX\n",
-				    p_rht_entry_f1->dw);
-
+			p_rht_entry_f1->valid = 0;
 			asm volatile ("lwsync"::);
 
 			p_rht_entry_f1->lun_id = 0ULL;
@@ -1020,7 +1022,7 @@ void afu_err_intr_init(struct afu *p_afu)
 	/* Clear/Set internal lun bits */
 	reg = read_64(&p_afu->p_afu_map->global.fc_regs[0][FC_CONFIG2 / 8]);
 	cflash_info("ilun p0 = %016llX\n", reg);
-	reg &= ~((u64)0x3 << 32);
+	reg &= ~(0x3ULL << 32);
 	if (internal_lun)
 		reg |= ((u64)(internal_lun - 1) << 32);
 	cflash_info("ilun p0 = %016llX\n", reg);
@@ -1349,11 +1351,11 @@ int cflash_start_afu(struct cflash *p_cflash)
 	p_afu->p_hrrq_curr = p_afu->p_hrrq_start;
 	p_afu->toggle = 1;
 
-	memset(&version[0], 0, sizeof(version));
+	memset(version, 0, sizeof(version));
 	/* don't byte reverse on reading afu_version, else the string form */
 	/*     will be backwards */
 	reg = p_afu->p_afu_map->global.regs.afu_version;
-	memcpy(&version[0], &reg, 8);
+	memcpy(version, &reg, 8);
 	reg = read_64(&p_afu->p_afu_map->global.regs.interface_version);
 	cflash_info("afu version %s, interface version 0x%llx\n", version, 
 		   reg);
@@ -1378,9 +1380,11 @@ int cflash_start_afu(struct cflash *p_cflash)
 	write_64(&p_afu->p_afu_map->global.regs.afu_config, reg);
 
 	/* global port select: select either port */
+#if 0   /* XXX - check with Andy/Todd b/c this doesn't work */
 	if (internal_lun)
 		write_64(&p_afu->p_afu_map->global.regs.afu_port_sel, 0x1);
 	else
+#endif
 		write_64(&p_afu->p_afu_map->global.regs.afu_port_sel, 0x3);
 
 	for (i = 0; i < NUM_FC_PORTS; i++) {
@@ -1694,7 +1698,7 @@ int afu_sync(struct afu *p_afu,
 	cflash_info("in %s p_afu %p p_cmd %p %d\n",
 		    __func__, p_afu, p_cmd, ctx_hndl_u);
 
-	memset(&p_cmd->rcb.cdb[0], 0, sizeof(p_cmd->rcb.cdb));
+	memset(p_cmd->rcb.cdb, 0, sizeof(p_cmd->rcb.cdb));
 
 	p_cmd->rcb.req_flags = SISL_REQ_FLAGS_AFU_CMD;
 	p_cmd->rcb.port_sel = 0x0;	/* NA */
@@ -2144,9 +2148,6 @@ int read_cap16(struct afu *p_afu, struct lun_info *p_lun_info, u32 port_sel)
 		return -1;
 	}
 
-	memset(p_cmd->buf, 0, CMD_BUFSIZE);
-	memset(&p_cmd->rcb.cdb[0], 0, sizeof(p_cmd->rcb.cdb));
-
 	p_cmd->rcb.req_flags = (SISL_REQ_FLAGS_PORT_LUN_ID |
 				SISL_REQ_FLAGS_SUP_UNDERRUN |
 				SISL_REQ_FLAGS_HOST_READ);
@@ -2216,9 +2217,6 @@ int find_lun(struct cflash *p_cflash, u32 port_sel)
 			   __func__);
 		return -1;
 	}
-
-	memset(p_cmd->buf, 0, CMD_BUFSIZE);
-	memset(&p_cmd->rcb.cdb[0], 0, sizeof(p_cmd->rcb.cdb));
 
 	p_cmd->rcb.req_flags = (SISL_REQ_FLAGS_PORT_LUN_ID |
 				SISL_REQ_FLAGS_SUP_UNDERRUN |
@@ -2335,11 +2333,7 @@ void cflash_send_scsi(struct afu *p_afu, struct scsi_cmnd *scp)
 		return;
 	}
 
-	memset(p_cmd->buf, 0, CMD_BUFSIZE);
-	memset(&p_cmd->rcb.cdb[0], 0, sizeof(p_cmd->rcb.cdb));
-
 	p_cmd->rcb.ctx_id = p_afu->ctx_hndl;
-
 	p_cmd->rcb.port_sel = port_sel;
 	p_cmd->rcb.lun_id = scp->device->lun;
 
@@ -2398,11 +2392,7 @@ void cflash_send_tmf(struct afu *p_afu, struct scsi_cmnd *scp, u64 cmd)
 		return;
 	}
 
-	memset(p_cmd->buf, 0, CMD_BUFSIZE);
-	memset(&p_cmd->rcb.cdb[0], 0, sizeof(p_cmd->rcb.cdb));
-
 	p_cmd->rcb.ctx_id = p_afu->ctx_hndl;
-
 	p_cmd->rcb.port_sel = port_sel;
 	p_cmd->rcb.lun_id = scp->device->lun;
 

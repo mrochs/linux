@@ -93,11 +93,13 @@ struct afu_cmd *get_next_cmd(struct afu *p_afu)
 			spin_unlock_irqrestore(p_cmd->slock, lock_flags);
 			cflash_info("in %s returning found index=%d\n",
 				    __func__, p_cmd->slot);
+			memset(p_cmd->buf, 0, CMD_BUFSIZE);
+			memset(p_cmd->rcb.cdb, 0, sizeof(p_cmd->rcb.cdb));
 			return p_cmd;
 		}
 		spin_unlock_irqrestore(p_cmd->slock, lock_flags);
 	}
-	return  NULL;
+	return NULL;
 
 }
 
@@ -283,10 +285,14 @@ static int cflash_eh_host_reset_handler(struct scsi_cmnd *scp)
 
 void init_lun_info(struct lun_info *p_lun_info)
 {
+	int i;
+
 	memset(p_lun_info, 0, sizeof(struct lun_info));
 
 	p_lun_info->lun_id = -1ULL;
-	p_lun_info->lfd = -1;
+
+	for (i = 0; i < MAX_CONTEXT; i++)
+		p_lun_info->lfd[i] = -1;
 
 	spin_lock_init(&p_lun_info->_slock);
 	p_lun_info->slock = &p_lun_info->_slock;
