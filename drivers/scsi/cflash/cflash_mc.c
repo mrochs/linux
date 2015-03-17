@@ -1182,17 +1182,6 @@ void cflash_stop_context(struct cflash *p_cflash)
 	cflash_info("in %s returning \n", __func__);
 }
 
-static void send_cmd_timeout(struct afu_cmd *p_cmd)
-{
-	unsigned long lock_flags = 0;
-
-	cflash_err("command timeout, opcode 0x%X\n", p_cmd->rcb.cdb[0]);
-
-	spin_lock_irqsave(p_cmd->slock, lock_flags);
-	p_cmd->sa.host_use_b[0] |= (B_DONE | B_ERROR | B_TIMEOUT);
-	spin_unlock_irqrestore(p_cmd->slock, lock_flags);
-}
-
 #define WWPN_LEN	16
 #define WWPN_BUF_LEN	(WWPN_LEN + 1)
 
@@ -1267,6 +1256,35 @@ out:
 	return rc;
 }
 
+void cflash_context_reset(struct afu *p_afu)
+{
+	int nretry = 0;
+	u64 rrin = 0x1;
+
+	cflash_info("in %s p_afu %p\n", __func__, p_afu);
+
+	if (p_afu->room == 0) {
+		asm volatile ("eieio"::); /* let IOARRIN writes complete */
+		do {
+			p_afu->room = read_64(&p_afu->p_host_map->cmd_room);
+			udelay(nretry);
+		} while ((p_afu->room == 0) && (nretry++ < MC_ROOM_RETRY_CNT));
+	}
+
+	if (p_afu->room) {
+		write_64(&p_afu->p_host_map->ioarrin, (u64) rrin);
+		asm volatile ("eieio"::); /* let IOARRIN writes complete */
+		do {
+			rrin = read_64(&p_afu->p_host_map->ioarrin);
+			/* Double delay each time */
+			udelay(2^nretry);
+		} while ((rrin == 0x1) && (nretry++ < MC_ROOM_RETRY_CNT));
+	}
+	else
+		cflash_err("in %s no cmd_room to send reset\n", __func__);
+}
+
+
 int cflash_start_afu(struct cflash *p_cflash)
 {
 	struct afu *p_afu = p_cflash->p_afu;
@@ -1294,8 +1312,8 @@ int cflash_start_afu(struct cflash *p_cflash)
 		struct timer_list *p_timer = &p_afu->cmd[i].timer;
 
 		init_timer(p_timer);
-		p_timer->data = (unsigned long)&p_afu->cmd[i];
-		p_timer->function = (void (*)(unsigned long))send_cmd_timeout;
+		p_timer->data = (unsigned long)p_afu;
+		p_timer->function = (void (*)(unsigned long))cflash_context_reset;
 
 		spin_lock_init(&p_afu->cmd[i]._slock);
 		p_afu->cmd[i].slock = &p_afu->cmd[i]._slock;
@@ -1528,6 +1546,14 @@ void cflash_term_afu(struct cflash *p_cflash)
 			p_afu->p_blka[i] = NULL;
 		}
 	}
+
+	/* Need to stop timers before unmapping */
+	if (p_cflash->p_afu) { 
+		for (i=0; i<NUM_CMDS; i++) { 
+			timer_stop(&p_cflash->p_afu->cmd[i].timer, TRUE);
+		}
+	}
+
 	cflash_undo_start_afu(p_afu, UNDO_AFU_ALL);
 
 	cflash_info("in %s returning\n", __func__);
@@ -1566,34 +1592,6 @@ int check_status(struct sisl_ioasa_s *p_ioasa)
 	return 0;
 }
 
-void cflash_context_reset(struct afu *p_afu)
-{
-	int nretry = 0;
-	u64 rrin = 0x1;
-
-	cflash_info("in %s p_afu %p\n", __func__, p_afu);
-
-	if (p_afu->room == 0) {
-		asm volatile ("eieio"::); /* let IOARRIN writes complete */
-		do {
-			p_afu->room = read_64(&p_afu->p_host_map->cmd_room);
-			udelay(nretry);
-		} while ((p_afu->room == 0) && (nretry++ < MC_ROOM_RETRY_CNT));
-	}
-
-	if (p_afu->room) {
-		write_64(&p_afu->p_host_map->ioarrin, (u64) rrin);
-		asm volatile ("eieio"::); /* let IOARRIN writes complete */
-		do {
-			rrin = read_64(&p_afu->p_host_map->ioarrin);
-			/* Double delay each time */
-			udelay(2^nretry);
-		} while ((rrin == 0x1) && (nretry++ < MC_ROOM_RETRY_CNT));
-	}
-	else
-		cflash_err("in %s no cmd_room to send reset\n", __func__);
-}
-
 void cflash_send_cmd(struct afu *p_afu, struct afu_cmd *p_cmd)
 {
 	int nretry = 0;
@@ -1618,7 +1616,7 @@ void cflash_send_cmd(struct afu *p_afu, struct afu_cmd *p_cmd)
 	 * XXX - find out why this code originally (and still does)
 	 * have a doubler (*2) for the timeout value
 	 */
-	timer_start(&p_cmd->timer, (p_cmd->rcb.timeout * 2 * HZ), p_afu);
+	timer_start(&p_cmd->timer, (p_cmd->rcb.timeout * 2 * HZ));
 
 	/* Write IOARRIN */
 	if (p_afu->room)
@@ -1663,12 +1661,9 @@ void cflash_wait_resp(struct afu *p_afu, struct afu_cmd *p_cmd)
 			   p_cmd->sa.rc.scsi_rc, p_cmd->sa.rc.fc_rc);
 }
 
-void timer_start(struct timer_list *p_timer, unsigned long timeout_in_jiffies,
-		 struct afu *p_afu)
+void timer_start(struct timer_list *p_timer, unsigned long timeout_in_jiffies)
 {
 	p_timer->expires = (jiffies + timeout_in_jiffies);
-	p_timer->data = (unsigned long)p_afu;
-	p_timer->function  = (void  (*)(unsigned long))cflash_context_reset;
 	add_timer(p_timer);
 }
 
