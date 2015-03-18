@@ -39,6 +39,7 @@
 #include <asm/cputhreads.h>
 #include <asm/cpuidle.h>
 #include <asm/code-patching.h>
+#include <misc/cxl.h>
 
 #include "powernv.h"
 #include "subcore.h"
@@ -172,8 +173,18 @@ static void pnv_progress(char *s, unsigned short hex)
 
 static int pnv_dma_set_mask(struct device *dev, u64 dma_mask)
 {
-	if (dev_is_pci(dev))
-		return pnv_pci_dma_set_mask(to_pci_dev(dev), dma_mask);
+	struct pci_controller *hose;
+	struct pci_dev *pdev;
+
+	if (dev_is_pci(dev)) {
+		pdev = to_pci_dev(dev);
+		hose = pci_bus_to_host(pdev->bus);
+		if (hose->type == PCI_CXL)
+			return cxl_dma_set_mask(dev, dma_mask);
+
+		return pnv_pci_dma_set_mask(pdev, dma_mask);
+	}
+
 	return __dma_set_mask(dev, dma_mask);
 }
 
