@@ -154,6 +154,8 @@ struct lun_info {
 	spinlock_t *slock;
 
 	struct blka blka;
+	struct scsi_device *sdev;
+	struct list_head list;
 };
 
 enum undo_level {
@@ -232,8 +234,7 @@ struct afu {
 	u64 room;
 	u64 hb;
 
-	/* LUN discovery: one lun_info per path */
-	struct lun_info lun_info[SURELOCK_NUM_VLUNS];
+	struct list_head luns;	/* list of lun_info structs */
 
 } __attribute__ ((aligned(0x1000)));
 

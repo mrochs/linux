@@ -19,6 +19,7 @@
 #include <linux/file.h>
 #include <linux/cdev.h>
 #include <linux/delay.h>
+#include <linux/list.h>
 #include <linux/syscalls.h>
 #include <uapi/misc/cxl.h>
 #include <misc/cxl.h>
@@ -42,7 +43,6 @@
 #include "afu_fc.h"
 #include "mserv.h"
 
-extern void init_lun_info(struct lun_info *);
 
 
 /* Mask off the low nibble of the length to ensure 16 byte multiple */
@@ -1518,6 +1518,8 @@ int cflash_init_afu(struct cflash *p_cflash)
 	 */
 	cflash_start_context(p_cflash);
 
+	INIT_LIST_HEAD(&p_afu->luns);
+
 	rc = cflash_start_afu(p_cflash);
 	if (rc) {
 		dev_err(&p_cflash->p_dev->dev,
@@ -1549,6 +1551,7 @@ void cflash_term_afu(struct cflash *p_cflash)
 {
 	int i;
 	struct afu *p_afu = p_cflash->p_afu;
+	struct lun_info *p_lun_info, *p_temp;
 
 	if (p_cflash->p_mcctx) {
 		cflash_stop_context(p_cflash);
@@ -1567,20 +1570,21 @@ void cflash_term_afu(struct cflash *p_cflash)
 		p_cflash->p_mcctx = NULL;
 	}
 
-	for (i = 0; i < SURELOCK_NUM_VLUNS; i++) {
-		if (p_afu->lun_info[i].blka.nchunk) {
-			ba_terminate(&p_afu->lun_info[i].blka.ba_lun);
-		}
-	}
-
 	/* Need to stop timers before unmapping */
 	if (p_cflash->p_afu) {
 		for (i=0; i<CFLASH_MAX_CMDS; i++) {
 			timer_stop(&p_cflash->p_afu->cmd[i].timer, TRUE);
 		}
-	}
 
-	cflash_undo_start_afu(p_afu, UNDO_AFU_ALL);
+		cflash_undo_start_afu(p_afu, UNDO_AFU_ALL);
+
+		list_for_each_entry_safe(p_lun_info, p_temp, &p_afu->luns,
+					 list) {
+			list_del(&p_lun_info->list);
+			ba_terminate(&p_lun_info->blka.ba_lun);
+			kfree(p_lun_info);
+		}
+	}
 
 	cflash_info("in %s returning\n", __func__);
 }
@@ -2145,7 +2149,7 @@ int read_cap16(struct afu *p_afu, struct lun_info *p_lun_info, u32 port_sel)
 	u64 *p_u64;
 	struct afu_cmd *p_cmd;
 
-	p_cmd =  get_next_cmd(p_afu);
+	p_cmd = get_next_cmd(p_afu);
 	if (!p_cmd) {
 		cflash_err("in %s could not get a free command\n",
 			   __func__);
@@ -2198,6 +2202,29 @@ int read_cap16(struct afu *p_afu, struct lun_info *p_lun_info, u32 port_sel)
 	return 0;
 }
 
+static struct lun_info *
+create_lun_info(struct scsi_device *sdev, u64 lun_id)
+{
+	struct lun_info *p_lun_info = NULL;
+
+	p_lun_info = kzalloc(sizeof(*p_lun_info), GFP_KERNEL);
+	if (!p_lun_info) {
+		cflash_err("in %s could not allocate p_lun_info\n", __func__);
+		goto create_lun_info_exit;
+	}
+
+	p_lun_info->sdev = sdev;
+	p_lun_info->lun_id = lun_id;
+
+
+	spin_lock_init(&p_lun_info->_slock);
+	p_lun_info->slock = &p_lun_info->_slock;
+
+create_lun_info_exit:
+	cflash_info("in %s returning %p\n", __func__, p_lun_info);
+	return p_lun_info;
+}
+
 /* XXX: This is temporary. When the DMA mapping services are available
  * The report luns command will be sent be the SCSI stack
  */
@@ -2208,7 +2235,7 @@ int find_lun(struct cflash *p_cflash, u32 port_sel)
 	u64 *p_u64;
 	struct afu *p_afu = p_cflash->p_afu;
 	struct afu_cmd *p_cmd;
-	struct lun_info *p_lun_info;
+	struct lun_info *p_lun_info = NULL;
 	u64 *p_currid;
 	int i = 0;
 	int j = 0;
@@ -2272,13 +2299,27 @@ int find_lun(struct cflash *p_cflash, u32 port_sel)
 
 	p_currid = lunidarray;
 
-	for (j = 0; j < i; j++) {
+	for (j = 0; j < i; j++, p_currid++) {
 		cflash_info("%s: adding i=%d lun_id %llx last_index %d\n",
 			    __func__, j, *p_currid,
 			    p_cflash->last_lun_index);
 
-		p_lun_info = &p_afu->lun_info[p_cflash->last_lun_index];
-		init_lun_info(p_lun_info);
+		p_lun_info = create_lun_info(NULL, *p_currid);
+		if (!p_lun_info) {
+			cflash_err("in %s could not allocate lun_info\n",
+				   __func__);
+			rc = -ENOMEM;
+			goto out;
+		}
+
+		/*
+		 * XXX - link in before calling scsi_add_device() so that we
+		 * can find the device in slave_alloc(). Once we transition to
+		 * creating the lun_info in slave_alloc(), we'll link in right 
+		 * before returning from slave_alloc() to simplify cleanup in
+		 * case something fails between the creation and linking.
+		 */
+		list_add_tail(&p_lun_info->list, &p_afu->luns);
 
 		scsi_add_device(p_cflash->host, port_sel,
 				CFLASH_TARGET, *p_currid);
@@ -2286,18 +2327,22 @@ int find_lun(struct cflash *p_cflash, u32 port_sel)
 		write_64(&p_afu->p_afu_map->global.fc_port[port_sel - 1]
 			 [p_cflash->last_lun_index], *p_currid);
 
-		/* record the lun_id to be used in discovery later */
-		p_lun_info->lun_id = *p_currid;
-		p_currid++;
-
 		read_cap16(p_afu, p_lun_info, port_sel);
 
+		/*
+		 * XXX - when we transition to slave_alloc, refactor this into
+		 * create_lun_info(), for now it must be called separately after
+		 * we obtain the blk_len and lba from cap16.
+		 */
 		rc = cflash_init_ba(p_lun_info);
 		if (rc) {
 			cflash_err("call to cflash_init_ba failed rc=%d!\n",
 				   rc);
+			list_del(&p_lun_info->list);
+			kfree(p_lun_info);
 			goto out;
 		}
+
 		p_cflash->last_lun_index++;
 	}
 
@@ -2358,8 +2403,10 @@ void cflash_send_scsi(struct afu *p_afu, struct scsi_cmnd *scp)
 	nseg = scsi_dma_map(scp);
 	ncount = scsi_sg_count(scp);
 	scsi_for_each_sg(scp, sg, ncount, i) {
-		p_cmd->rcb.data_len = (sg_dma_len(sg) & SISLITE_LEN_MASK);
-		p_cmd->rcb.data_ea = (sg_phys(sg));
+		p_cmd->rcb.data_len = (sg_dma_len(sg));
+                p_cmd->rcb.data_ea = (sg_dma_address(sg));
+		//p_cmd->rcb.data_len = (sg_dma_len(sg) & SISLITE_LEN_MASK);
+		//p_cmd->rcb.data_ea = (sg_phys(sg));
 	}
 
 	/* Copy the CDB from the scsi_cmnd passed in */

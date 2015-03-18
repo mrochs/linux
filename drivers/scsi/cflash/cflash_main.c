@@ -18,6 +18,7 @@
 #include <linux/semaphore.h>
 #include <linux/fs.h>
 #include <linux/cdev.h>
+#include <linux/list.h>
 #include <linux/libata.h>
 #include <linux/reboot.h>
 
@@ -284,16 +285,6 @@ static int cflash_eh_host_reset_handler(struct scsi_cmnd *scp)
 	return rc;
 }
 
-void init_lun_info(struct lun_info *p_lun_info)
-{
-	memset(p_lun_info, 0, sizeof(struct lun_info));
-
-	p_lun_info->lun_id = -1ULL;
-
-	spin_lock_init(&p_lun_info->_slock);
-	p_lun_info->slock = &p_lun_info->_slock;
-}
-
 /**
  * cflash_slave_alloc - Setup the device's task set value
  * @sdev:       struct scsi_device device to configure
@@ -306,7 +297,7 @@ void init_lun_info(struct lun_info *p_lun_info)
  **/
 static int cflash_slave_alloc(struct scsi_device *sdev)
 {
-	struct lun_info *p_luninfo;
+	struct lun_info *p_lun_info;
 	struct Scsi_Host *shost = sdev->host;
 	struct cflash *p_cflash = shost_priv(shost);
 	struct afu *p_afu = p_cflash->p_afu;
@@ -315,14 +306,37 @@ static int cflash_slave_alloc(struct scsi_device *sdev)
 
 	spin_lock_irqsave(shost->host_lock, flags);
 
-	p_luninfo = &p_afu->lun_info[p_cflash->task_set];
-	sdev->hostdata = p_luninfo;
-	p_cflash->task_set++;
+	/* XXX - these are temporary */
+	cflash_info("LUN: %016llX\n", sdev->lun);
+	cflash_info("PAGE: %s\n", sdev->vpd_pg83);
 
+	/*
+	 * XXX - the find_lun() thread adds to the tail so we should
+	 * be the last entry in the list. This code will be refactored
+	 * once we transition the lun_info creation to this routine.
+	 */
+	p_lun_info = list_last_entry(&p_afu->luns, struct lun_info, list);
+	if (!p_lun_info) {
+		cflash_err("in %s, no lun_info in list!\n", __func__);
+		rc = -ENXIO;
+		goto out;
+	}
+
+	if (p_lun_info->sdev) {
+		cflash_err("in %s, LUN %p already has sdev defined %p (%p)\n",
+			   __func__, p_lun_info, p_lun_info->sdev,
+			   p_lun_info->sdev->hostdata);
+		goto out;
+	}
+
+	p_lun_info->sdev = sdev;
+	sdev->hostdata = p_lun_info;
+	p_cflash->task_set++;
+out:
 	spin_unlock_irqrestore(shost->host_lock, flags);
 
 	cflash_info("in %s returning task_set %d luninfo %p sdev %p\n",
-		    __func__, p_cflash->task_set, p_luninfo, sdev);
+		    __func__, p_cflash->task_set, p_lun_info, sdev);
 	return rc;
 }
 
