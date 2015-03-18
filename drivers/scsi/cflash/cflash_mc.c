@@ -175,7 +175,7 @@ int cflash_disk_attach(struct scsi_device *sdev, void __user * arg)
 	 * userspace and can't be undone. No error paths after this as we
 	 * can't free the fd safely.
 	 */
-	p_work = &p_lun_info->work[parg->context_id];
+	p_work = &p_cflash->per_context[parg->context_id].work;
 	memset(p_work, 0, sizeof(*p_work));
 	p_work->num_interrupts = 4;
 	p_work->flags = CXL_START_WORK_NUM_IRQS;
@@ -213,7 +213,7 @@ int cflash_disk_attach(struct scsi_device *sdev, void __user * arg)
 	fd_install(fd, file);
 
 	spin_lock(p_lun_info->slock);
-	p_lun_info->lfd[parg->context_id] = fd;
+	p_cflash->per_context[parg->context_id].lfd = fd;
 	spin_unlock(p_lun_info->slock);
 
 	parg->return_flags = 0;
@@ -1167,7 +1167,7 @@ int cflash_start_context(struct cflash *p_cflash)
 {
 	int rc = 0;
 
-	rc = cxl_start_context(p_cflash->p_ctx,
+	rc = cxl_start_context(p_cflash->p_mcctx,
 			       p_cflash->p_afu->work.work_element_descriptor,
 			       NULL);
 
@@ -1180,7 +1180,7 @@ int cflash_start_context(struct cflash *p_cflash)
  */
 void cflash_stop_context(struct cflash *p_cflash)
 {
-	cxl_stop_context(p_cflash->p_ctx);
+	cxl_stop_context(p_cflash->p_mcctx);
 	cflash_info("in %s returning \n", __func__);
 }
 
@@ -1286,6 +1286,31 @@ void cflash_context_reset(struct afu *p_afu)
 		cflash_err("in %s no cmd_room to send reset\n", __func__);
 }
 
+int cflash_afu_recover(struct scsi_device *sdev, void __user * arg)
+{
+	struct cflash *p_cflash = (struct cflash *)sdev->host->hostdata;
+	struct afu *p_afu = p_cflash->p_afu;
+	struct dk_capi_recover_afu *parg = (struct dk_capi_recover_afu *)arg;
+	long reg;
+	int rc = 0;
+
+	reg = read_64(&p_afu->p_ctrl_map->mbox_r);	/* Try MMIO */
+
+	/* MMIO returning 0xff, need to reset */
+	if (reg == -1) {
+		/* XXX: Once MIkey provides a service to reset the AFU */
+		cflash_info("in %s p_afu %p reason 0x%llx\n", __func__, p_afu,
+			parg->reason);
+
+	} else {
+		cflash_info("in %s reason 0x%llx MMIO is working, no reset"
+			    "performed\n", __func__, parg->reason);
+		rc = -EINVAL;
+	}
+
+	return rc;
+}
+
 
 int cflash_start_afu(struct cflash *p_cflash)
 {
@@ -1324,7 +1349,7 @@ int cflash_start_afu(struct cflash *p_cflash)
 
 	/* Map the entire MMIO space of the AFU.
 	 */
-	p_afu->p_afu_map = cxl_psa_map(p_cflash->p_ctx);
+	p_afu->p_afu_map = cxl_psa_map(p_cflash->p_mcctx);
 	if (!p_afu->p_afu_map)
 		goto out;
 
@@ -1340,7 +1365,7 @@ int cflash_start_afu(struct cflash *p_cflash)
 	level = UNDO_AFU_MMAP;
 
 	/* copy frequently used fields into p_afu */
-	p_afu->ctx_hndl = (u16) cxl_process_element(p_cflash->p_ctx);
+	p_afu->ctx_hndl = (u16) cxl_process_element(p_cflash->p_mcctx);
 	/* ctx_hndl is 16 bits in CAIA */
 	p_afu->p_host_map = &p_afu->p_afu_map->hosts[p_afu->ctx_hndl].host;
 	p_afu->p_ctrl_map = &p_afu->p_afu_map->ctrls[p_afu->ctx_hndl].ctrl;
@@ -1434,7 +1459,7 @@ int cflash_init_afu(struct cflash *p_cflash)
 	ctx = cxl_dev_context_init(p_cflash->p_dev);
 	if (!ctx)
 		return -ENOMEM;
-	p_cflash->p_ctx = ctx;
+	p_cflash->p_mcctx = ctx;
 
 	/* Set it up as a master with the CXL */
 	cxl_set_master(ctx);
@@ -1516,7 +1541,7 @@ err2:
 	cxl_free_afu_irqs(ctx);
 err1:
 	cxl_release_context(ctx);
-	p_cflash->p_ctx = NULL;
+	p_cflash->p_mcctx = NULL;
 	cflash_info("in %s returning rc=%d\n", __func__, rc);
 	return rc;
 }
@@ -1526,24 +1551,24 @@ void cflash_term_afu(struct cflash *p_cflash)
 	int i;
 	struct afu *p_afu = p_cflash->p_afu;
 
-	if (p_cflash->p_ctx) {
+	if (p_cflash->p_mcctx) {
 		cflash_stop_context(p_cflash);
 		cflash_info("in %s before unmap 4 \n", __func__);
-		cxl_unmap_afu_irq(p_cflash->p_ctx, 4, p_afu);
+		cxl_unmap_afu_irq(p_cflash->p_mcctx, 4, p_afu);
 		cflash_info("in %s before unmap 3 \n", __func__);
-		cxl_unmap_afu_irq(p_cflash->p_ctx, 3, p_afu);
+		cxl_unmap_afu_irq(p_cflash->p_mcctx, 3, p_afu);
 		cflash_info("in %s before unmap 2 \n", __func__);
-		cxl_unmap_afu_irq(p_cflash->p_ctx, 2, p_afu);
+		cxl_unmap_afu_irq(p_cflash->p_mcctx, 2, p_afu);
 		cflash_info("in %s before unmap 1 \n", __func__);
-		cxl_unmap_afu_irq(p_cflash->p_ctx, 1, p_afu);
+		cxl_unmap_afu_irq(p_cflash->p_mcctx, 1, p_afu);
 		cflash_info("in %s before cxl_free_afu_irqs \n", __func__);
-		cxl_free_afu_irqs(p_cflash->p_ctx);
+		cxl_free_afu_irqs(p_cflash->p_mcctx);
 		cflash_info("in %s before cxl_release_context \n", __func__);
-		cxl_release_context(p_cflash->p_ctx);
-		p_cflash->p_ctx = NULL;
+		cxl_release_context(p_cflash->p_mcctx);
+		p_cflash->p_mcctx = NULL;
 	}
 
-	for (i = 0; i < CFLASH_MAX_LUNS; i++) {
+	for (i = 0; i < SURELOCK_NUM_VLUNS; i++) {
 		if (p_afu->p_blka[i]) {
 			ba_terminate(&p_afu->p_blka[i]->ba_lun);
 			kfree(p_afu->p_blka[i]);

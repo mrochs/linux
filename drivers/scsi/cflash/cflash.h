@@ -34,8 +34,8 @@ extern u32 internal_lun;
 #define CFLASH_TARGET                   0x0
 #define CFLASH_MAX_CDB_LEN		16
 
-#define CFLASH_MAX_CMDS                 16
-#define CFLASH_MAX_CMDS_PER_LUN         16
+#define CFLASH_MAX_CMDS			16
+#define CFLASH_MAX_CMDS_PER_LUN         CFLASH_MAX_CMDS
 #define CFLASH_MAX_SECTORS              0xffffu
 /* Really only one target per bus since the Texan is directly attached */
 #define CFLASH_MAX_NUM_TARGETS_PER_BUS                     256
@@ -72,6 +72,6 @@ extern int cflash_disk_detach(struct scsi_device *sdev, void __user * arg);
 extern int cflash_vlun_resize(struct scsi_device *sdev, void __user * arg);
 extern int cflash_disk_release(struct scsi_device *sdev, void __user * arg);
 extern int cflash_disk_clone(struct scsi_device *sdev, void __user * arg);
-extern void hexdump(void *data, long len, const char *hdr);
+extern int cflash_afu_recover(struct scsi_device *sdev, void __user * arg);
 
 #endif

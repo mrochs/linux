@@ -33,7 +33,6 @@
 /* Sizing parms: same context can be registered multiple times.
    Therefore we allow MAX_CONNS > MAX_CONTEXT.
 */
-#define MAX_CONTEXT  SURELOCK_MAX_CONTEXT	/* num contexts per afu */
 #define MAX_RHT_PER_CONTEXT 16	/* num resource hndls per context */
 #define MAX_CONNS (MAX_CONTEXT*2)	/* num client connections per AFU */
 #define MAX_CONN_TO_POLL 64	/* num fds to poll once */
@@ -146,9 +145,6 @@ struct lun_info {
 
 	spinlock_t _slock;
 	spinlock_t *slock;
-
-	int lfd[MAX_CONTEXT];
-	struct cxl_ioctl_start_work work[MAX_CONTEXT];
 };
 
 /* Block Alocator can be shared between AFUs */
@@ -234,14 +230,11 @@ struct afu {
 	u64 room;
 	u64 hb;
 
-//#define CFLASH_MAX_LUNS	512
-#define CFLASH_MAX_LUNS 8
-
 	/* LUN discovery: one lun_info per path */
-	struct lun_info lun_info[CFLASH_MAX_LUNS];
+	struct lun_info lun_info[SURELOCK_NUM_VLUNS];
 
 	/* shared block allocator with other AFUs */
-	struct blka *p_blka[CFLASH_MAX_LUNS];
+	struct blka *p_blka[SURELOCK_NUM_VLUNS];
 
 } __attribute__ ((aligned(0x1000)));
 

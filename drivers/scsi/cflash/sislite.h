@@ -325,6 +325,7 @@ struct sisl_global_regs {
 
 #define SURELOCK_NUM_FC_PORTS   2
 #define SURELOCK_MAX_CONTEXT  512	/* how many contexts per afu */
+#define SURELOCK_NUM_VLUNS    512
 
 struct sisl_global_map {
 	union {
@@ -333,8 +334,8 @@ struct sisl_global_map {
 	};
 
 	char page1[0x1000];	/* page 1 */
-	u64 fc_regs[SURELOCK_NUM_FC_PORTS][512];	/* pages 2 & 3, see afu_fc.h */
-	u64 fc_port[SURELOCK_NUM_FC_PORTS][512];	/* pages 4 & 5 (lun tbl) */
+	u64 fc_regs[SURELOCK_NUM_FC_PORTS][SURELOCK_NUM_VLUNS];	/* pages 2 & 3, see afu_fc.h */
+	u64 fc_port[SURELOCK_NUM_FC_PORTS][SURELOCK_NUM_VLUNS];	/* pages 4 & 5 (lun tbl) */
 
 };
 

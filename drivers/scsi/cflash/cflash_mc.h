@@ -32,9 +32,16 @@ typedef unsigned int useconds_t;	/* time in microseconds */
 /* Types                                                                      */
 /*----------------------------------------------------------------------------*/
 
+#define MAX_CONTEXT  SURELOCK_MAX_CONTEXT       /* num contexts per afu */
+
+struct cflash_ctx {
+	struct cxl_ioctl_start_work work;
+	int lfd;
+};
+
 struct cflash {
 	struct afu *p_afu;
-	struct cxl_context *p_ctx;
+	struct cxl_context *p_mcctx;
 
 	struct pci_dev *p_dev;
 	struct pci_device_id *p_dev_id;
@@ -51,11 +58,13 @@ struct cflash {
 	timer_t timer_hb;
 	timer_t timer_fc;
 
-	int task_set;
 	struct pci_pool *cflash_cmd_pool;
 	struct pci_dev *parent_dev;
 
+	struct cflash_ctx per_context[MAX_CONTEXT];
+
 	int last_lun_index;
+	int task_set;
 
         wait_queue_head_t tmf_wait_q;
 	u8 context_reset_active:1;

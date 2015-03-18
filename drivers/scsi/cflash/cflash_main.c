@@ -46,6 +46,7 @@ MODULE_AUTHOR("Matthew R. Ochs <mrochs@linux.vnet.ibm.com>");
 MODULE_LICENSE("GPL");
 
 u32 internal_lun = 0;
+u32 fullqc = 0;
 module_param_named(lun_mode, internal_lun, uint, 0);
 MODULE_PARM_DESC(lun_mode, " 0 = external LUN[s](default),\n"
 			   " 1 = internal LUN (1 x 64K, 512B blocks, id 0),\n"
@@ -54,6 +55,9 @@ MODULE_PARM_DESC(lun_mode, " 0 = external LUN[s](default),\n"
 			   " 4 = internal LUN (2 x 32K, 4K blocks, ids 0,1)");
 module_param_named(debug, cflash_debug, uint, 0);
 MODULE_PARM_DESC(debug, " 1 = enabled");
+
+module_param_named(qc, fullqc, uint, 0);
+MODULE_PARM_DESC(qc, " 1 = Regular SCSI queuecommand");
 
 
 unsigned int cflash_debug = 0;
@@ -116,7 +120,7 @@ void release_cmd(struct afu_cmd *p_cmd)
 }
 
 /**
- * cflash_queuecommand_lck - Queue a mid-layer request
+ * cflash_queuecommand - Queue a mid-layer request
  * @shost:               scsi host struct
  * @scsi_cmd:            scsi command struct
  *
@@ -127,36 +131,33 @@ void release_cmd(struct afu_cmd *p_cmd)
  *      SCSI_MLQUEUE_DEVICE_BUSY if device is busy
  *      SCSI_MLQUEUE_HOST_BUSY if host is busy
  **/
-static int cflash_queuecommand_lck(struct scsi_cmnd *scp,
-				   void (*done) (struct scsi_cmnd *))
+static int cflash_queuecommand(struct Scsi_Host *host,
+			       struct scsi_cmnd *scp)
 {
-	struct Scsi_Host *host = scp->device->host;
 	struct cflash *p_cflash = (struct cflash *)host->hostdata;
 	struct afu *p_afu = p_cflash->p_afu;
 
 	/* XXX: Until the scsi_dma_map works, this stuff is meaningless
 	 * Make the queuecommand entry point a dummy one for now.
 	 */
-	scp->scsi_done = done;
-	scp->scsi_done(scp);
-	return 0;
-	cflash_info("in %s (scp=%p) %d/%d/%d/%llu "
-		    "cdb=(%08x-%08x-%08x-%08x)\n",
-		    __func__, scp,
-		    host->host_no, scp->device->channel,
-		    scp->device->id, scp->device->lun,
-		    cpu_to_be32(((u32 *) scp->cmnd)[0]),
-		    cpu_to_be32(((u32 *) scp->cmnd)[1]),
-		    cpu_to_be32(((u32 *) scp->cmnd)[2]),
-		    cpu_to_be32(((u32 *) scp->cmnd)[3]));
+	if (!fullqc) {
+		scp->scsi_done(scp);
+	} else {
+		cflash_info("in %s (scp=%p) %d/%d/%d/%llu "
+			"cdb=(%08x-%08x-%08x-%08x)\n",
+			__func__, scp,
+			host->host_no, scp->device->channel,
+			scp->device->id, scp->device->lun,
+			cpu_to_be32(((u32 *) scp->cmnd)[0]),
+			cpu_to_be32(((u32 *) scp->cmnd)[1]),
+			cpu_to_be32(((u32 *) scp->cmnd)[2]),
+			cpu_to_be32(((u32 *) scp->cmnd)[3]));
 
-	scp->scsi_done = done;
-	scp->result = (DID_OK << 16);;
-	cflash_send_scsi(p_afu, scp);
+		scp->result = (DID_OK << 16);;
+		cflash_send_scsi(p_afu, scp);
+	}
 	return 0;
 }
-
-static DEF_SCSI_QCMD(cflash_queuecommand)
 
 /**
  * cflash_eh_abort_handler - Abort a single op
@@ -285,14 +286,9 @@ static int cflash_eh_host_reset_handler(struct scsi_cmnd *scp)
 
 void init_lun_info(struct lun_info *p_lun_info)
 {
-	int i;
-
 	memset(p_lun_info, 0, sizeof(struct lun_info));
 
 	p_lun_info->lun_id = -1ULL;
-
-	for (i = 0; i < MAX_CONTEXT; i++)
-		p_lun_info->lfd[i] = -1;
 
 	spin_lock_init(&p_lun_info->_slock);
 	p_lun_info->slock = &p_lun_info->_slock;
@@ -642,6 +638,9 @@ static int cflash_ioctl(struct scsi_device *sdev, int cmd, void __user * arg)
 	case DK_CAPI_CLONE:
 		rc = cflash_disk_clone(sdev, arg);
 		break;
+	case DK_CAPI_RECOVER_AFU:
+		rc = cflash_afu_recover(sdev, arg);
+		break;
 	default:
 		rc = -EOPNOTSUPP;
 		break;
@@ -819,6 +818,10 @@ static int cflash_gb_alloc(struct cflash *p_cflash)
 		p_cflash->p_afu->cmd[i].flag = CMD_FREE;
 		p_cflash->p_afu->cmd[i].slot = i;
 		p_cflash->p_afu->cmd[i].special = 0;
+	}
+
+	for  (i=0; i<MAX_CONTEXT; i++) {
+		p_cflash->per_context[i].lfd = -1;
 	}
 
 out:
