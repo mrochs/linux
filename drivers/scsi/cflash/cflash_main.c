@@ -953,46 +953,6 @@ static void cflash_scan_luns(struct cflash *p_cflash)
 	}
 }
 
-int cflash_init_ba(struct cflash *p_cflash, int lunindex)
-{
-	struct afu *p_afu = p_cflash->p_afu;
-	struct lun_info *p_luninfo = &p_afu->lun_info[lunindex];
-	int rc = 0;
-	struct blka *p_blka = NULL;
-
-	p_blka = kzalloc(sizeof(*p_blka), GFP_KERNEL);
-	if (!p_blka) {
-		cflash_err("Failed to get memory for block alloc!\n");
-		rc = -ENOMEM;
-		goto cflash_init_ba_exit;
-	}
-
-	mutex_init(&p_blka->mutex);
-
-	p_blka->ba_lun.lun_id = p_luninfo->lun_id;
-	p_blka->ba_lun.lsize = p_luninfo->max_lba + 1;
-	p_blka->ba_lun.lba_size = p_luninfo->blk_len;
-
-	p_blka->ba_lun.au_size = MC_CHUNK_SIZE;
-	p_blka->nchunk = p_blka->ba_lun.lsize / MC_CHUNK_SIZE;
-
-	rc = ba_init(&p_blka->ba_lun);
-	if (rc) {
-		cflash_err("cannot init block_alloc, rc %d\n", rc);
-		goto cflash_init_ba_exit;
-	}
-
-	p_afu->p_blka[lunindex] = p_blka;
-
-cflash_init_ba_exit:
-	if (rc && p_blka)
-		kfree(p_blka);
-
-	cflash_info("in %s returning index %d p_blka %p rc=%d\n",
-		    __func__, lunindex, p_afu->p_blka[lunindex], rc);
-	return rc;
-}
-
 static int cflash_init_scsi(struct cflash *p_cflash)
 {
 	struct pci_dev *pdev = p_cflash->p_dev;

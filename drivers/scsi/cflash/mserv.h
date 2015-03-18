@@ -136,6 +136,13 @@ struct ctx_info {
 /* forward decls */
 struct capikv_ini_elm;
 
+/* Block Alocator */
+struct blka {
+	struct ba_lun ba_lun;	/* single LUN for SureLock */
+	u64 nchunk;		/* number of chunks */
+	struct mutex mutex;
+};
+
 /* LUN discovery results are in lun_info */
 struct lun_info {
 	u64 lun_id;	/* from REPORT_LUNS */
@@ -145,13 +152,8 @@ struct lun_info {
 
 	spinlock_t _slock;
 	spinlock_t *slock;
-};
 
-/* Block Alocator can be shared between AFUs */
-struct blka {
-	struct ba_lun ba_lun;	/* single LUN for SureLock */
-	u64 nchunk;		/* number of chunks */
-	struct mutex mutex;
+	struct blka blka;
 };
 
 enum undo_level {
@@ -233,9 +235,6 @@ struct afu {
 	/* LUN discovery: one lun_info per path */
 	struct lun_info lun_info[SURELOCK_NUM_VLUNS];
 
-	/* shared block allocator with other AFUs */
-	struct blka *p_blka[SURELOCK_NUM_VLUNS];
-
 } __attribute__ ((aligned(0x1000)));
 
 struct asyc_intr_info {
@@ -263,21 +262,21 @@ int afu_set_wwpn(struct afu *p_afu, int port,
 void afu_link_reset(struct afu *p_afu, int port, volatile u64 * p_fc_regs);
 
 int grow_lxt(struct afu *p_afu,
-	     int lun_index,
+	     struct blka *p_blka,
 	     ctx_hndl_t ctx_hndl_u,
 	     res_hndl_t res_hndl_u,
 	     struct sisl_rht_entry *p_rht_entry,
 	     u64 delta, u64 * p_act_new_size);
 
 int shrink_lxt(struct afu *p_afu,
-	       int lun_index,
+	       struct blka *p_blka,
 	       ctx_hndl_t ctx_hndl_u,
 	       res_hndl_t res_hndl_u,
 	       struct sisl_rht_entry *p_rht_entry,
 	       u64 delta, u64 * p_act_new_size);
 
 int clone_lxt(struct afu *p_afu,
-	      int lun_index,
+	      struct blka *p_blka,
 	      ctx_hndl_t ctx_hndl_u,
 	      res_hndl_t res_hndl_u,
 	      struct sisl_rht_entry *p_rht_entry,

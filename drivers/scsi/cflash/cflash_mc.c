@@ -190,7 +190,7 @@ int cflash_disk_attach(struct scsi_device *sdev, void __user * arg)
 
 	rc = cxl_start_work(ctx, p_work);
 	if (rc) {
-		cflash_err("in %s Could not start context rc %d\n", 
+		cflash_err("in %s Could not start context rc %d\n",
 			   __func__, rc);
 		cxl_release_context(ctx);
 		fput(file);
@@ -429,8 +429,8 @@ out:
 int cflash_disk_release(struct scsi_device *sdev, void __user * arg)
 {
 	struct cflash *p_cflash = (struct cflash *)sdev->host->hostdata;
-	struct afu *p_afu = p_cflash->p_afu;
 	struct lun_info *p_lun_info = sdev->hostdata;
+	struct afu *p_afu = p_cflash->p_afu;
 
 	struct dk_capi_release *prele = (struct dk_capi_release *)arg;
 	struct dk_capi_resize size;
@@ -619,6 +619,7 @@ int cflash_vlun_resize(struct scsi_device *sdev, void __user * arg)
 {
 	struct cflash *p_cflash = (struct cflash *)sdev->host->hostdata;
 	struct lun_info *p_lun_info = sdev->hostdata;
+	struct blka *p_blka = &p_lun_info->blka;
 	struct afu *p_afu = p_cflash->p_afu;
 
 	struct dk_capi_resize *parg = (struct dk_capi_resize *)arg;
@@ -631,7 +632,7 @@ int cflash_vlun_resize(struct scsi_device *sdev, void __user * arg)
 	struct rht_info *p_rht_info;
 	struct sisl_rht_entry *p_rht_entry;
 
-	int rc = 0, lun_index = p_lun_info - p_afu->lun_info;
+	int rc = 0;
 
 	/* req_size is always assumed to be in 4k blocks. So we have to convert
 	 * it from 4k to chunk size
@@ -674,7 +675,7 @@ int cflash_vlun_resize(struct scsi_device *sdev, void __user * arg)
 
 		if (new_size > p_rht_entry->lxt_cnt) {
 			grow_lxt(p_afu,
-				 lun_index,
+				 p_blka,
 				 parg->context_id,
 				 res_hndl,
 				 p_rht_entry,
@@ -682,7 +683,7 @@ int cflash_vlun_resize(struct scsi_device *sdev, void __user * arg)
 				 &p_act_new_size);
 		} else if (new_size < p_rht_entry->lxt_cnt) {
 			shrink_lxt(p_afu,
-				   lun_index,
+				   p_blka,
 				   parg->context_id,
 				   res_hndl,
 				   p_rht_entry,
@@ -706,14 +707,13 @@ out:
 }
 
 int grow_lxt(struct afu *p_afu,
-	     int lun_index,
+	     struct blka *p_blka,
 	     ctx_hndl_t ctx_hndl_u,
 	     res_hndl_t res_hndl_u,
 	     struct sisl_rht_entry *p_rht_entry,
 	     u64 delta, u64 * p_act_new_size)
 {
 	struct sisl_lxt_entry *p_lxt = NULL, *p_lxt_old = NULL;
-	struct blka *p_blka = p_afu->p_blka[lun_index];
 	unsigned int av_size;
 	unsigned int ngrps, ngrps_old;
 	u64 aun;		/* chunk# allocated by block allocator */
@@ -794,14 +794,13 @@ int grow_lxt(struct afu *p_afu,
 }
 
 int shrink_lxt(struct afu *p_afu,
-	       int lun_index,
+	       struct blka *p_blka,
 	       ctx_hndl_t ctx_hndl_u,
 	       res_hndl_t res_hndl_u,
 	       struct sisl_rht_entry *p_rht_entry,
 	       u64 delta, u64 * p_act_new_size)
 {
 	struct sisl_lxt_entry *p_lxt, *p_lxt_old;
-	struct blka *p_blka = p_afu->p_blka[lun_index];
 	unsigned int ngrps, ngrps_old;
 	u64 aun;		/* chunk# allocated by block allocator */
 	int i;
@@ -1382,7 +1381,7 @@ int cflash_start_afu(struct cflash *p_cflash)
 	reg = p_afu->p_afu_map->global.regs.afu_version;
 	memcpy(version, &reg, 8);
 	reg = read_64(&p_afu->p_afu_map->global.regs.interface_version);
-	cflash_info("afu version %s, interface version 0x%llx\n", version, 
+	cflash_info("afu version %s, interface version 0x%llx\n", version,
 		   reg);
 
 	/* initialize cmd fields that never change */
@@ -1569,16 +1568,14 @@ void cflash_term_afu(struct cflash *p_cflash)
 	}
 
 	for (i = 0; i < SURELOCK_NUM_VLUNS; i++) {
-		if (p_afu->p_blka[i]) {
-			ba_terminate(&p_afu->p_blka[i]->ba_lun);
-			kfree(p_afu->p_blka[i]);
-			p_afu->p_blka[i] = NULL;
+		if (p_afu->lun_info[i].blka.nchunk) {
+			ba_terminate(&p_afu->lun_info[i].blka.ba_lun);
 		}
 	}
 
 	/* Need to stop timers before unmapping */
-	if (p_cflash->p_afu) { 
-		for (i=0; i<CFLASH_MAX_CMDS; i++) { 
+	if (p_cflash->p_afu) {
+		for (i=0; i<CFLASH_MAX_CMDS; i++) {
 			timer_stop(&p_cflash->p_afu->cmd[i].timer, TRUE);
 		}
 	}
@@ -1772,14 +1769,13 @@ int afu_sync(struct afu *p_afu,
  * NOTES:
  */
 int clone_lxt(struct afu *p_afu,
-	      int lun_index,
+	      struct blka *p_blka,
 	      ctx_hndl_t ctx_hndl_u,
 	      res_hndl_t res_hndl_u,
 	      struct sisl_rht_entry *p_rht_entry,
 	      struct sisl_rht_entry *p_rht_entry_src)
 {
 	struct sisl_lxt_entry *p_lxt;
-	struct blka *p_blka = p_afu->p_blka[lun_index];
 	unsigned int ngrps;
 	u64 aun;		/* chunk# allocated by block allocator */
 	int i, j;
@@ -1924,6 +1920,7 @@ int cflash_disk_clone(struct scsi_device *sdev, void __user * arg)
 {
 	struct cflash *p_cflash = (struct cflash *)sdev->host->hostdata;
 	struct lun_info *p_lun_info = sdev->hostdata;
+	struct blka *p_blka = &p_lun_info->blka;
 	struct afu *p_afu = p_cflash->p_afu;
 	struct dk_capi_clone *pclone = (struct dk_capi_clone *)arg;
 	struct dk_capi_release release = { 0 };
@@ -1934,8 +1931,7 @@ int cflash_disk_clone(struct scsi_device *sdev, void __user * arg)
 			*p_rht_info_dst;
 	u64 reg;
 	int i, j;
-	int rc,
-	    lun_index = p_lun_info - p_afu->lun_info;
+	int rc;
 
 	cflash_info("%s, challenge=%lld ctx_hdl=%lld\n",
 		    __func__, pclone->challenge_src, pclone->context_id_src);
@@ -1975,7 +1971,7 @@ int cflash_disk_clone(struct scsi_device *sdev, void __user * arg)
 		    SISL_RHT_FP_CLONE(p_rht_info_src->rht_start[i].fp,
 				      pclone->flags & 0x3);
 
-		rc = clone_lxt(p_afu, lun_index, pclone->context_id_dst, i,
+		rc = clone_lxt(p_afu, p_blka, pclone->context_id_dst, i,
 			       &p_rht_info_dst->rht_start[i],
 			       &p_rht_info_src->rht_start[i]);
 		if (rc) {
@@ -2081,8 +2077,8 @@ int cflash_disk_dup(struct scsi_device *sdev, void __user * arg)
  */
 int cflash_disk_stat(struct scsi_device *sdev, void __user * arg)
 {
-	struct cflash *p_cflash = (struct cflash *)sdev->host->hostdata;
-	struct afu *p_afu = p_cflash->p_afu;
+	struct lun_info *p_lun_info = sdev->hostdata;
+	struct blka *p_blka = &p_lun_info->blka;
 
 	/* XXX: Input arguments; */
 	mc_stat_t *p_mc_stat = NULL;
@@ -2092,10 +2088,6 @@ int cflash_disk_stat(struct scsi_device *sdev, void __user * arg)
 
 	struct rht_info *p_rht_info = p_ctx_info->p_rht_info;
 	struct sisl_rht_entry *p_rht_entry;
-
-	/* TODO - properly derive lun_index */
-	int lun_index = 0;
-	struct blka *p_blka = p_afu->p_blka[lun_index];
 
 	cflash_info("%s, context_id=%lld\n",
 		    __func__, context_id);
@@ -2119,25 +2111,17 @@ int cflash_disk_stat(struct scsi_device *sdev, void __user * arg)
 	return 0;
 }
 
-static int cflash_init_ba(struct cflash *p_cflash, int lunindex)
+static int cflash_init_ba(struct lun_info *p_lun_info)
 {
-	struct afu *p_afu = p_cflash->p_afu;
-	struct lun_info *p_luninfo = &p_afu->lun_info[lunindex];
 	int rc = 0;
-	struct blka *p_blka = NULL;
+	struct blka *p_blka = &p_lun_info->blka;
 
-	p_blka = kzalloc(sizeof(*p_blka), GFP_KERNEL);
-	if (!p_blka) {
-		cflash_err("Failed to get memory for block alloc!\n");
-		rc = -ENOMEM;
-		goto cflash_init_ba_exit;
-	}
-
+	memset(p_blka, 0, sizeof(*p_blka));
 	mutex_init(&p_blka->mutex);
 
-	p_blka->ba_lun.lun_id = p_luninfo->lun_id;
-	p_blka->ba_lun.lsize = p_luninfo->max_lba + 1;
-	p_blka->ba_lun.lba_size = p_luninfo->blk_len;
+	p_blka->ba_lun.lun_id = p_lun_info->lun_id;
+	p_blka->ba_lun.lsize = p_lun_info->max_lba + 1;
+	p_blka->ba_lun.lba_size = p_lun_info->blk_len;
 
 	p_blka->ba_lun.au_size = MC_CHUNK_SIZE;
 	p_blka->nchunk = p_blka->ba_lun.lsize / MC_CHUNK_SIZE;
@@ -2148,14 +2132,9 @@ static int cflash_init_ba(struct cflash *p_cflash, int lunindex)
 		goto cflash_init_ba_exit;
 	}
 
-	p_afu->p_blka[lunindex] = p_blka;
-
 cflash_init_ba_exit:
-	if (rc && p_blka)
-		kfree(p_blka);
-
-	cflash_info("in %s returning index %d p_blka %p rc=%d\n",
-		    __func__, lunindex, p_afu->p_blka[lunindex], rc);
+	cflash_info("in %s returning rc=%d p_lun_info=%p\n",
+		    __func__, rc, p_lun_info);
 	return rc;
 }
 
@@ -2313,7 +2292,7 @@ int find_lun(struct cflash *p_cflash, u32 port_sel)
 
 		read_cap16(p_afu, p_lun_info, port_sel);
 
-		rc = cflash_init_ba(p_cflash, p_cflash->last_lun_index);
+		rc = cflash_init_ba(p_lun_info);
 		if (rc) {
 			cflash_err("call to cflash_init_ba failed rc=%d!\n",
 				   rc);
