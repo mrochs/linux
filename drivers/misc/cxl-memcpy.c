@@ -78,6 +78,8 @@ static void cxl_memcpy_vpd_info(struct pci_dev *dev)
 static int cxl_memcpy_probe(struct pci_dev *dev, const struct pci_device_id *id)
 {
 	struct cxl_afu *afu;
+	struct page *dummypage;
+	dma_addr_t map;
 	int rc;
 	int minor;
 
@@ -98,6 +100,12 @@ static int cxl_memcpy_probe(struct pci_dev *dev, const struct pci_device_id *id)
 	memcpy_afu_dev = dev;
 
 	cxl_memcpy_vpd_info(dev);
+
+	/* Try out the dma ops */
+	dummypage = alloc_page(GFP_KERNEL);
+	map = dma_map_single(&dev->dev, dummypage, PAGE_SIZE, DMA_BIDIRECTIONAL);
+	printk("map:%016lx dummypage:%p phys:%016lx\n", (unsigned long int)map, dummypage,
+	       virt_to_phys(dummypage));
 
 	return 0;
 }
