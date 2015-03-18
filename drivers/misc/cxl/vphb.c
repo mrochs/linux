@@ -15,6 +15,19 @@ void cxl_pci_dma_dev_setup(struct pci_dev *pdev)
 	printk("WARNING %s", __func__);
 }
 
+int cxl_dma_set_mask(struct device *dev, u64 dma_mask)
+{
+	pr_devel("%s", __func__);
+
+	if (dma_mask < DMA_BIT_MASK(64)) {
+		pr_info("%s only 64bit DMA supported on CXL", __func__);
+		return EIO;
+	}
+
+	*dev->dma_mask = dma_mask;
+	return 0;
+}
+
 int cxl_pci_probe_mode(struct pci_bus *bus)
 {
 	printk("WARNING %s", __func__);
@@ -46,6 +59,8 @@ int cxl_pci_enable_device_hook(struct pci_dev *dev)
 
         hose = pci_bus_to_host(dev->bus);
 	afu = (struct cxl_afu *)hose->private_data;
+	set_dma_ops(&dev->dev, &dma_direct_ops);
+	set_dma_offset(&dev->dev, PAGE_OFFSET);
 
 	return afu_check_and_enable(afu);
 }
