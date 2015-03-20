@@ -2210,29 +2210,6 @@ int read_cap16(struct afu *p_afu, struct lun_info *p_lun_info, u32 port_sel)
 	return 0;
 }
 
-static struct lun_info *
-create_lun_info(struct scsi_device *sdev, u64 lun_id)
-{
-	struct lun_info *p_lun_info = NULL;
-
-	p_lun_info = kzalloc(sizeof(*p_lun_info), GFP_KERNEL);
-	if (!p_lun_info) {
-		cflash_err("in %s could not allocate p_lun_info\n", __func__);
-		goto create_lun_info_exit;
-	}
-
-	p_lun_info->sdev = sdev;
-	p_lun_info->lun_id = lun_id;
-
-
-	spin_lock_init(&p_lun_info->_slock);
-	p_lun_info->slock = &p_lun_info->_slock;
-
-create_lun_info_exit:
-	cflash_info("in %s returning %p\n", __func__, p_lun_info);
-	return p_lun_info;
-}
-
 /* XXX: This is temporary. When the DMA mapping services are available
  * The report luns command will be sent be the SCSI stack
  */
@@ -2312,25 +2289,17 @@ int find_lun(struct cflash *p_cflash, u32 port_sel)
 			    __func__, j, *p_currid,
 			    p_cflash->last_lun_index);
 
-		p_lun_info = create_lun_info(NULL, *p_currid);
-		if (!p_lun_info) {
-			cflash_err("in %s could not allocate lun_info\n",
-				   __func__);
-			rc = -ENOMEM;
-			goto out;
-		}
-
 		/*
-		 * XXX - link in before calling scsi_add_device() so that we
-		 * can find the device in slave_alloc(). Once we transition to
-		 * creating the lun_info in slave_alloc(), we'll link in right 
-		 * before returning from slave_alloc() to simplify cleanup in
-		 * case something fails between the creation and linking.
+		 * XXX - scsi_add_device() will trigger slave_alloc and
+		 * slave_configure which will create the lun_info structure
+		 * and add it to the front of the AFU's lun list.
 		 */
-		list_add_tail(&p_lun_info->list, &p_afu->luns);
+		scsi_add_device(p_cflash->host, port_sel, CFLASH_TARGET,
+				*p_currid);
+		p_lun_info = list_first_entry(&p_afu->luns, struct lun_info,
+					      list);
+		p_lun_info->lun_id = *p_currid;
 
-		scsi_add_device(p_cflash->host, port_sel,
-				CFLASH_TARGET, *p_currid);
 		/* program FC_PORT LUN Tbl */
 		write_64(&p_afu->p_afu_map->global.fc_port[port_sel - 1]
 			 [p_cflash->last_lun_index], *p_currid);

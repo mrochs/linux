@@ -141,6 +141,16 @@ static int cflash_queuecommand(struct Scsi_Host *host,
 	/* XXX: Until the scsi_dma_map works, this stuff is meaningless
 	 * Make the queuecommand entry point a dummy one for now.
 	 */
+
+	switch (scp->cmnd[0]) {
+	case REPORT_LUNS:
+		cflash_info("REPORT_LUNS received!!!\n");
+		break;
+	case INQUIRY:
+		cflash_info("INQUIRY received!!!\n");
+		break;
+	}
+
 	if (!fullqc) {
 		scp->scsi_done(scp);
 	} else {
@@ -284,6 +294,27 @@ static int cflash_eh_host_reset_handler(struct scsi_cmnd *scp)
 	return rc;
 }
 
+static struct lun_info *
+create_lun_info(struct scsi_device *sdev)
+{
+	struct lun_info *p_lun_info = NULL;
+
+	p_lun_info = kzalloc(sizeof(*p_lun_info), GFP_KERNEL);
+	if (!p_lun_info) {
+		cflash_err("in %s could not allocate p_lun_info\n", __func__);
+		goto create_lun_info_exit;
+	}
+
+	p_lun_info->sdev = sdev;
+
+	spin_lock_init(&p_lun_info->_slock);
+	p_lun_info->slock = &p_lun_info->_slock;
+
+create_lun_info_exit:
+	cflash_info("in %s returning %p\n", __func__, p_lun_info);
+	return p_lun_info;
+}
+
 /**
  * cflash_slave_alloc - Setup the device's task set value
  * @sdev:       struct scsi_device device to configure
@@ -296,7 +327,7 @@ static int cflash_eh_host_reset_handler(struct scsi_cmnd *scp)
  **/
 static int cflash_slave_alloc(struct scsi_device *sdev)
 {
-	struct lun_info *p_lun_info;
+	struct lun_info *p_lun_info = NULL;
 	struct Scsi_Host *shost = sdev->host;
 	struct cflash *p_cflash = shost_priv(shost);
 	struct afu *p_afu = p_cflash->p_afu;
@@ -305,32 +336,15 @@ static int cflash_slave_alloc(struct scsi_device *sdev)
 
 	spin_lock_irqsave(shost->host_lock, flags);
 
-	/* XXX - these are temporary */
-	cflash_info("LUN: %016llX\n", sdev->lun);
-	cflash_info("PAGE: %s\n", sdev->vpd_pg83);
-
-	/*
-	 * XXX - the find_lun() thread adds to the tail so we should
-	 * be the last entry in the list. This code will be refactored
-	 * once we transition the lun_info creation to this routine.
-	 */
-	p_lun_info = list_last_entry(&p_afu->luns, struct lun_info, list);
+	p_lun_info = create_lun_info(sdev);
 	if (!p_lun_info) {
-		cflash_err("in %s, no lun_info in list!\n", __func__);
+		cflash_err("in %s failed to allocate lun_info!\n", __func__);
 		rc = -ENXIO;
 		goto out;
 	}
 
-	if (p_lun_info->sdev) {
-		cflash_err("in %s, LUN %p already has sdev defined %p (%p)\n",
-			   __func__, p_lun_info, p_lun_info->sdev,
-			   p_lun_info->sdev->hostdata);
-		goto out;
-	}
-
-	p_lun_info->sdev = sdev;
 	sdev->hostdata = p_lun_info;
-	p_cflash->task_set++;
+	list_add(&p_lun_info->list, &p_afu->luns);
 out:
 	spin_unlock_irqrestore(shost->host_lock, flags);
 
@@ -338,6 +352,34 @@ out:
 		    __func__, p_cflash->task_set, p_lun_info, sdev);
 	return rc;
 }
+
+static int cflash_init_ba(struct lun_info *p_lun_info)
+{
+	int rc = 0;
+	struct blka *p_blka = &p_lun_info->blka;
+
+	memset(p_blka, 0, sizeof(*p_blka));
+	mutex_init(&p_blka->mutex);
+
+	p_blka->ba_lun.lun_id = p_lun_info->lun_id;
+	p_blka->ba_lun.lsize = p_lun_info->max_lba + 1;
+	p_blka->ba_lun.lba_size = p_lun_info->blk_len;
+
+	p_blka->ba_lun.au_size = MC_CHUNK_SIZE;
+	p_blka->nchunk = p_blka->ba_lun.lsize / MC_CHUNK_SIZE;
+
+	rc = ba_init(&p_blka->ba_lun);
+	if (rc) {
+		cflash_err("cannot init block_alloc, rc %d\n", rc);
+		goto cflash_init_ba_exit;
+	}
+
+cflash_init_ba_exit:
+	cflash_info("in %s returning rc=%d p_lun_info=%p\n",
+		    __func__, rc, p_lun_info);
+	return rc;
+}
+
 
 /**
  * cflash_slave_configure - Configure the device
@@ -351,10 +393,43 @@ out:
  **/
 static int cflash_slave_configure(struct scsi_device *sdev)
 {
-	/* XXX: Dummy */
 	int rc = 0;
+	struct lun_info *p_lun_info = sdev->hostdata;
+
+	cflash_info("ID = %08X\n", sdev->id);
+	cflash_info("CHANNEL = %08X\n", sdev->channel);
+	cflash_info("LUN = %016llX\n", sdev->lun);
+	cflash_info("sector_size = %u\n", sdev->sector_size);
+
+	p_lun_info->lun_id = sdev->lun;
+
+	if (!fullqc) {
+		rc = cflash_init_ba(p_lun_info);
+		if (rc) {
+			cflash_err("call to cflash_init_ba failed rc=%d!\n",
+				   rc);
+			rc = -ENOMEM;
+			goto out;
+		}
+	}
+
+out:
 	cflash_info("in %s returning rc=%d\n", __func__, rc);
-	return 0;
+	return rc;
+}
+
+static void cflash_slave_destroy(struct scsi_device *sdev)
+{
+	struct lun_info *p_lun_info = sdev->hostdata;
+
+	if (p_lun_info) {
+		sdev->hostdata = NULL;
+		list_del(&p_lun_info->list);
+		kfree(p_lun_info);
+	}
+
+	cflash_info("in %s p_lun_info=%p\n", __func__, p_lun_info);
+	return;
 }
 
 /**
@@ -711,6 +786,7 @@ static struct scsi_host_template driver_template = {
 	.eh_host_reset_handler = cflash_eh_host_reset_handler,
 	.slave_alloc = cflash_slave_alloc,
 	.slave_configure = cflash_slave_configure,
+	.slave_destroy = cflash_slave_destroy,
 	.target_alloc = cflash_target_alloc,
 	.scan_finished = cflash_scan_finished,
 	.change_queue_depth = cflash_change_queue_depth,
@@ -982,7 +1058,8 @@ static int cflash_init_scsi(struct cflash *p_cflash)
 	dev_info(&pdev->dev, "in %s before scsi_scan_host\n", __func__);
 	scsi_scan_host(p_cflash->host);
 
-	cflash_scan_luns(p_cflash);
+	if (!fullqc)
+		cflash_scan_luns(p_cflash);
 
 out:
 	cflash_info("in %s returning rc %d\n", __func__, rc);
@@ -1007,8 +1084,10 @@ static int cflash_probe(struct pci_dev *pdev,
 
 	dev_info(&pdev->dev, "Found CFLASH with IRQ: %d\n", pdev->irq);
 
-	host = scsi_host_alloc(&driver_template, sizeof(struct cflash));
+	if (fullqc)
+		driver_template.scan_finished = NULL;
 
+	host = scsi_host_alloc(&driver_template, sizeof(struct cflash));
 	if (!host) {
 		dev_err(&pdev->dev, "call to scsi_host_alloc failed!\n");
 		rc = -ENOMEM;
