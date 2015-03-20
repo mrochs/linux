@@ -154,7 +154,6 @@ static int cflash_queuecommand(struct Scsi_Host *host,
 			cpu_to_be32(((u32 *) scp->cmnd)[2]),
 			cpu_to_be32(((u32 *) scp->cmnd)[3]));
 
-		scp->result = (DID_OK << 16);;
 		cflash_send_scsi(p_afu, scp);
 	}
 	return 0;
@@ -869,7 +868,7 @@ static int cflash_init_pci(struct cflash *p_cflash)
 		}
 	}
 
-	/* XXX: Wait for Mikey to wire pci_set_dma_mask correctly
+	/* XXX: Need to investigate
 	   p_cflash->cflash_regs = pci_ioremap_bar(pdev, 0);
 
 	   if (!p_cflash->cflash_regs) {
@@ -878,18 +877,18 @@ static int cflash_init_pci(struct cflash *p_cflash)
 	   rc = -ENOMEM;
 	   goto out_disable;
 	   }
-
-	   rc = pci_set_dma_mask(pdev, DMA_BIT_MASK(64));
-	   if (rc < 0) {
-	   dev_dbg(&pdev->dev, "Failed to set 64 bit PCI DMA mask\n");
-	   rc = pci_set_dma_mask(pdev, DMA_BIT_MASK(32));
-	   }
-
-	   if (rc < 0) {
-	   dev_err(&pdev->dev, "Failed to set PCI DMA mask\n");
-	   goto out_disable;
-	   }
 	 */
+
+	rc = pci_set_dma_mask(pdev, DMA_BIT_MASK(64));
+	if (rc < 0) {
+		dev_dbg(&pdev->dev, "Failed to set 64 bit PCI DMA mask\n");
+		rc = pci_set_dma_mask(pdev, DMA_BIT_MASK(32));
+	}
+
+	if (rc < 0) {
+		dev_err(&pdev->dev, "Failed to set PCI DMA mask\n");
+		goto out_disable;
+	}
 
 	rc = pci_write_config_byte(pdev, PCI_CACHE_LINE_SIZE, 0x20);
 
@@ -1018,7 +1017,7 @@ static int cflash_probe(struct pci_dev *pdev,
 	/* XXX: Need to double check with the sislite spec */
 	host->max_id = CFLASH_MAX_NUM_TARGETS_PER_BUS;
 	host->max_lun = CFLASH_MAX_NUM_LUNS_PER_TARGET;
-	host->max_channel = NUM_FC_PORTS;
+	host->max_channel = NUM_FC_PORTS-1;
 	host->unique_id = host->host_no;
 	host->max_cmd_len = CFLASH_MAX_CDB_LEN;
 

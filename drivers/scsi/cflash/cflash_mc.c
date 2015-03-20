@@ -1112,6 +1112,13 @@ static irqreturn_t cflash_rrq_irq(int irq, void *data)
 
 		if (p_cmd->rcb.rsvd2) {
 			scp = (struct scsi_cmnd *)p_cmd->rcb.rsvd2;
+			if (p_cmd->sa.rc.afu_rc || p_cmd->sa.rc.scsi_rc ||
+			    p_cmd->sa.rc.fc_rc) {
+				/* XXX: Needs to be decoded to report errors */
+				scp->result = (DID_OK << 16);
+			} else {
+				scp->result = (DID_OK << 16);
+			}
 			cflash_info("In %s calling scsi_set_resid, "
 				    "scp=0x%llx len=%d\n",
 				    __func__, p_cmd->rcb.rsvd2,
@@ -1434,12 +1441,13 @@ int cflash_start_afu(struct cflash *p_cflash)
 	}
 
 	/* set up master's own CTX_CAP to allow real mode, host translation */
-	/* tbls, afu cmds and non-read/write GSCSI cmds. */
+	/* tbls, afu cmds and read/write GSCSI cmds. */
 	/* First, unlock ctx_cap write by reading mbox */
 	(void)read_64(&p_afu->p_ctrl_map->mbox_r);	/* unlock ctx_cap */
 	asm volatile ("eieio"::);
 	write_64(&p_afu->p_ctrl_map->ctx_cap,
 		 SISL_CTX_CAP_REAL_MODE | SISL_CTX_CAP_HOST_XLATE |
+		 SISL_CTX_CAP_READ_CMD | SISL_CTX_CAP_WRITE_CMD |
 		 SISL_CTX_CAP_AFU_CMD | SISL_CTX_CAP_GSCSI_CMD);
 	/* init heartbeat */
 	p_afu->hb = read_64(&p_afu->p_afu_map->global.regs.afu_hb);
@@ -2357,11 +2365,11 @@ void cflash_send_scsi(struct afu *p_afu, struct scsi_cmnd *scp)
 {
 	struct afu_cmd *p_cmd;
 
-	/* XXX: Decide how to select port */
-	u64 port_sel = 0x1;
+	u64 port_sel = scp->device->channel + 1;
 	int nseg, i, ncount;
 	struct scatterlist *sg;
 	short lflag = 0;
+	u64  lun_id;
 
 	unsigned long lock_flags = 0;
 	struct Scsi_Host *host = scp->device->host;
@@ -2384,7 +2392,8 @@ void cflash_send_scsi(struct afu *p_afu, struct scsi_cmnd *scp)
 
 	p_cmd->rcb.ctx_id = p_afu->ctx_hndl;
 	p_cmd->rcb.port_sel = port_sel;
-	p_cmd->rcb.lun_id = scp->device->lun;
+	int_to_scsilun(scp->device->lun, (struct scsi_lun *)&lun_id);
+	p_cmd->rcb.lun_id = read_64(&lun_id);
 
 	if (scp->sc_data_direction == DMA_TO_DEVICE)
 		lflag = SISL_REQ_FLAGS_HOST_WRITE;
@@ -2421,12 +2430,12 @@ void cflash_send_tmf(struct afu *p_afu, struct scsi_cmnd *scp, u64 cmd)
 {
 	struct afu_cmd *p_cmd;
 
-	/* XXX: Decide how to select port */
-	u64 port_sel = 0x1;
+	u64 port_sel = scp->device->channel + 1;
 	short lflag = 0;
 	unsigned long lock_flags = 0;
 	struct Scsi_Host *host = scp->device->host;
 	struct cflash *p_cflash = (struct cflash *)host->hostdata;
+	u64  lun_id;
 
 	spin_lock_irqsave(host->host_lock, lock_flags);
 	while (p_cflash->tmf_active) {
@@ -2445,7 +2454,8 @@ void cflash_send_tmf(struct afu *p_afu, struct scsi_cmnd *scp, u64 cmd)
 
 	p_cmd->rcb.ctx_id = p_afu->ctx_hndl;
 	p_cmd->rcb.port_sel = port_sel;
-	p_cmd->rcb.lun_id = scp->device->lun;
+	int_to_scsilun(scp->device->lun, (struct scsi_lun *)&lun_id);
+	p_cmd->rcb.lun_id = read_64(&lun_id);
 
 	lflag = SISL_REQ_FLAGS_TMF_CMD;
 

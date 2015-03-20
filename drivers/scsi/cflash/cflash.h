@@ -38,7 +38,7 @@ extern u32 internal_lun;
 #define CFLASH_MAX_CMDS_PER_LUN         CFLASH_MAX_CMDS
 #define CFLASH_MAX_SECTORS              0xffffu
 /* Really only one target per bus since the Texan is directly attached */
-#define CFLASH_MAX_NUM_TARGETS_PER_BUS                     256
+#define CFLASH_MAX_NUM_TARGETS_PER_BUS                     1
 #define CFLASH_MAX_NUM_LUNS_PER_TARGET                     65536
 
 #define CFLASH_PCI_ERROR_RECOVERY_TIMEOUT  (120 * HZ)
