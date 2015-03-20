@@ -22,6 +22,7 @@
 
 extern u32 cflash_debug;
 extern u32 internal_lun;
+extern u32 fullqc;
 
 #define CFLASH_NAME                      "cflash"
 #define CFLASH_DRIVER_VERSION           "1.0.1"

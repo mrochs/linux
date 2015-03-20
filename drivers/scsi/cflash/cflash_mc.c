@@ -118,6 +118,33 @@ out:
 
 }
 
+static int cflash_init_ba(struct lun_info *p_lun_info)
+{
+	int rc = 0;
+	struct blka *p_blka = &p_lun_info->blka;
+
+	memset(p_blka, 0, sizeof(*p_blka));
+	mutex_init(&p_blka->mutex);
+
+	p_blka->ba_lun.lun_id = p_lun_info->lun_id;
+	p_blka->ba_lun.lsize = p_lun_info->max_lba + 1;
+	p_blka->ba_lun.lba_size = p_lun_info->blk_len;
+
+	p_blka->ba_lun.au_size = MC_CHUNK_SIZE;
+	p_blka->nchunk = p_blka->ba_lun.lsize / MC_CHUNK_SIZE;
+
+	rc = ba_init(&p_blka->ba_lun);
+	if (rc) {
+		cflash_err("cannot init block_alloc, rc %d\n", rc);
+		goto cflash_init_ba_exit;
+	}
+
+cflash_init_ba_exit:
+	cflash_info("in %s returning rc=%d p_lun_info=%p\n",
+		    __func__, rc, p_lun_info);
+	return rc;
+}
+
 /*
  * NAME:        cflash_disk_attach
  *
@@ -153,6 +180,23 @@ int cflash_disk_attach(struct scsi_device *sdev, void __user * arg)
 	struct cxl_context *ctx;
 
 	int fd = -1;
+
+	if (fullqc) {
+	if (p_lun_info->max_lba == 0) {
+		cflash_info("No capacity info yet for this LUN (%016llX)\n",
+			    p_lun_info->lun_id);
+		read_cap16(p_afu, p_lun_info, sdev->channel + 1);
+		cflash_info("LBA = %016llX\n", p_lun_info->max_lba);
+		cflash_info("BLK_LEN = %08X\n", p_lun_info->blk_len);
+		rc = cflash_init_ba(p_lun_info);
+		if (rc) {
+			cflash_err("call to cflash_init_ba failed rc=%d!\n",
+				   rc);
+			rc = -ENOMEM;
+			goto out;
+		}
+		}
+	}
 
 	ctx = cxl_dev_context_init(p_cflash->p_dev);
 	if (!ctx) {
@@ -2123,33 +2167,6 @@ int cflash_disk_stat(struct scsi_device *sdev, void __user * arg)
 	return 0;
 }
 
-static int cflash_init_ba(struct lun_info *p_lun_info)
-{
-	int rc = 0;
-	struct blka *p_blka = &p_lun_info->blka;
-
-	memset(p_blka, 0, sizeof(*p_blka));
-	mutex_init(&p_blka->mutex);
-
-	p_blka->ba_lun.lun_id = p_lun_info->lun_id;
-	p_blka->ba_lun.lsize = p_lun_info->max_lba + 1;
-	p_blka->ba_lun.lba_size = p_lun_info->blk_len;
-
-	p_blka->ba_lun.au_size = MC_CHUNK_SIZE;
-	p_blka->nchunk = p_blka->ba_lun.lsize / MC_CHUNK_SIZE;
-
-	rc = ba_init(&p_blka->ba_lun);
-	if (rc) {
-		cflash_err("cannot init block_alloc, rc %d\n", rc);
-		goto cflash_init_ba_exit;
-	}
-
-cflash_init_ba_exit:
-	cflash_info("in %s returning rc=%d p_lun_info=%p\n",
-		    __func__, rc, p_lun_info);
-	return rc;
-}
-
 int read_cap16(struct afu *p_afu, struct lun_info *p_lun_info, u32 port_sel)
 {
 
@@ -2285,7 +2302,7 @@ int find_lun(struct cflash *p_cflash, u32 port_sel)
 	p_currid = lunidarray;
 
 	for (j = 0; j < i; j++, p_currid++) {
-		cflash_info("%s: adding i=%d lun_id %llx last_index %d\n",
+		cflash_info("%s: adding i=%d lun_id %016llx last_index %d\n",
 			    __func__, j, *p_currid,
 			    p_cflash->last_lun_index);
 

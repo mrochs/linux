@@ -353,34 +353,6 @@ out:
 	return rc;
 }
 
-static int cflash_init_ba(struct lun_info *p_lun_info)
-{
-	int rc = 0;
-	struct blka *p_blka = &p_lun_info->blka;
-
-	memset(p_blka, 0, sizeof(*p_blka));
-	mutex_init(&p_blka->mutex);
-
-	p_blka->ba_lun.lun_id = p_lun_info->lun_id;
-	p_blka->ba_lun.lsize = p_lun_info->max_lba + 1;
-	p_blka->ba_lun.lba_size = p_lun_info->blk_len;
-
-	p_blka->ba_lun.au_size = MC_CHUNK_SIZE;
-	p_blka->nchunk = p_blka->ba_lun.lsize / MC_CHUNK_SIZE;
-
-	rc = ba_init(&p_blka->ba_lun);
-	if (rc) {
-		cflash_err("cannot init block_alloc, rc %d\n", rc);
-		goto cflash_init_ba_exit;
-	}
-
-cflash_init_ba_exit:
-	cflash_info("in %s returning rc=%d p_lun_info=%p\n",
-		    __func__, rc, p_lun_info);
-	return rc;
-}
-
-
 /**
  * cflash_slave_configure - Configure the device
  * @sdev:       struct scsi_device device to configure
@@ -393,17 +365,36 @@ cflash_init_ba_exit:
  **/
 static int cflash_slave_configure(struct scsi_device *sdev)
 {
-	int rc = 0;
 	struct lun_info *p_lun_info = sdev->hostdata;
+	int rc = 0;
+	u64 lun_id;
 
 	cflash_info("ID = %08X\n", sdev->id);
 	cflash_info("CHANNEL = %08X\n", sdev->channel);
 	cflash_info("LUN = %016llX\n", sdev->lun);
 	cflash_info("sector_size = %u\n", sdev->sector_size);
 
-	p_lun_info->lun_id = sdev->lun;
+	/* Store off lun in unpacked, AFU-friendly format */
+	int_to_scsilun(sdev->lun, (struct scsi_lun *)&lun_id);
+	p_lun_info->lun_id = read_64(&lun_id);
+	cflash_info("LUN2 = %016llX\n", p_lun_info->lun_id);
 
-	if (!fullqc) {
+	/*
+	 * XXX - leaving this here for now as a reminder that read_cap16
+	 * doesn't work in this path. We also need to figure out how and
+	 * when to setup the LUN table (on attach coupled with where we
+	 * now call read_cap16?) and also look into how we're skipping
+	 * entries. The spec has a blurb about this but I'm not convinced
+	 * we're doing it right.
+	 */
+#if 0
+	if (fullqc) {
+		//write_64(&p_afu->p_afu_map->global.fc_port[sdev->channel]
+		//		 [p_cflash->last_lun_index++], p_lun_info->lun_id);
+		//read_cap16(p_afu, p_lun_info, sdev->channel + 1);
+		cflash_info("LBA = %016llX\n", p_lun_info->max_lba);
+		cflash_info("BLK_LEN = %08X\n", p_lun_info->blk_len);
+
 		rc = cflash_init_ba(p_lun_info);
 		if (rc) {
 			cflash_err("call to cflash_init_ba failed rc=%d!\n",
@@ -412,8 +403,8 @@ static int cflash_slave_configure(struct scsi_device *sdev)
 			goto out;
 		}
 	}
+#endif
 
-out:
 	cflash_info("in %s returning rc=%d\n", __func__, rc);
 	return rc;
 }
@@ -425,6 +416,7 @@ static void cflash_slave_destroy(struct scsi_device *sdev)
 	if (p_lun_info) {
 		sdev->hostdata = NULL;
 		list_del(&p_lun_info->list);
+		ba_terminate(&p_lun_info->blka.ba_lun);
 		kfree(p_lun_info);
 	}
 
@@ -699,7 +691,7 @@ static int cflash_ioctl(struct scsi_device *sdev, int cmd, void __user * arg)
 		case DK_CAPI_CLONE:
 			cflash_err("%s not supported for lun_mode=%d\n",
 				   decode_ioctl(cmd), internal_lun);
-			rc = -EOPNOTSUPP;
+			rc = -EINVAL;
 			goto cflash_ioctl_exit;
 		}
 	}
@@ -730,7 +722,7 @@ static int cflash_ioctl(struct scsi_device *sdev, int cmd, void __user * arg)
 		rc = cflash_afu_recover(sdev, arg);
 		break;
 	default:
-		rc = -EOPNOTSUPP;
+		rc = -EINVAL;
 		break;
 	}
 
