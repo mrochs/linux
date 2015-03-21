@@ -272,7 +272,7 @@ out:
 	return rc;
 }
 
-static struct ctx_info *
+struct ctx_info *
 get_validated_context(struct cflash *p_cflash, u64 ctxid, bool clone_path)
 {
 	struct afu *p_afu = p_cflash->p_afu;
@@ -282,12 +282,102 @@ get_validated_context(struct cflash *p_cflash, u64 ctxid, bool clone_path)
 	if (unlikely(clone_path))
 		pid = current->parent->pid;
 
+	/* Special case the master context, the master context
+	 * is not associated with any PID
+	 */
 	if ((ctxid < MAX_CONTEXT) &&
-	    (p_cflash->per_context[ctxid].pid == pid)) {
+	    ((p_cflash->per_context[ctxid].pid == pid) ||
+	     (ctxid == p_afu->ctx_hndl))) {
 		p_ctx_info = &p_afu->ctx_info[ctxid];
 	}
 
 	return p_ctx_info;
+}
+
+/* Checkout a free/empty RHT entry */
+struct sisl_rht_entry *cflash_rhte_cout(struct cflash *p_cflash, 
+					u64 context_id)
+{
+	struct ctx_info *p_ctx_info;
+	struct rht_info *p_rht_info = NULL;
+	struct sisl_rht_entry *p_rht_entry = NULL;
+	int i;
+
+	p_ctx_info = get_validated_context(p_cflash, context_id, FALSE);
+	if (p_ctx_info != NULL) {
+		p_rht_info = p_ctx_info->p_rht_info;
+
+		cflash_info("ctx 0x%llx ctxinfo %p rhtinfo %p",
+			    context_id, p_ctx_info, p_rht_info);
+
+		/* find a free RHT entry */
+		for (i = 0; i < MAX_RHT_PER_CONTEXT; i++) {
+			if (p_rht_info->rht_start[i].nmask == 0) {
+				p_rht_entry = &p_rht_info->rht_start[i];
+				break;
+			}
+		}
+		cflash_info("i %d rhti %p rhte %p", 
+			    i, p_rht_info, p_rht_entry);
+
+		/* if we did not find a free entry, reached max opens allowed
+		 * per context
+		 */
+
+		if (p_rht_entry == NULL) {
+			goto out;
+		}
+
+	} else {
+		goto out;
+	}
+out:
+	cflash_info("returning p_rht_entry=%p", p_rht_entry);
+	return p_rht_entry;
+}
+
+void  cflash_rhte_cin(struct sisl_rht_entry *p_rht_entry)
+{
+	p_rht_entry->nmask = 0;
+	p_rht_entry->fp = 0;
+}
+
+void cflash_rht_format1(struct sisl_rht_entry *p_rht_entry,
+			u64 lun_id)
+{
+	/*
+	 * Populate the Format 1 RHT entry for direct access (physical
+	 * LUN) using the synchronization sequence defined in the
+	 * SISLite specification.
+	 */
+	struct sisl_rht_entry_f1 dummy = { 0 };
+	struct sisl_rht_entry_f1 *p_rht_entry_f1 =
+		(struct sisl_rht_entry_f1 *)p_rht_entry;
+	memset(p_rht_entry_f1, 0, sizeof(struct sisl_rht_entry_f1));
+	p_rht_entry_f1->fp = SISL_RHT_FP(1U, 0x3);
+	asm volatile ("lwsync"::);
+
+	p_rht_entry_f1->lun_id = lun_id;
+	asm volatile ("lwsync"::);
+
+	/*
+	 * Use a dummy RHT Format 1 entry to build the second dword
+	 * of the entry that must be populated in a single write when
+	 * enabled (valid bit set to TRUE).
+	 */
+	dummy.valid = 0x80;
+	dummy.fp = SISL_RHT_FP(1U, 0x3);
+#if 0	/* XXX - check with Andy/Todd b/c this doesn't work */
+	if (internal_lun)
+		dummy.port_sel = 0x1;
+	else
+#endif
+		dummy.port_sel = 0x3;
+	p_rht_entry_f1->dw = dummy.dw;
+
+	asm volatile ("lwsync"::);
+
+	return;
 }
 
 /*
@@ -317,7 +407,6 @@ int cflash_disk_open(struct scsi_device *sdev, void __user * arg,
 	struct cflash *p_cflash = (struct cflash *)sdev->host->hostdata;
 	struct afu *p_afu = p_cflash->p_afu;
 	struct lun_info *p_lun_info = sdev->hostdata;
-	struct ctx_info *p_ctx_info;
 
 	struct dk_capi_uvirtual *pvirt = (struct dk_capi_uvirtual *)arg;
 	struct dk_capi_udirect *pphys = (struct dk_capi_udirect *)arg;
@@ -330,8 +419,8 @@ int cflash_disk_open(struct scsi_device *sdev, void __user * arg,
 	u64 rsrc_handle = -1;
 
 	int rc = 0;
-	int i;
 
+	struct ctx_info *p_ctx_info;
 	struct rht_info *p_rht_info = NULL;
 	struct sisl_rht_entry *p_rht_entry = NULL;
 
@@ -364,35 +453,22 @@ int cflash_disk_open(struct scsi_device *sdev, void __user * arg,
 
 	cflash_info("context=0x%llx ls=0x%llx", context_id, lun_size);
 
-	p_ctx_info = get_validated_context(p_cflash, context_id, FALSE);
-	if (!p_ctx_info) {
-		cflash_err("invalid context!");
-		rc = -EINVAL;
-		goto out;
-	}
+	p_rht_entry  = cflash_rhte_cout(p_cflash, context_id);
 
-	p_rht_info = p_ctx_info->p_rht_info;
-
-	cflash_info("ctx 0x%llx ctxinfo %p rhtinfo %p",
-		    context_id, p_ctx_info, p_rht_info);
-
-	/* find a free RHT entry */
-	for (i = 0; i < MAX_RHT_PER_CONTEXT; i++) {
-		if (p_rht_info->rht_start[i].nmask == 0) {
-			p_rht_entry = &p_rht_info->rht_start[i];
-			break;
-		}
-	}
-	cflash_info("i %d rhti %p rhte %p", i, p_rht_info, p_rht_entry);
-
-	/* if we did not find a free entry, reached max opens allowed
-	 * per context
-	 */
-
-	if (p_rht_entry == NULL) {
+	if (p_rht_entry == NULL)
+	{
 		cflash_err("too many opens for this context");
 		rc = -EMFILE;	/* too many opens  */
 		goto out;
+	} else {
+		p_ctx_info = get_validated_context(p_cflash, context_id, FALSE);
+		if (p_ctx_info) {
+			p_rht_info = p_ctx_info->p_rht_info;
+		} else {
+			cflash_err("in %s context not valid\n", __func__);
+			rc = -EINVAL;
+			goto out;
+		}
 	}
 
 	rsrc_handle = (p_rht_entry - p_rht_info->rht_start);
@@ -417,37 +493,7 @@ int cflash_disk_open(struct scsi_device *sdev, void __user * arg,
 		pvirt->last_lba = last_lba;
 		pvirt->rsrc_handle = rsrc_handle;
 	} else if (mode == MODE_PHYSICAL) {
-		/*
-		 * Populate the Format 1 RHT entry for direct access (physical
-		 * LUN) using the synchronization sequence defined in the
-		 * SISLite specification.
-		 */
-		struct sisl_rht_entry_f1 dummy = { 0 };
-		struct sisl_rht_entry_f1 *p_rht_entry_f1 =
-			(struct sisl_rht_entry_f1 *)p_rht_entry;
-		memset(p_rht_entry_f1, 0, sizeof(struct sisl_rht_entry_f1));
-		p_rht_entry_f1->fp = SISL_RHT_FP(1U, 0x3);
-		asm volatile ("lwsync"::);
-
-		p_rht_entry_f1->lun_id = p_lun_info->lun_id;
-		asm volatile ("lwsync"::);
-
-		/*
-		 * Use a dummy RHT Format 1 entry to build the second dword
-		 * of the entry that must be populated in a single write when
-		 * enabled (valid bit set to TRUE).
-		 */
-		dummy.valid = 0x80;
-		dummy.fp = SISL_RHT_FP(1U, 0x3);
-#if 0		/* XXX - check with Andy/Todd b/c this doesn't work */
-		if (internal_lun)
-			dummy.port_sel = 0x1;
-		else
-#endif
-			dummy.port_sel = 0x3;
-		p_rht_entry_f1->dw = dummy.dw;
-
-		asm volatile ("lwsync"::);
+		cflash_rht_format1(p_rht_entry, p_lun_info->lun_id);
 		afu_sync(p_afu, context_id, rsrc_handle, AFU_LW_SYNC);
 
 		last_lba = p_lun_info->max_lba;
@@ -532,10 +578,8 @@ int cflash_disk_release(struct scsi_device *sdev, void __user * arg)
 			if (rc) {
 				cflash_err("resize failed rc %d", rc);
 				goto out;
-			}
-
-			p_rht_entry->nmask = 0;
-			p_rht_entry->fp = 0;
+			}			
+			cflash_rhte_cin(p_rht_entry);
 		} else if (p_lun_info->mode ==  MODE_PHYSICAL) {
 			/*
 			 * Clear the Format 1 RHT entry for direct access (physical
@@ -1184,7 +1228,7 @@ static irqreturn_t cflash_rrq_irq(int irq, void *data)
 				p_cflash->tmf_active = 0;
 				wake_up_all(&p_cflash->tmf_wait_q);
 			}
-			release_cmd(p_cmd);
+			cflash_cmd_cin(p_cmd);
 		}
 
 		/* Advance to next entry or wrap and flip the toggle bit */
@@ -1683,8 +1727,6 @@ void cflash_send_cmd(struct afu *p_afu, struct afu_cmd *p_cmd)
 {
 	int nretry = 0;
 
-	cflash_info("p_afu=%p p_cmd=%p", p_afu, p_cmd);
-
 	if (p_afu->room == 0) {
 		asm volatile ("eieio"::); /* let IOARRIN writes complete */
 		do {
@@ -1711,7 +1753,7 @@ void cflash_send_cmd(struct afu *p_afu, struct afu_cmd *p_cmd)
 	else
 		cflash_err("no cmd_room to send 0x%X", p_cmd->rcb.cdb[0]);
 
-	cflash_info("p_cmd=%p len=%d ea=%p", p_cmd, p_cmd->rcb.data_len,
+	cflash_dbg("p_cmd=%p len=%d ea=%p", p_cmd, p_cmd->rcb.data_len,
 		    (void *)p_cmd->rcb.data_ea);
 
 	/* Let timer fire to complete the response... */
@@ -2048,8 +2090,7 @@ int cflash_disk_clone(struct scsi_device *sdev, void __user * arg)
 				cflash_disk_release(sdev, &release);
 			}
 
-			p_rht_info_dst->rht_start[i].nmask = 0;
-			p_rht_info_dst->rht_start[i].fp = 0;
+			cflash_rhte_cin(&p_rht_info_dst->rht_start[i]);
 			goto out;
 		}
 	}
@@ -2184,8 +2225,9 @@ int read_cap16(struct afu *p_afu, struct lun_info *p_lun_info, u32 port_sel)
 	u32 *p_u32;
 	u64 *p_u64;
 	struct afu_cmd *p_cmd;
+	int rc=0;
 
-	p_cmd = get_next_cmd(p_afu);
+	p_cmd = cflash_cmd_cout(p_afu);
 	if (!p_cmd) {
 		cflash_err("could not get a free command");
 		return -1;
@@ -2217,9 +2259,9 @@ int read_cap16(struct afu *p_afu, struct lun_info *p_lun_info, u32 port_sel)
 	} while (check_status(&p_cmd->sa));
 
 	if (p_cmd->sa.host_use_b[0] & B_ERROR) {
-		release_cmd(p_cmd);
 		cflash_err("command failed");
-		return -1;
+		rc = -1;
+		goto out;
 	}
 	/* read cap success  */
 	spin_lock(p_lun_info->slock);
@@ -2229,11 +2271,13 @@ int read_cap16(struct afu *p_afu, struct lun_info *p_lun_info, u32 port_sel)
 	p_u32 = (u32 *) & p_cmd->buf[8];
 	p_lun_info->blk_len = read_32(p_u32);
 	spin_unlock(p_lun_info->slock);
-	release_cmd(p_cmd);
+
+out:
+	cflash_cmd_cin(p_cmd);
 
 	cflash_info("maxlba=%lld blklen=%d pcmd %p",
 		    p_lun_info->max_lba, p_lun_info->blk_len, p_cmd);
-	return 0;
+	return rc;
 }
 
 /* XXX: This is temporary. When the DMA mapping services are available
@@ -2253,7 +2297,7 @@ int find_lun(struct cflash *p_cflash, u32 port_sel)
 	int rc = 0;
 	u64 *lunidarray = NULL;
 
-	p_cmd = get_next_cmd(p_afu);
+	p_cmd = cflash_cmd_cout(p_afu);
 	if (!p_cmd) {
 		cflash_err("could not get a free command");
 		return -1;
@@ -2283,7 +2327,7 @@ int find_lun(struct cflash *p_cflash, u32 port_sel)
 	} while (check_status(&p_cmd->sa));
 
 	if (p_cmd->sa.host_use_b[0] & B_ERROR) {
-		release_cmd(p_cmd);
+		cflash_cmd_cin(p_cmd);
 		return -1;
 	}
 	/* report luns success  */
@@ -2304,7 +2348,7 @@ int find_lun(struct cflash *p_cflash, u32 port_sel)
 	cflash_info("found %d luns", i);
 
 	/* Release the CMD only after looking through the response */
-	release_cmd(p_cmd);
+	cflash_cmd_cin(p_cmd);
 
 	p_currid = lunidarray;
 
@@ -2360,7 +2404,6 @@ void cflash_send_scsi(struct afu *p_afu, struct scsi_cmnd *scp)
 	int nseg, i, ncount;
 	struct scatterlist *sg;
 	short lflag = 0;
-	u64  lun_id;
 
 	unsigned long lock_flags = 0;
 	struct Scsi_Host *host = scp->device->host;
@@ -2374,7 +2417,7 @@ void cflash_send_scsi(struct afu *p_afu, struct scsi_cmnd *scp)
 	}
 	spin_unlock_irqrestore(host->host_lock, lock_flags);
 
-	p_cmd = get_next_cmd(p_afu);
+	p_cmd = cflash_cmd_cout(p_afu);
 	if (!p_cmd) {
 		cflash_err("could not get a free command");
 		return;
@@ -2382,8 +2425,7 @@ void cflash_send_scsi(struct afu *p_afu, struct scsi_cmnd *scp)
 
 	p_cmd->rcb.ctx_id = p_afu->ctx_hndl;
 	p_cmd->rcb.port_sel = port_sel;
-	int_to_scsilun(scp->device->lun, (struct scsi_lun *)&lun_id);
-	p_cmd->rcb.lun_id = read_64(&lun_id);
+	p_cmd->rcb.lun_id = lun_to_lunid(scp->device->lun);
 
 	if (scp->sc_data_direction == DMA_TO_DEVICE)
 		lflag = SISL_REQ_FLAGS_HOST_WRITE;
@@ -2425,7 +2467,6 @@ void cflash_send_tmf(struct afu *p_afu, struct scsi_cmnd *scp, u64 cmd)
 	unsigned long lock_flags = 0;
 	struct Scsi_Host *host = scp->device->host;
 	struct cflash *p_cflash = (struct cflash *)host->hostdata;
-	u64  lun_id;
 
 	spin_lock_irqsave(host->host_lock, lock_flags);
 	while (p_cflash->tmf_active) {
@@ -2435,7 +2476,7 @@ void cflash_send_tmf(struct afu *p_afu, struct scsi_cmnd *scp, u64 cmd)
 	}
 	spin_unlock_irqrestore(host->host_lock, lock_flags);
 
-	p_cmd = get_next_cmd(p_afu);
+	p_cmd = cflash_cmd_cout(p_afu);
 	if (!p_cmd) {
 		cflash_err("could not get a free command");
 		return;
@@ -2443,8 +2484,7 @@ void cflash_send_tmf(struct afu *p_afu, struct scsi_cmnd *scp, u64 cmd)
 
 	p_cmd->rcb.ctx_id = p_afu->ctx_hndl;
 	p_cmd->rcb.port_sel = port_sel;
-	int_to_scsilun(scp->device->lun, (struct scsi_lun *)&lun_id);
-	p_cmd->rcb.lun_id = read_64(&lun_id);
+	p_cmd->rcb.lun_id = lun_to_lunid(scp->device->lun);
 
 	lflag = SISL_REQ_FLAGS_TMF_CMD;
 

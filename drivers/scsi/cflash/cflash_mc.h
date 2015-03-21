@@ -120,6 +120,14 @@ static inline u16 read_16(volatile u16 * addr)
 	return val;
 }
 
+static inline u64 lun_to_lunid(u64 lun) 
+{
+	u64 lun_id;
+
+	int_to_scsilun(lun, (struct scsi_lun *)&lun_id);
+	return read_64(&lun_id);
+
+}
 /* mc_stat is analogous to fstat in POSIX. It returns information on
  * a virtual disk.
  *
@@ -190,8 +198,12 @@ typedef struct mc_notify_s {
 
 int cflash_init_afu(struct cflash *);
 void cflash_term_afu(struct cflash *);
-struct afu_cmd *get_next_cmd(struct afu *p_afu);
-void release_cmd(struct afu_cmd *p_cmd);
+struct afu_cmd *cflash_cmd_cout(struct afu *p_afu);
+void cflash_cmd_cin(struct afu_cmd *p_cmd);
 void cflash_send_scsi(struct afu *, struct scsi_cmnd *);
 void cflash_send_tmf(struct afu *, struct scsi_cmnd *, u64);
+struct sisl_rht_entry *cflash_rhte_cout(struct cflash *, u64);
+void cflash_rht_format1(struct sisl_rht_entry *, u64);
+struct ctx_info *get_validated_context(struct cflash *, u64, bool);
+
 #endif /* ifndef _CFLASHMC_H */

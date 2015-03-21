@@ -82,7 +82,8 @@ static const char *cflash_driver_info(struct Scsi_Host *host)
 	return buffer;
 }
 
-struct afu_cmd *get_next_cmd(struct afu *p_afu)
+/* Check out a command */
+struct afu_cmd *cflash_cmd_cout(struct afu *p_afu)
 {
 	int i;
 	struct afu_cmd *p_cmd;
@@ -96,7 +97,7 @@ struct afu_cmd *get_next_cmd(struct afu *p_afu)
 		if (p_cmd->flag == CMD_FREE) {
 			p_cmd->flag = CMD_IN_USE;
 			spin_unlock_irqrestore(p_cmd->slock, lock_flags);
-			cflash_info("returning found index=%d", p_cmd->slot);
+			cflash_dbg("returning found index=%d", p_cmd->slot);
 			memset(p_cmd->buf, 0, CMD_BUFSIZE);
 			memset(p_cmd->rcb.cdb, 0, sizeof(p_cmd->rcb.cdb));
 			return p_cmd;
@@ -107,7 +108,8 @@ struct afu_cmd *get_next_cmd(struct afu *p_afu)
 
 }
 
-void release_cmd(struct afu_cmd *p_cmd)
+/* Check in the command */
+void cflash_cmd_cin(struct afu_cmd *p_cmd)
 {
 	unsigned long lock_flags = 0;
 
@@ -115,7 +117,7 @@ void release_cmd(struct afu_cmd *p_cmd)
 	p_cmd->flag = CMD_FREE;
 	p_cmd->special = 0;
 	spin_unlock_irqrestore(p_cmd->slock, lock_flags);
-	cflash_info("releasing cmd index=%d", p_cmd->slot);
+	cflash_dbg("releasing cmd index=%d", p_cmd->slot);
 
 }
 
@@ -269,8 +271,7 @@ static int cflash_eh_host_reset_handler(struct scsi_cmnd *scp)
 {
 	int rc = SUCCESS;
 	struct Scsi_Host *host = scp->device->host;
-	struct cflash *p_cflash = (struct cflash *)host->hostdata;
-	struct afu *p_afu = p_cflash->p_afu;
+	struct dk_capi_recover_afu arg = {0};
 
 	cflash_info("(scp=%p) %d/%d/%d/%llu "
 		    "cdb=(%08x-%08x-%08x-%08x)", scp,
@@ -282,7 +283,7 @@ static int cflash_eh_host_reset_handler(struct scsi_cmnd *scp)
 		    cpu_to_be32(((u32 *) scp->cmnd)[3]));
 
 	scp->result = (DID_OK << 16);;
-	cflash_send_scsi(p_afu, scp);
+	cflash_afu_recover(scp->device, &arg);
 
 	cflash_info("returning rc=%d", rc);
 	return rc;
@@ -361,7 +362,6 @@ static int cflash_slave_configure(struct scsi_device *sdev)
 {
 	struct lun_info *p_lun_info = sdev->hostdata;
 	int rc = 0;
-	u64 lun_id;
 
 	cflash_info("ID = %08X", sdev->id);
 	cflash_info("CHANNEL = %08X", sdev->channel);
@@ -369,8 +369,7 @@ static int cflash_slave_configure(struct scsi_device *sdev)
 	cflash_info("sector_size = %u", sdev->sector_size);
 
 	/* Store off lun in unpacked, AFU-friendly format */
-	int_to_scsilun(sdev->lun, (struct scsi_lun *)&lun_id);
-	p_lun_info->lun_id = read_64(&lun_id);
+	p_lun_info->lun_id = lun_to_lunid(sdev->lun);
 	cflash_info("LUN2 = %016llX", p_lun_info->lun_id);
 
 	/*
@@ -383,8 +382,17 @@ static int cflash_slave_configure(struct scsi_device *sdev)
 	 */
 #if 0
 	if (fullqc) {
-		//write_64(&p_afu->p_afu_map->global.fc_port[sdev->channel]
-		//		 [p_cflash->last_lun_index++], p_lun_info->lun_id);
+        	struct ctx_info *p_ctx_info;
+        	struct rht_info *p_rht_info = NULL;
+        	struct sisl_rht_entry *p_rht_entry = NULL;
+	        u64 rsrc_handle = -1;
+		struct Scsi_Host *shost = sdev->host;
+		struct cflash *p_cflash = shost_priv(shost);
+		struct afu *p_afu = p_cflash->p_afu;
+
+
+		write_64(&p_afu->p_afu_map->global.fc_port[sdev->channel]
+				 [p_cflash->last_lun_index++], p_lun_info->lun_id);
 		//read_cap16(p_afu, p_lun_info, sdev->channel + 1);
 		cflash_info("LBA = %016llX", p_lun_info->max_lba);
 		cflash_info("BLK_LEN = %08X", p_lun_info->blk_len);
@@ -396,6 +404,13 @@ static int cflash_slave_configure(struct scsi_device *sdev)
 			rc = -ENOMEM;
 			goto out;
 		}
+                p_ctx_info = get_validated_context(p_cflash, context_id, FALSE);
+		p_ctx_info->p_rht_info = &p_afu->rht_info[p_afu->ctx_hndl];
+	        p_rht_entry  = cflash_rhte_cout(p_cflash, p_afu->ctx_hndl);
+                p_rht_info = p_ctx_info->p_rht_info;
+        	rsrc_handle = (p_rht_entry - p_rht_info->rht_start);
+                cflash_rht_format1(p_rht_entry, p_lun_info->lun_id);
+                afu_sync(p_afu, p_afu->ctx_hndl, rsrc_handle, AFU_LW_SYNC);
 	}
 #endif
 
@@ -831,9 +846,21 @@ static void cflash_free_mem(struct cflash *p_cflash)
 static void cflash_remove(struct pci_dev *pdev)
 {
 	struct cflash *p_cflash = pci_get_drvdata(pdev);
+	struct Scsi_Host *host = p_cflash->host;
+	unsigned long lock_flags = 0;
+
 	ENTER;
 
 	dev_err(&pdev->dev, "enter cflash_remove!\n");
+
+	spin_lock_irqsave(host->host_lock, lock_flags);
+	while (p_cflash->tmf_active) {
+		spin_unlock_irqrestore(host->host_lock, lock_flags);
+		wait_event(p_cflash->tmf_wait_q, !p_cflash->tmf_active);
+		spin_lock_irqsave(host->host_lock, lock_flags);
+	}
+	spin_unlock_irqrestore(host->host_lock, lock_flags);
+
 
 	/* Use this for now to indicate that scsi_add_host() was performed */
 	if (p_cflash->host->cmd_pool) {
@@ -1163,6 +1190,18 @@ out_remove:
 static void cflash_shutdown(struct pci_dev *pdev)
 {
 	/* XXX: Dummy */
+	struct cflash *p_cflash = pci_get_drvdata(pdev);
+	struct Scsi_Host *host = p_cflash->host;
+	unsigned long lock_flags = 0;
+
+	spin_lock_irqsave(host->host_lock, lock_flags);
+	while (p_cflash->tmf_active) {
+		spin_unlock_irqrestore(host->host_lock, lock_flags);
+		wait_event(p_cflash->tmf_wait_q, !p_cflash->tmf_active);
+		spin_lock_irqsave(host->host_lock, lock_flags);
+	}
+	spin_unlock_irqrestore(host->host_lock, lock_flags);
+
 }
 
 /**
