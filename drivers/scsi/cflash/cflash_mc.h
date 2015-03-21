@@ -37,6 +37,7 @@ typedef unsigned int useconds_t;	/* time in microseconds */
 struct cflash_ctx {
 	struct cxl_ioctl_start_work work;
 	int lfd;
+	pid_t pid;
 };
 
 struct cflash {

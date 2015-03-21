@@ -213,6 +213,9 @@ int cflash_disk_attach(struct scsi_device *sdev, void __user * arg)
 		goto out;
 	}
 
+	//BUG_ON(p_cflash->per_context[parg->context_id].lfd != -1);
+	//BUG_ON(p_cflash->per_context[parg->context_id].pid != 0);
+
 	/*
 	 * Create and attach a new file descriptor. This must be the last
 	 * statement as once this is run, the file descritor is visible to
@@ -256,8 +259,10 @@ int cflash_disk_attach(struct scsi_device *sdev, void __user * arg)
 	/* No error paths after installing the fd */
 	fd_install(fd, file);
 
+	/* XXX - I think we want a different lock here... */
 	spin_lock(p_lun_info->slock);
 	p_cflash->per_context[parg->context_id].lfd = fd;
+	p_cflash->per_context[parg->context_id].pid = current->pid;
 	spin_unlock(p_lun_info->slock);
 
 	parg->return_flags = 0;
@@ -270,6 +275,24 @@ out:
 	cflash_info("in %s returning fd=%d bs=%lld rc=%d\n",
 		    __func__, fd, parg->block_size, rc);
 	return rc;
+}
+
+static struct ctx_info *
+get_validated_context(struct cflash *p_cflash, u64 ctxid, bool clone_path)
+{
+	struct afu *p_afu = p_cflash->p_afu;
+	struct ctx_info *p_ctx_info = NULL;
+	pid_t pid = current->pid;
+
+	if (unlikely(clone_path))
+		pid = current->parent->pid;
+
+	if ((ctxid < MAX_CONTEXT) &&
+	    (p_cflash->per_context[ctxid].pid == pid)) {
+		p_ctx_info = &p_afu->ctx_info[ctxid];
+	}
+
+	return p_ctx_info;
 }
 
 /*
@@ -311,7 +334,7 @@ int cflash_disk_open(struct scsi_device *sdev, void __user * arg,
 	u64 last_lba = 0;
 	u64 rsrc_handle = -1;
 
-	int rc;
+	int rc = 0;
 	int i;
 
 	struct rht_info *p_rht_info = NULL;
@@ -348,41 +371,40 @@ int cflash_disk_open(struct scsi_device *sdev, void __user * arg,
 	cflash_info("%s, context=0x%llx ls=0x%llx\n",
 		    __func__, context_id, lun_size);
 
-	if (context_id < MAX_CONTEXT) {
-		p_ctx_info = &p_afu->ctx_info[context_id];
-		p_rht_info = p_ctx_info->p_rht_info;
-
-		cflash_info("in %s ctx 0x%llx ctxinfo %p rhtinfo %p\n",
-			    __func__, context_id, p_ctx_info, p_rht_info);
-
-		/* find a free RHT entry */
-		for (i = 0; i < MAX_RHT_PER_CONTEXT; i++) {
-			if (p_rht_info->rht_start[i].nmask == 0) {
-				p_rht_entry = &p_rht_info->rht_start[i];
-				break;
-			}
-		}
-		cflash_info("in %s i %d rhti %p rhte %p\n", __func__,
-			    i, p_rht_info, p_rht_entry);
-
-		/* if we did not find a free entry, reached max opens allowed
-		 * per context
-		 */
-
-		if (p_rht_entry == NULL) {
-			cflash_err("in %s too many contexts open\n", __func__);
-			rc = -EMFILE;	/* too many opens  */
-			goto out;
-		}
-
-		rsrc_handle = (p_rht_entry - p_rht_info->rht_start);
-		block_size = p_lun_info->blk_len;
-
-		rc = 0;
-	} else {
+	p_ctx_info = get_validated_context(p_cflash, context_id, FALSE);
+	if (!p_ctx_info) {
+		cflash_err("in %s invalid context!\n", __func__);
 		rc = -EINVAL;
 		goto out;
 	}
+
+	p_rht_info = p_ctx_info->p_rht_info;
+
+	cflash_info("in %s ctx 0x%llx ctxinfo %p rhtinfo %p\n", __func__,
+		    context_id, p_ctx_info, p_rht_info);
+
+	/* find a free RHT entry */
+	for (i = 0; i < MAX_RHT_PER_CONTEXT; i++) {
+		if (p_rht_info->rht_start[i].nmask == 0) {
+			p_rht_entry = &p_rht_info->rht_start[i];
+			break;
+		}
+	}
+	cflash_info("in %s i %d rhti %p rhte %p\n", __func__,
+		    i, p_rht_info, p_rht_entry);
+
+	/* if we did not find a free entry, reached max opens allowed
+	 * per context
+	 */
+
+	if (p_rht_entry == NULL) {
+		cflash_err("in %s too many contexts open\n", __func__);
+		rc = -EMFILE;	/* too many opens  */
+		goto out;
+	}
+
+	rsrc_handle = (p_rht_entry - p_rht_info->rht_start);
+	block_size = p_lun_info->blk_len;
 
 	if (mode == MODE_VIRTUAL) {
 		p_rht_entry->nmask = MC_RHT_NMASK;
@@ -482,23 +504,22 @@ int cflash_disk_release(struct scsi_device *sdev, void __user * arg)
 
 	int rc = 0;
 
-	struct ctx_info *p_ctx_info = &p_afu->ctx_info[prele->context_id];
-	struct rht_info *p_rht_info = p_ctx_info->p_rht_info;
+	struct ctx_info *p_ctx_info;
+	struct rht_info *p_rht_info;
 	struct sisl_rht_entry *p_rht_entry;
 
 	cflash_info("%s, context=0x%llx res_hndl=0x%llx, challenge=0x%llx\n",
 		    __func__, prele->context_id,
 		    prele->rsrc_handle, prele->challenge);
 
-	if (prele->context_id < MAX_CONTEXT) {
-		p_ctx_info = &p_afu->ctx_info[prele->context_id];
-		p_rht_info = p_ctx_info->p_rht_info;
-	} else {
-		cflash_err("in %s context id too large 0x%llx\n", __func__,
-			    prele->context_id);
+	p_ctx_info = get_validated_context(p_cflash, prele->context_id, FALSE);
+	if (!p_ctx_info) {
+		cflash_err("in %s invalid context!\n", __func__);
 		rc = -EINVAL;
 		goto out;
 	}
+
+	p_rht_info = p_ctx_info->p_rht_info;
 
 	if (res_hndl < MAX_RHT_PER_CONTEXT) {
 		p_rht_entry = &p_rht_info->rht_start[res_hndl];
@@ -587,7 +608,6 @@ out:
 int cflash_disk_detach(struct scsi_device *sdev, void __user * arg)
 {
 	struct cflash *p_cflash = (struct cflash *)sdev->host->hostdata;
-	struct afu *p_afu = p_cflash->p_afu;
 	struct lun_info *p_lun_info = sdev->hostdata;
 
 	struct dk_capi_detach *pdet = (struct dk_capi_detach *)arg;
@@ -600,9 +620,9 @@ int cflash_disk_detach(struct scsi_device *sdev, void __user * arg)
 
 	cflash_info("%s, context=0x%llx\n", __func__, pdet->context_id);
 
-	if (pdet->context_id < MAX_CONTEXT)
-		p_ctx_info = &p_afu->ctx_info[pdet->context_id];
-	else {
+	p_ctx_info = get_validated_context(p_cflash, pdet->context_id, FALSE);
+	if (!p_ctx_info) {
+		cflash_err("in %s invalid context!\n", __func__);
 		rc = -EINVAL;
 		goto out;
 	}
@@ -630,6 +650,11 @@ int cflash_disk_detach(struct scsi_device *sdev, void __user * arg)
 	}
 	spin_lock(p_lun_info->slock);
 	p_lun_info->mode = MODE_NONE;
+
+	/* XXX - move these to a different lock... */
+	p_cflash->per_context[pdet->context_id].lfd = -1;
+	p_cflash->per_context[pdet->context_id].pid = 0;
+
 	spin_unlock(p_lun_info->slock);
 
 out:
@@ -697,15 +722,14 @@ int cflash_vlun_resize(struct scsi_device *sdev, void __user * arg)
 
 	}
 
-	if (parg->context_id < MAX_CONTEXT) {
-		p_ctx_info = &p_afu->ctx_info[parg->context_id];
-		p_rht_info = p_ctx_info->p_rht_info;
-	} else {
-		cflash_err("in %s context id too large 0x%llx\n", __func__,
-			   parg->context_id);
+	p_ctx_info = get_validated_context(p_cflash, parg->context_id, FALSE);
+	if (!p_ctx_info) {
+		cflash_err("in %s invalid context!\n", __func__);
 		rc = -EINVAL;
 		goto out;
 	}
+
+	p_rht_info = p_ctx_info->p_rht_info;
 
 	if (res_hndl < MAX_RHT_PER_CONTEXT) {
 		p_rht_entry = &p_rht_info->rht_start[res_hndl];
@@ -1987,33 +2011,42 @@ int cflash_disk_clone(struct scsi_device *sdev, void __user * arg)
 			*p_rht_info_dst;
 	u64 reg;
 	int i, j;
-	int rc;
+	int rc = 0;
 
 	cflash_info("%s, challenge=%lld ctx_hdl=%lld\n",
 		    __func__, pclone->challenge_src, pclone->context_id_src);
 
 	/* Do not clone yourself */
-	if (pclone->context_id_src == pclone->context_id_dst)
-		return -EINVAL;
-
-	if ((pclone->context_id_src < MAX_CONTEXT) &&
-	    (pclone->context_id_dst < MAX_CONTEXT)) {
-		p_ctx_info_src = &p_afu->ctx_info[pclone->context_id_src];
-		p_rht_info_src = &p_afu->rht_info[pclone->context_id_src];
-		p_ctx_info_dst = &p_afu->ctx_info[pclone->context_id_dst];
-		p_rht_info_dst = &p_afu->rht_info[pclone->context_id_dst];
-	} else {
-		return -EINVAL;
+	if (pclone->context_id_src == pclone->context_id_dst) {
+		rc = -EINVAL;
+		goto out;
 	}
+
+	p_ctx_info_src = get_validated_context(p_cflash, pclone->context_id_src,
+					       TRUE);
+	p_ctx_info_dst = get_validated_context(p_cflash, pclone->context_id_dst,
+					       FALSE);
+	if (!p_ctx_info_src || !p_ctx_info_dst) {
+		cflash_err("in %s invalid context!\n", __func__);
+		rc = -EINVAL;
+		goto out;
+	}
+
+	p_rht_info_src = p_ctx_info_src->p_rht_info;
+	p_rht_info_dst = p_ctx_info_dst->p_rht_info;
 
 	/* Verify there is no open resource handle in the destination context */
 	for (i = 0; i < MAX_RHT_PER_CONTEXT; i++)
-		if (p_rht_info_dst->rht_start[i].nmask != 0)
-			return -EINVAL;
+		if (p_rht_info_dst->rht_start[i].nmask != 0) {
+			rc = -EINVAL;
+			goto out;
+		}
 
 	reg = read_64(&p_ctx_info_src->p_ctrl_map->mbox_r);
-	if (reg == 0)		/* zeroed mbox is a locked mbox */
-		return -EACCES;	/* return Permission denied */
+	if (reg == 0) {		/* zeroed mbox is a locked mbox */
+		rc = -EACCES;	/* return Permission denied */
+		goto out;
+	}
 
 	/*
 	 * This loop is equivalent to cflash_disk_open & cflash_vlun_resize.
@@ -2039,12 +2072,13 @@ int cflash_disk_clone(struct scsi_device *sdev, void __user * arg)
 
 			p_rht_info_dst->rht_start[i].nmask = 0;
 			p_rht_info_dst->rht_start[i].fp = 0;
-			return rc;
+			goto out;
 		}
 	}
 
-	cflash_info("in %s returning\n", __func__);
-	return 0;
+out:
+	cflash_info("in %s returning %d\n", __func__, rc);
+	return rc;
 }
 
 /*
