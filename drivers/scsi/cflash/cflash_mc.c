@@ -64,7 +64,7 @@ int cflash_afu_attach(struct cflash *p_cflash, u64 context_id)
 
 	/* zeroed mbox is a locked mbox */
 	if (reg == 0) {
-		cflash_err("zero mbox reg 0x%llx\n", reg);
+		cflash_err("zero mbox reg 0x%llx", reg);
 	}
 
 	/* This context is not duped and is in a group by
@@ -88,7 +88,7 @@ int cflash_afu_attach(struct cflash *p_cflash, u64 context_id)
 	 * register locked up.  fail the registration
 	 */
 	if (reg != (SISL_CTX_CAP_READ_CMD | SISL_CTX_CAP_WRITE_CMD)) {
-		cflash_err("ctx may be closed reg=%llx\n", reg);
+		cflash_err("ctx may be closed reg=%llx", reg);
 		rc = -EAGAIN;
 		goto out;
 	}
@@ -113,7 +113,7 @@ int cflash_afu_attach(struct cflash *p_cflash, u64 context_id)
 				 (u64) (p_afu->ctx_hndl)));
 	p_ctx_info->ref_cnt = 1;
 out:
-	cflash_info("in %s returning rc=%d\n", __func__, rc);
+	cflash_info("returning rc=%d", rc);
 	return rc;
 
 }
@@ -135,13 +135,12 @@ static int cflash_init_ba(struct lun_info *p_lun_info)
 
 	rc = ba_init(&p_blka->ba_lun);
 	if (rc) {
-		cflash_err("cannot init block_alloc, rc %d\n", rc);
+		cflash_err("cannot init block_alloc, rc=%d", rc);
 		goto cflash_init_ba_exit;
 	}
 
 cflash_init_ba_exit:
-	cflash_info("in %s returning rc=%d p_lun_info=%p\n",
-		    __func__, rc, p_lun_info);
+	cflash_info("returning rc=%d p_lun_info=%p", rc, p_lun_info);
 	return rc;
 }
 
@@ -183,15 +182,14 @@ int cflash_disk_attach(struct scsi_device *sdev, void __user * arg)
 
 	if (fullqc) {
 	if (p_lun_info->max_lba == 0) {
-		cflash_info("No capacity info yet for this LUN (%016llX)\n",
+		cflash_info("No capacity info yet for this LUN (%016llX)",
 			    p_lun_info->lun_id);
 		read_cap16(p_afu, p_lun_info, sdev->channel + 1);
-		cflash_info("LBA = %016llX\n", p_lun_info->max_lba);
-		cflash_info("BLK_LEN = %08X\n", p_lun_info->blk_len);
+		cflash_info("LBA = %016llX", p_lun_info->max_lba);
+		cflash_info("BLK_LEN = %08X", p_lun_info->blk_len);
 		rc = cflash_init_ba(p_lun_info);
 		if (rc) {
-			cflash_err("call to cflash_init_ba failed rc=%d!\n",
-				   rc);
+			cflash_err("call to cflash_init_ba failed rc=%d!", rc);
 			rc = -ENOMEM;
 			goto out;
 		}
@@ -200,15 +198,14 @@ int cflash_disk_attach(struct scsi_device *sdev, void __user * arg)
 
 	ctx = cxl_dev_context_init(p_cflash->p_dev);
 	if (!ctx) {
-		cflash_err("in %s Could not initialize context\n", __func__);
+		cflash_err("Could not initialize context");
 		rc = -ENODEV;
 		goto out;
 	}
 
 	parg->context_id = (u64) cxl_process_element(ctx);
 	if (parg->context_id > MAX_CONTEXT) {
-		cflash_err("in %s context_id (%llu) is too large!\n", __func__,
-			   parg->context_id);
+		cflash_err("context_id (%llu) is too large!", parg->context_id);
 		rc = -EPERM;
 		goto out;
 	}
@@ -231,14 +228,13 @@ int cflash_disk_attach(struct scsi_device *sdev, void __user * arg)
 	if (fd < 0) {
 		rc = -ENODEV;
 		cxl_release_context(ctx);
-		cflash_err("Could not get file descriptor\n");
+		cflash_err("Could not get file descriptor");
 		goto out;
 	}
 
 	rc = cxl_start_work(ctx, p_work);
 	if (rc) {
-		cflash_err("in %s Could not start context rc %d\n",
-			   __func__, rc);
+		cflash_err("Could not start context rc=%d", rc);
 		cxl_release_context(ctx);
 		fput(file);
 		put_unused_fd(fd);
@@ -248,7 +244,7 @@ int cflash_disk_attach(struct scsi_device *sdev, void __user * arg)
 
 	rc = cflash_afu_attach(p_cflash, parg->context_id);
 	if (rc) {
-		cflash_err("in %s Could not attach AFU rc %d\n", __func__, rc);
+		cflash_err("Could not attach AFU rc %d", rc);
 		cxl_release_context(ctx);
 		fput(file);
 		put_unused_fd(fd);
@@ -272,8 +268,7 @@ int cflash_disk_attach(struct scsi_device *sdev, void __user * arg)
 out:
 	parg->adap_fd = fd;
 
-	cflash_info("in %s returning fd=%d bs=%lld rc=%d\n",
-		    __func__, fd, parg->block_size, rc);
+	cflash_info("returning fd=%d bs=%lld rc=%d", fd, parg->block_size, rc);
 	return rc;
 }
 
@@ -350,7 +345,7 @@ int cflash_disk_open(struct scsi_device *sdev, void __user * arg,
 		/* Initialize to invalid value */
 		pphys->rsrc_handle = -1;
 	} else {
-		cflash_err("in %s, unknown mode %d\n", __func__, mode);
+		cflash_err("unknown mode %d", mode);
 		rc = -EINVAL;
 		goto out;
 	}
@@ -359,28 +354,26 @@ int cflash_disk_open(struct scsi_device *sdev, void __user * arg,
 	if (p_lun_info->mode == MODE_NONE) {
 		p_lun_info->mode = mode;
 	} else  if (p_lun_info->mode != mode) {
-		cflash_err("in %s, disk already opened in mode %d "
-			   "mode requested %d\n",
-			   __func__, p_lun_info->mode, mode);
+		cflash_err("disk already opened in mode %d, mode requested %d",
+			   p_lun_info->mode, mode);
 		rc = -EINVAL;
 		spin_unlock(p_lun_info->slock);
 		goto out;
 	}
 	spin_unlock(p_lun_info->slock);
 
-	cflash_info("%s, context=0x%llx ls=0x%llx\n",
-		    __func__, context_id, lun_size);
+	cflash_info("context=0x%llx ls=0x%llx", context_id, lun_size);
 
 	p_ctx_info = get_validated_context(p_cflash, context_id, FALSE);
 	if (!p_ctx_info) {
-		cflash_err("in %s invalid context!\n", __func__);
+		cflash_err("invalid context!");
 		rc = -EINVAL;
 		goto out;
 	}
 
 	p_rht_info = p_ctx_info->p_rht_info;
 
-	cflash_info("in %s ctx 0x%llx ctxinfo %p rhtinfo %p\n", __func__,
+	cflash_info("ctx 0x%llx ctxinfo %p rhtinfo %p",
 		    context_id, p_ctx_info, p_rht_info);
 
 	/* find a free RHT entry */
@@ -390,15 +383,14 @@ int cflash_disk_open(struct scsi_device *sdev, void __user * arg,
 			break;
 		}
 	}
-	cflash_info("in %s i %d rhti %p rhte %p\n", __func__,
-		    i, p_rht_info, p_rht_entry);
+	cflash_info("i %d rhti %p rhte %p", i, p_rht_info, p_rht_entry);
 
 	/* if we did not find a free entry, reached max opens allowed
 	 * per context
 	 */
 
 	if (p_rht_entry == NULL) {
-		cflash_err("in %s too many contexts open\n", __func__);
+		cflash_err("too many opens for this context");
 		rc = -EMFILE;	/* too many opens  */
 		goto out;
 	}
@@ -415,8 +407,7 @@ int cflash_disk_open(struct scsi_device *sdev, void __user * arg,
 			marshall_virt_to_resize (pvirt, &resize);
 			rc = cflash_vlun_resize(sdev, &resize);
 			if (rc) {
-				cflash_err("in %s resize failed rc %d\n",
-					   __func__, rc);
+				cflash_err("resize failed rc %d", rc);
 				goto out;
 			}
 			last_lba = resize.last_lba;
@@ -467,8 +458,8 @@ int cflash_disk_open(struct scsi_device *sdev, void __user * arg,
 	}
 
 out:
-	cflash_info("in %s returning handle 0x%llx rc=%d bs %lld llba %lld\n",
-		    __func__, rsrc_handle, rc, block_size, last_lba);
+	cflash_info("returning handle 0x%llx rc=%d bs %lld llba %lld",
+		    rsrc_handle, rc, block_size, last_lba);
 	return rc;
 }
 
@@ -508,13 +499,12 @@ int cflash_disk_release(struct scsi_device *sdev, void __user * arg)
 	struct rht_info *p_rht_info;
 	struct sisl_rht_entry *p_rht_entry;
 
-	cflash_info("%s, context=0x%llx res_hndl=0x%llx, challenge=0x%llx\n",
-		    __func__, prele->context_id,
-		    prele->rsrc_handle, prele->challenge);
+	cflash_info("context=0x%llx res_hndl=0x%llx, challenge=0x%llx",
+		    prele->context_id, prele->rsrc_handle, prele->challenge);
 
 	p_ctx_info = get_validated_context(p_cflash, prele->context_id, FALSE);
 	if (!p_ctx_info) {
-		cflash_err("in %s invalid context!\n", __func__);
+		cflash_err("invalid context!");
 		rc = -EINVAL;
 		goto out;
 	}
@@ -525,7 +515,7 @@ int cflash_disk_release(struct scsi_device *sdev, void __user * arg)
 		p_rht_entry = &p_rht_info->rht_start[res_hndl];
 		if (p_rht_entry->nmask == 0) {	/* not open */
 			rc = -EINVAL;
-			cflash_err("in %s not open\n", __func__);
+			cflash_err("not open");
 			goto out;
 		}
 
@@ -540,8 +530,7 @@ int cflash_disk_release(struct scsi_device *sdev, void __user * arg)
 			size.req_size = 0;
 			rc = cflash_vlun_resize(sdev, &size);/* p_conn good ? */
 			if (rc) {
-				cflash_err("in %s resize failed rc %d\n",
-					   __func__, rc);
+				cflash_err("resize failed rc %d", rc);
 				goto out;
 			}
 
@@ -573,12 +562,11 @@ int cflash_disk_release(struct scsi_device *sdev, void __user * arg)
 		p_rht_info->ref_cnt--;
 	} else {
 		rc = -EINVAL;
-		cflash_info("in %s resource handle invalid %d\n", __func__,
-			    res_hndl);
+		cflash_info("resource handle invalid %d", res_hndl);
 	}
 
 out:
-	cflash_info("in %s returning rc=%d\n", __func__, rc);
+	cflash_info("returning rc=%d", rc);
 	return rc;
 }
 
@@ -618,11 +606,11 @@ int cflash_disk_detach(struct scsi_device *sdev, void __user * arg)
 	int i;
 	int rc = 0;
 
-	cflash_info("%s, context=0x%llx\n", __func__, pdet->context_id);
+	cflash_info("context=0x%llx", pdet->context_id);
 
 	p_ctx_info = get_validated_context(p_cflash, pdet->context_id, FALSE);
 	if (!p_ctx_info) {
-		cflash_err("in %s invalid context!\n", __func__);
+		cflash_err("invalid context!");
 		rc = -EINVAL;
 		goto out;
 	}
@@ -658,7 +646,7 @@ int cflash_disk_detach(struct scsi_device *sdev, void __user * arg)
 	spin_unlock(p_lun_info->slock);
 
 out:
-	cflash_info("in %s returning rc=%d\n", __func__, rc);
+	cflash_info("returning rc=%d", rc);
 	return rc;
 }
 
@@ -709,14 +697,13 @@ int cflash_vlun_resize(struct scsi_device *sdev, void __user * arg)
 	nsectors = (parg->req_size * DK_CAPI_BLOCK) / (p_lun_info->blk_len);
 	new_size = (nsectors + MC_CHUNK_SIZE - 1) / MC_CHUNK_SIZE;
 
-	cflash_info("%s, context=0x%llx res_hndl=0x%llx, req_size=0x%llx,"
-		    "new_size=%llx\n",
-		    __func__, parg->context_id,
+	cflash_info("context=0x%llx res_hndl=0x%llx, req_size=0x%llx,"
+		    "new_size=%llx", parg->context_id,
 		    parg->rsrc_handle, parg->req_size, new_size);
 
 	if (p_lun_info->mode != MODE_VIRTUAL) {
-		cflash_err("in %s cannot resize lun that is not virtual %d\n",
-			   __func__, p_lun_info->mode);
+		cflash_err("cannot resize lun that is not virtual %d",
+			   p_lun_info->mode);
 		rc = -EINVAL;
 		goto out;
 
@@ -724,7 +711,7 @@ int cflash_vlun_resize(struct scsi_device *sdev, void __user * arg)
 
 	p_ctx_info = get_validated_context(p_cflash, parg->context_id, FALSE);
 	if (!p_ctx_info) {
-		cflash_err("in %s invalid context!\n", __func__);
+		cflash_err("invalid context!");
 		rc = -EINVAL;
 		goto out;
 	}
@@ -735,8 +722,8 @@ int cflash_vlun_resize(struct scsi_device *sdev, void __user * arg)
 		p_rht_entry = &p_rht_info->rht_start[res_hndl];
 
 		if (p_rht_entry->nmask == 0) {	/* not open */
-			cflash_err("in %s not open rhti %p rhte %p\n",
-				   __func__, p_rht_info, p_rht_entry);
+			cflash_err("not open rhti %p rhte %p",
+				   p_rht_info, p_rht_entry);
 			rc = -EINVAL;
 			goto out;
 		}
@@ -761,7 +748,7 @@ int cflash_vlun_resize(struct scsi_device *sdev, void __user * arg)
 			p_act_new_size = new_size;
 		}
 	} else {
-		cflash_err("in %s res_hndl %d invalid\n", __func__, res_hndl);
+		cflash_err("res_hndl %d invalid", res_hndl);
 		rc = -EINVAL;
 	}
 	parg->return_flags = 0;
@@ -769,8 +756,7 @@ int cflash_vlun_resize(struct scsi_device *sdev, void __user * arg)
 			  p_lun_info->blk_len) / DK_CAPI_BLOCK;
 
 out:
-	cflash_info("in %s resized to %lld returning rc=%d\n", __func__,
-		    parg->last_lba, rc);
+	cflash_info("resized to %lld returning rc=%d", parg->last_lba, rc);
 	return rc;
 }
 
@@ -857,7 +843,7 @@ int grow_lxt(struct afu *p_afu,
 
 	/* XXX - what is the significance of this comment? */
 	/* sync up AFU on each context in the doubly linked list */
-	cflash_info("in %s returning\n", __func__);
+	cflash_info("returning");
 	return 0;
 }
 
@@ -922,7 +908,7 @@ int shrink_lxt(struct afu *p_afu,
 		kfree(p_lxt_old);
 	/* XXX - what is the significance of this comment? */
 	/* sync up AFU on each context in the doubly linked list!!! */
-	cflash_info("in %s returning\n", __func__);
+	cflash_info("returning");
 	return 0;
 }
 
@@ -957,7 +943,7 @@ int wait_port_online(volatile u64 * p_fc_regs,
 	u64 status;
 
 	if (delay_us < 1000) {
-		cflash_err("invalid delay specified %d\n", delay_us);
+		cflash_err("invalid delay specified %d", delay_us);
 		return -EINVAL;
 	}
 
@@ -977,7 +963,7 @@ int wait_port_offline(volatile u64 * p_fc_regs,
 	u64 status;
 
 	if (delay_us < 1000) {
-		cflash_err("invalid delay specified %d\n", delay_us);
+		cflash_err("invalid delay specified %d", delay_us);
 		return -EINVAL;
 	}
 
@@ -1000,7 +986,7 @@ int afu_set_wwpn(struct afu *p_afu, int port, volatile u64 * p_fc_regs,
 
 	if (!wait_port_offline(p_fc_regs, FC_PORT_STATUS_RETRY_INTERVAL_US,
 			       FC_PORT_STATUS_RETRY_CNT)) {
-		cflash_dbg("wait on port %d to go offline timed out\n", port);
+		cflash_dbg("wait on port %d to go offline timed out", port);
 		ret = -1; /* but continue on to leave the port back online */
 	}
 
@@ -1012,7 +998,7 @@ int afu_set_wwpn(struct afu *p_afu, int port, volatile u64 * p_fc_regs,
 
 	if (!wait_port_online(p_fc_regs, FC_PORT_STATUS_RETRY_INTERVAL_US,
 			      FC_PORT_STATUS_RETRY_CNT)) {
-		cflash_dbg("wait on port %d to go online timed out\n", port);
+		cflash_dbg("wait on port %d to go online timed out", port);
 		ret = -1;
 
 		/*
@@ -1020,13 +1006,13 @@ int afu_set_wwpn(struct afu *p_afu, int port, volatile u64 * p_fc_regs,
 		 * XXX - is a wrap plug mandatory?
 		 */
 		if (internal_lun) {
-			cflash_info("Overriding port %d online timeout!!!\n",
+			cflash_info("Overriding port %d online timeout!!!",
 				    port);
 			ret = 0;
 		}
 	}
 
-	cflash_info("In %s returning rc=%d\n", __func__, ret);
+	cflash_info("returning rc=%d", ret);
 
 	return ret;
 }
@@ -1054,7 +1040,7 @@ void cflash_undo_start_afu(struct afu *p_afu, enum undo_level level)
 	default:
 		break;
 	}
-	cflash_info("in %s returning level=%d\n", __func__, level);
+	cflash_info("returning level=%d", level);
 }
 
 void afu_err_intr_init(struct afu *p_afu)
@@ -1088,11 +1074,11 @@ void afu_err_intr_init(struct afu *p_afu)
 
 	/* Clear/Set internal lun bits */
 	reg = read_64(&p_afu->p_afu_map->global.fc_regs[0][FC_CONFIG2 / 8]);
-	cflash_info("ilun p0 = %016llX\n", reg);
+	cflash_info("ilun p0 = %016llX", reg);
 	reg &= ~(0x3ULL << 32);
 	if (internal_lun)
 		reg |= ((u64)(internal_lun - 1) << 32);
-	cflash_info("ilun p0 = %016llX\n", reg);
+	cflash_info("ilun p0 = %016llX", reg);
 	write_64(&p_afu->p_afu_map->global.fc_regs[0][FC_CONFIG2 / 8], reg);
 
 	/* now clear FC errors */
@@ -1116,7 +1102,7 @@ void afu_err_intr_init(struct afu *p_afu)
 static irqreturn_t cflash_dummy_irq_handler(int irq, void *data)
 {
 	/* XXX - to be removed once we settle the 4th interrupt */
-	cflash_info("in %s returning rc=%d\n", __func__, IRQ_HANDLED);
+	cflash_info("returning rc=%d", IRQ_HANDLED);
 	return IRQ_HANDLED;
 }
 
@@ -1130,18 +1116,18 @@ static irqreturn_t cflash_sync_err_irq(int irq, void *data)
 	reg_unmasked = (reg & SISL_ISTATUS_UNMASK);
 
 	if (reg_unmasked == 0UL) {
-		cflash_err("%llX: spurious interrupt, intr_status %016llX\n",
+		cflash_err("%llX: spurious interrupt, intr_status %016llX",
 			   (u64) p_afu, reg);
 		goto cflash_sync_err_irq_exit;
 	}
 
-	cflash_err("%llX: unexpected interrupt, intr_status %016llX\n",
+	cflash_err("%llX: unexpected interrupt, intr_status %016llX",
 		   (u64) p_afu, reg);
 
 	write_64(&p_afu->p_host_map->intr_clear, reg_unmasked);
 
 cflash_sync_err_irq_exit:
-	cflash_info("in %s returning rc=%d\n", __func__, IRQ_HANDLED);
+	cflash_info("returning rc=%d", IRQ_HANDLED);
 	return IRQ_HANDLED;
 }
 
@@ -1187,10 +1173,8 @@ static irqreturn_t cflash_rrq_irq(int irq, void *data)
 			} else {
 				scp->result = (DID_OK << 16);
 			}
-			cflash_info("In %s calling scsi_set_resid, "
-				    "scp=0x%llx len=%d\n",
-				    __func__, p_cmd->rcb.rsvd2,
-				    p_cmd->sa.resid);
+			cflash_info("calling scsi_set_resid, scp=0x%llx len=%d",
+				    p_cmd->rcb.rsvd2, p_cmd->sa.resid);
 
 			scsi_set_resid(scp, p_cmd->sa.resid);
 			scp->scsi_done(scp);
@@ -1213,7 +1197,7 @@ static irqreturn_t cflash_rrq_irq(int irq, void *data)
 	}
 
 	/* XXX
-	   cflash_info("in %s returning rc=%d\n", __func__, IRQ_HANDLED);
+	   cflash_info("returning rc=%d", IRQ_HANDLED);
 	 */
 	return IRQ_HANDLED;
 }
@@ -1228,8 +1212,7 @@ static irqreturn_t cflash_async_err_irq(int irq, void *data)
 	 * will block.
 	 */
 
-	cflash_info("in %s returning rc=%d, afu = %p\n",
-		    __func__, IRQ_HANDLED, p_afu);
+	cflash_info("returning rc=%d, afu=%p", IRQ_HANDLED, p_afu);
 	return IRQ_HANDLED;
 }
 
@@ -1245,7 +1228,7 @@ int cflash_start_context(struct cflash *p_cflash)
 			       p_cflash->p_afu->work.work_element_descriptor,
 			       NULL);
 
-	cflash_info("in %s returning rc=%d\n", __func__, rc);
+	cflash_info("returning rc=%d", rc);
 	return rc;
 }
 
@@ -1255,7 +1238,7 @@ int cflash_start_context(struct cflash *p_cflash)
 void cflash_stop_context(struct cflash *p_cflash)
 {
 	cxl_stop_context(p_cflash->p_mcctx);
-	cflash_info("in %s returning \n", __func__);
+	cflash_info("returning");
 }
 
 #define WWPN_LEN	16
@@ -1271,17 +1254,17 @@ int cflash_read_vpd(struct cflash *p_cflash, u64 wwpn[])
 	int l_kw_length;
 	char localwwpn[NUM_FC_PORTS][WWPN_BUF_LEN];
 
-	cflash_info("in %s pci_dev %p\n", __func__, p_cflash->parent_dev);
+	cflash_info("pci_dev=%p", p_cflash->parent_dev);
 
 	buf = kzalloc(KWDATA_SZ, GFP_KERNEL);
 	if (!buf) {
-		cflash_err("in %s could not allocate mem\n", __func__);
+		cflash_err("could not allocate mem");
 		rc = -ENOMEM;
 		goto out;
 	}
 	bytes = pci_read_vpd(p_cflash->parent_dev, 0, KWDATA_SZ, buf);
 	if (bytes <= 0) {
-		cflash_err("could not read VPD rc %d\n", rc);
+		cflash_err("could not read VPD rc %d", rc);
 		rc = -ENODEV;
 		goto out;
 	}
@@ -1328,7 +1311,7 @@ int cflash_read_vpd(struct cflash *p_cflash, u64 wwpn[])
 out:
 	if (buf)
 		kfree(buf);
-	cflash_info("in %s returning rc=%d\n", __func__, rc);
+	cflash_info("returning rc=%d", rc);
 	return rc;
 }
 
@@ -1337,7 +1320,7 @@ void cflash_context_reset(struct afu *p_afu)
 	int nretry = 0;
 	u64 rrin = 0x1;
 
-	cflash_info("in %s p_afu %p\n", __func__, p_afu);
+	cflash_info("p_afu=%p", p_afu);
 
 	if (p_afu->room == 0) {
 		asm volatile ("eieio"::); /* let IOARRIN writes complete */
@@ -1357,7 +1340,7 @@ void cflash_context_reset(struct afu *p_afu)
 		} while ((rrin == 0x1) && (nretry++ < MC_ROOM_RETRY_CNT));
 	}
 	else
-		cflash_err("in %s no cmd_room to send reset\n", __func__);
+		cflash_err("no cmd_room to send reset");
 }
 
 int cflash_afu_recover(struct scsi_device *sdev, void __user * arg)
@@ -1373,12 +1356,11 @@ int cflash_afu_recover(struct scsi_device *sdev, void __user * arg)
 	/* MMIO returning 0xff, need to reset */
 	if (reg == -1) {
 		/* XXX: Once MIkey provides a service to reset the AFU */
-		cflash_info("in %s p_afu %p reason 0x%llx\n", __func__, p_afu,
-			parg->reason);
+		cflash_info("p_afu=%p reason 0x%llx", p_afu, parg->reason);
 
 	} else {
-		cflash_info("in %s reason 0x%llx MMIO is working, no reset"
-			    "performed\n", __func__, parg->reason);
+		cflash_info("reason 0x%llx MMIO is working, no reset performed",
+			    parg->reason);
 		rc = -EINVAL;
 	}
 
@@ -1399,11 +1381,10 @@ int cflash_start_afu(struct cflash *p_cflash)
 
 	rc = cflash_read_vpd(p_cflash, &wwpn[0]);
 	if (rc) {
-		cflash_err("in %s could not read vpd rc=%d\n", __func__, rc);
+		cflash_err("could not read vpd rc=%d", rc);
 		goto out;
 	}
-	cflash_info("in %s wwpn0=0x%llx wwpn1=0x%llx\n", __func__,
-		    wwpn[0], wwpn[1]);
+	cflash_info("wwpn0=0x%llx wwpn1=0x%llx", wwpn[0], wwpn[1]);
 
 	for (i = 0; i < MAX_CONTEXT; i++) {
 		p_afu->rht_info[i].rht_start = &p_afu->rht[i][0];
@@ -1456,7 +1437,7 @@ int cflash_start_afu(struct cflash *p_cflash)
 	reg = p_afu->p_afu_map->global.regs.afu_version;
 	memcpy(version, &reg, 8);
 	reg = read_64(&p_afu->p_afu_map->global.regs.interface_version);
-	cflash_info("afu version %s, interface version 0x%llx\n", version,
+	cflash_info("afu version %s, interface version 0x%llx", version,
 		   reg);
 
 	/* initialize cmd fields that never change */
@@ -1501,7 +1482,7 @@ int cflash_start_afu(struct cflash *p_cflash)
 		    afu_set_wwpn(p_afu, i,
 				 &p_afu->p_afu_map->global.fc_regs[i][0],
 				 wwpn[i])) {
-			cflash_dbg("failed to set WWPN on port %d\n", i);
+			cflash_dbg("failed to set WWPN on port %d", i);
 			cflash_undo_start_afu(p_afu, level);
 			return -1;
 		}
@@ -1521,7 +1502,7 @@ int cflash_start_afu(struct cflash *p_cflash)
 	p_afu->hb = read_64(&p_afu->p_afu_map->global.regs.afu_hb);
 
 out:
-	cflash_info("in %s returning rc=%d\n", __func__, rc);
+	cflash_info("returning rc=%d", rc);
 	return rc;
 }
 
@@ -1603,7 +1584,7 @@ int cflash_init_afu(struct cflash *p_cflash)
 		goto err6;
 	}
 
-	cflash_info("in %s returning rc=%d\n", __func__, rc);
+	cflash_info("returning rc=%d", rc);
 	return rc;
 err6:
 	cflash_stop_context(p_cflash);
@@ -1619,7 +1600,7 @@ err2:
 err1:
 	cxl_release_context(ctx);
 	p_cflash->p_mcctx = NULL;
-	cflash_info("in %s returning rc=%d\n", __func__, rc);
+	cflash_info("returning rc=%d", rc);
 	return rc;
 }
 
@@ -1631,17 +1612,17 @@ void cflash_term_afu(struct cflash *p_cflash)
 
 	if (p_cflash->p_mcctx) {
 		cflash_stop_context(p_cflash);
-		cflash_info("in %s before unmap 4 \n", __func__);
+		cflash_info("before unmap 4");
 		cxl_unmap_afu_irq(p_cflash->p_mcctx, 4, p_afu);
-		cflash_info("in %s before unmap 3 \n", __func__);
+		cflash_info("before unmap 3");
 		cxl_unmap_afu_irq(p_cflash->p_mcctx, 3, p_afu);
-		cflash_info("in %s before unmap 2 \n", __func__);
+		cflash_info("before unmap 2");
 		cxl_unmap_afu_irq(p_cflash->p_mcctx, 2, p_afu);
-		cflash_info("in %s before unmap 1 \n", __func__);
+		cflash_info("before unmap 1");
 		cxl_unmap_afu_irq(p_cflash->p_mcctx, 1, p_afu);
-		cflash_info("in %s before cxl_free_afu_irqs \n", __func__);
+		cflash_info("before cxl_free_afu_irqs");
 		cxl_free_afu_irqs(p_cflash->p_mcctx);
-		cflash_info("in %s before cxl_release_context \n", __func__);
+		cflash_info("before cxl_release_context");
 		cxl_release_context(p_cflash->p_mcctx);
 		p_cflash->p_mcctx = NULL;
 	}
@@ -1662,7 +1643,7 @@ void cflash_term_afu(struct cflash *p_cflash)
 		}
 	}
 
-	cflash_info("in %s returning\n", __func__);
+	cflash_info("returning");
 }
 
 /* do we need to retry AFU_CMDs (sync) on afu_rc = 0x30 ? */
@@ -1702,7 +1683,7 @@ void cflash_send_cmd(struct afu *p_afu, struct afu_cmd *p_cmd)
 {
 	int nretry = 0;
 
-	cflash_info("in %s p_afu %p p_cmd %p\n", __func__, p_afu, p_cmd);
+	cflash_info("p_afu=%p p_cmd=%p", p_afu, p_cmd);
 
 	if (p_afu->room == 0) {
 		asm volatile ("eieio"::); /* let IOARRIN writes complete */
@@ -1728,10 +1709,9 @@ void cflash_send_cmd(struct afu *p_afu, struct afu_cmd *p_cmd)
 	if (p_afu->room)
 		write_64(&p_afu->p_host_map->ioarrin, (u64) & p_cmd->rcb);
 	else
-		cflash_err("no cmd_room to send 0x%X\n", p_cmd->rcb.cdb[0]);
+		cflash_err("no cmd_room to send 0x%X", p_cmd->rcb.cdb[0]);
 
-	cflash_info("In %s p_cmd=%p len=%d ea=%p\n",
-		    __func__, p_cmd, p_cmd->rcb.data_len,
+	cflash_info("p_cmd=%p len=%d ea=%p", p_cmd, p_cmd->rcb.data_len,
 		    (void *)p_cmd->rcb.data_ea);
 
 	/* Let timer fire to complete the response... */
@@ -1760,7 +1740,7 @@ void cflash_wait_resp(struct afu *p_afu, struct afu_cmd *p_cmd)
 
 	if (p_cmd->sa.ioasc != 0)
 		cflash_err("CMD 0x%x failed, IOASC: flags 0x%x, afu_rc 0x%x, "
-			   "scsi_rc 0x%x, fc_rc 0x%x\n",
+			   "scsi_rc 0x%x, fc_rc 0x%x",
 			   p_cmd->rcb.cdb[0],
 			   p_cmd->sa.rc.flags,
 			   p_cmd->sa.rc.afu_rc,
@@ -1797,8 +1777,7 @@ int afu_sync(struct afu *p_afu,
 	struct afu_cmd *p_cmd = &p_afu->cmd[AFU_SYNC_INDEX];
 	int rc = 0;
 
-	cflash_info("in %s p_afu %p p_cmd %p %d\n",
-		    __func__, p_afu, p_cmd, ctx_hndl_u);
+	cflash_info("p_afu=%p p_cmd=%p %d", p_afu, p_cmd, ctx_hndl_u);
 
 	memset(p_cmd->rcb.cdb, 0, sizeof(p_cmd->rcb.cdb));
 
@@ -1824,7 +1803,7 @@ int afu_sync(struct afu *p_afu,
 		/* B_ERROR is set on timeout */
 	}
 
-	cflash_info("in %s returning rc %d", __func__, rc);
+	cflash_info("returning rc=%d", rc);
 	return rc;
 }
 
@@ -1908,7 +1887,7 @@ int clone_lxt(struct afu *p_afu,
 
 	/* XXX - what is the significance of this comment? */
 	/* sync up AFU on each context in the doubly linked list */
-	cflash_info("in %s returning\n", __func__);
+	cflash_info("returning");
 	return 0;
 }
 
@@ -1945,9 +1924,8 @@ int cflash_xlate_lba(struct scsi_device *sdev, void __user * arg)
 	struct sisl_rht_entry *p_rht_entry;
 	u64 chunk_id, chunk_off, rlba_base;
 
-	cflash_info("%s, rsrc_handle=%lld v_lba=%lld ctx_hdl=%lld\n",
-		    __func__, rsrc_handle,
-		    v_lba, context_id);
+	cflash_info("rsrc_handle=%lld v_lba=%lld ctx_hdl=%lld",
+		    rsrc_handle, v_lba, context_id);
 
 	if (rsrc_handle < MAX_RHT_PER_CONTEXT) {
 		p_rht_entry = &p_rht_info->rht_start[rsrc_handle];
@@ -1971,7 +1949,7 @@ int cflash_xlate_lba(struct scsi_device *sdev, void __user * arg)
 		return -EINVAL;
 	}
 
-	cflash_info("in %s returning\n", __func__);
+	cflash_info("returning");
 	return 0;
 }
 
@@ -2013,8 +1991,8 @@ int cflash_disk_clone(struct scsi_device *sdev, void __user * arg)
 	int i, j;
 	int rc = 0;
 
-	cflash_info("%s, challenge=%lld ctx_hdl=%lld\n",
-		    __func__, pclone->challenge_src, pclone->context_id_src);
+	cflash_info("challenge=%lld ctx_hdl=%lld",
+		    pclone->challenge_src, pclone->context_id_src);
 
 	/* Do not clone yourself */
 	if (pclone->context_id_src == pclone->context_id_dst) {
@@ -2027,7 +2005,7 @@ int cflash_disk_clone(struct scsi_device *sdev, void __user * arg)
 	p_ctx_info_dst = get_validated_context(p_cflash, pclone->context_id_dst,
 					       FALSE);
 	if (!p_ctx_info_src || !p_ctx_info_dst) {
-		cflash_err("in %s invalid context!\n", __func__);
+		cflash_err("invalid context!");
 		rc = -EINVAL;
 		goto out;
 	}
@@ -2077,7 +2055,7 @@ int cflash_disk_clone(struct scsi_device *sdev, void __user * arg)
 	}
 
 out:
-	cflash_info("in %s returning %d\n", __func__, rc);
+	cflash_info("returning rc=%d", rc);
 	return rc;
 }
 
@@ -2119,8 +2097,8 @@ int cflash_disk_dup(struct scsi_device *sdev, void __user * arg)
 	u64 reg;
 	int i;
 
-	cflash_info("%s, challenge=%lld cand=%lld ctx_hdl=%lld\n",
-		    __func__, challenge, ctx_hndl_cand, context_id);
+	cflash_info("challenge=%lld cand=%lld ctx_hdl=%lld",
+		    challenge, ctx_hndl_cand, context_id);
 
 	/* verify there is no open resource handle in the target context of the clone */
 	for (i = 0; i < MAX_RHT_PER_CONTEXT; i++)
@@ -2143,7 +2121,7 @@ int cflash_disk_dup(struct scsi_device *sdev, void __user * arg)
 		return -EACCES;	/* return Permission denied */
 
 	/* XXX - what does this mean? */
-	cflash_info("in %s returning\n", __func__);
+	cflash_info("returning");
 	return -EIO;		/* todo later!!! */
 }
 
@@ -2179,8 +2157,7 @@ int cflash_disk_stat(struct scsi_device *sdev, void __user * arg)
 	struct rht_info *p_rht_info = p_ctx_info->p_rht_info;
 	struct sisl_rht_entry *p_rht_entry;
 
-	cflash_info("%s, context_id=%lld\n",
-		    __func__, context_id);
+	cflash_info("context_id=%lld", context_id);
 
 	if (rsrc_handle < MAX_RHT_PER_CONTEXT) {
 		p_rht_entry = &p_rht_info->rht_start[rsrc_handle];
@@ -2197,7 +2174,7 @@ int cflash_disk_stat(struct scsi_device *sdev, void __user * arg)
 		return -EINVAL;
 	}
 
-	cflash_info("in %s returning\n", __func__);
+	cflash_info("returning");
 	return 0;
 }
 
@@ -2210,8 +2187,7 @@ int read_cap16(struct afu *p_afu, struct lun_info *p_lun_info, u32 port_sel)
 
 	p_cmd = get_next_cmd(p_afu);
 	if (!p_cmd) {
-		cflash_err("in %s could not get a free command\n",
-			   __func__);
+		cflash_err("could not get a free command");
 		return -1;
 	}
 
@@ -2231,8 +2207,8 @@ int read_cap16(struct afu *p_afu, struct lun_info *p_lun_info, u32 port_sel)
 	write_32(p_u32, CMD_BUFSIZE);
 	p_cmd->sa.host_use_b[1] = 0;	/* reset retry cnt */
 
-	cflash_info("in %s: sending cmd(0x%x) with RCB EA=%p data EA=0x%llx\n",
-		    __func__, p_cmd->rcb.cdb[0], &p_cmd->rcb,
+	cflash_info("sending cmd(0x%x) with RCB EA=%p data EA=0x%llx",
+		    p_cmd->rcb.cdb[0], &p_cmd->rcb,
 		    p_cmd->rcb.data_ea);
 
 	do {
@@ -2242,8 +2218,7 @@ int read_cap16(struct afu *p_afu, struct lun_info *p_lun_info, u32 port_sel)
 
 	if (p_cmd->sa.host_use_b[0] & B_ERROR) {
 		release_cmd(p_cmd);
-		cflash_err("in %s command failed \n",
-			   __func__);
+		cflash_err("command failed");
 		return -1;
 	}
 	/* read cap success  */
@@ -2256,7 +2231,7 @@ int read_cap16(struct afu *p_afu, struct lun_info *p_lun_info, u32 port_sel)
 	spin_unlock(p_lun_info->slock);
 	release_cmd(p_cmd);
 
-	cflash_info("in %s maxlba=%lld blklen=%d pcmd %p\n", __func__,
+	cflash_info("maxlba=%lld blklen=%d pcmd %p",
 		    p_lun_info->max_lba, p_lun_info->blk_len, p_cmd);
 	return 0;
 }
@@ -2280,8 +2255,7 @@ int find_lun(struct cflash *p_cflash, u32 port_sel)
 
 	p_cmd = get_next_cmd(p_afu);
 	if (!p_cmd) {
-		cflash_err("in %s could not get a free command\n",
-			   __func__);
+		cflash_err("could not get a free command");
 		return -1;
 	}
 
@@ -2300,8 +2274,7 @@ int find_lun(struct cflash *p_cflash, u32 port_sel)
 	write_32(p_u32, CMD_BUFSIZE);	/* allocation length */
 	p_cmd->sa.host_use_b[1] = 0;	/* reset retry cnt */
 
-	cflash_info("%s: sending cmd(0x%x) with RCB EA=%p data EA=0x%p\n",
-		    __func__,
+	cflash_info("sending cmd(0x%x) with RCB EA=%p data EA=0x%p",
 		    p_cmd->rcb.cdb[0], &p_cmd->rcb, (void *)p_cmd->rcb.data_ea);
 
 	do {
@@ -2328,7 +2301,7 @@ int find_lun(struct cflash *p_cflash, u32 port_sel)
 		i++;
 		p_currid++;
 	}
-	cflash_info("%s: found %d luns\n", __func__, i);
+	cflash_info("found %d luns", i);
 
 	/* Release the CMD only after looking through the response */
 	release_cmd(p_cmd);
@@ -2336,9 +2309,8 @@ int find_lun(struct cflash *p_cflash, u32 port_sel)
 	p_currid = lunidarray;
 
 	for (j = 0; j < i; j++, p_currid++) {
-		cflash_info("%s: adding i=%d lun_id %016llx last_index %d\n",
-			    __func__, j, *p_currid,
-			    p_cflash->last_lun_index);
+		cflash_info("adding i=%d lun_id %016llx last_index %d",
+			    j, *p_currid, p_cflash->last_lun_index);
 
 		/*
 		 * XXX - scsi_add_device() will trigger slave_alloc and
@@ -2364,8 +2336,7 @@ int find_lun(struct cflash *p_cflash, u32 port_sel)
 		 */
 		rc = cflash_init_ba(p_lun_info);
 		if (rc) {
-			cflash_err("call to cflash_init_ba failed rc=%d!\n",
-				   rc);
+			cflash_err("call to cflash_init_ba failed rc=%d!", rc);
 			list_del(&p_lun_info->list);
 			kfree(p_lun_info);
 			goto out;
@@ -2377,7 +2348,7 @@ int find_lun(struct cflash *p_cflash, u32 port_sel)
 out:
 	if (lunidarray)
 		kfree(lunidarray);
-	cflash_info("in %s returning rc %d pcmd%p\n", __func__, rc, p_cmd);
+	cflash_info("returning rc %d pcmd%p", rc, p_cmd);
 	return rc;
 }
 
@@ -2405,8 +2376,7 @@ void cflash_send_scsi(struct afu *p_afu, struct scsi_cmnd *scp)
 
 	p_cmd = get_next_cmd(p_afu);
 	if (!p_cmd) {
-		cflash_err("in %s could not get a free command\n",
-			   __func__);
+		cflash_err("could not get a free command");
 		return;
 	}
 
@@ -2467,8 +2437,7 @@ void cflash_send_tmf(struct afu *p_afu, struct scsi_cmnd *scp, u64 cmd)
 
 	p_cmd = get_next_cmd(p_afu);
 	if (!p_cmd) {
-		cflash_err("in %s could not get a free command\n",
-			   __func__);
+		cflash_err("could not get a free command");
 		return;
 	}
 

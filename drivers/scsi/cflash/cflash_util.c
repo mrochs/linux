@@ -44,14 +44,14 @@ bool prov_find_vpd_kw(const char *i_kw,
 	u8 l_curr_kw_sz = 0;
 
 	/* Code  */
-	cflash_dbg("Entry\n");
+	cflash_dbg("Entry");
 
 	do {
 		if ((i_kw == NULL) || (i_vpd_buffer == NULL) ||
 		    (i_vpd_buffer_length == 0) ||
 		    (o_kwdata == NULL) || (io_kwdata_length == NULL)) {
 			cflash_err("Invalid or null Args. Unable to parse "
-				   "VPD structures.\n");
+				   "VPD structures.");
 			l_rc = false;
 			break;
 		}
@@ -63,9 +63,8 @@ bool prov_find_vpd_kw(const char *i_kw,
 		 */
 
 		if (l_vpd_header->pci_eyecatcher != PCI_FORMAT_EYECATCHER) {
-			cflash_err
-			    ("This doesn't appear to be valid VPD. "
-			     "PCI eyecatcher = 0x%02x, expected 0x%02x.\n",
+			cflash_err("This doesn't appear to be valid VPD. "
+			     "PCI eyecatcher = 0x%02x, expected 0x%02x.",
 			     l_vpd_header->pci_eyecatcher,
 			     PCI_FORMAT_EYECATCHER);
 			l_rc = false;
@@ -76,11 +75,11 @@ bool prov_find_vpd_kw(const char *i_kw,
 		    PROV_CONVERT_UINT8_ARRAY_UINT16(l_vpd_header->name_sz[0],
 						    l_vpd_header->name_sz[1]);
 		cflash_dbg("Got apparently-valid eyecatcher data. "
-			   "Name size is %d.\n", l_vpd_name_sz);
+			   "Name size is %d.", l_vpd_name_sz);
 
 		if (l_vpd_name_sz > KWDATA_SZ) {
 			cflash_info("Warning: Trimming KW Name down to "
-				    "%d bytes. Original was %d\n",
+				    "%d bytes. Original was %d",
 				    KWDATA_SZ, l_vpd_name_sz);
 			l_vpd_name_sz = KWDATA_SZ;
 		}
@@ -88,7 +87,7 @@ bool prov_find_vpd_kw(const char *i_kw,
 		memset(l_vpd_name, 0, sizeof(l_vpd_name));
 		strncpy(l_vpd_name, l_vpd_header->name, l_vpd_name_sz);
 
-		cflash_info("Parsing VPD for '%s'\n", l_vpd_name);
+		cflash_info("Parsing VPD for '%s'", l_vpd_name);
 
 		/* get the address of the VPD section that follows the name
 		 * by relying on the fact that the name section is an "array"
@@ -108,7 +107,7 @@ bool prov_find_vpd_kw(const char *i_kw,
 						    l_vpd_section->segment_sz
 						    [1]);
 
-		cflash_dbg("Got %d bytes of RO section data.\n",
+		cflash_dbg("Got %d bytes of RO section data.",
 			   l_section_length);
 
 		/* set up the pointer to the beginning of the keyword data */
@@ -129,7 +128,7 @@ bool prov_find_vpd_kw(const char *i_kw,
 				    PROV_CONVERT_UINT8_ARRAY_UINT16(lo, hi);
 				cflash_info("RW Data section found of "
 					    "length %d bytes, starting a "
-					    "new section.\n", l_section_length);
+					    "new section.", l_section_length);
 				continue;	/* new section found, so
 						 * continue processing
 						 */
@@ -138,7 +137,7 @@ bool prov_find_vpd_kw(const char *i_kw,
 			l_curr_kw_name[0] = *l_buffer_ptr++;
 			l_curr_kw_name[1] = *l_buffer_ptr++;
 			l_curr_kw_sz = *l_buffer_ptr++;
-			cflash_dbg("Current KW: '%s' size = %d\n",
+			cflash_dbg("Current KW: '%s' size = %d",
 				   l_curr_kw_name, l_curr_kw_sz);
 
 			/* copy the data out. note this may copy zero bytes
@@ -160,21 +159,19 @@ bool prov_find_vpd_kw(const char *i_kw,
 		}/* end inner while that is searching the buffer for KW data */
 
 		if (l_found_kw) {
-			cflash_info("Found VPD for keyword '%s' "
-				    "length %d\n", l_curr_kw_name,
-				    l_curr_kw_sz);
+			cflash_info("Found VPD for keyword '%s' length %d",
+				    l_curr_kw_name, l_curr_kw_sz);
 
 			if (*io_kwdata_length < l_curr_kw_sz) {
 				cflash_dbg("Output buffer %d is too small "
 					   "for keyword '%s' data. We need "
-					   "at least %d bytes.\n",
+					   "at least %d bytes.",
 					   *io_kwdata_length, l_curr_kw_name,
 					   l_curr_kw_sz);
 				l_rc = false;
 				break;
 			} else {
-				cflash_dbg("Copying data to output "
-					   "buffer...\n");
+				cflash_dbg("Copying data to output buffer...");
 				*io_kwdata_length = l_curr_kw_sz;
 				memcpy(o_kwdata, l_curr_kw_data, l_curr_kw_sz);
 				l_rc = true;

@@ -48,9 +48,28 @@ extern u32 fullqc;
 
 /*
  * Error logging macros
+ *
+ * These wrappers around pr_* add the function name and newline character
+ * automatically, avoiding the need to include them inline with each trace
+ * statement and saving line width.
+ *
+ * The parameters must be split into the format string and variable list of
+ * parameters in order to support concatenation of the function format
+ * specifier and newline character. The CONFN macro is a helper to simplify
+ * the contactenation and make it easier to change the desired format. Lastly,
+ * the variable list is passed with a dummy concatenation. This trick is used
+ * to support the case where no parameters are passed and the user simply
+ * desires a single string trace.
  */
-#define cflash_err(...) printk(KERN_ERR CFLASH_NAME ": "__VA_ARGS__)
-#define cflash_info(...) printk(KERN_INFO CFLASH_NAME ": "__VA_ARGS__)
+#define CONFN(_s) "%s: "_s"\n"
+#define cflash_emerg(_s, ...)	pr_emerg(CONFN(_s), __func__, ##__VA_ARGS__)
+#define cflash_alert(_s, ...)	pr_alert(CONFN(_s), __func__, ##__VA_ARGS__)
+#define cflash_crit(_s,  ...)	pr_crit(CONFN(_s),  __func__, ##__VA_ARGS__)
+#define cflash_err(_s,   ...)	pr_err(CONFN(_s),   __func__, ##__VA_ARGS__)
+#define cflash_warn(_s,  ...)	pr_warn(CONFN(_s),  __func__, ##__VA_ARGS__)
+#define cflash_info(_s,  ...)	pr_info(CONFN(_s),  __func__, ##__VA_ARGS__)
+#define cflash_devel(_s, ...)	pr_devel(CONFN(_s), __func__, ##__VA_ARGS__)
+
 #define cflash_dbg(...) CFLASH_DBG_CMD(printk(KERN_INFO CFLASH_NAME ": "__VA_ARGS__))
 
 #define ENTER CFLASH_DBG_CMD(printk(KERN_INFO CFLASH_NAME": Entering %s\n", __func__))
