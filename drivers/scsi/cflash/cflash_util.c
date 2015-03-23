@@ -238,7 +238,6 @@ void marshall_clone_to_rele(struct dk_capi_clone *pclone,
 	prel->rsvd[1] = pclone->rsvd[1];
 	prel->flags = pclone->flags;
 	prel->context_id = pclone->context_id_dst;
-	prel->challenge = pclone->challenge_dst;
 }
 
 void hexdump(void *data, long len, const char *hdr)

@@ -114,8 +114,6 @@ struct dk_capi_clone {
 	u64 flags;		/* Flags for clone */
 	u64 context_id_src;	/* Context ID to clone from */
 	u64 context_id_dst;	/* Context ID to clone to */
-	u64 challenge_src;	/* Validation cookie to access source context */
-	u64 challenge_dst;	/* Validation cookie to access dest context */
 };
 
 struct dk_capi_verify {

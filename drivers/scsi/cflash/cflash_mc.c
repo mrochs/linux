@@ -2033,8 +2033,8 @@ int cflash_disk_clone(struct scsi_device *sdev, void __user * arg)
 	int i, j;
 	int rc = 0;
 
-	cflash_info("challenge=%lld ctx_hdl=%lld",
-		    pclone->challenge_src, pclone->context_id_src);
+	cflash_info("ctx_hdl_src=%llu ctx_hdl_dst=%llu",
+		    pclone->context_id_src, pclone->context_id_dst);
 
 	/* Do not clone yourself */
 	if (pclone->context_id_src == pclone->context_id_dst) {
