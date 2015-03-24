@@ -44,8 +44,6 @@ extern u32 fullqc;
 
 #define CFLASH_PCI_ERROR_RECOVERY_TIMEOUT  (120 * HZ)
 
-#define CFLASH_DBG_CMD(CMD) if (cflash_debug) { CMD; }
-
 /*
  * Error logging macros
  *
@@ -70,11 +68,24 @@ extern u32 fullqc;
 #define cflash_info(_s,  ...)	pr_info(CONFN(_s),  __func__, ##__VA_ARGS__)
 #define cflash_devel(_s, ...)	pr_devel(CONFN(_s), __func__, ##__VA_ARGS__)
 
-#define cflash_dbg(...) CFLASH_DBG_CMD(printk(KERN_INFO CFLASH_NAME ": "__VA_ARGS__))
+#define cflash_dbg(_s, ...)	\
+	do { if (cflash_debug) cflash_info(_s, ##__VA_ARGS__);} while(0)
 
-#define ENTER CFLASH_DBG_CMD(printk(KERN_INFO CFLASH_NAME": Entering %s\n", __func__))
-#define LEAVE CFLASH_DBG_CMD(printk(KERN_INFO CFLASH_NAME": Leaving %s\n", __func__))
+#define cflash_dev_emerg(_d, _s, ...)	\
+	dev_emerg(_d, CONFN(_s), __func__, ##__VA_ARGS__)
+#define cflash_dev_alert(_d, _s, ...)	\
+	dev_alert(_d, CONFN(_s), __func__, ##__VA_ARGS__)
+#define cflash_dev_crit(_d, _s, ...)	\
+	dev_crit(_d, CONFN(_s), __func__, ##__VA_ARGS__)
+#define cflash_dev_err(_d, _s, ...)	\
+	dev_err(_d, CONFN(_s), __func__, ##__VA_ARGS__)
+#define cflash_dev_warn(_d, _s, ...)	\
+	dev_warn(_d, CONFN(_s), __func__, ##__VA_ARGS__)
+#define cflash_dev_info(_d, _s, ...)	\
+	dev_info(_d, CONFN(_s), __func__, ##__VA_ARGS__)
 
+#define cflash_dev_dbg(_d, _s, ...)	\
+	do { if (cflash_debug) cflash_dev_info(_d, _s, ##__VA_ARGS__);} while(0)
 
 enum open_mode_type {
 	MODE_NONE = 0,

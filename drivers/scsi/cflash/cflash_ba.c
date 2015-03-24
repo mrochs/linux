@@ -86,8 +86,8 @@ int ba_init(struct ba_lun *ba_lun)
 	lun_info->lun_alloc_map = kzalloc((lun_info->lun_bmap_size *
 					   sizeof(u64)), GFP_KERNEL);
 	if (!lun_info->lun_alloc_map) {
-		cflash_err("Failed to allocate lun allocation map: lun_id = %llX",
-			   ba_lun->lun_id);
+		cflash_err("Failed to allocate lun allocation map: "
+			   "lun_id = %llX", ba_lun->lun_id);
 		kfree(lun_info);
 		return -ENOMEM;
 	}
@@ -98,7 +98,7 @@ int ba_init(struct ba_lun *ba_lun)
 	for (i = 0; i < lun_info->lun_bmap_size; i++)
 		lun_info->lun_alloc_map[i] = (u64) ~ 0;
 
-	/* If the last word is not fully utilized, mark the extra bits as allocated */
+	/* If the last word not fully utilized, mark extra bits as allocated */
 	last_word_underflow = (lun_info->lun_bmap_size * 64) -
 	    lun_info->free_aun_cnt;
 	if (last_word_underflow > 0) {
@@ -208,8 +208,8 @@ u64 ba_alloc(struct ba_lun * ba_lun)
 					  lun_info->free_curr_idx,
 					  lun_info, &bit_word);
 		if (bit_pos == -1) {
-			cflash_err("Could not find an allocation unit on LUN: lun_id = %llX",
-				   ba_lun->lun_id);
+			cflash_err("Could not find an allocation unit on LUN: "
+				   "lun_id = %llX", ba_lun->lun_id);
 			return -1ULL;
 		}
 	}
@@ -256,12 +256,14 @@ int ba_free(struct ba_lun *ba_lun, u64 to_free)
 		return -1;
 	}
 #if 0
-	cflash_info("Received a request to free AU %lX on lun_id %llX, free_aun_cnt = %llX",
-	     to_free, ba_lun->lun_id, lun_info->free_aun_cnt);
+	cflash_info("Received a request to free AU %lX on lun_id %llX, "
+		    "free_aun_cnt = %llX",
+		    to_free, ba_lun->lun_id, lun_info->free_aun_cnt);
 #endif
 
 	if (lun_info->aun_clone_map[to_free] > 0) {
-		cflash_info("AUN %llX on lun_id %llX has been cloned. Clone count = %X",
+		cflash_info("AUN %llX on lun_id %llX has been cloned. Clone "
+			    "count = %X",
 		     to_free, ba_lun->lun_id, lun_info->aun_clone_map[to_free]);
 		lun_info->aun_clone_map[to_free]--;
 		return 0;
@@ -279,7 +281,8 @@ int ba_free(struct ba_lun *ba_lun, u64 to_free)
 		lun_info->free_high_idx = idx;
 
 #if 0
-	cflash_info("Successfully freed AU at bit_pos %X, bit map index %X on lun_id %llX, free_aun_cnt = %llX",
+	cflash_info("Successfully freed AU at bit_pos %X, bit map index %X on "
+		    "lun_id %llX, free_aun_cnt = %llX",
 	     bit_pos, idx, ba_lun->lun_id, lun_info->free_aun_cnt);
 #endif
 	return 0;

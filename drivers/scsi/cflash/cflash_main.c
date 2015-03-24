@@ -849,9 +849,7 @@ static void cflash_remove(struct pci_dev *pdev)
 	struct Scsi_Host *host = p_cflash->host;
 	unsigned long lock_flags = 0;
 
-	ENTER;
-
-	dev_err(&pdev->dev, "enter cflash_remove!\n");
+	cflash_dev_err(&pdev->dev, "enter cflash_remove!");
 
 	spin_lock_irqsave(host->host_lock, lock_flags);
 	while (p_cflash->tmf_active) {
@@ -865,11 +863,11 @@ static void cflash_remove(struct pci_dev *pdev)
 	/* Use this for now to indicate that scsi_add_host() was performed */
 	if (p_cflash->host->cmd_pool) {
 		scsi_remove_host(p_cflash->host);
-		dev_err(&pdev->dev, "after scsi_remove_host!\n");
+		cflash_dev_err(&pdev->dev, "after scsi_remove_host!");
 	}
 
 	cflash_term_afu(p_cflash);
-	dev_err(&pdev->dev, "after struct cflash_term_afu !\n");
+	cflash_dev_dbg(&pdev->dev, "after struct cflash_term_afu!");
 
 	/* XXX: Commented out for now
 	   iounmap(p_cflash->cflash_regs);
@@ -878,13 +876,13 @@ static void cflash_remove(struct pci_dev *pdev)
 
 	cflash_free_mem(p_cflash);
 	scsi_host_put(p_cflash->host);
-	dev_err(&pdev->dev, "after scsi_host_put!\n");
+	cflash_dev_dbg(&pdev->dev, "after scsi_host_put!");
 
 	/* XXX: Commented out for now
 	   pci_disable_device(pdev);
 	 */
 
-	LEAVE;
+	cflash_dbg("returning");
 }
 
 static int cflash_gb_alloc(struct cflash *p_cflash)
@@ -936,8 +934,8 @@ static int cflash_init_pci(struct cflash *p_cflash)
 	p_cflash->cflash_regs_pci = pci_resource_start(pdev, 0);
 	rc = pci_request_regions(pdev, CFLASH_NAME);
 	if (rc < 0) {
-		dev_err(&pdev->dev,
-			"Couldn't register memory range of registers\n");
+		cflash_dev_err(&pdev->dev,
+			"Couldn't register memory range of registers");
 		goto out;
 	}
 
@@ -949,7 +947,7 @@ static int cflash_init_pci(struct cflash *p_cflash)
 		}
 
 		if (rc) {
-			dev_err(&pdev->dev, "Cannot enable adapter\n");
+			cflash_dev_err(&pdev->dev, "Cannot enable adapter");
 			cflash_wait_for_pci_err_recovery(p_cflash);
 			goto out_release_regions;
 		}
@@ -959,8 +957,8 @@ static int cflash_init_pci(struct cflash *p_cflash)
 	   p_cflash->cflash_regs = pci_ioremap_bar(pdev, 0);
 
 	   if (!p_cflash->cflash_regs) {
-	   dev_err(&pdev->dev,
-	   "Couldn't map memory range of registers\n");
+	   cflash_dev_err(&pdev->dev,
+	   "Couldn't map memory range of registers");
 	   rc = -ENOMEM;
 	   goto out_disable;
 	   }
@@ -968,19 +966,19 @@ static int cflash_init_pci(struct cflash *p_cflash)
 
 	rc = pci_set_dma_mask(pdev, DMA_BIT_MASK(64));
 	if (rc < 0) {
-		dev_dbg(&pdev->dev, "Failed to set 64 bit PCI DMA mask\n");
+		cflash_dev_dbg(&pdev->dev, "Failed to set 64 bit PCI DMA mask");
 		rc = pci_set_dma_mask(pdev, DMA_BIT_MASK(32));
 	}
 
 	if (rc < 0) {
-		dev_err(&pdev->dev, "Failed to set PCI DMA mask\n");
+		cflash_dev_err(&pdev->dev, "Failed to set PCI DMA mask");
 		goto out_disable;
 	}
 
 	rc = pci_write_config_byte(pdev, PCI_CACHE_LINE_SIZE, 0x20);
 
 	if (rc != PCIBIOS_SUCCESSFUL) {
-		dev_err(&pdev->dev, "Write of cache line size failed\n");
+		cflash_dev_err(&pdev->dev, "Write of cache line size failed");
 		cflash_wait_for_pci_err_recovery(p_cflash);
 
 		rc = -EIO;
@@ -1004,7 +1002,7 @@ static int cflash_init_pci(struct cflash *p_cflash)
 	   rc = pci_save_state(pdev);
 
 	   if (rc != PCIBIOS_SUCCESSFUL) {
-	   dev_err(&pdev->dev, "Failed to save PCI config space\n");
+	   cflash_dev_err(&pdev->dev, "Failed to save PCI config space");
 	   rc = -EIO;
 	   goto cleanup_nolog;
 	   }
@@ -1057,15 +1055,14 @@ static int cflash_init_scsi(struct cflash *p_cflash)
 	struct pci_dev *pdev = p_cflash->p_dev;
 	int rc = 0;
 
-	dev_info(&pdev->dev, "in %s before scsi_add_host\n", __func__);
+	cflash_dev_dbg(&pdev->dev, "before scsi_add_host");
 	rc = scsi_add_host(p_cflash->host, &pdev->dev);
 	if (rc) {
-		dev_err(&pdev->dev, "in %s, scsi_add_host() failed (rc=%d)\n",
-			__func__, rc);
+		cflash_dev_err(&pdev->dev, "scsi_add_host failed (rc=%d)", rc);
 		goto out;
 	}
 
-	dev_info(&pdev->dev, "in %s before scsi_scan_host\n", __func__);
+	cflash_dev_dbg(&pdev->dev, "before scsi_scan_host");
 	scsi_scan_host(p_cflash->host);
 
 	if (!fullqc)
@@ -1090,16 +1087,14 @@ static int cflash_probe(struct pci_dev *pdev,
 	struct device *phys_dev;
 	int rc = 0;
 
-	ENTER;
-
-	dev_info(&pdev->dev, "Found CFLASH with IRQ: %d\n", pdev->irq);
+	cflash_dev_dbg(&pdev->dev, "Found CFLASH with IRQ: %d", pdev->irq);
 
 	if (fullqc)
 		driver_template.scan_finished = NULL;
 
 	host = scsi_host_alloc(&driver_template, sizeof(struct cflash));
 	if (!host) {
-		dev_err(&pdev->dev, "call to scsi_host_alloc failed!\n");
+		cflash_dev_err(&pdev->dev, "call to scsi_host_alloc failed!");
 		rc = -ENOMEM;
 		goto out;
 	}
@@ -1114,7 +1109,7 @@ static int cflash_probe(struct pci_dev *pdev,
 	p_cflash->host = host;
 	rc = cflash_gb_alloc(p_cflash);
 	if (rc) {
-		dev_err(&pdev->dev, "call to scsi_host_alloc failed!\n");
+		cflash_dev_err(&pdev->dev, "call to scsi_host_alloc failed!");
 		rc = -ENOMEM;
 		goto out;
 	}
@@ -1144,8 +1139,8 @@ static int cflash_probe(struct pci_dev *pdev,
 	p_cflash->afu = cxl_pci_to_afu(pdev, NULL);
 	rc = cflash_init_afu(p_cflash);
 	if (rc) {
-		dev_err(&pdev->dev, "call to cflash_init_afu failed rc=%d!\n",
-			rc);
+		cflash_dev_err(&pdev->dev,
+			       "call to cflash_init_afu failed rc=%d!", rc);
 		goto out_remove;
 	}
 
@@ -1155,19 +1150,18 @@ static int cflash_probe(struct pci_dev *pdev,
 
 	rc = cflash_init_pci(p_cflash);
 	if (rc) {
-		dev_err(&pdev->dev, "call to cflash_init_pci failed rc=%d!\n",
-			rc);
+		cflash_dev_err(&pdev->dev,
+			       "call to cflash_init_pci failed rc=%d!", rc);
 		goto out_remove;
 	}
 
 	rc = cflash_init_scsi(p_cflash);
 	if (rc) {
-		dev_err(&pdev->dev, "call to cflash_init_scsi failed rc=%d!\n",
-			rc);
+		cflash_dev_err(&pdev->dev,
+			"call to cflash_init_scsi failed rc=%d!", rc);
 		goto out_remove;
 	}
 
-	LEAVE;
 out:
 	cflash_info("returning rc=%d", rc);
 	return rc;

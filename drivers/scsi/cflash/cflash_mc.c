@@ -1552,8 +1552,9 @@ out:
 
 int cflash_init_afu(struct cflash *p_cflash)
 {
-	int rc;
+	int rc = 0;
 	struct afu *p_afu = p_cflash->p_afu;
+	struct device *dev = &p_cflash->p_dev->dev;
 	struct cxl_context *ctx;
 
 	ctx = cxl_dev_context_init(p_cflash->p_dev);
@@ -1567,8 +1568,8 @@ int cflash_init_afu(struct cflash *p_cflash)
 	/* Allocate AFU generated interrupt handler */
 	rc = cxl_allocate_afu_irqs(ctx, 4);
 	if (rc) {
-		dev_err(&p_cflash->p_dev->dev,
-			"call to allocate_afu_irqs failed rc=%d!\n", rc);
+		cflash_dev_err(dev, "call to allocate_afu_irqs failed rc=%d!",
+			       rc);
 		goto err1;
 	}
 
@@ -1576,24 +1577,24 @@ int cflash_init_afu(struct cflash *p_cflash)
 	rc = cxl_map_afu_irq(ctx, 1, cflash_sync_err_irq, p_afu,
 			     "SISL_MSI_SYNC_ERROR");
 	if (!rc) {
-		dev_err(&p_cflash->p_dev->dev,
-			"call to map IRQ 1 (SISL_MSI_SYNC_ERROR) failed!\n");
+		cflash_dev_err(dev,
+			       "IRQ 1 (SISL_MSI_SYNC_ERROR) map failed!");
 		goto err2;
 	}
 	/* Register AFU interrupt 2 (SISL_MSI_RRQ_UPDATED) */
 	rc = cxl_map_afu_irq(ctx, 2, cflash_rrq_irq, p_afu,
 			     "SISL_MSI_RRQ_UPDATED");
 	if (!rc) {
-		dev_err(&p_cflash->p_dev->dev,
-			"call to map IRQ 2 (SISL_MSI_RRQ_UPDATED) failed!\n");
+		cflash_dev_err(dev,
+			       "IRQ 2 (SISL_MSI_RRQ_UPDATED) map failed!");
 		goto err3;
 	}
 	/* Register AFU interrupt 3 (SISL_MSI_ASYNC_ERROR) */
 	rc = cxl_map_afu_irq(ctx, 3, cflash_async_err_irq, p_afu,
 			     "SISL_MSI_ASYNC_ERROR");
 	if (!rc) {
-		dev_err(&p_cflash->p_dev->dev,
-			"call to map IRQ 3 (SISL_MSI_ASYNC_ERROR) failed!\n");
+		cflash_dev_err(dev,
+			       "IRQ 3 (SISL_MSI_ASYNC_ERROR) map failed!");
 		goto err4;
 	}
 
@@ -1606,7 +1607,7 @@ int cflash_init_afu(struct cflash *p_cflash)
 	/* Register AFU interrupt 4 for errors. */
 	rc = cxl_map_afu_irq(ctx, 4, cflash_dummy_irq_handler, p_afu, "err3");
 	if (!rc) {
-		dev_err(&p_cflash->p_dev->dev, "call to map IRQ 4 failed!\n");
+		cflash_dev_err(dev, "IRQ 4 map failed!");
 		goto err5;
 	}
 
@@ -1623,8 +1624,7 @@ int cflash_init_afu(struct cflash *p_cflash)
 
 	rc = cflash_start_afu(p_cflash);
 	if (rc) {
-		dev_err(&p_cflash->p_dev->dev,
-			"call to start_afu failed, rc=%d!\n", rc);
+		cflash_dev_err(dev, "call to start_afu failed, rc=%d!", rc);
 		goto err6;
 	}
 
