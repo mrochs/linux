@@ -342,8 +342,8 @@ void  cflash_rhte_cin(struct sisl_rht_entry *p_rht_entry)
 	p_rht_entry->fp = 0;
 }
 
-void cflash_rht_format1(struct sisl_rht_entry *p_rht_entry,
-			u64 lun_id)
+void cflash_rht_format1(struct sisl_rht_entry *p_rht_entry, u64 lun_id,
+			u32 perm)
 {
 	/*
 	 * Populate the Format 1 RHT entry for direct access (physical
@@ -354,7 +354,7 @@ void cflash_rht_format1(struct sisl_rht_entry *p_rht_entry,
 	struct sisl_rht_entry_f1 *p_rht_entry_f1 =
 		(struct sisl_rht_entry_f1 *)p_rht_entry;
 	memset(p_rht_entry_f1, 0, sizeof(struct sisl_rht_entry_f1));
-	p_rht_entry_f1->fp = SISL_RHT_FP(1U, 0x3);
+	p_rht_entry_f1->fp = SISL_RHT_FP(1U, 0);
 	asm volatile ("lwsync"::);
 
 	p_rht_entry_f1->lun_id = lun_id;
@@ -366,7 +366,7 @@ void cflash_rht_format1(struct sisl_rht_entry *p_rht_entry,
 	 * enabled (valid bit set to TRUE).
 	 */
 	dummy.valid = 0x80;
-	dummy.fp = SISL_RHT_FP(1U, 0x3);
+	dummy.fp = SISL_RHT_FP(1U, perm);
 #if 0	/* XXX - check with Andy/Todd b/c this doesn't work */
 	if (internal_lun)
 		dummy.port_sel = 0x1;
@@ -412,6 +412,7 @@ int cflash_disk_open(struct scsi_device *sdev, void __user * arg,
 	struct dk_capi_udirect *pphys = (struct dk_capi_udirect *)arg;
 	struct dk_capi_resize  resize;
 
+	u32 perm;
 	u64 context_id;
 	u64 lun_size = 0;
 	u64 block_size = 0;
@@ -453,7 +454,7 @@ int cflash_disk_open(struct scsi_device *sdev, void __user * arg,
 
 	cflash_info("context=0x%llx ls=0x%llx", context_id, lun_size);
 
-	p_rht_entry  = cflash_rhte_cout(p_cflash, context_id);
+	p_rht_entry = cflash_rhte_cout(p_cflash, context_id);
 
 	if (p_rht_entry == NULL)
 	{
@@ -471,12 +472,15 @@ int cflash_disk_open(struct scsi_device *sdev, void __user * arg,
 		}
 	}
 
+	/* Translate read/write O_* flags from fnctl.h to AFU permission bits */
+	perm = ((pvirt->flags + 1) & 0x3);
+
 	rsrc_handle = (p_rht_entry - p_rht_info->rht_start);
 	block_size = p_lun_info->blk_len;
 
 	if (mode == MODE_VIRTUAL) {
 		p_rht_entry->nmask = MC_RHT_NMASK;
-		p_rht_entry->fp = SISL_RHT_FP(0u, 0x3);
+		p_rht_entry->fp = SISL_RHT_FP(0U, perm);
 		/* format 0 & perms */
 
 		if (lun_size != 0) {
@@ -493,7 +497,7 @@ int cflash_disk_open(struct scsi_device *sdev, void __user * arg,
 		pvirt->last_lba = last_lba;
 		pvirt->rsrc_handle = rsrc_handle;
 	} else if (mode == MODE_PHYSICAL) {
-		cflash_rht_format1(p_rht_entry, p_lun_info->lun_id);
+		cflash_rht_format1(p_rht_entry, p_lun_info->lun_id, perm);
 		afu_sync(p_afu, context_id, rsrc_handle, AFU_LW_SYNC);
 
 		last_lba = p_lun_info->max_lba;
@@ -2029,6 +2033,7 @@ int cflash_disk_clone(struct scsi_device *sdev, void __user * arg)
 			*p_ctx_info_dst;
 	struct rht_info *p_rht_info_src,
 			*p_rht_info_dst;
+	u32 perm;
 	u64 reg;
 	int i, j;
 	int rc = 0;
@@ -2068,6 +2073,9 @@ int cflash_disk_clone(struct scsi_device *sdev, void __user * arg)
 		goto out;
 	}
 
+	/* Translate read/write O_* flags from fnctl.h to AFU permission bits */
+	perm = ((pclone->flags + 1) & 0x3);
+
 	/*
 	 * This loop is equivalent to cflash_disk_open & cflash_vlun_resize.
 	 * Not checking if the source context has anything open or whether
@@ -2077,8 +2085,7 @@ int cflash_disk_clone(struct scsi_device *sdev, void __user * arg)
 		p_rht_info_dst->rht_start[i].nmask =
 		    p_rht_info_src->rht_start[i].nmask;
 		p_rht_info_dst->rht_start[i].fp =
-		    SISL_RHT_FP_CLONE(p_rht_info_src->rht_start[i].fp,
-				      pclone->flags & 0x3);
+		    SISL_RHT_FP_CLONE(p_rht_info_src->rht_start[i].fp, perm);
 
 		rc = clone_lxt(p_afu, p_blka, pclone->context_id_dst, i,
 			       &p_rht_info_dst->rht_start[i],

@@ -203,7 +203,7 @@ void cflash_cmd_cin(struct afu_cmd *p_cmd);
 void cflash_send_scsi(struct afu *, struct scsi_cmnd *);
 void cflash_send_tmf(struct afu *, struct scsi_cmnd *, u64);
 struct sisl_rht_entry *cflash_rhte_cout(struct cflash *, u64);
-void cflash_rht_format1(struct sisl_rht_entry *, u64);
+void cflash_rht_format1(struct sisl_rht_entry *, u64, u32);
 struct ctx_info *get_validated_context(struct cflash *, u64, bool);
 
 #endif /* ifndef _CFLASHMC_H */
