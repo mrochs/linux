@@ -138,6 +138,7 @@ static int cflash_queuecommand(struct Scsi_Host *host,
 {
 	struct cflash *p_cflash = (struct cflash *)host->hostdata;
 	struct afu *p_afu = p_cflash->p_afu;
+	int rc = 0;
 
 	/* XXX: Until the scsi_dma_map works, this stuff is meaningless
 	 * Make the queuecommand entry point a dummy one for now.
@@ -164,9 +165,9 @@ static int cflash_queuecommand(struct Scsi_Host *host,
 			cpu_to_be32(((u32 *) scp->cmnd)[2]),
 			cpu_to_be32(((u32 *) scp->cmnd)[3]));
 
-		cflash_send_scsi(p_afu, scp);
+		rc = cflash_send_scsi(p_afu, scp);
 	}
-	return 0;
+	return rc;
 }
 
 /**
@@ -404,7 +405,8 @@ static int cflash_slave_configure(struct scsi_device *sdev)
 			rc = -ENOMEM;
 			goto out;
 		}
-                p_ctx_info = get_validated_context(p_cflash, context_id, FALSE);
+                p_ctx_info = get_validated_context(p_cflash, p_afu->ctx_hndl, 
+						   FALSE);
 		p_ctx_info->p_rht_info = &p_afu->rht_info[p_afu->ctx_hndl];
 	        p_rht_entry  = cflash_rhte_cout(p_cflash, p_afu->ctx_hndl);
                 p_rht_info = p_ctx_info->p_rht_info;

@@ -37,7 +37,8 @@ extern u32 fullqc;
 
 #define CFLASH_MAX_CMDS			16
 #define CFLASH_MAX_CMDS_PER_LUN         CFLASH_MAX_CMDS
-#define CFLASH_MAX_SECTORS              0xffffu
+/* With a 4ksector, and a 16MB transfer size limit max should be 4k sectors */
+#define CFLASH_MAX_SECTORS              0x1000
 /* Really only one target per bus since the Texan is directly attached */
 #define CFLASH_MAX_NUM_TARGETS_PER_BUS                     1
 #define CFLASH_MAX_NUM_LUNS_PER_TARGET                     65536
