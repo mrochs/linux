@@ -10,12 +10,12 @@
 #include <linux/pci.h>
 #include "cxl.h"
 
-void cxl_pci_dma_dev_setup(struct pci_dev *pdev)
+static void cxl_pci_dma_dev_setup(struct pci_dev *pdev)
 {
 	printk("WARNING %s", __func__);
 }
 
-int cxl_dma_set_mask(struct device *dev, u64 dma_mask)
+static int cxl_dma_set_mask(struct pci_dev *pdev, u64 dma_mask)
 {
 	pr_devel("%s", __func__);
 
@@ -24,29 +24,28 @@ int cxl_dma_set_mask(struct device *dev, u64 dma_mask)
 		return EIO;
 	}
 
-	*dev->dma_mask = dma_mask;
+	*(pdev->dev.dma_mask) = dma_mask;
 	return 0;
 }
 
-int cxl_pci_probe_mode(struct pci_bus *bus)
+static int cxl_pci_probe_mode(struct pci_bus *bus)
 {
 	printk("WARNING %s", __func__);
 	return PCI_PROBE_NORMAL;
 }
 
-int cxl_setup_msi_irqs(struct pci_dev *pdev, int nvec, int type)
+static int cxl_setup_msi_irqs(struct pci_dev *pdev, int nvec, int type)
 {
 	printk("WARNING %s", __func__);
 	return -ENODEV;
 }
 
-int cxl_teardown_msi_irqs(struct pci_dev *pdev)
+static void cxl_teardown_msi_irqs(struct pci_dev *pdev)
 {
 	printk("WARNING %s", __func__);
-	return -ENODEV;
 }
 
-int cxl_pci_enable_device_hook(struct pci_dev *dev)
+static bool cxl_pci_enable_device_hook(struct pci_dev *dev)
 {
         struct pci_controller *hose;
 	struct cxl_afu *afu;
@@ -56,17 +55,17 @@ int cxl_pci_enable_device_hook(struct pci_dev *dev)
 	set_dma_ops(&dev->dev, &dma_direct_ops);
 	set_dma_offset(&dev->dev, PAGE_OFFSET);
 
-	return afu_check_and_enable(afu);
+	return (afu_check_and_enable(afu) == 0);
 }
 
-resource_size_t cxl_pci_window_alignment(struct pci_bus *bus,
+static resource_size_t cxl_pci_window_alignment(struct pci_bus *bus,
 						unsigned long type)
 {
 	printk("WARNING %s", __func__);
 	return -1;
 }
 
-void cxl_pci_reset_secondary_bus(struct pci_dev *dev)
+static void cxl_pci_reset_secondary_bus(struct pci_dev *dev)
 {
 	printk("WARNING %s", __func__);
 }
@@ -148,6 +147,19 @@ static struct pci_ops cxl_pcie_pci_ops =
 	.write = cxl_pcie_write_config,
 };
 
+
+static struct pci_controller_ops cxl_pci_controller_ops =
+{
+	.dma_dev_setup = cxl_pci_dma_dev_setup,
+	.probe_mode = cxl_pci_probe_mode,
+	.enable_device_hook = cxl_pci_enable_device_hook,
+	.window_alignment = cxl_pci_window_alignment,
+	.reset_secondary_bus = cxl_pci_reset_secondary_bus,
+	.setup_msi_irqs = cxl_setup_msi_irqs,
+	.teardown_msi_irqs = cxl_teardown_msi_irqs,
+	.dma_set_mask = cxl_dma_set_mask,
+};
+
 int cxl_pci_vphb_add(struct cxl_afu *afu)
 {
 	struct pci_controller *hose;
@@ -169,7 +181,7 @@ int cxl_pci_vphb_add(struct cxl_afu *afu)
         hose->cfg_addr = afu->afu_desc_mmio + afu->crs_offset;
         hose->cfg_data = (void *)(u64)afu->crs_len;
 	hose->private_data = afu;
-	hose->type = PCI_CXL;
+	hose->controller_ops = cxl_pci_controller_ops;
 
 	/* Scan the bus */
 	pcibios_scan_phb(hose);

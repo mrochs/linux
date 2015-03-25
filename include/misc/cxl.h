@@ -51,24 +51,6 @@ static inline void cxl_slbia(struct mm_struct *mm) {}
 #endif /* CONFIG_CXL_BASE */
 
 
-/*
- * Functions to implement vPHB
- *
- * FIXME Remove from here and put these in struct pci_controller and have then
- * override the ppc_md versions.
- */
-void cxl_pci_dma_dev_setup(struct pci_dev *pdev);
-int cxl_dma_set_mask(struct device *dev, u64 dma_mask);
-int cxl_pci_probe_mode(struct pci_bus *bus);
-int cxl_setup_msi_irqs(struct pci_dev *pdev, int nvec, int type);
-int cxl_teardown_msi_irqs(struct pci_dev *pdev);
-int cxl_pci_enable_device_hook(struct pci_dev *dev);
-resource_size_t cxl_pci_window_alignment(struct pci_bus *bus,
-                                         unsigned long type);
-void cxl_pci_reset_secondary_bus(struct pci_dev *dev);
-
-
-
 /**** In kernel API below here *******/
 
 /*
