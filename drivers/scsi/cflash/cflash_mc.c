@@ -277,19 +277,27 @@ get_validated_context(struct cflash *p_cflash, u64 ctxid, bool clone_path)
 {
 	struct afu *p_afu = p_cflash->p_afu;
 	struct ctx_info *p_ctx_info = NULL;
-	pid_t pid = current->pid;
+	bool mc_override = ctxid == p_afu->ctx_hndl;
+	pid_t pid = current->pid,
+	      ctxpid = 0;
 
 	if (unlikely(clone_path))
 		pid = current->parent->pid;
 
-	/* Special case the master context, the master context
-	 * is not associated with any PID
-	 */
-	if ((ctxid < MAX_CONTEXT) &&
-	    ((p_cflash->per_context[ctxid].pid == pid) ||
-	     (ctxid == p_afu->ctx_hndl))) {
+	if (likely(ctxid < MAX_CONTEXT)) {
 		p_ctx_info = &p_afu->ctx_info[ctxid];
+
+		if (checkpid) {
+			ctxpid = p_cflash->per_context[ctxid].pid;
+
+			if ((pid != ctxpid) &&
+			     (!mc_override))
+				p_ctx_info = NULL;
+		}
 	}
+
+	cflash_dbg("ctxid=%llu p_ctx_info=%p ctxpid=%u pid=%u clone_path=%d",
+		   ctxid, p_ctx_info, ctxpid, pid, clone_path);
 
 	return p_ctx_info;
 }
@@ -473,7 +481,8 @@ int cflash_disk_open(struct scsi_device *sdev, void __user * arg,
 	}
 
 	/* Translate read/write O_* flags from fnctl.h to AFU permission bits */
-	perm = ((pvirt->flags + 1) & 0x3);
+	//perm = ((pvirt->flags + 1) & 0x3);
+	perm = 0x3;
 
 	rsrc_handle = (p_rht_entry - p_rht_info->rht_start);
 	block_size = p_lun_info->blk_len;

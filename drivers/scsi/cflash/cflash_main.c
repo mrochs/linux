@@ -47,7 +47,9 @@ MODULE_AUTHOR("Matthew R. Ochs <mrochs@linux.vnet.ibm.com>");
 MODULE_LICENSE("GPL");
 
 u32 internal_lun = 0;
+u32 cflash_debug = 0;
 u32 fullqc = 0;
+u32 checkpid = 0;
 module_param_named(lun_mode, internal_lun, uint, 0);
 MODULE_PARM_DESC(lun_mode, " 0 = external LUN[s](default),\n"
 			   " 1 = internal LUN (1 x 64K, 512B blocks, id 0),\n"
@@ -60,8 +62,9 @@ MODULE_PARM_DESC(debug, " 1 = enabled");
 module_param_named(qc, fullqc, uint, 0);
 MODULE_PARM_DESC(qc, " 1 = Regular SCSI queuecommand");
 
+module_param_named(checkpid, checkpid, uint, 0);
+MODULE_PARM_DESC(qc, " 1 = Enforce PID/context ownership policy");
 
-unsigned int cflash_debug = 0;
 
 /**
  * cflash_driver_info - Get information about the card/driver
