@@ -1,0 +1,2533 @@
+/*
+ * CAPI Flash Device Driver
+ *
+ * Written by: Manoj N. Kumar <manoj@linux.vnet.ibm.com>, IBM Corporation
+ *             Matthew R. Ochs <mrochs@linux.vnet.ibm.com>, IBM Corporation
+ *
+ * Copyright (C) 2015 IBM Corporation
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version
+ * 2 of the License, or (at your option) any later version.
+ */
+
+#include <linux/pci.h>
+#include <linux/module.h>
+#include <linux/semaphore.h>
+#include <linux/fs.h>
+#include <linux/file.h>
+#include <linux/cdev.h>
+#include <linux/delay.h>
+#include <linux/list.h>
+#include <linux/syscalls.h>
+#include <uapi/misc/cxl.h>
+#include <misc/cxl.h>
+#include <linux/unistd.h>
+#include <linux/kernel.h>
+#include <asm/unistd.h>
+
+#include <scsi/scsi.h>
+#include <scsi/scsi_host.h>
+#include <scsi/scsi_device.h>
+#include <scsi/scsi_tcq.h>
+#include <scsi/scsi_eh.h>
+#include <scsi/scsi_cmnd.h>
+
+#include "sislite.h"
+#include "cflash.h"
+#include "cflash_mc.h"
+#include "cflash_ba.h"
+#include "cflash_ioctl.h"
+#include "cflash_util.h"
+#include "afu_fc.h"
+#include "mserv.h"
+
+
+
+/* Mask off the low nibble of the length to ensure 16 byte multiple */
+#define SISLITE_LEN_MASK 0xFFFFFFF0
+
+int cflash_afu_attach(struct cflash *p_cflash, u64 context_id)
+{
+	struct afu *p_afu = p_cflash->p_afu;
+	struct ctx_info *p_ctx_info = &p_afu->ctx_info[context_id];
+	int rc = 0;
+	u64 reg;
+
+	/* This code reads the mbox w/o knowing if the requester is
+	 * the true owner of the context it wants to register. The
+	 * read has no side effect and does not affect the true
+	 * owner if this is a fraudulent registration attempt.
+	 */
+	reg = read_64(&p_ctx_info->p_ctrl_map->mbox_r);
+
+	/* zeroed mbox is a locked mbox */
+	if (reg == 0) {
+		cflash_err("zero mbox reg 0x%llx", reg);
+	}
+
+	/* This context is not duped and is in a group by
+	 * itself.
+	 */
+	p_ctx_info->p_next = p_ctx_info;
+	p_ctx_info->p_forw = p_ctx_info;
+
+	/* restrict user to read/write cmds in translated
+	 * mode. User has option to choose read and/or write
+	 * permissions again in mc_open.
+	 */
+	write_64(&p_ctx_info->p_ctrl_map->ctx_cap,
+		 SISL_CTX_CAP_READ_CMD | SISL_CTX_CAP_WRITE_CMD);
+
+	asm volatile ("eieio"::);
+	reg = read_64(&p_ctx_info->p_ctrl_map->ctx_cap);
+
+	/* if the write failed, the ctx must have been
+	 * closed since the mbox read and the ctx_cap
+	 * register locked up.  fail the registration
+	 */
+	if (reg != (SISL_CTX_CAP_READ_CMD | SISL_CTX_CAP_WRITE_CMD)) {
+		cflash_err("ctx may be closed reg=%llx", reg);
+		rc = -EAGAIN;
+		goto out;
+	}
+
+	/* the context gets a dedicated RHT tbl unless it
+	 * is dup'ed later.
+	 */
+	p_ctx_info->p_rht_info = &p_afu->rht_info[context_id];
+	p_ctx_info->p_rht_info->ref_cnt = 1;
+	memset(p_ctx_info->p_rht_info->rht_start, 0,
+	       sizeof(struct sisl_rht_entry) * MAX_RHT_PER_CONTEXT);
+	/* make clearing of the RHT visible to AFU before
+	 * MMIO
+	 */
+	asm volatile ("lwsync"::);
+
+	/* set up MMIO registers pointing to the RHT */
+	write_64(&p_ctx_info->p_ctrl_map->rht_start,
+		 (u64) p_ctx_info->p_rht_info->rht_start);
+	write_64(&p_ctx_info->p_ctrl_map->rht_cnt_id,
+		 SISL_RHT_CNT_ID((u64) MAX_RHT_PER_CONTEXT,
+				 (u64) (p_afu->ctx_hndl)));
+	p_ctx_info->ref_cnt = 1;
+out:
+	cflash_info("returning rc=%d", rc);
+	return rc;
+
+}
+
+static int cflash_init_ba(struct lun_info *p_lun_info)
+{
+	int rc = 0;
+	struct blka *p_blka = &p_lun_info->blka;
+
+	memset(p_blka, 0, sizeof(*p_blka));
+	mutex_init(&p_blka->mutex);
+
+	p_blka->ba_lun.lun_id = p_lun_info->lun_id;
+	p_blka->ba_lun.lsize = p_lun_info->max_lba + 1;
+	p_blka->ba_lun.lba_size = p_lun_info->blk_len;
+
+	p_blka->ba_lun.au_size = MC_CHUNK_SIZE;
+	p_blka->nchunk = p_blka->ba_lun.lsize / MC_CHUNK_SIZE;
+
+	rc = ba_init(&p_blka->ba_lun);
+	if (rc) {
+		cflash_err("cannot init block_alloc, rc=%d", rc);
+		goto cflash_init_ba_exit;
+	}
+
+cflash_init_ba_exit:
+	cflash_info("returning rc=%d p_lun_info=%p", rc, p_lun_info);
+	return rc;
+}
+
+/*
+ * NAME:        cflash_disk_attach
+ *
+ * FUNCTION:    attach a LUN to context
+ *
+ * INPUTS:
+ *              sdev       - Pointer to scsi device structure
+ *              arg        - Pointer to ioctl specific structure
+ *
+ * OUTPUTS:
+ *              context_id - Unique context index
+ *              adap_fd    - New file descriptor for user
+ *
+ * RETURNS:
+ *              0           - Success
+ *              errno       - Failure
+ *
+ * NOTES:
+ *              When successful:
+ *               a. initialize AFU for this context
+ *
+ */
+int cflash_disk_attach(struct scsi_device *sdev, void __user * arg)
+{
+	struct cflash *p_cflash = (struct cflash *)sdev->host->hostdata;
+	struct afu *p_afu = p_cflash->p_afu;
+	struct lun_info *p_lun_info = sdev->hostdata;
+	struct cxl_ioctl_start_work *p_work;
+	int rc = 0;
+	struct file *file;
+
+	struct dk_capi_attach *parg = (struct dk_capi_attach *)arg;
+	struct cxl_context *ctx;
+
+	int fd = -1;
+
+	if (fullqc) {
+	if (p_lun_info->max_lba == 0) {
+		cflash_info("No capacity info yet for this LUN (%016llX)",
+			    p_lun_info->lun_id);
+		read_cap16(p_afu, p_lun_info, sdev->channel + 1);
+		cflash_info("LBA = %016llX", p_lun_info->max_lba);
+		cflash_info("BLK_LEN = %08X", p_lun_info->blk_len);
+		rc = cflash_init_ba(p_lun_info);
+		if (rc) {
+			cflash_err("call to cflash_init_ba failed rc=%d!", rc);
+			rc = -ENOMEM;
+			goto out;
+		}
+		}
+	}
+
+	ctx = cxl_dev_context_init(p_cflash->p_dev);
+	if (!ctx) {
+		cflash_err("Could not initialize context");
+		rc = -ENODEV;
+		goto out;
+	}
+
+	parg->context_id = (u64) cxl_process_element(ctx);
+	if (parg->context_id > MAX_CONTEXT) {
+		cflash_err("context_id (%llu) is too large!", parg->context_id);
+		rc = -EPERM;
+		goto out;
+	}
+
+	//BUG_ON(p_cflash->per_context[parg->context_id].lfd != -1);
+	//BUG_ON(p_cflash->per_context[parg->context_id].pid != 0);
+
+	/*
+	 * Create and attach a new file descriptor. This must be the last
+	 * statement as once this is run, the file descritor is visible to
+	 * userspace and can't be undone. No error paths after this as we
+	 * can't free the fd safely.
+	 */
+	p_work = &p_cflash->per_context[parg->context_id].work;
+	memset(p_work, 0, sizeof(*p_work));
+	p_work->num_interrupts = 4;
+	p_work->flags = CXL_START_WORK_NUM_IRQS;
+
+	file = cxl_get_fd(ctx, NULL, &fd);
+	if (fd < 0) {
+		rc = -ENODEV;
+		cxl_release_context(ctx);
+		cflash_err("Could not get file descriptor");
+		goto out;
+	}
+
+	rc = cxl_start_work(ctx, p_work);
+	if (rc) {
+		cflash_err("Could not start context rc=%d", rc);
+		cxl_release_context(ctx);
+		fput(file);
+		put_unused_fd(fd);
+		fd = -1;
+		goto out;
+	}
+
+	rc = cflash_afu_attach(p_cflash, parg->context_id);
+	if (rc) {
+		cflash_err("Could not attach AFU rc %d", rc);
+		cxl_release_context(ctx);
+		fput(file);
+		put_unused_fd(fd);
+		fd = -1;
+		goto out;
+	}
+
+	/* No error paths after installing the fd */
+	fd_install(fd, file);
+
+	/* XXX - I think we want a different lock here... */
+	spin_lock(p_lun_info->slock);
+	p_cflash->per_context[parg->context_id].lfd = fd;
+	p_cflash->per_context[parg->context_id].pid = current->pid;
+	spin_unlock(p_lun_info->slock);
+
+	parg->return_flags = 0;
+	parg->block_size = p_lun_info->blk_len;
+	parg->mmio_size = sizeof(p_afu->p_afu_map->hosts[0].harea);
+
+out:
+	parg->adap_fd = fd;
+
+	cflash_info("returning fd=%d bs=%lld rc=%d", fd, parg->block_size, rc);
+	return rc;
+}
+
+struct ctx_info *
+get_validated_context(struct cflash *p_cflash, u64 ctxid, bool clone_path)
+{
+	struct afu *p_afu = p_cflash->p_afu;
+	struct ctx_info *p_ctx_info = NULL;
+	bool mc_override = ctxid == p_afu->ctx_hndl;
+	pid_t pid = current->pid,
+	      ctxpid = 0;
+
+	if (unlikely(clone_path))
+		pid = current->parent->pid;
+
+	if (likely(ctxid < MAX_CONTEXT)) {
+		p_ctx_info = &p_afu->ctx_info[ctxid];
+
+		if (checkpid) {
+			ctxpid = p_cflash->per_context[ctxid].pid;
+
+			if ((pid != ctxpid) &&
+			     (!mc_override))
+				p_ctx_info = NULL;
+		}
+	}
+
+	cflash_dbg("ctxid=%llu p_ctx_info=%p ctxpid=%u pid=%u clone_path=%d",
+		   ctxid, p_ctx_info, ctxpid, pid, clone_path);
+
+	return p_ctx_info;
+}
+
+/* Checkout a free/empty RHT entry */
+struct sisl_rht_entry *cflash_rhte_cout(struct cflash *p_cflash, 
+					u64 context_id)
+{
+	struct ctx_info *p_ctx_info;
+	struct rht_info *p_rht_info = NULL;
+	struct sisl_rht_entry *p_rht_entry = NULL;
+	int i;
+
+	p_ctx_info = get_validated_context(p_cflash, context_id, FALSE);
+	if (p_ctx_info != NULL) {
+		p_rht_info = p_ctx_info->p_rht_info;
+
+		cflash_info("ctx 0x%llx ctxinfo %p rhtinfo %p",
+			    context_id, p_ctx_info, p_rht_info);
+
+		/* find a free RHT entry */
+		for (i = 0; i < MAX_RHT_PER_CONTEXT; i++) {
+			if (p_rht_info->rht_start[i].nmask == 0) {
+				p_rht_entry = &p_rht_info->rht_start[i];
+				break;
+			}
+		}
+		cflash_info("i %d rhti %p rhte %p", 
+			    i, p_rht_info, p_rht_entry);
+
+		/* if we did not find a free entry, reached max opens allowed
+		 * per context
+		 */
+
+		if (p_rht_entry == NULL) {
+			goto out;
+		}
+
+	} else {
+		goto out;
+	}
+out:
+	cflash_info("returning p_rht_entry=%p", p_rht_entry);
+	return p_rht_entry;
+}
+
+void  cflash_rhte_cin(struct sisl_rht_entry *p_rht_entry)
+{
+	p_rht_entry->nmask = 0;
+	p_rht_entry->fp = 0;
+}
+
+void cflash_rht_format1(struct sisl_rht_entry *p_rht_entry, u64 lun_id,
+			u32 perm)
+{
+	/*
+	 * Populate the Format 1 RHT entry for direct access (physical
+	 * LUN) using the synchronization sequence defined in the
+	 * SISLite specification.
+	 */
+	struct sisl_rht_entry_f1 dummy = { 0 };
+	struct sisl_rht_entry_f1 *p_rht_entry_f1 =
+		(struct sisl_rht_entry_f1 *)p_rht_entry;
+	memset(p_rht_entry_f1, 0, sizeof(struct sisl_rht_entry_f1));
+	p_rht_entry_f1->fp = SISL_RHT_FP(1U, 0);
+	asm volatile ("lwsync"::);
+
+	p_rht_entry_f1->lun_id = lun_id;
+	asm volatile ("lwsync"::);
+
+	/*
+	 * Use a dummy RHT Format 1 entry to build the second dword
+	 * of the entry that must be populated in a single write when
+	 * enabled (valid bit set to TRUE).
+	 */
+	dummy.valid = 0x80;
+	dummy.fp = SISL_RHT_FP(1U, perm);
+#if 0	/* XXX - check with Andy/Todd b/c this doesn't work */
+	if (internal_lun)
+		dummy.port_sel = 0x1;
+	else
+#endif
+		dummy.port_sel = 0x3;
+	p_rht_entry_f1->dw = dummy.dw;
+
+	asm volatile ("lwsync"::);
+
+	return;
+}
+
+/*
+ * NAME:        cflash_disk_open
+ *
+ * FUNCTION:    open a virtual lun of specified size
+ *
+ * INPUTS:
+ *              sdev       - Pointer to scsi device structure
+ *              arg        - Pointer to ioctl specific structure
+ *
+ * OUTPUTS:
+ *              none
+ *
+ * RETURNS:
+ *              0           - Success
+ *              errno       - Failure
+ *
+ * NOTES:
+ *              When successful:
+ *               a. find a free RHT entry
+ *
+ */
+int cflash_disk_open(struct scsi_device *sdev, void __user * arg,
+		     enum open_mode_type mode)
+{
+	struct cflash *p_cflash = (struct cflash *)sdev->host->hostdata;
+	struct afu *p_afu = p_cflash->p_afu;
+	struct lun_info *p_lun_info = sdev->hostdata;
+
+	struct dk_capi_uvirtual *pvirt = (struct dk_capi_uvirtual *)arg;
+	struct dk_capi_udirect *pphys = (struct dk_capi_udirect *)arg;
+	struct dk_capi_resize  resize;
+
+	u32 perm;
+	u64 context_id;
+	u64 lun_size = 0;
+	u64 block_size = 0;
+	u64 last_lba = 0;
+	u64 rsrc_handle = -1;
+
+	int rc = 0;
+
+	struct ctx_info *p_ctx_info;
+	struct rht_info *p_rht_info = NULL;
+	struct sisl_rht_entry *p_rht_entry = NULL;
+
+	if (mode == MODE_VIRTUAL) {
+		context_id = pvirt->context_id;
+		lun_size =  pvirt->lun_size;
+		/* Initialize to invalid value */
+		pvirt->rsrc_handle = -1;
+	} else if (mode == MODE_PHYSICAL) {
+		context_id = pphys->context_id;
+		/* Initialize to invalid value */
+		pphys->rsrc_handle = -1;
+	} else {
+		cflash_err("unknown mode %d", mode);
+		rc = -EINVAL;
+		goto out;
+	}
+
+	spin_lock(p_lun_info->slock);
+	if (p_lun_info->mode == MODE_NONE) {
+		p_lun_info->mode = mode;
+	} else  if (p_lun_info->mode != mode) {
+		cflash_err("disk already opened in mode %d, mode requested %d",
+			   p_lun_info->mode, mode);
+		rc = -EINVAL;
+		spin_unlock(p_lun_info->slock);
+		goto out;
+	}
+	spin_unlock(p_lun_info->slock);
+
+	cflash_info("context=0x%llx ls=0x%llx", context_id, lun_size);
+
+	p_rht_entry = cflash_rhte_cout(p_cflash, context_id);
+
+	if (p_rht_entry == NULL)
+	{
+		cflash_err("too many opens for this context");
+		rc = -EMFILE;	/* too many opens  */
+		goto out;
+	} else {
+		p_ctx_info = get_validated_context(p_cflash, context_id, FALSE);
+		if (p_ctx_info) {
+			p_rht_info = p_ctx_info->p_rht_info;
+		} else {
+			cflash_err("in %s context not valid\n", __func__);
+			rc = -EINVAL;
+			goto out;
+		}
+	}
+
+	/* Translate read/write O_* flags from fnctl.h to AFU permission bits */
+	//perm = ((pvirt->flags + 1) & 0x3);
+	perm = 0x3;
+
+	rsrc_handle = (p_rht_entry - p_rht_info->rht_start);
+	block_size = p_lun_info->blk_len;
+
+	if (mode == MODE_VIRTUAL) {
+		p_rht_entry->nmask = MC_RHT_NMASK;
+		p_rht_entry->fp = SISL_RHT_FP(0U, perm);
+		/* format 0 & perms */
+
+		if (lun_size != 0) {
+			marshall_virt_to_resize (pvirt, &resize);
+			rc = cflash_vlun_resize(sdev, &resize);
+			if (rc) {
+				cflash_err("resize failed rc %d", rc);
+				goto out;
+			}
+			last_lba = resize.last_lba;
+		}
+		pvirt->return_flags = 0;
+		pvirt->block_size = block_size;
+		pvirt->last_lba = last_lba;
+		pvirt->rsrc_handle = rsrc_handle;
+	} else if (mode == MODE_PHYSICAL) {
+		cflash_rht_format1(p_rht_entry, p_lun_info->lun_id, perm);
+		afu_sync(p_afu, context_id, rsrc_handle, AFU_LW_SYNC);
+
+		last_lba = p_lun_info->max_lba;
+		pphys->return_flags = 0;
+		pphys->block_size = block_size;
+		pphys->last_lba = last_lba;
+		pphys->rsrc_handle = rsrc_handle;
+	}
+
+out:
+	cflash_info("returning handle 0x%llx rc=%d bs %lld llba %lld",
+		    rsrc_handle, rc, block_size, last_lba);
+	return rc;
+}
+
+/*
+ * NAME:        cflash_disk_release
+ *
+ * FUNCTION:    Close a virtual LBA space setting it to 0 size and
+ *              marking the res_hndl as free/closed.
+ *
+ * INPUTS:
+ *              sdev       - Pointer to scsi device structure
+ *              arg        - Pointer to ioctl specific structure
+ *
+ * OUTPUTS:
+ *              none
+ *
+ * RETURNS:
+ *              0           - Success
+ *              errno       - Failure
+ *
+ * NOTES:
+ *              When successful, the RHT entry is cleared.
+ */
+int cflash_disk_release(struct scsi_device *sdev, void __user * arg)
+{
+	struct cflash *p_cflash = (struct cflash *)sdev->host->hostdata;
+	struct lun_info *p_lun_info = sdev->hostdata;
+	struct afu *p_afu = p_cflash->p_afu;
+
+	struct dk_capi_release *prele = (struct dk_capi_release *)arg;
+	struct dk_capi_resize size;
+	res_hndl_t res_hndl = prele->rsrc_handle;
+
+	int rc = 0;
+
+	struct ctx_info *p_ctx_info;
+	struct rht_info *p_rht_info;
+	struct sisl_rht_entry *p_rht_entry;
+
+	cflash_info("context=0x%llx res_hndl=0x%llx, challenge=0x%llx",
+		    prele->context_id, prele->rsrc_handle, prele->challenge);
+
+	p_ctx_info = get_validated_context(p_cflash, prele->context_id, FALSE);
+	if (!p_ctx_info) {
+		cflash_err("invalid context!");
+		rc = -EINVAL;
+		goto out;
+	}
+
+	p_rht_info = p_ctx_info->p_rht_info;
+
+	if (res_hndl < MAX_RHT_PER_CONTEXT) {
+		p_rht_entry = &p_rht_info->rht_start[res_hndl];
+		if (p_rht_entry->nmask == 0) {	/* not open */
+			rc = -EINVAL;
+			cflash_err("not open");
+			goto out;
+		}
+
+		/*
+		 * Resize to 0 for virtual LUNS by setting the size
+		 * to 0. This will clear LXT_START and LXT_CNT fields
+		 * in the RHT entry and properly sync with the AFU.
+		 * Afterwards we clear the remaining fields.
+		 */
+		if (p_lun_info->mode ==  MODE_VIRTUAL) {
+			marshall_rele_to_resize (prele, &size);
+			size.req_size = 0;
+			rc = cflash_vlun_resize(sdev, &size);/* p_conn good ? */
+			if (rc) {
+				cflash_err("resize failed rc %d", rc);
+				goto out;
+			}			
+			cflash_rhte_cin(p_rht_entry);
+		} else if (p_lun_info->mode ==  MODE_PHYSICAL) {
+			/*
+			 * Clear the Format 1 RHT entry for direct access (physical
+			 * LUN) using the synchronization sequence defined in the
+			 * SISLite specification.
+			 */
+			struct sisl_rht_entry_f1 *p_rht_entry_f1 =
+				(struct sisl_rht_entry_f1 *)p_rht_entry;
+
+			p_rht_entry_f1->valid = 0;
+			asm volatile ("lwsync"::);
+
+			p_rht_entry_f1->lun_id = 0ULL;
+			asm volatile ("lwsync"::);
+
+			p_rht_entry_f1->dw = 0ULL;
+			asm volatile ("lwsync"::);
+			afu_sync(p_afu, prele->context_id, res_hndl,
+				 AFU_HW_SYNC);
+		}
+
+		/* now the RHT entry is all cleared */
+		rc = 0;
+		p_rht_info->ref_cnt--;
+	} else {
+		rc = -EINVAL;
+		cflash_info("resource handle invalid %d", res_hndl);
+	}
+
+out:
+	cflash_info("returning rc=%d", rc);
+	return rc;
+}
+
+/*
+ * NAME:        cflash_disk_detach
+ *
+ * FUNCTION:    Unregister a user AFU context with master.
+ *
+ * INPUTS:
+ *              sdev       - Pointer to scsi device structure
+ *              arg        - Pointer to ioctl specific structure
+ *
+ * OUTPUTS:
+ *              none
+ *
+ * RETURNS:
+ *              0           - Success
+ *              errno       - Failure
+ *
+ * NOTES:
+ *              When successful:
+ *               a. RHT_START, RHT_CNT & CTX_CAP registers for the
+ *                  context are cleared
+ *               b. There is no need to clear RHT entries since
+ *                  RHT_CNT=0.
+ */
+int cflash_disk_detach(struct scsi_device *sdev, void __user * arg)
+{
+	struct cflash *p_cflash = (struct cflash *)sdev->host->hostdata;
+	struct lun_info *p_lun_info = sdev->hostdata;
+
+	struct dk_capi_detach *pdet = (struct dk_capi_detach *)arg;
+	struct dk_capi_release rel;
+
+	struct ctx_info *p_ctx_info;
+
+	int i;
+	int rc = 0;
+
+	cflash_info("context=0x%llx", pdet->context_id);
+
+	p_ctx_info = get_validated_context(p_cflash, pdet->context_id, FALSE);
+	if (!p_ctx_info) {
+		cflash_err("invalid context!");
+		rc = -EINVAL;
+		goto out;
+	}
+
+	if (p_ctx_info->ref_cnt-- == 1) {
+
+		/* close the context */
+		/* for any resource still open, deallocate LBAs and close
+		 * if nobody else is using it.
+		 */
+
+		if (p_ctx_info->p_rht_info->ref_cnt-- == 1) {
+			marshall_det_to_rele(pdet, &rel);
+			for (i = 0; i < MAX_RHT_PER_CONTEXT; i++) {
+				rel.rsrc_handle = i;
+				cflash_disk_release(sdev, &rel);
+			}
+		}
+
+		/* clear RHT registers for this context */
+		write_64(&p_ctx_info->p_ctrl_map->rht_start, 0);
+		write_64(&p_ctx_info->p_ctrl_map->rht_cnt_id, 0);
+		/* drop all capabilities */
+		write_64(&p_ctx_info->p_ctrl_map->ctx_cap, 0);
+	}
+	spin_lock(p_lun_info->slock);
+	p_lun_info->mode = MODE_NONE;
+
+	/* XXX - move these to a different lock... */
+	p_cflash->per_context[pdet->context_id].lfd = -1;
+	p_cflash->per_context[pdet->context_id].pid = 0;
+
+	spin_unlock(p_lun_info->slock);
+
+out:
+	cflash_info("returning rc=%d", rc);
+	return rc;
+}
+
+/*
+ * NAME:	cflash_vlun_resize()
+ *
+ * FUNCTION:	Resize a resource handle by changing the RHT entry and LXT
+ *		Tbl it points to. Synchronize all contexts that refer to
+ *		the RHT.
+ *
+ * INPUTS:
+ *              sdev       - Pointer to scsi device structure
+ *              arg        - Pointer to ioctl specific structure
+ *
+ * OUTPUTS:
+ *		p_act_new_size	- pointer to actual new size in chunks
+ *
+ * RETURNS:
+ *		0	- Success
+ *		errno	- Failure
+ *
+ * NOTES:
+ *		Setting new_size=0 will clear LXT_START and LXT_CNT fields
+ *		in the RHT entry.
+ */
+int cflash_vlun_resize(struct scsi_device *sdev, void __user * arg)
+{
+	struct cflash *p_cflash = (struct cflash *)sdev->host->hostdata;
+	struct lun_info *p_lun_info = sdev->hostdata;
+	struct blka *p_blka = &p_lun_info->blka;
+	struct afu *p_afu = p_cflash->p_afu;
+
+	struct dk_capi_resize *parg = (struct dk_capi_resize *)arg;
+	u64 p_act_new_size = 0;
+	res_hndl_t res_hndl = parg->rsrc_handle;
+	u64 new_size;
+	u64 nsectors;
+
+	struct ctx_info *p_ctx_info;
+	struct rht_info *p_rht_info;
+	struct sisl_rht_entry *p_rht_entry;
+
+	int rc = 0;
+
+	/* req_size is always assumed to be in 4k blocks. So we have to convert
+	 * it from 4k to chunk size
+	 */
+	nsectors = (parg->req_size * DK_CAPI_BLOCK) / (p_lun_info->blk_len);
+	new_size = (nsectors + MC_CHUNK_SIZE - 1) / MC_CHUNK_SIZE;
+
+	cflash_info("context=0x%llx res_hndl=0x%llx, req_size=0x%llx,"
+		    "new_size=%llx", parg->context_id,
+		    parg->rsrc_handle, parg->req_size, new_size);
+
+	if (p_lun_info->mode != MODE_VIRTUAL) {
+		cflash_err("cannot resize lun that is not virtual %d",
+			   p_lun_info->mode);
+		rc = -EINVAL;
+		goto out;
+
+	}
+
+	p_ctx_info = get_validated_context(p_cflash, parg->context_id, FALSE);
+	if (!p_ctx_info) {
+		cflash_err("invalid context!");
+		rc = -EINVAL;
+		goto out;
+	}
+
+	p_rht_info = p_ctx_info->p_rht_info;
+
+	if (res_hndl < MAX_RHT_PER_CONTEXT) {
+		p_rht_entry = &p_rht_info->rht_start[res_hndl];
+
+		if (p_rht_entry->nmask == 0) {	/* not open */
+			cflash_err("not open rhti %p rhte %p",
+				   p_rht_info, p_rht_entry);
+			rc = -EINVAL;
+			goto out;
+		}
+
+		if (new_size > p_rht_entry->lxt_cnt) {
+			grow_lxt(p_afu,
+				 p_blka,
+				 parg->context_id,
+				 res_hndl,
+				 p_rht_entry,
+				 new_size - p_rht_entry->lxt_cnt,
+				 &p_act_new_size);
+		} else if (new_size < p_rht_entry->lxt_cnt) {
+			shrink_lxt(p_afu,
+				   p_blka,
+				   parg->context_id,
+				   res_hndl,
+				   p_rht_entry,
+				   p_rht_entry->lxt_cnt - new_size,
+				   &p_act_new_size);
+		} else {
+			p_act_new_size = new_size;
+		}
+	} else {
+		cflash_err("res_hndl %d invalid", res_hndl);
+		rc = -EINVAL;
+	}
+	parg->return_flags = 0;
+	parg->last_lba = (p_act_new_size * MC_CHUNK_SIZE *
+			  p_lun_info->blk_len) / DK_CAPI_BLOCK;
+
+out:
+	cflash_info("resized to %lld returning rc=%d", parg->last_lba, rc);
+	return rc;
+}
+
+int grow_lxt(struct afu *p_afu,
+	     struct blka *p_blka,
+	     ctx_hndl_t ctx_hndl_u,
+	     res_hndl_t res_hndl_u,
+	     struct sisl_rht_entry *p_rht_entry,
+	     u64 delta, u64 * p_act_new_size)
+{
+	struct sisl_lxt_entry *p_lxt = NULL, *p_lxt_old = NULL;
+	unsigned int av_size;
+	unsigned int ngrps, ngrps_old;
+	u64 aun;		/* chunk# allocated by block allocator */
+	int i;
+
+	/*
+	 * Check what is available in the block allocator before re-allocating
+	 * LXT array. This is done up front under the mutex which must not be
+	 * released until after allocation is complete.
+	 */
+	mutex_lock(&p_blka->mutex);
+	av_size = ba_space(&p_blka->ba_lun);
+	if (av_size < delta)
+		delta = av_size;
+
+	p_lxt_old = p_rht_entry->lxt_start;
+	ngrps_old = LXT_NUM_GROUPS(p_rht_entry->lxt_cnt);
+	ngrps = LXT_NUM_GROUPS(p_rht_entry->lxt_cnt + delta);
+
+	if (ngrps != ngrps_old) {
+		/* reallocate to fit new size */
+		p_lxt = kzalloc((sizeof(*p_lxt) * LXT_GROUP_SIZE * ngrps),
+				GFP_KERNEL);
+		if (!p_lxt) {
+			mutex_unlock(&p_blka->mutex);
+			return -ENOMEM;
+		}
+
+		/* copy over all old entries */
+		memcpy(p_lxt, p_lxt_old, (sizeof(*p_lxt) *
+					  p_rht_entry->lxt_cnt));
+	} else {
+		p_lxt = p_lxt_old;
+	}
+
+	/* nothing can fail from now on */
+	*p_act_new_size = p_rht_entry->lxt_cnt + delta;
+
+	/* add new entries to the end */
+	for (i = p_rht_entry->lxt_cnt; i < *p_act_new_size; i++) {
+		/*
+		 * Due to the earlier check of available space, ba_alloc
+		 * cannot fail here. If it did due to internal error,
+		 * leave a rlba_base of -1u which will likely be a
+		 * invalid LUN (too large).
+		 */
+		aun = ba_alloc(&p_blka->ba_lun);
+		if ((aun == -1ULL) || (aun >= p_blka->nchunk)) {
+			cflash_err("ba_alloc error: allocated chunk# %llX, "
+				   "max %llX", aun, p_blka->nchunk - 1);
+		}
+
+		/* lun_indx = 0, select both ports, use r/w perms from RHT */
+		p_lxt[i].rlba_base = ((aun << MC_CHUNK_SHIFT) | 0x33);
+	}
+
+	mutex_unlock(&p_blka->mutex);
+
+	asm volatile ("lwsync"::);	/* make lxt updates visible */
+
+	/* Now sync up AFU - this can take a while */
+	p_rht_entry->lxt_start = p_lxt;	/* even if p_lxt didn't change */
+	asm volatile ("lwsync"::);
+
+	p_rht_entry->lxt_cnt = *p_act_new_size;
+	asm volatile ("lwsync"::);
+
+	afu_sync(p_afu, ctx_hndl_u, res_hndl_u, AFU_LW_SYNC);
+
+	/* free old lxt if reallocated */
+	if (p_lxt != p_lxt_old)
+		kfree(p_lxt_old);
+
+	/* XXX - what is the significance of this comment? */
+	/* sync up AFU on each context in the doubly linked list */
+	cflash_info("returning");
+	return 0;
+}
+
+int shrink_lxt(struct afu *p_afu,
+	       struct blka *p_blka,
+	       ctx_hndl_t ctx_hndl_u,
+	       res_hndl_t res_hndl_u,
+	       struct sisl_rht_entry *p_rht_entry,
+	       u64 delta, u64 * p_act_new_size)
+{
+	struct sisl_lxt_entry *p_lxt, *p_lxt_old;
+	unsigned int ngrps, ngrps_old;
+	u64 aun;		/* chunk# allocated by block allocator */
+	int i;
+
+	p_lxt_old = p_rht_entry->lxt_start;
+	ngrps_old = LXT_NUM_GROUPS(p_rht_entry->lxt_cnt);
+	ngrps = LXT_NUM_GROUPS(p_rht_entry->lxt_cnt - delta);
+
+	if (ngrps != ngrps_old) {
+		/* reallocate to fit new size unless new size is 0 */
+		if (ngrps) {
+			p_lxt = kzalloc((sizeof(*p_lxt) * LXT_GROUP_SIZE *
+					 ngrps), GFP_KERNEL);
+			if (!p_lxt)
+				return -ENOMEM;
+
+			/* copy over old entries that will remain */
+			memcpy(p_lxt, p_lxt_old, (sizeof(*p_lxt) *
+						  (p_rht_entry->lxt_cnt -
+						   delta)));
+		} else {
+			p_lxt = NULL;
+		}
+	} else {
+		p_lxt = p_lxt_old;
+	}
+
+	/* nothing can fail from now on */
+	*p_act_new_size = p_rht_entry->lxt_cnt - delta;
+
+	/* Now sync up AFU - this can take a while */
+	p_rht_entry->lxt_cnt = *p_act_new_size;
+	asm volatile ("lwsync"::);	/* also makes lxt updates visible */
+
+	p_rht_entry->lxt_start = p_lxt;	/* even if p_lxt didn't change */
+	asm volatile ("lwsync"::);
+
+	afu_sync(p_afu, ctx_hndl_u, res_hndl_u, AFU_HW_SYNC);
+
+	/* free LBAs allocated to freed chunks */
+	mutex_lock(&p_blka->mutex);
+	for (i = delta - 1; i >= 0; i--) {
+		aun = (p_lxt_old[*p_act_new_size + i].rlba_base >>
+		       MC_CHUNK_SHIFT);
+		ba_free(&p_blka->ba_lun, aun);
+	}
+	mutex_unlock(&p_blka->mutex);
+
+	/* free old lxt if reallocated */
+	if (p_lxt != p_lxt_old)
+		kfree(p_lxt_old);
+	/* XXX - what is the significance of this comment? */
+	/* sync up AFU on each context in the doubly linked list!!! */
+	cflash_info("returning");
+	return 0;
+}
+
+/* online means the FC link layer has sync and has completed the link
+ * layer handshake. It is ready for login to start.
+ */
+void set_port_online(volatile u64 * p_fc_regs)
+{
+	u64 cmdcfg;
+
+	cmdcfg = read_64(&p_fc_regs[FC_MTIP_CMDCONFIG / 8]);
+	cmdcfg &= (~FC_MTIP_CMDCONFIG_OFFLINE);	/* clear OFF_LINE */
+	cmdcfg |= (FC_MTIP_CMDCONFIG_ONLINE);	/* set ON_LINE */
+	write_64(&p_fc_regs[FC_MTIP_CMDCONFIG / 8], cmdcfg);
+}
+
+void set_port_offline(volatile u64 * p_fc_regs)
+{
+	u64 cmdcfg;
+
+	cmdcfg = read_64(&p_fc_regs[FC_MTIP_CMDCONFIG / 8]);
+	cmdcfg &= (~FC_MTIP_CMDCONFIG_ONLINE);	/* clear ON_LINE */
+	cmdcfg |= (FC_MTIP_CMDCONFIG_OFFLINE);	/* set OFF_LINE */
+	write_64(&p_fc_regs[FC_MTIP_CMDCONFIG / 8], cmdcfg);
+}
+
+/* returns 1 - went online */
+/* wait_port_xxx will timeout when cable is not pluggd in */
+int wait_port_online(volatile u64 * p_fc_regs,
+		     useconds_t delay_us, unsigned int nretry)
+{
+	u64 status;
+
+	if (delay_us < 1000) {
+		cflash_err("invalid delay specified %d", delay_us);
+		return -EINVAL;
+	}
+
+	do {
+		msleep(delay_us / 1000);
+		status = read_64(&p_fc_regs[FC_MTIP_STATUS / 8]);
+	} while ((status & FC_MTIP_STATUS_MASK) != FC_MTIP_STATUS_ONLINE &&
+		 nretry--);
+
+	return ((status & FC_MTIP_STATUS_MASK) == FC_MTIP_STATUS_ONLINE);
+}
+
+/* returns 1 - went offline */
+int wait_port_offline(volatile u64 * p_fc_regs,
+		      useconds_t delay_us, unsigned int nretry)
+{
+	u64 status;
+
+	if (delay_us < 1000) {
+		cflash_err("invalid delay specified %d", delay_us);
+		return -EINVAL;
+	}
+
+	do {
+		msleep(delay_us / 1000);
+		status = read_64(&p_fc_regs[FC_MTIP_STATUS / 8]);
+	} while ((status & FC_MTIP_STATUS_MASK) != FC_MTIP_STATUS_OFFLINE &&
+		 nretry--);
+
+	return ((status & FC_MTIP_STATUS_MASK) == FC_MTIP_STATUS_OFFLINE);
+}
+
+/* this function can block up to a few seconds */
+int afu_set_wwpn(struct afu *p_afu, int port, volatile u64 * p_fc_regs,
+		 u64 wwpn)
+{
+	int ret = 0;
+
+	set_port_offline(p_fc_regs);
+
+	if (!wait_port_offline(p_fc_regs, FC_PORT_STATUS_RETRY_INTERVAL_US,
+			       FC_PORT_STATUS_RETRY_CNT)) {
+		cflash_dbg("wait on port %d to go offline timed out", port);
+		ret = -1; /* but continue on to leave the port back online */
+	}
+
+	if (ret == 0) {
+		write_64(&p_fc_regs[FC_PNAME / 8], wwpn);
+	}
+
+	set_port_online(p_fc_regs);
+
+	if (!wait_port_online(p_fc_regs, FC_PORT_STATUS_RETRY_INTERVAL_US,
+			      FC_PORT_STATUS_RETRY_CNT)) {
+		cflash_dbg("wait on port %d to go online timed out", port);
+		ret = -1;
+
+		/*
+		 * Override for internal lun!!!
+		 * XXX - is a wrap plug mandatory?
+		 */
+		if (internal_lun) {
+			cflash_info("Overriding port %d online timeout!!!",
+				    port);
+			ret = 0;
+		}
+	}
+
+	cflash_info("returning rc=%d", ret);
+
+	return ret;
+}
+
+void cflash_undo_start_afu(struct afu *p_afu, enum undo_level level)
+{
+	switch (level) {
+	case UNDO_AFU_ALL:
+	case UNDO_EPOLL_ADD:
+	case UNDO_EPOLL_CREATE:
+	case UNDO_BIND_SOCK:
+	case UNDO_OPEN_SOCK:
+	case UNDO_AFU_MMAP:
+		cxl_psa_unmap((void *)p_afu->p_afu_map);
+	case UNDO_AFU_START:
+	case UNDO_AFU_OPEN:
+	case UNDO_TIMER:
+		/*
+		 * Nothing to do for timers; note that in the context of
+		 * a non-error path teardown (ie: struct cflasherminate_afu)
+		 * we should probably ensure all timers are stopped prior
+		 * to calling this routine.
+		 */
+	case UNDO_MLOCK:
+	default:
+		break;
+	}
+	cflash_info("returning level=%d", level);
+}
+
+void afu_err_intr_init(struct afu *p_afu)
+{
+	int i;
+	volatile u64 reg;
+
+	/* global async interrupts: AFU clears afu_ctrl on context exit
+	 * if async interrupts were sent to that context. This prevents
+	 * the AFU form sending further async interrupts when
+	 * there is
+	 * nobody to receive them.
+	 */
+
+	/* mask all */
+	write_64(&p_afu->p_afu_map->global.regs.aintr_mask, -1ull);
+	/* set LISN# to send and point to master context */
+	reg = ((u64)(((p_afu->ctx_hndl << 8) | SISL_MSI_ASYNC_ERROR)) << 40);
+
+	if (internal_lun)
+		reg |= 1; /* Bit 63 indicates local lun */
+	write_64(&p_afu->p_afu_map->global.regs.afu_ctrl, reg);
+	/* clear all */
+	write_64(&p_afu->p_afu_map->global.regs.aintr_clear, -1ull);
+	/* unmask bits that are of interest */
+	/* note: afu can send an interrupt after this step */
+	write_64(&p_afu->p_afu_map->global.regs.aintr_mask, SISL_ASTATUS_MASK);
+	/* clear again in case a bit came on after previous clear but before */
+	/* unmask */
+	write_64(&p_afu->p_afu_map->global.regs.aintr_clear, -1ull);
+
+	/* Clear/Set internal lun bits */
+	reg = read_64(&p_afu->p_afu_map->global.fc_regs[0][FC_CONFIG2 / 8]);
+	cflash_info("ilun p0 = %016llX", reg);
+	reg &= ~(0x3ULL << 32);
+	if (internal_lun)
+		reg |= ((u64)(internal_lun - 1) << 32);
+	cflash_info("ilun p0 = %016llX", reg);
+	write_64(&p_afu->p_afu_map->global.fc_regs[0][FC_CONFIG2 / 8], reg);
+
+	/* now clear FC errors */
+	for (i = 0; i < NUM_FC_PORTS; i++) {
+		write_64(&p_afu->p_afu_map->global.fc_regs[i][FC_ERROR / 8],
+			 (u32) - 1);
+		write_64(&p_afu->p_afu_map->global.fc_regs[i][FC_ERRCAP / 8],
+			 0);
+	}
+
+	/* sync interrupts for master's IOARRIN write */
+	/* note that unlike asyncs, there can be no pending sync interrupts */
+	/* at this time (this is a fresh context and master has not written */
+	/* IOARRIN yet), so there is nothing to clear. */
+
+	/* set LISN#, it is always sent to the context that wrote IOARRIN */
+	write_64(&p_afu->p_host_map->ctx_ctrl, SISL_MSI_SYNC_ERROR);
+	write_64(&p_afu->p_host_map->intr_mask, SISL_ISTATUS_MASK);
+}
+
+static irqreturn_t cflash_dummy_irq_handler(int irq, void *data)
+{
+	/* XXX - to be removed once we settle the 4th interrupt */
+	cflash_info("returning rc=%d", IRQ_HANDLED);
+	return IRQ_HANDLED;
+}
+
+static irqreturn_t cflash_sync_err_irq(int irq, void *data)
+{
+	struct afu *p_afu = (struct afu *)data;
+	u64 reg;
+	u64 reg_unmasked;
+
+	reg = read_64(&p_afu->p_host_map->intr_status);
+	reg_unmasked = (reg & SISL_ISTATUS_UNMASK);
+
+	if (reg_unmasked == 0UL) {
+		cflash_err("%llX: spurious interrupt, intr_status %016llX",
+			   (u64) p_afu, reg);
+		goto cflash_sync_err_irq_exit;
+	}
+
+	cflash_err("%llX: unexpected interrupt, intr_status %016llX",
+		   (u64) p_afu, reg);
+
+	write_64(&p_afu->p_host_map->intr_clear, reg_unmasked);
+
+cflash_sync_err_irq_exit:
+	cflash_info("returning rc=%d", IRQ_HANDLED);
+	return IRQ_HANDLED;
+}
+
+static irqreturn_t cflash_rrq_irq(int irq, void *data)
+{
+	struct afu *p_afu = (struct afu *)data;
+	struct cflash *p_cflash;
+	struct afu_cmd *p_cmd;
+	unsigned long lock_flags = 0UL;
+
+       	p_cflash = (struct cflash *) (p_afu - offsetof(struct cflash, p_afu));
+	/*
+	 * XXX - might want to look at using locals for loop control
+	 * as an optimization
+	 */
+
+	/* Process however many RRQ entries that are ready */
+	while ((*p_afu->p_hrrq_curr & SISL_RESP_HANDLE_T_BIT) == p_afu->toggle) {
+		struct scsi_cmnd *scp;
+
+		p_cmd = (struct afu_cmd *)
+		    ((*p_afu->p_hrrq_curr) & (~SISL_RESP_HANDLE_T_BIT));
+
+		spin_lock_irqsave(p_cmd->slock, lock_flags);
+		p_cmd->sa.host_use_b[0] |= B_DONE;
+		spin_unlock_irqrestore(p_cmd->slock, lock_flags);
+
+		/* already stopped if timer fired */
+		timer_stop(&p_cmd->timer, FALSE);
+
+		/*
+		   hexdump ((void *)&p_cmd->rcb, sizeof(sisl_ioarcb_t), "rcb");
+		   hexdump ((void *)&p_cmd->sa, sizeof(sisl_ioasa_t), "sa");
+		   hexdump ((void *)p_cmd->rcb.data_ea, 64, "data");
+		 */
+
+		if (p_cmd->rcb.rsvd2) {
+			scp = (struct scsi_cmnd *)p_cmd->rcb.rsvd2;
+			if (p_cmd->sa.rc.afu_rc || p_cmd->sa.rc.scsi_rc ||
+			    p_cmd->sa.rc.fc_rc) {
+				/* XXX: Needs to be decoded to report errors */
+				scp->result = (DID_OK << 16);
+			} else {
+				scp->result = (DID_OK << 16);
+			}
+			cflash_info("calling scsi_set_resid, scp=0x%llx len=%d",
+				    p_cmd->rcb.rsvd2, p_cmd->sa.resid);
+
+			scsi_set_resid(scp, p_cmd->sa.resid);
+			scp->scsi_done(scp);
+			scsi_dma_unmap(scp);
+			p_cmd->rcb.rsvd2 = 0ULL;
+			if (p_cmd->special) {
+				p_cflash->tmf_active = 0;
+				wake_up_all(&p_cflash->tmf_wait_q);
+			}
+			cflash_cmd_cin(p_cmd);
+		}
+
+		/* Advance to next entry or wrap and flip the toggle bit */
+		if (p_afu->p_hrrq_curr < p_afu->p_hrrq_end) {
+			p_afu->p_hrrq_curr++;
+		} else {
+			p_afu->p_hrrq_curr = p_afu->p_hrrq_start;
+			p_afu->toggle ^= SISL_RESP_HANDLE_T_BIT;
+		}
+	}
+
+	/* XXX
+	   cflash_info("returning rc=%d", IRQ_HANDLED);
+	 */
+	return IRQ_HANDLED;
+}
+
+static irqreturn_t cflash_async_err_irq(int irq, void *data)
+{
+	struct afu *p_afu = (struct afu *)data;
+
+	/*
+	 * XXX - Matt to work on this next, need to create a thread
+	 * as this type of interrupt can drive a link reset which
+	 * will block.
+	 */
+
+	cflash_info("returning rc=%d, afu=%p", IRQ_HANDLED, p_afu);
+	return IRQ_HANDLED;
+}
+
+/*
+ * Start the afu context.  This is calling into the generic CXL driver code
+ * (except for the contents of the WED).
+ */
+int cflash_start_context(struct cflash *p_cflash)
+{
+	int rc = 0;
+
+	rc = cxl_start_context(p_cflash->p_mcctx,
+			       p_cflash->p_afu->work.work_element_descriptor,
+			       NULL);
+
+	cflash_info("returning rc=%d", rc);
+	return rc;
+}
+
+/*
+ * Stop the afu context.  This is calling into the generic CXL driver code
+ */
+void cflash_stop_context(struct cflash *p_cflash)
+{
+	cxl_stop_context(p_cflash->p_mcctx);
+	cflash_info("returning");
+}
+
+#define WWPN_LEN	16
+#define WWPN_BUF_LEN	(WWPN_LEN + 1)
+
+int cflash_read_vpd(struct cflash *p_cflash, u64 wwpn[])
+{
+
+	char *buf = NULL;
+	int rc = 0;
+	int bytes = 0;
+	bool l_rc;
+	int l_kw_length;
+	char localwwpn[NUM_FC_PORTS][WWPN_BUF_LEN];
+
+	cflash_info("pci_dev=%p", p_cflash->parent_dev);
+
+	buf = kzalloc(KWDATA_SZ, GFP_KERNEL);
+	if (!buf) {
+		cflash_err("could not allocate mem");
+		rc = -ENOMEM;
+		goto out;
+	}
+	bytes = pci_read_vpd(p_cflash->parent_dev, 0, KWDATA_SZ, buf);
+	if (bytes <= 0) {
+		cflash_err("could not read VPD rc %d", rc);
+		rc = -ENODEV;
+		goto out;
+	}
+	hexdump((void *)buf, KWDATA_SZ, "vpd");
+
+	/* Decode Port 0 */
+	l_kw_length = WWPN_LEN;
+	l_rc =
+	    prov_find_vpd_kw("V5", buf, KWDATA_SZ, (u8 *) & localwwpn[0],
+			     &l_kw_length);
+	if (l_rc == false) {
+		cflash_err("Error: Unable to find Port name VPD for Port 0 "
+			   "(VPD KW V5)");
+		rc = -ENODEV;
+		goto out;
+	}
+
+	hexdump((void *)localwwpn[0], WWPN_LEN, "wwpn0");
+	/* NULL terminate before calling kstrtoul */
+	localwwpn[0][WWPN_BUF_LEN - 1] = '\0';
+	rc = kstrtoul(localwwpn[0], WWPN_LEN, (unsigned long *)&wwpn[0]);
+	if (rc)
+		goto out;
+
+	/* Decode Port 1 */
+	l_kw_length = WWPN_LEN;
+	l_rc =
+	    prov_find_vpd_kw("V6", buf, KWDATA_SZ, (u8 *) & localwwpn[1],
+			     &l_kw_length);
+	if (l_rc == false) {
+		cflash_err("Error: Unable to find Port name VPD for Port 1 "
+			   "(VPD KW V6)");
+		rc = -ENODEV;
+		goto out;
+	}
+
+	hexdump((void *)localwwpn[1], WWPN_LEN, "wwpn1");
+	/* NULL terminate before calling kstrtoul */
+	localwwpn[1][WWPN_BUF_LEN - 1] = '\0';
+	rc = kstrtoul(localwwpn[1], WWPN_LEN, (unsigned long *)&wwpn[1]);
+	if (rc)
+		goto out;
+
+out:
+	if (buf)
+		kfree(buf);
+	cflash_info("returning rc=%d", rc);
+	return rc;
+}
+
+void cflash_context_reset(struct afu *p_afu)
+{
+	int nretry = 0;
+	u64 rrin = 0x1;
+
+	cflash_info("p_afu=%p", p_afu);
+
+	if (p_afu->room == 0) {
+		asm volatile ("eieio"::); /* let IOARRIN writes complete */
+		do {
+			p_afu->room = read_64(&p_afu->p_host_map->cmd_room);
+			udelay(nretry);
+		} while ((p_afu->room == 0) && (nretry++ < MC_ROOM_RETRY_CNT));
+	}
+
+	if (p_afu->room) {
+		write_64(&p_afu->p_host_map->ioarrin, (u64) rrin);
+		asm volatile ("eieio"::); /* let IOARRIN writes complete */
+		do {
+			rrin = read_64(&p_afu->p_host_map->ioarrin);
+			/* Double delay each time */
+			udelay(2^nretry);
+		} while ((rrin == 0x1) && (nretry++ < MC_ROOM_RETRY_CNT));
+	}
+	else
+		cflash_err("no cmd_room to send reset");
+}
+
+int cflash_afu_recover(struct scsi_device *sdev, void __user * arg)
+{
+	struct cflash *p_cflash = (struct cflash *)sdev->host->hostdata;
+	struct afu *p_afu = p_cflash->p_afu;
+	struct dk_capi_recover_afu *parg = (struct dk_capi_recover_afu *)arg;
+	long reg;
+	int rc = 0;
+
+	reg = read_64(&p_afu->p_ctrl_map->mbox_r);	/* Try MMIO */
+
+	/* MMIO returning 0xff, need to reset */
+	if (reg == -1) {
+		/* XXX: Once MIkey provides a service to reset the AFU */
+		cflash_info("p_afu=%p reason 0x%llx", p_afu, parg->reason);
+
+	} else {
+		cflash_info("reason 0x%llx MMIO is working, no reset performed",
+			    parg->reason);
+		rc = -EINVAL;
+	}
+
+	return rc;
+}
+
+
+int cflash_start_afu(struct cflash *p_cflash)
+{
+	struct afu *p_afu = p_cflash->p_afu;
+	char version[16];
+	u64 wwpn[NUM_FC_PORTS];	/* wwpn of AFU ports */
+
+	int i = 0;
+	int rc = 0;
+	u64 reg;
+	enum undo_level level = UNDO_NONE;
+
+	rc = cflash_read_vpd(p_cflash, &wwpn[0]);
+	if (rc) {
+		cflash_err("could not read vpd rc=%d", rc);
+		goto out;
+	}
+	cflash_info("wwpn0=0x%llx wwpn1=0x%llx", wwpn[0], wwpn[1]);
+
+	for (i = 0; i < MAX_CONTEXT; i++) {
+		p_afu->rht_info[i].rht_start = &p_afu->rht[i][0];
+	}
+
+	for (i = 0; i < CFLASH_MAX_CMDS; i++) {
+		struct timer_list *p_timer = &p_afu->cmd[i].timer;
+
+		init_timer(p_timer);
+		p_timer->data = (unsigned long)p_afu;
+		p_timer->function = (void (*)(unsigned long))cflash_context_reset;
+
+		spin_lock_init(&p_afu->cmd[i]._slock);
+		p_afu->cmd[i].slock = &p_afu->cmd[i]._slock;
+	}
+	level = UNDO_TIMER;
+
+	/* Map the entire MMIO space of the AFU.
+	 */
+	p_afu->p_afu_map = cxl_psa_map(p_cflash->p_mcctx);
+	if (!p_afu->p_afu_map)
+		goto out;
+
+	for (i = 0; i < MAX_CONTEXT; i++) {
+		p_afu->ctx_info[i].p_ctrl_map =
+		    &p_afu->p_afu_map->ctrls[i].ctrl;
+		/* disrupt any clients that could be running */
+		/* e. g. clients that survived a master restart */
+		write_64(&p_afu->ctx_info[i].p_ctrl_map->rht_start, 0);
+		write_64(&p_afu->ctx_info[i].p_ctrl_map->rht_cnt_id, 0);
+		write_64(&p_afu->ctx_info[i].p_ctrl_map->ctx_cap, 0);
+	}
+	level = UNDO_AFU_MMAP;
+
+	/* copy frequently used fields into p_afu */
+	p_afu->ctx_hndl = (u16) cxl_process_element(p_cflash->p_mcctx);
+	/* ctx_hndl is 16 bits in CAIA */
+	p_afu->p_host_map = &p_afu->p_afu_map->hosts[p_afu->ctx_hndl].host;
+	p_afu->p_ctrl_map = &p_afu->p_afu_map->ctrls[p_afu->ctx_hndl].ctrl;
+
+	/* initialize RRQ pointers */
+	p_afu->p_hrrq_start = &p_afu->rrq_entry[0];
+	p_afu->p_hrrq_end = &p_afu->rrq_entry[NUM_RRQ_ENTRY - 1];
+	p_afu->p_hrrq_curr = p_afu->p_hrrq_start;
+	p_afu->toggle = 1;
+
+	memset(version, 0, sizeof(version));
+	/* don't byte reverse on reading afu_version, else the string form */
+	/*     will be backwards */
+	reg = p_afu->p_afu_map->global.regs.afu_version;
+	memcpy(version, &reg, 8);
+	reg = read_64(&p_afu->p_afu_map->global.regs.interface_version);
+	cflash_info("afu version %s, interface version 0x%llx", version,
+		   reg);
+
+	/* initialize cmd fields that never change */
+	for (i = 0; i < CFLASH_MAX_CMDS; i++) {
+		p_afu->cmd[i].rcb.ctx_id = p_afu->ctx_hndl;
+		p_afu->cmd[i].rcb.msi = SISL_MSI_RRQ_UPDATED;
+		p_afu->cmd[i].rcb.rrq = 0x0;
+	}
+
+	/* set up RRQ in AFU for master issued cmds */
+	write_64(&p_afu->p_host_map->rrq_start, (u64) p_afu->p_hrrq_start);
+	write_64(&p_afu->p_host_map->rrq_end, (u64) p_afu->p_hrrq_end);
+
+	/* AFU configuration */
+	reg = read_64(&p_afu->p_afu_map->global.regs.afu_config);
+	reg |= 0x7F20; /* enable all auto retry options and LE */
+	/* leave others at default: */
+	/* CTX_CAP write protected, mbox_r does not clear on read and */
+	/* checker on if dual afu */
+	write_64(&p_afu->p_afu_map->global.regs.afu_config, reg);
+
+	/* global port select: select either port */
+#if 0   /* XXX - check with Andy/Todd b/c this doesn't work */
+	if (internal_lun)
+		write_64(&p_afu->p_afu_map->global.regs.afu_port_sel, 0x1);
+	else
+#endif
+		write_64(&p_afu->p_afu_map->global.regs.afu_port_sel, 0x3);
+
+	for (i = 0; i < NUM_FC_PORTS; i++) {
+		/* unmask all errors (but they are still masked at AFU) */
+		write_64(&p_afu->p_afu_map->global.fc_regs[i][FC_ERRMSK / 8],
+			 0);
+		/* clear CRC error cnt & set a threshold */
+		(void)read_64(&p_afu->p_afu_map->
+			      global.fc_regs[i][FC_CNT_CRCERR / 8]);
+		write_64(&p_afu->p_afu_map->global.fc_regs[i]
+			 [FC_CRC_THRESH / 8], MC_CRC_THRESH);
+
+		/* set WWPNs. If already programmed, wwpn[i] is 0 */
+		if (wwpn[i] != 0 &&
+		    afu_set_wwpn(p_afu, i,
+				 &p_afu->p_afu_map->global.fc_regs[i][0],
+				 wwpn[i])) {
+			cflash_dbg("failed to set WWPN on port %d", i);
+			cflash_undo_start_afu(p_afu, level);
+			return -1;
+		}
+
+	}
+
+	/* set up master's own CTX_CAP to allow real mode, host translation */
+	/* tbls, afu cmds and read/write GSCSI cmds. */
+	/* First, unlock ctx_cap write by reading mbox */
+	(void)read_64(&p_afu->p_ctrl_map->mbox_r);	/* unlock ctx_cap */
+	asm volatile ("eieio"::);
+	write_64(&p_afu->p_ctrl_map->ctx_cap,
+		 SISL_CTX_CAP_REAL_MODE | SISL_CTX_CAP_HOST_XLATE |
+		 SISL_CTX_CAP_READ_CMD | SISL_CTX_CAP_WRITE_CMD |
+		 SISL_CTX_CAP_AFU_CMD | SISL_CTX_CAP_GSCSI_CMD);
+	/* init heartbeat */
+	p_afu->hb = read_64(&p_afu->p_afu_map->global.regs.afu_hb);
+
+out:
+	cflash_info("returning rc=%d", rc);
+	return rc;
+}
+
+int cflash_init_afu(struct cflash *p_cflash)
+{
+	int rc = 0;
+	struct afu *p_afu = p_cflash->p_afu;
+	struct device *dev = &p_cflash->p_dev->dev;
+	struct cxl_context *ctx;
+
+	ctx = cxl_dev_context_init(p_cflash->p_dev);
+	if (!ctx)
+		return -ENOMEM;
+	p_cflash->p_mcctx = ctx;
+
+	/* Set it up as a master with the CXL */
+	cxl_set_master(ctx);
+
+	/* Allocate AFU generated interrupt handler */
+	rc = cxl_allocate_afu_irqs(ctx, 4);
+	if (rc) {
+		cflash_dev_err(dev, "call to allocate_afu_irqs failed rc=%d!",
+			       rc);
+		goto err1;
+	}
+
+	/* Register AFU interrupt 1 (SISL_MSI_SYNC_ERROR) */
+	rc = cxl_map_afu_irq(ctx, 1, cflash_sync_err_irq, p_afu,
+			     "SISL_MSI_SYNC_ERROR");
+	if (!rc) {
+		cflash_dev_err(dev,
+			       "IRQ 1 (SISL_MSI_SYNC_ERROR) map failed!");
+		goto err2;
+	}
+	/* Register AFU interrupt 2 (SISL_MSI_RRQ_UPDATED) */
+	rc = cxl_map_afu_irq(ctx, 2, cflash_rrq_irq, p_afu,
+			     "SISL_MSI_RRQ_UPDATED");
+	if (!rc) {
+		cflash_dev_err(dev,
+			       "IRQ 2 (SISL_MSI_RRQ_UPDATED) map failed!");
+		goto err3;
+	}
+	/* Register AFU interrupt 3 (SISL_MSI_ASYNC_ERROR) */
+	rc = cxl_map_afu_irq(ctx, 3, cflash_async_err_irq, p_afu,
+			     "SISL_MSI_ASYNC_ERROR");
+	if (!rc) {
+		cflash_dev_err(dev,
+			       "IRQ 3 (SISL_MSI_ASYNC_ERROR) map failed!");
+		goto err4;
+	}
+
+	/*
+	 * XXX - why did we put a 4th interrupt? Were we thinking this is
+	 * for the SISL_MSI_PSL_XLATE? Wouldn't that be covered under the
+	 * cxl_register_error_irq() ?
+	 */
+
+	/* Register AFU interrupt 4 for errors. */
+	rc = cxl_map_afu_irq(ctx, 4, cflash_dummy_irq_handler, p_afu, "err3");
+	if (!rc) {
+		cflash_dev_err(dev, "IRQ 4 map failed!");
+		goto err5;
+	}
+
+	/* Register for PSL errors. TODO: implement this */
+	/* cxl_register_error_irq(dev,... ,callback function, private data); */
+
+	/* This performs the equivalent of the CXL_IOCTL_START_WORK.
+	 * The CXL_IOCTL_GET_PROCESS_ELEMENT is implicit in the process
+	 * element (pe) that is embedded in the context (ctx)
+	 */
+	cflash_start_context(p_cflash);
+
+	INIT_LIST_HEAD(&p_afu->luns);
+
+	rc = cflash_start_afu(p_cflash);
+	if (rc) {
+		cflash_dev_err(dev, "call to start_afu failed, rc=%d!", rc);
+		goto err6;
+	}
+
+	cflash_info("returning rc=%d", rc);
+	return rc;
+err6:
+	cflash_stop_context(p_cflash);
+	cxl_unmap_afu_irq(ctx, 4, p_afu);
+err5:
+	cxl_unmap_afu_irq(ctx, 3, p_afu);
+err4:
+	cxl_unmap_afu_irq(ctx, 2, p_afu);
+err3:
+	cxl_unmap_afu_irq(ctx, 1, p_afu);
+err2:
+	cxl_free_afu_irqs(ctx);
+err1:
+	cxl_release_context(ctx);
+	p_cflash->p_mcctx = NULL;
+	cflash_info("returning rc=%d", rc);
+	return rc;
+}
+
+void cflash_term_afu(struct cflash *p_cflash)
+{
+	int i;
+	struct afu *p_afu = p_cflash->p_afu;
+	struct lun_info *p_lun_info, *p_temp;
+
+	if (p_cflash->p_mcctx) {
+		cflash_stop_context(p_cflash);
+		cflash_info("before unmap 4");
+		cxl_unmap_afu_irq(p_cflash->p_mcctx, 4, p_afu);
+		cflash_info("before unmap 3");
+		cxl_unmap_afu_irq(p_cflash->p_mcctx, 3, p_afu);
+		cflash_info("before unmap 2");
+		cxl_unmap_afu_irq(p_cflash->p_mcctx, 2, p_afu);
+		cflash_info("before unmap 1");
+		cxl_unmap_afu_irq(p_cflash->p_mcctx, 1, p_afu);
+		cflash_info("before cxl_free_afu_irqs");
+		cxl_free_afu_irqs(p_cflash->p_mcctx);
+		cflash_info("before cxl_release_context");
+		cxl_release_context(p_cflash->p_mcctx);
+		p_cflash->p_mcctx = NULL;
+	}
+
+	/* Need to stop timers before unmapping */
+	if (p_cflash->p_afu) {
+		for (i=0; i<CFLASH_MAX_CMDS; i++) {
+			timer_stop(&p_cflash->p_afu->cmd[i].timer, TRUE);
+		}
+
+		cflash_undo_start_afu(p_afu, UNDO_AFU_ALL);
+
+		list_for_each_entry_safe(p_lun_info, p_temp, &p_afu->luns,
+					 list) {
+			list_del(&p_lun_info->list);
+			ba_terminate(&p_lun_info->blka.ba_lun);
+			kfree(p_lun_info);
+		}
+	}
+
+	cflash_info("returning");
+}
+
+/* do we need to retry AFU_CMDs (sync) on afu_rc = 0x30 ? */
+/* can we not avoid that ? */
+/* not retrying afu timeouts (B_TIMEOUT) */
+/* returns 1 if the cmd should be retried, 0 otherwise */
+/* sets B_ERROR flag based on IOASA */
+int check_status(struct sisl_ioasa_s *p_ioasa)
+{
+	if (p_ioasa->ioasc == 0) {
+		return 0;
+	}
+
+	p_ioasa->host_use_b[0] |= B_ERROR;
+
+	if (!(p_ioasa->host_use_b[1]++ < MC_RETRY_CNT)) {
+		return 0;
+	}
+
+	switch (p_ioasa->rc.afu_rc) {
+	case SISL_AFU_RC_NO_CHANNELS:
+	case SISL_AFU_RC_OUT_OF_DATA_BUFS:
+		msleep(1);	/* 1 msec */
+		return 1;
+
+	case 0:
+		/* no afu_rc, but either scsi_rc and/or fc_rc is set */
+		/* retry all scsi_rc and fc_rc after a small delay */
+		msleep(1);	/* 1 msec */
+		return 1;
+	}
+
+	return 0;
+}
+
+void cflash_send_cmd(struct afu *p_afu, struct afu_cmd *p_cmd)
+{
+	int nretry = 0;
+
+	if (p_afu->room == 0) {
+		asm volatile ("eieio"::); /* let IOARRIN writes complete */
+		do {
+			p_afu->room = read_64(&p_afu->p_host_map->cmd_room);
+			udelay(nretry);
+		} while ((p_afu->room == 0) && (nretry++ < MC_ROOM_RETRY_CNT));
+	}
+
+	p_cmd->sa.host_use_b[0] = 0;	/* 0 means active */
+	p_cmd->sa.ioasc = 0;
+
+	/* make memory updates visible to AFU before MMIO */
+	asm volatile ("lwsync"::);
+
+	/*
+	 * XXX - find out why this code originally (and still does)
+	 * have a doubler (*2) for the timeout value
+	 */
+	timer_start(&p_cmd->timer, (p_cmd->rcb.timeout * 2 * HZ));
+
+	/* Write IOARRIN */
+	if (p_afu->room)
+		write_64(&p_afu->p_host_map->ioarrin, (u64) & p_cmd->rcb);
+	else
+		cflash_err("no cmd_room to send 0x%X", p_cmd->rcb.cdb[0]);
+
+	cflash_dbg("p_cmd=%p len=%d ea=%p", p_cmd, p_cmd->rcb.data_len,
+		    (void *)p_cmd->rcb.data_ea);
+
+	/* Let timer fire to complete the response... */
+}
+
+void cflash_wait_resp(struct afu *p_afu, struct afu_cmd *p_cmd)
+{
+	unsigned long lock_flags = 0;
+
+	spin_lock_irqsave(p_cmd->slock, lock_flags);
+	while (!(p_cmd->sa.host_use_b[0] & B_DONE)) {
+
+		/*
+		 * XXX - how do we want to handle this...
+		 * need to study how send_cmd/wait_resp
+		 * is used in interrupt context.
+		 */
+
+		spin_unlock_irqrestore(p_cmd->slock, lock_flags);
+		udelay(10);
+		spin_lock_irqsave(p_cmd->slock, lock_flags);
+	}
+	spin_unlock_irqrestore(p_cmd->slock, lock_flags);
+
+	timer_stop(&p_cmd->timer, FALSE); /* already stopped if timer fired */
+
+	if (p_cmd->sa.ioasc != 0)
+		cflash_err("CMD 0x%x failed, IOASC: flags 0x%x, afu_rc 0x%x, "
+			   "scsi_rc 0x%x, fc_rc 0x%x",
+			   p_cmd->rcb.cdb[0],
+			   p_cmd->sa.rc.flags,
+			   p_cmd->sa.rc.afu_rc,
+			   p_cmd->sa.rc.scsi_rc, p_cmd->sa.rc.fc_rc);
+}
+
+void timer_start(struct timer_list *p_timer, unsigned long timeout_in_jiffies)
+{
+	p_timer->expires = (jiffies + timeout_in_jiffies);
+	add_timer(p_timer);
+}
+
+void timer_stop(struct timer_list *p_timer, bool sync)
+{
+	if (unlikely(sync))
+		del_timer_sync(p_timer);
+	else
+		del_timer(p_timer);
+}
+
+/*
+ * afu_sync can be called from interrupt thread and the main processing
+ * thread. Caller is responsible for any serialization.
+ * Also, it can be called even before/during discovery, so we must use
+ * a dedicated cmd not used by discovery.
+ *
+ * AFU takes only 1 sync cmd at a time.
+ */
+int afu_sync(struct afu *p_afu,
+	     ctx_hndl_t ctx_hndl_u, res_hndl_t res_hndl_u, u8 mode)
+{
+	u16 *p_u16;
+	u32 *p_u32;
+	struct afu_cmd *p_cmd = &p_afu->cmd[AFU_SYNC_INDEX];
+	int rc = 0;
+
+	cflash_info("p_afu=%p p_cmd=%p %d", p_afu, p_cmd, ctx_hndl_u);
+
+	memset(p_cmd->rcb.cdb, 0, sizeof(p_cmd->rcb.cdb));
+
+	p_cmd->rcb.req_flags = SISL_REQ_FLAGS_AFU_CMD;
+	p_cmd->rcb.port_sel = 0x0;	/* NA */
+	p_cmd->rcb.lun_id = 0x0;	/* NA */
+	p_cmd->rcb.data_len = 0x0;
+	p_cmd->rcb.data_ea = 0x0;
+	p_cmd->rcb.timeout = MC_AFU_SYNC_TIMEOUT;
+
+	p_cmd->rcb.cdb[0] = 0xC0;	/* AFU Sync */
+	p_cmd->rcb.cdb[1] = mode;
+	p_u16 = (u16 *) & p_cmd->rcb.cdb[2];
+	write_16(p_u16, ctx_hndl_u);	/* context to sync up */
+	p_u32 = (u32 *) & p_cmd->rcb.cdb[4];
+	write_32(p_u32, res_hndl_u);	/* res_hndl to sync up */
+
+	cflash_send_cmd(p_afu, p_cmd);
+	cflash_wait_resp(p_afu, p_cmd);
+
+	if ((p_cmd->sa.ioasc != 0) || (p_cmd->sa.host_use_b[0] & B_ERROR)) {
+		rc = -1;
+		/* B_ERROR is set on timeout */
+	}
+
+	cflash_info("returning rc=%d", rc);
+	return rc;
+}
+
+/*
+ * NAME:	clone_lxt()
+ *
+ * FUNCTION:	clone a LXT table
+ *
+ * INPUTS:
+ *		p_afu		- Pointer to afu struct
+ *		ctx_hndl_u	- context that owns the destination LXT
+ *		res_hndl_u	- res_hndl of the destination LXT
+ *		p_rht_entry	- destination RHT to clone into
+ *		p_rht_entry_src	- source RHT to clone from
+ *
+ * OUTPUTS:
+ *
+ * RETURNS:
+ *		0	- Success
+ *		errno	- Failure
+ *
+ * NOTES:
+ */
+int clone_lxt(struct afu *p_afu,
+	      struct blka *p_blka,
+	      ctx_hndl_t ctx_hndl_u,
+	      res_hndl_t res_hndl_u,
+	      struct sisl_rht_entry *p_rht_entry,
+	      struct sisl_rht_entry *p_rht_entry_src)
+{
+	struct sisl_lxt_entry *p_lxt;
+	unsigned int ngrps;
+	u64 aun;		/* chunk# allocated by block allocator */
+	int i, j;
+
+	ngrps = LXT_NUM_GROUPS(p_rht_entry_src->lxt_cnt);
+
+	if (ngrps) {
+		/* allocate new LXTs for clone */
+		p_lxt = kzalloc((sizeof(*p_lxt) * LXT_GROUP_SIZE * ngrps),
+				GFP_KERNEL);
+		if (!p_lxt)
+			return -ENOMEM;
+
+		/* copy over */
+		memcpy(p_lxt, p_rht_entry_src->lxt_start,
+		       (sizeof(*p_lxt) * p_rht_entry_src->lxt_cnt));
+
+		/* clone the LBAs in block allocator via ref_cnt */
+		mutex_lock(&p_blka->mutex);
+		for (i = 0; i < p_rht_entry_src->lxt_cnt; i++) {
+			aun = (p_lxt[i].rlba_base >> MC_CHUNK_SHIFT);
+			if (ba_clone(&p_blka->ba_lun, aun) == -1ULL) {
+				/* free the clones already made */
+				for (j = 0; j < i; j++) {
+					aun = (p_lxt[j].rlba_base >>
+					       MC_CHUNK_SHIFT);
+					ba_free(&p_blka->ba_lun, aun);
+				}
+
+				mutex_unlock(&p_blka->mutex);
+				kfree(p_lxt);
+				return -EIO;
+			}
+		}
+		mutex_unlock(&p_blka->mutex);
+	} else {
+		p_lxt = NULL;
+	}
+
+	asm volatile ("lwsync"::);	/* make lxt updates visible */
+
+	/* Now sync up AFU - this can take a while */
+	p_rht_entry->lxt_start = p_lxt;	/* even if p_lxt is NULL */
+	asm volatile ("lwsync"::);
+
+	p_rht_entry->lxt_cnt = p_rht_entry_src->lxt_cnt;
+	asm volatile ("lwsync"::);
+
+	afu_sync(p_afu, ctx_hndl_u, res_hndl_u, AFU_LW_SYNC);
+
+	/* XXX - what is the significance of this comment? */
+	/* sync up AFU on each context in the doubly linked list */
+	cflash_info("returning");
+	return 0;
+}
+
+/*
+ * NAME:        do_mc_xlate_lba
+ *
+ * FUNCTION:    Query the physical LBA mapped to a virtual LBA
+ *
+ * INPUTS:
+ *              p_afu       - Pointer to afu struct
+ *              p_conn_info - Pointer to connection the request came in
+ *              res_hndl    - resource handle to query on
+ *              v_lba       - virtual LBA on res_hndl
+ *
+ * OUTPUTS:
+ *              p_p_lba     - pointer to output physical LBA
+ *
+ * RETURNS:
+ *              0           - Success
+ *              errno       - Failure
+ *
+ */
+int cflash_xlate_lba(struct scsi_device *sdev, void __user * arg)
+{
+	/* XXX: Original arguments. */
+	u64 v_lba = 0;
+	u64 *p_p_lba = NULL;
+	u64 rsrc_handle = 0;
+	/* XXX: How to determine p_ctx_info? */
+	u64 context_id = 0;
+	struct ctx_info *p_ctx_info = NULL;
+
+	struct rht_info *p_rht_info = p_ctx_info->p_rht_info;
+	struct sisl_rht_entry *p_rht_entry;
+	u64 chunk_id, chunk_off, rlba_base;
+
+	cflash_info("rsrc_handle=%lld v_lba=%lld ctx_hdl=%lld",
+		    rsrc_handle, v_lba, context_id);
+
+	if (rsrc_handle < MAX_RHT_PER_CONTEXT) {
+		p_rht_entry = &p_rht_info->rht_start[rsrc_handle];
+		if (p_rht_entry->nmask == 0) {
+			/* not open */
+			return -EINVAL;
+		}
+
+		chunk_id = (v_lba >> MC_CHUNK_SHIFT);
+		chunk_off = (v_lba & MC_CHUNK_OFF_MASK);
+
+		if (chunk_id < p_rht_entry->lxt_cnt) {
+			rlba_base =
+			    (p_rht_entry->lxt_start[chunk_id].rlba_base &
+			     (~MC_CHUNK_OFF_MASK));
+			*p_p_lba = (rlba_base | chunk_off);
+		} else {
+			return -EINVAL;
+		}
+	} else {
+		return -EINVAL;
+	}
+
+	cflash_info("returning");
+	return 0;
+}
+
+/*
+ * NAME:        cflash_disk_clone
+ *
+ * FUNCTION:    Clone a context by making a snapshot copy of another, specified
+ *		context. This routine effectively performs cflash_disk_open
+ *		operations for each in-use virtual resource in the source
+ *		context. Note that the destination context must be in pristine
+ *		state and cannot have any resource handles open at the time
+ *		of the clone.
+ *
+ * INPUTS:
+ *              sdev       - Pointer to scsi device structure
+ *              arg        - Pointer to ioctl specific structure
+ *
+ * OUTPUTS:
+ *              None
+ *
+ * RETURNS:
+ *              0           - Success
+ *              errno       - Failure
+ */
+int cflash_disk_clone(struct scsi_device *sdev, void __user * arg)
+{
+	struct cflash *p_cflash = (struct cflash *)sdev->host->hostdata;
+	struct lun_info *p_lun_info = sdev->hostdata;
+	struct blka *p_blka = &p_lun_info->blka;
+	struct afu *p_afu = p_cflash->p_afu;
+	struct dk_capi_clone *pclone = (struct dk_capi_clone *)arg;
+	struct dk_capi_release release = { 0 };
+
+	struct ctx_info *p_ctx_info_src,
+			*p_ctx_info_dst;
+	struct rht_info *p_rht_info_src,
+			*p_rht_info_dst;
+	u32 perm;
+	u64 reg;
+	int i, j;
+	int rc = 0;
+
+	cflash_info("ctx_hdl_src=%llu ctx_hdl_dst=%llu",
+		    pclone->context_id_src, pclone->context_id_dst);
+
+	/* Do not clone yourself */
+	if (pclone->context_id_src == pclone->context_id_dst) {
+		rc = -EINVAL;
+		goto out;
+	}
+
+	p_ctx_info_src = get_validated_context(p_cflash, pclone->context_id_src,
+					       TRUE);
+	p_ctx_info_dst = get_validated_context(p_cflash, pclone->context_id_dst,
+					       FALSE);
+	if (!p_ctx_info_src || !p_ctx_info_dst) {
+		cflash_err("invalid context!");
+		rc = -EINVAL;
+		goto out;
+	}
+
+	p_rht_info_src = p_ctx_info_src->p_rht_info;
+	p_rht_info_dst = p_ctx_info_dst->p_rht_info;
+
+	/* Verify there is no open resource handle in the destination context */
+	for (i = 0; i < MAX_RHT_PER_CONTEXT; i++)
+		if (p_rht_info_dst->rht_start[i].nmask != 0) {
+			rc = -EINVAL;
+			goto out;
+		}
+
+	reg = read_64(&p_ctx_info_src->p_ctrl_map->mbox_r);
+	if (reg == 0) {		/* zeroed mbox is a locked mbox */
+		rc = -EACCES;	/* return Permission denied */
+		goto out;
+	}
+
+	/* Translate read/write O_* flags from fnctl.h to AFU permission bits */
+	perm = ((pclone->flags + 1) & 0x3);
+
+	/*
+	 * This loop is equivalent to cflash_disk_open & cflash_vlun_resize.
+	 * Not checking if the source context has anything open or whether
+	 * it is even registered. Cleanup when the clone fails.
+	 */
+	for (i = 0; i < MAX_RHT_PER_CONTEXT; i++) {
+		p_rht_info_dst->rht_start[i].nmask =
+		    p_rht_info_src->rht_start[i].nmask;
+		p_rht_info_dst->rht_start[i].fp =
+		    SISL_RHT_FP_CLONE(p_rht_info_src->rht_start[i].fp, perm);
+
+		rc = clone_lxt(p_afu, p_blka, pclone->context_id_dst, i,
+			       &p_rht_info_dst->rht_start[i],
+			       &p_rht_info_src->rht_start[i]);
+		if (rc) {
+			marshall_clone_to_rele(pclone, &release);
+			for (j = 0; j < i; j++) {
+				release.rsrc_handle = j;
+				cflash_disk_release(sdev, &release);
+			}
+
+			cflash_rhte_cin(&p_rht_info_dst->rht_start[i]);
+			goto out;
+		}
+	}
+
+out:
+	cflash_info("returning rc=%d", rc);
+	return rc;
+}
+
+/*
+ * NAME:	do_mc_dup()
+ *
+ * FUNCTION:	dup 2 contexts by linking their RHTs
+ *
+ * INPUTS:
+ *		p_afu		- Pointer to afu struct
+ *		p_conn_info	- Pointer to connection the request came in
+ *				  This is the context to dup to (target)
+ *		ctx_hndl_cand	- This is the context to dup from source)
+ *		challenge	- used to validate access to ctx_hndl_cand
+ *
+ * OUTPUTS:
+ *		None
+ *
+ * RETURNS:
+ *		0	- Success
+ *		errno	- Failure
+ */
+/* XXX - what is the significance of this comment? */
+/* dest ctx must be unduped and with no open res_hndls */
+int cflash_disk_dup(struct scsi_device *sdev, void __user * arg)
+{
+	struct cflash *p_cflash = (struct cflash *)sdev->host->hostdata;
+	struct afu *p_afu = p_cflash->p_afu;
+
+	/* XXX: Input arguments */
+	u64 challenge = 0;
+	u64 ctx_hndl_cand = 0;
+	u64 context_id = 0;
+	struct ctx_info *p_ctx_info = NULL;
+
+	struct rht_info *p_rht_info = p_ctx_info->p_rht_info;
+
+	struct ctx_info *p_ctx_info_cand;
+	u64 reg;
+	int i;
+
+	cflash_info("challenge=%lld cand=%lld ctx_hdl=%lld",
+		    challenge, ctx_hndl_cand, context_id);
+
+	/* verify there is no open resource handle in the target context of the clone */
+	for (i = 0; i < MAX_RHT_PER_CONTEXT; i++)
+		if (p_rht_info->rht_start[i].nmask != 0)
+			return -EINVAL;
+
+	/* do not dup yourself */
+	if (context_id == ctx_hndl_cand)
+		return -EINVAL;
+
+	if (ctx_hndl_cand < MAX_CONTEXT)
+		p_ctx_info_cand = &p_afu->ctx_info[ctx_hndl_cand];
+	else
+		return -EINVAL;
+
+	reg = read_64(&p_ctx_info_cand->p_ctrl_map->mbox_r);
+
+	/* fyi, zeroed mbox is a locked mbox */
+	if ((reg == 0) || (challenge != reg))
+		return -EACCES;	/* return Permission denied */
+
+	/* XXX - what does this mean? */
+	cflash_info("returning");
+	return -EIO;		/* todo later!!! */
+}
+
+/*
+ * NAME:	do_mc_stat()
+ *
+ * FUNCTION:	Query the current information on a resource handle
+ *
+ * INPUTS:
+ *		p_afu		- Pointer to afu struct
+ *		p_conn_info	- Pointer to connection the request came in
+ *		res_hndl	- resource handle to query
+ *
+ * OUTPUTS:
+ *		p_mc_stat	- pointer to output stat information
+ *
+ * RETURNS:
+ *		0		- Success
+ *		errno		- Failure
+ *
+ */
+int cflash_disk_stat(struct scsi_device *sdev, void __user * arg)
+{
+	struct lun_info *p_lun_info = sdev->hostdata;
+	struct blka *p_blka = &p_lun_info->blka;
+
+	/* XXX: Input arguments; */
+	mc_stat_t *p_mc_stat = NULL;
+	struct ctx_info *p_ctx_info = NULL;
+	u64 context_id = 0;
+	u64 rsrc_handle = 0;
+
+	struct rht_info *p_rht_info = p_ctx_info->p_rht_info;
+	struct sisl_rht_entry *p_rht_entry;
+
+	cflash_info("context_id=%lld", context_id);
+
+	if (rsrc_handle < MAX_RHT_PER_CONTEXT) {
+		p_rht_entry = &p_rht_info->rht_start[rsrc_handle];
+
+		/* not open */
+		if (p_rht_entry->nmask == 0)
+			return -EINVAL;
+
+		p_mc_stat->blk_len = p_blka->ba_lun.lba_size;
+		p_mc_stat->nmask = p_rht_entry->nmask;
+		p_mc_stat->size = p_rht_entry->lxt_cnt;
+		p_mc_stat->flags = SISL_RHT_PERM(p_rht_entry->fp);
+	} else {
+		return -EINVAL;
+	}
+
+	cflash_info("returning");
+	return 0;
+}
+
+int read_cap16(struct afu *p_afu, struct lun_info *p_lun_info, u32 port_sel)
+{
+
+	u32 *p_u32;
+	u64 *p_u64;
+	struct afu_cmd *p_cmd;
+	int rc=0;
+
+	p_cmd = cflash_cmd_cout(p_afu);
+	if (!p_cmd) {
+		cflash_err("could not get a free command");
+		return -1;
+	}
+
+	p_cmd->rcb.req_flags = (SISL_REQ_FLAGS_PORT_LUN_ID |
+				SISL_REQ_FLAGS_SUP_UNDERRUN |
+				SISL_REQ_FLAGS_HOST_READ);
+
+	p_cmd->rcb.port_sel = port_sel;
+	p_cmd->rcb.lun_id = p_lun_info->lun_id;
+	p_cmd->rcb.data_len = CMD_BUFSIZE;
+	p_cmd->rcb.data_ea = (u64) p_cmd->buf;
+	p_cmd->rcb.timeout = MC_DISCOVERY_TIMEOUT;
+
+	p_cmd->rcb.cdb[0] = 0x9E;	/* read cap(16) */
+	p_cmd->rcb.cdb[1] = 0x10;	/* service action */
+	p_u32 = (u32 *) & p_cmd->rcb.cdb[10];
+	write_32(p_u32, CMD_BUFSIZE);
+	p_cmd->sa.host_use_b[1] = 0;	/* reset retry cnt */
+
+	cflash_info("sending cmd(0x%x) with RCB EA=%p data EA=0x%llx",
+		    p_cmd->rcb.cdb[0], &p_cmd->rcb,
+		    p_cmd->rcb.data_ea);
+
+	do {
+		cflash_send_cmd(p_afu, p_cmd);
+		cflash_wait_resp(p_afu, p_cmd);
+	} while (check_status(&p_cmd->sa));
+
+	if (p_cmd->sa.host_use_b[0] & B_ERROR) {
+		cflash_err("command failed");
+		rc = -1;
+		goto out;
+	}
+	/* read cap success  */
+	spin_lock(p_lun_info->slock);
+	p_u64 = (u64 *) & p_cmd->buf[0];
+	p_lun_info->max_lba = read_64(p_u64);
+
+	p_u32 = (u32 *) & p_cmd->buf[8];
+	p_lun_info->blk_len = read_32(p_u32);
+	spin_unlock(p_lun_info->slock);
+
+out:
+	cflash_cmd_cin(p_cmd);
+
+	cflash_info("maxlba=%lld blklen=%d pcmd %p",
+		    p_lun_info->max_lba, p_lun_info->blk_len, p_cmd);
+	return rc;
+}
+
+/* XXX: This is temporary. When the DMA mapping services are available
+ * The report luns command will be sent be the SCSI stack
+ */
+int find_lun(struct cflash *p_cflash, u32 port_sel)
+{
+	u32 *p_u32;
+	u32 len;
+	u64 *p_u64;
+	struct afu *p_afu = p_cflash->p_afu;
+	struct afu_cmd *p_cmd;
+	struct lun_info *p_lun_info = NULL;
+	u64 *p_currid;
+	int i = 0;
+	int j = 0;
+	int rc = 0;
+	u64 *lunidarray = NULL;
+
+	p_cmd = cflash_cmd_cout(p_afu);
+	if (!p_cmd) {
+		cflash_err("could not get a free command");
+		return -1;
+	}
+
+	p_cmd->rcb.req_flags = (SISL_REQ_FLAGS_PORT_LUN_ID |
+				SISL_REQ_FLAGS_SUP_UNDERRUN |
+				SISL_REQ_FLAGS_HOST_READ);
+
+	p_cmd->rcb.port_sel = port_sel;
+	p_cmd->rcb.lun_id = 0x0;	/* use lun_id=0 w/report luns */
+	p_cmd->rcb.data_len = CMD_BUFSIZE;
+	p_cmd->rcb.data_ea = (u64) p_cmd->buf;
+	p_cmd->rcb.timeout = MC_DISCOVERY_TIMEOUT;
+
+	p_cmd->rcb.cdb[0] = 0xA0;	/* report luns */
+	p_u32 = (u32 *) & p_cmd->rcb.cdb[6];
+	write_32(p_u32, CMD_BUFSIZE);	/* allocation length */
+	p_cmd->sa.host_use_b[1] = 0;	/* reset retry cnt */
+
+	cflash_info("sending cmd(0x%x) with RCB EA=%p data EA=0x%p",
+		    p_cmd->rcb.cdb[0], &p_cmd->rcb, (void *)p_cmd->rcb.data_ea);
+
+	do {
+		cflash_send_cmd(p_afu, p_cmd);
+		cflash_wait_resp(p_afu, p_cmd);
+	} while (check_status(&p_cmd->sa));
+
+	if (p_cmd->sa.host_use_b[0] & B_ERROR) {
+		cflash_cmd_cin(p_cmd);
+		return -1;
+	}
+	/* report luns success  */
+	len = read_32((u32 *) & p_cmd->buf[0]);
+	hexdump((void *)p_cmd->buf, len + 8, "report luns data");
+
+	p_u64 = (u64 *) & p_cmd->buf[8];	/* start of lun list */
+
+	p_currid = lunidarray = kzalloc(len, GFP_KERNEL);
+
+	while (len) {
+		*p_currid = read_64(p_u64);
+		len -= 8;
+		p_u64++;
+		i++;
+		p_currid++;
+	}
+	cflash_info("found %d luns", i);
+
+	/* Release the CMD only after looking through the response */
+	cflash_cmd_cin(p_cmd);
+
+	p_currid = lunidarray;
+
+	for (j = 0; j < i; j++, p_currid++) {
+		cflash_info("adding i=%d lun_id %016llx last_index %d",
+			    j, *p_currid, p_cflash->last_lun_index);
+
+		/*
+		 * XXX - scsi_add_device() will trigger slave_alloc and
+		 * slave_configure which will create the lun_info structure
+		 * and add it to the front of the AFU's lun list.
+		 */
+		scsi_add_device(p_cflash->host, port_sel, CFLASH_TARGET,
+				*p_currid);
+		p_lun_info = list_first_entry(&p_afu->luns, struct lun_info,
+					      list);
+		p_lun_info->lun_id = *p_currid;
+
+		/* program FC_PORT LUN Tbl */
+		write_64(&p_afu->p_afu_map->global.fc_port[port_sel - 1]
+			 [p_cflash->last_lun_index], *p_currid);
+
+		read_cap16(p_afu, p_lun_info, port_sel);
+
+		/*
+		 * XXX - when we transition to slave_alloc, refactor this into
+		 * create_lun_info(), for now it must be called separately after
+		 * we obtain the blk_len and lba from cap16.
+		 */
+		rc = cflash_init_ba(p_lun_info);
+		if (rc) {
+			cflash_err("call to cflash_init_ba failed rc=%d!", rc);
+			list_del(&p_lun_info->list);
+			kfree(p_lun_info);
+			goto out;
+		}
+
+		p_cflash->last_lun_index++;
+	}
+
+out:
+	if (lunidarray)
+		kfree(lunidarray);
+	cflash_info("returning rc %d pcmd%p", rc, p_cmd);
+	return rc;
+}
+
+int cflash_send_scsi(struct afu *p_afu, struct scsi_cmnd *scp)
+{
+	struct afu_cmd *p_cmd;
+
+	u64 port_sel = scp->device->channel + 1;
+	int nseg, i, ncount;
+	struct scatterlist *sg;
+	short lflag = 0;
+	int rc = 0;
+
+	unsigned long lock_flags = 0;
+	struct Scsi_Host *host = scp->device->host;
+	struct cflash *p_cflash = (struct cflash *)host->hostdata;
+
+	spin_lock_irqsave(host->host_lock, lock_flags);
+	while (p_cflash->tmf_active) {
+		spin_unlock_irqrestore(host->host_lock, lock_flags);
+		wait_event(p_cflash->tmf_wait_q, !p_cflash->tmf_active);
+		spin_lock_irqsave(host->host_lock, lock_flags);
+	}
+	spin_unlock_irqrestore(host->host_lock, lock_flags);
+
+	p_cmd = cflash_cmd_cout(p_afu);
+	if (!p_cmd) {
+		cflash_err("could not get a free command");
+		rc = SCSI_MLQUEUE_HOST_BUSY;
+		goto out;
+	}
+
+	p_cmd->rcb.ctx_id = p_afu->ctx_hndl;
+	p_cmd->rcb.port_sel = port_sel;
+	p_cmd->rcb.lun_id = lun_to_lunid(scp->device->lun);
+
+	if (scp->sc_data_direction == DMA_TO_DEVICE)
+		lflag = SISL_REQ_FLAGS_HOST_WRITE;
+	else
+		lflag = SISL_REQ_FLAGS_HOST_READ;
+
+	p_cmd->rcb.req_flags = (SISL_REQ_FLAGS_PORT_LUN_ID |
+				SISL_REQ_FLAGS_SUP_UNDERRUN | lflag);
+	p_cmd->rcb.timeout = MC_DISCOVERY_TIMEOUT;
+
+	/* Stash the scp in the reserved field, for reuse during interrupt */
+	p_cmd->rcb.rsvd2 = (u64) scp;
+
+	p_cmd->sa.host_use_b[1] = 0;	/* reset retry cnt */
+
+	nseg = scsi_dma_map(scp);
+	ncount = scsi_sg_count(scp);
+	scsi_for_each_sg(scp, sg, ncount, i) {
+		p_cmd->rcb.data_len = (sg_dma_len(sg));
+                p_cmd->rcb.data_ea = (sg_dma_address(sg));
+		//p_cmd->rcb.data_len = (sg_dma_len(sg) & SISLITE_LEN_MASK);
+		//p_cmd->rcb.data_ea = (sg_phys(sg));
+	}
+
+	/* Copy the CDB from the scsi_cmnd passed in */
+	memcpy(p_cmd->rcb.cdb, scp->cmnd, sizeof(p_cmd->rcb.cdb));
+
+	/* Send the command */
+	cflash_send_cmd(p_afu, p_cmd);
+
+out:
+	return rc;
+}
+
+int cflash_send_tmf(struct afu *p_afu, struct scsi_cmnd *scp, u64 cmd)
+{
+	struct afu_cmd *p_cmd;
+
+	u64 port_sel = scp->device->channel + 1;
+	short lflag = 0;
+	unsigned long lock_flags = 0;
+	struct Scsi_Host *host = scp->device->host;
+	struct cflash *p_cflash = (struct cflash *)host->hostdata;
+	int rc = 0;
+
+	spin_lock_irqsave(host->host_lock, lock_flags);
+	while (p_cflash->tmf_active) {
+		spin_unlock_irqrestore(host->host_lock, lock_flags);
+		wait_event(p_cflash->tmf_wait_q, !p_cflash->tmf_active);
+		spin_lock_irqsave(host->host_lock, lock_flags);
+	}
+	spin_unlock_irqrestore(host->host_lock, lock_flags);
+
+	p_cmd = cflash_cmd_cout(p_afu);
+	if (!p_cmd) {
+		cflash_err("could not get a free command");
+		rc = SCSI_MLQUEUE_HOST_BUSY;
+		goto out;
+	}
+
+	p_cmd->rcb.ctx_id = p_afu->ctx_hndl;
+	p_cmd->rcb.port_sel = port_sel;
+	p_cmd->rcb.lun_id = lun_to_lunid(scp->device->lun);
+
+	lflag = SISL_REQ_FLAGS_TMF_CMD;
+
+	p_cmd->rcb.req_flags = (SISL_REQ_FLAGS_PORT_LUN_ID |
+				SISL_REQ_FLAGS_SUP_UNDERRUN | lflag);
+	p_cmd->rcb.timeout = MC_DISCOVERY_TIMEOUT;
+
+	/* Stash the scp in the reserved field, for reuse during interrupt */
+	p_cmd->rcb.rsvd2 = (u64) scp;
+	p_cmd->special = 0x1;
+	p_cflash->tmf_active = 0x1;
+
+	p_cmd->sa.host_use_b[1] = 0;	/* reset retry cnt */
+
+	/* Copy the CDB from the cmd passed in */
+	memcpy(p_cmd->rcb.cdb, &cmd, sizeof(cmd));
+
+	/* Send the command */
+	cflash_send_cmd(p_afu, p_cmd);
+
+out:
+	return rc;
+
+}
