@@ -144,6 +144,29 @@ cflash_init_ba_exit:
 	return rc;
 }
 
+/**
+ * cflash_scan_luns - Scans For all LUNs on all Ports
+ * @p_cflash:    struct cflash config struct
+ *
+ * Description: This will be deprecated when the kernel services
+ * are ready.
+ *
+ * Return value:
+ *      none
+ **/
+void cflash_scan_luns(struct cflash *p_cflash)
+{
+	int j, rc;
+
+	for (j = 0; j < NUM_FC_PORTS; j++) {	/* discover on each port */
+		if ((rc = find_lun(p_cflash, 1u << j)) == 0) {
+			cflash_info("Found valid lun on port=%d", j);
+		} else {
+			cflash_err("find_lun returned rc=%d on port=%d", rc, j);
+		}
+	}
+}
+
 /*
  * NAME:        cflash_disk_attach
  *
@@ -1422,7 +1445,7 @@ out:
 	return rc;
 }
 
-/* XXX: This is temporary. When the DMA mapping services are available
+/* XXX: This is temporary. 
  * The report luns command will be sent be the SCSI stack
  */
 int find_lun(struct cflash *p_cflash, u32 port_sel)

@@ -1,14 +1,26 @@
 Introduction
 ============
 
+    CAPI provides a mechanism by which user space applications can
+    directly talk to a device (network or storage) bypassing the
+    typical kernel/device driver stack. The CAPI Flash Adapter Driver
+    enables a user space application direct access to Flash storage.
+
     The CAPI Flash Adapter Driver is a kernel module that sits in
-    the SCSI stack as an adapter driver (below the SCSI disk and
-    protocol drivers) for the IBM CAPI Flash Adapter. This driver
-    performs initialization of the adapter, performs LUN discovery
-    and does error recovery. It also communicates directly the Flash
-    Accelerator Functional Unit (AFU) as described in
-    Documentation/powerpc/cxl.txt. It also provides block allocation
-    services and special ioctls to a special user space block library.
+    the SCSI stack as a low leve device driver (below the SCSI disk
+    and protocol drivers) for the IBM CAPI Flash Adapter. This driver
+    performs initialization of the adapter, sets up the special path
+    for user space access and does error recovery. It communicates
+    directly the Flash Accelerator Functional Unit (AFU) as described
+    in Documentation/powerpc/cxl.txt. 
+
+    This driver has two modes in which it operates. Any flash
+    device (LUN) can be configured to be accessed as a regular disk
+    device or accessed from user space with a special block library.
+    This user space access provides either raw access to the LUN 
+    (physical mode) or access to a partition of a LUN (virtual mode).
+    The segmentation of a disk device into virtual LUNs is assisted
+    by special translation services provided by the Flash AFU.
 
 Overview
 ========

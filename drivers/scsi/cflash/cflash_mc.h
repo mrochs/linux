@@ -208,5 +208,6 @@ struct ctx_info *get_validated_context(struct cflash *, u64, bool);
 int check_status(struct sisl_ioasa_s *);
 void cflash_send_cmd(struct afu *, struct afu_cmd *);
 void cflash_wait_resp(struct afu *, struct afu_cmd *);
+void cflash_scan_luns(struct cflash *);
 
 #endif /* ifndef _CFLASHMC_H */

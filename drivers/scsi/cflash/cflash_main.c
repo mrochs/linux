@@ -448,7 +448,7 @@ static void cflash_slave_destroy(struct scsi_device *sdev)
 }
 
 /**
- * struct cflasharget_alloc - Setup the target's task set value
+ * cflash_target_alloc - Setup the target's task set value
  * @starget:    struct scsi_target
  *
  * Set the target's task set value so that error handling works as
@@ -855,7 +855,7 @@ static void cflash_remove(struct pci_dev *pdev)
 	}
 
 	cflash_term_afu(p_cflash);
-	cflash_dbg("after struct cflash_term_afu!");
+	cflash_dev_dbg(&pdev->dev, "after struct cflash_term_afu!");
 
 	/* XXX: Commented out for now
 	   iounmap(p_cflash->cflash_regs);
@@ -864,7 +864,7 @@ static void cflash_remove(struct pci_dev *pdev)
 
 	cflash_free_mem(p_cflash);
 	scsi_host_put(p_cflash->host);
-	cflash_dbg("after scsi_host_put!");
+	cflash_dev_dbg(&pdev->dev, "after scsi_host_put!");
 
 	/* XXX: Commented out for now
 	   pci_disable_device(pdev);
@@ -873,6 +873,15 @@ static void cflash_remove(struct pci_dev *pdev)
 	cflash_dbg("returning");
 }
 
+/**
+ * cflash_gb_alloc - Global allocator
+ * @p_cflash:       struct cflash
+ *
+ * Adapter hot plug remove entry point.
+ *
+ * Return value:
+ *      none
+ **/
 static int cflash_gb_alloc(struct cflash *p_cflash)
 {
 	int nbytes;
@@ -915,6 +924,15 @@ out:
 	return rc;
 }
 
+/**
+ * cflash_init_pci - Initialize PCI
+ * @p_cflash:       struct cflash
+ *
+ * All PCI setup
+ *
+ * Return value:
+ *      none
+ **/
 static int cflash_init_pci(struct cflash *p_cflash)
 {
 	struct pci_dev *pdev = p_cflash->p_dev;
@@ -1014,29 +1032,6 @@ out_release_regions:
 	pci_release_regions(pdev);
 	goto out;
 
-}
-
-/**
- * cflash_scan_luns - Scans For all LUNs on all Ports
- * @p_cflash:    struct cflash config struct
- *
- * Description: This will be deprecated when the kernel services
- * are ready.
- *
- * Return value:
- *      none
- **/
-static void cflash_scan_luns(struct cflash *p_cflash)
-{
-	int j, rc;
-
-	for (j = 0; j < NUM_FC_PORTS; j++) {	/* discover on each port */
-		if ((rc = find_lun(p_cflash, 1u << j)) == 0) {
-			cflash_info("Found valid lun on port=%d", j);
-		} else {
-			cflash_err("find_lun returned rc=%d on port=%d", rc, j);
-		}
-	}
 }
 
 static int cflash_init_scsi(struct cflash *p_cflash)
@@ -1167,6 +1162,15 @@ int afu_set_wwpn(struct afu *p_afu, int port, volatile u64 * p_fc_regs,
 	return ret;
 }
 
+/**
+ * cflash_stop_afu - Stop AFU
+ * @p_cflash:       struct cflash
+ *
+ * Tear down timers, Unmap the MMIO space
+ *
+ * Return value:
+ *      none
+ **/
 void cflash_stop_afu(struct cflash *p_cflash)
 {
 	int i;
@@ -1391,6 +1395,15 @@ void cflash_stop_context(struct cflash *p_cflash)
 #define WWPN_LEN	16
 #define WWPN_BUF_LEN	(WWPN_LEN + 1)
 
+/**
+ * cflash_read_vpd - Read the Vital Product Data on the Card.
+ * @p_cflash:       struct cflash
+ *
+ * Read and parse the VPD
+ *
+ * Return value:
+ *      WWPN for each port
+ **/
 int cflash_read_vpd(struct cflash *p_cflash, u64 wwpn[])
 {
 
@@ -1462,6 +1475,13 @@ out:
 	return rc;
 }
 
+/**
+ * cflash_context_reset - perform a context reset
+ * @p_afu:        struct afu pointer
+ *
+ * Returns:
+ *      NONE
+ */
 void cflash_context_reset(struct afu *p_afu)
 {
 	int nretry = 0;
@@ -1608,6 +1628,13 @@ out:
 	return rc;
 }
 
+/**
+ * cflash_start_afu - Start the AFU, in a pristine state
+ * @p_cflash:        struct cflash pointer
+ *
+ * Returns:
+ *      NONE
+ */
 int cflash_start_afu(struct cflash *p_cflash)
 {
 	struct afu *p_afu = p_cflash->p_afu;
@@ -1624,7 +1651,8 @@ int cflash_start_afu(struct cflash *p_cflash)
 
 		init_timer(p_timer);
 		p_timer->data = (unsigned long)p_afu;
-		p_timer->function = (void (*)(unsigned long))cflash_context_reset;
+		p_timer->function = (void (*)(unsigned long))
+			cflash_context_reset;
 
 		spin_lock_init(&p_afu->cmd[i]._slock);
 		p_afu->cmd[i].slock = &p_afu->cmd[i]._slock;
@@ -1643,6 +1671,14 @@ int cflash_start_afu(struct cflash *p_cflash)
 	return rc;
 }
 
+/**
+ * cflash_term_mc - Terminate the master context
+ * @p_cflash:        struct cflash pointer
+ * @level:           level to back out from
+ *
+ * Returns:
+ *      NONE
+ */
 void cflash_term_mc(struct cflash *p_cflash, enum undo_level level)
 {
 	struct afu *p_afu = p_cflash->p_afu;
@@ -1652,7 +1688,6 @@ void cflash_term_mc(struct cflash *p_cflash, enum undo_level level)
 		cflash_info("returning from term_mc with NULL afu or MC");
 		return;
 	}
-
 
 	switch (level) { 
 	case UNDO_START:
@@ -1679,6 +1714,13 @@ void cflash_term_mc(struct cflash *p_cflash, enum undo_level level)
 	}
 }
 
+/**
+ * cflash_init_mc - setup the master context
+ * @p_cflash:        struct cflash pointer
+ *
+ * Returns:
+ *      NONE
+ */
 int cflash_init_mc(struct cflash *p_cflash)
 {
 	struct cxl_context *ctx;
@@ -1992,6 +2034,16 @@ int afu_sync(struct afu *p_afu,
 	cflash_info("returning rc=%d", rc);
 	return rc;
 }
+
+
+/**
+ * cflash_send_scsi - Send a generic SCSI CDB down
+ * @p_afu:        struct afu pointer
+ * @scp:          scsi command passed in 
+ *
+ * Returns:
+ *      SUCCESS, BUSY
+ */
 int cflash_send_scsi(struct afu *p_afu, struct scsi_cmnd *scp)
 {
 	struct afu_cmd *p_cmd;
@@ -2058,6 +2110,15 @@ out:
 	return rc;
 }
 
+/**
+ * cflash_send_tmf - Send a Task Management Function
+ * @p_afu:        struct afu pointer
+ * @scp:          scsi command passed in 
+ * cmd:           Kind of TMF command
+ *
+ * Returns:
+ *      SUCCESS, BUSY
+ */
 int cflash_send_tmf(struct afu *p_afu, struct scsi_cmnd *scp, u64 cmd)
 {
 	struct afu_cmd *p_cmd;
@@ -2113,6 +2174,8 @@ out:
 }
 /**
  * cflash_probe - Adapter hot plug add entry point
+ * @pdev:       pci device struct
+ * @dev_id:     pci device id
  *
  * Return value:
  *      0 on success / non-zero on failure

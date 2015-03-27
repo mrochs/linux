@@ -339,6 +339,21 @@ struct sisl_global_map {
 
 };
 
+/* Surelock Memory Map 
+                     +-------------------------------+
+                     |    512 * 64 KB User MMIO      |
+                     |        (per context)          |
+                     |       User Accessible         |
+                     +-------------------------------+
+                     |    512 * 128 B per context    |
+                     |    Provisioning and Control   |
+                     |   Trusted Process accessible  |
+                     +-------------------------------+
+                     |         64 KB Global          |
+                     |   Trusted Process accessible  |
+                     +-------------------------------+
+*/
+
 struct surelock_afu_map {
 	union {
 		struct sisl_host_map host;
