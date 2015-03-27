@@ -205,5 +205,8 @@ int cflash_send_tmf(struct afu *, struct scsi_cmnd *, u64);
 struct sisl_rht_entry *cflash_rhte_cout(struct cflash *, u64);
 void cflash_rht_format1(struct sisl_rht_entry *, u64, u32);
 struct ctx_info *get_validated_context(struct cflash *, u64, bool);
+int check_status(struct sisl_ioasa_s *);
+void cflash_send_cmd(struct afu *, struct afu_cmd *);
+void cflash_wait_resp(struct afu *, struct afu_cmd *);
 
 #endif /* ifndef _CFLASHMC_H */

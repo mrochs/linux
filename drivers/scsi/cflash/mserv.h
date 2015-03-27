@@ -159,18 +159,13 @@ struct lun_info {
 };
 
 enum undo_level {
-	UNDO_NONE = 0,
-	UNDO_MLOCK,
-	UNDO_TIMER,
-	UNDO_AFU_OPEN,
-	UNDO_AFU_START,
-	UNDO_AFU_MMAP,
-	UNDO_OPEN_SOCK,
-	UNDO_BIND_SOCK,
-	UNDO_LISTEN,
-	UNDO_EPOLL_CREATE,
-	UNDO_EPOLL_ADD,
-	UNDO_AFU_ALL		/* must be last */
+	RELEASE_CONTEXT = 0,
+	FREE_IRQ,
+	UNMAP_ONE,
+	UNMAP_TWO,
+	UNMAP_THREE,
+	UNMAP_FOUR,
+	UNDO_START
 };
 
 #define AFU_INIT_INDEX   0	/* first cmd is used in init/discovery,
@@ -233,6 +228,9 @@ struct afu {
 	unsigned int toggle;
 	u64 room;
 	u64 hb;
+
+	char version[8];
+	u64 interface_version;
 
 	struct list_head luns;	/* list of lun_info structs */
 
