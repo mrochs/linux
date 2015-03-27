@@ -168,10 +168,20 @@ enum undo_level {
 	UNDO_START
 };
 
+#define CFLASH_NUM_CMDS	(2 * CFLASH_MAX_CMDS) /* Must be a pow2 for alignment
+					       * and more efficient array index
+					       * derivation
+					       */
+
+#define NOT_POW2(_x) ((_x) & ((_x) & ((_x) -1)))
+#if NOT_POW2(CFLASH_NUM_CMDS)
+#error "CFLASH_NUM_CMDS is not a power of 2!"
+#endif
+
 #define AFU_INIT_INDEX   0	/* first cmd is used in init/discovery,
 	                         * free for other use thereafter
 				 */
-#define AFU_SYNC_INDEX  (CFLASH_MAX_CMDS - 1)/* last cmd is rsvd for afu sync */
+#define AFU_SYNC_INDEX  (CFLASH_NUM_CMDS - 1)/* last cmd is rsvd for afu sync */
 
 #define CMD_FREE   0x0
 #define CMD_IN_USE 0x1
@@ -197,7 +207,7 @@ struct afu {
 	/*
 	 * Command & data for AFU commands.
 	 */
-	struct afu_cmd cmd[CFLASH_MAX_CMDS];
+	struct afu_cmd cmd[CFLASH_NUM_CMDS];
 
 	/* Housekeeping data */
 	struct ctx_info ctx_info[MAX_CONTEXT];

@@ -89,13 +89,20 @@ static const char *cflash_driver_info(struct Scsi_Host *host)
 /* Check out a command */
 struct afu_cmd *cflash_cmd_cout(struct afu *p_afu)
 {
-	int i;
+	static u32 inc = 0;
+	int k, dec = CFLASH_NUM_CMDS;
 	struct afu_cmd *p_cmd;
 	unsigned long lock_flags = 0;
 
-	/* The last command structure is reserved for SYNC */
-	for (i=0; i<CFLASH_MAX_CMDS-1; i++) {
-		p_cmd = &p_afu->cmd[i];
+	while (dec--) {
+		k = (inc++ & (CFLASH_NUM_CMDS - 1));
+
+		/* The last command structure is reserved for SYNC */
+		if (unlikely(k == AFU_SYNC_INDEX))
+			continue;
+
+		p_cmd = &p_afu->cmd[k];
+
 		spin_lock_irqsave(p_cmd->slock, lock_flags);
 
 		if (p_cmd->flag == CMD_FREE) {
@@ -106,10 +113,11 @@ struct afu_cmd *cflash_cmd_cout(struct afu *p_afu)
 			memset(p_cmd->rcb.cdb, 0, sizeof(p_cmd->rcb.cdb));
 			return p_cmd;
 		}
+
 		spin_unlock_irqrestore(p_cmd->slock, lock_flags);
 	}
-	return NULL;
 
+	return NULL;
 }
 
 /* Check in the command */
@@ -798,7 +806,7 @@ static void cflash_free_mem(struct cflash *p_cflash)
 	char *buf = NULL;
 
 	if (p_cflash->p_afu) {
-		for (i=0; i<CFLASH_MAX_CMDS; i++) {
+		for (i=0; i<CFLASH_NUM_CMDS; i++) {
 			timer_stop(&p_cflash->p_afu->cmd[i].timer, TRUE);
 			buf = p_cflash->p_afu->cmd[i].buf;
 			if (buf)
@@ -883,7 +891,7 @@ static int cflash_gb_alloc(struct cflash *p_cflash)
 	p_cflash->p_afu->p_afu_map = NULL;
 
 	/* Allocate one extra, just in case the SYNC command needs a buffer */
-	for (i=0; i<CFLASH_MAX_CMDS; i++) {
+	for (i=0; i<CFLASH_NUM_CMDS; i++) {
 		buf = (void *)__get_free_pages (GFP_KERNEL | __GFP_ZERO,
 						get_order(CMD_BUFSIZE));
 		if (!buf) {
@@ -1170,7 +1178,7 @@ void cflash_stop_afu(struct cflash *p_cflash)
 	}
 
 	/* Need to stop timers before unmapping */
-	for (i=0; i<CFLASH_MAX_CMDS; i++) {
+	for (i=0; i<CFLASH_NUM_CMDS; i++) {
 		timer_stop(&p_cflash->p_afu->cmd[i].timer, TRUE);
 	}
 
@@ -1314,15 +1322,17 @@ static irqreturn_t cflash_rrq_irq(int irq, void *data)
 				    p_cmd->rcb.rsvd2, p_cmd->sa.resid);
 
 			scsi_set_resid(scp, p_cmd->sa.resid);
-			scp->scsi_done(scp);
 			scsi_dma_unmap(scp);
+			scp->scsi_done(scp);
 			p_cmd->rcb.rsvd2 = 0ULL;
 			if (p_cmd->special) {
 				p_cflash->tmf_active = 0;
 				wake_up_all(&p_cflash->tmf_wait_q);
 			}
-			cflash_cmd_cin(p_cmd);
 		}
+
+		/* Done with command */
+		cflash_cmd_cin(p_cmd);
 
 		/* Advance to next entry or wrap and flip the toggle bit */
 		if (p_afu->p_hrrq_curr < p_afu->p_hrrq_end) {
@@ -1510,7 +1520,7 @@ void init_pcr(struct cflash *p_cflash)
 	p_afu->p_ctrl_map = &p_afu->p_afu_map->ctrls[p_afu->ctx_hndl].ctrl;
 
 	/* initialize cmd fields that never change */
-	for (i = 0; i < CFLASH_MAX_CMDS; i++) {
+	for (i = 0; i < CFLASH_NUM_CMDS; i++) {
 		p_afu->cmd[i].rcb.ctx_id = p_afu->ctx_hndl;
 		p_afu->cmd[i].rcb.msi = SISL_MSI_RRQ_UPDATED;
 		p_afu->cmd[i].rcb.rrq = 0x0;
@@ -1609,7 +1619,7 @@ int cflash_start_afu(struct cflash *p_cflash)
 		p_afu->rht_info[i].rht_start = &p_afu->rht[i][0];
 	}
 
-	for (i = 0; i < CFLASH_MAX_CMDS; i++) {
+	for (i = 0; i < CFLASH_NUM_CMDS; i++) {
 		struct timer_list *p_timer = &p_afu->cmd[i].timer;
 
 		init_timer(p_timer);
