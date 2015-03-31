@@ -418,7 +418,6 @@ void afu_irq_name_free(struct cxl_context *ctx)
 
 int afu_allocate_irqs(struct cxl_context *ctx, u32 count)
 {
-	irq_hw_number_t hwirq;
 	int rc, r, i, j = 1;
 	struct cxl_irq_name *irq_name;
 
