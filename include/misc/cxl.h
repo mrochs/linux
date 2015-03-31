@@ -156,6 +156,7 @@ int cxl_start_work(struct cxl_context *ctx,
 /* Map and unmap the AFU Problem Space area */
 void __iomem *cxl_psa_map(struct cxl_context *ctx);
 void cxl_psa_unmap(void __iomem *addr);
+int cxl_afu_reset(struct cxl_context *ctx);
 
 /*
  * Register callback on errors.  PSL may generate different types of errors
