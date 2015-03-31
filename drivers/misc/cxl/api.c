@@ -294,3 +294,16 @@ void cxl_psa_unmap(void __iomem *addr)
 	iounmap(addr);
 }
 EXPORT_SYMBOL_GPL(cxl_psa_unmap);
+
+int cxl_afu_reset(struct cxl_context *ctx)
+{
+	struct cxl_afu *afu = ctx->afu;
+	int rc;
+
+	rc = __cxl_afu_reset(afu);
+	if (rc)
+		return rc;
+
+	return afu_check_and_enable(afu);
+}
+EXPORT_SYMBOL_GPL(cxl_afu_reset);
