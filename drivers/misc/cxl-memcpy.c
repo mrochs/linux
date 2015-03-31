@@ -198,6 +198,10 @@ static int memcpy_afu(struct pci_dev *dev)
 	if (!ctx)
 		return -ENOMEM;
 
+	rc = cxl_afu_reset(ctx);
+	if (rc)
+		goto err1;
+
 	/* Allocate AFU generated interrupt handler */
 	rc = cxl_allocate_afu_irqs(ctx, 3);
 	if (rc)
