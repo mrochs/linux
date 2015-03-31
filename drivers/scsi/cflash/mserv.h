@@ -216,6 +216,7 @@ struct afu {
 				   e. g. to access afu */
 	struct mutex err_mutex;	/* for signalling error thread */
 	wait_queue_head_t err_cv;
+	u64 cmd_couts;		/* Number of command checkouts */
 	int err_flag;
 #define E_SYNC_INTR   0x1	/* synchronous error interrupt */
 #define E_ASYNC_INTR  0x2	/* asynchronous error interrupt */

@@ -89,13 +89,12 @@ static const char *cflash_driver_info(struct Scsi_Host *host)
 /* Check out a command */
 struct afu_cmd *cflash_cmd_cout(struct afu *p_afu)
 {
-	static u32 inc = 0;
 	int k, dec = CFLASH_NUM_CMDS;
 	struct afu_cmd *p_cmd;
 	unsigned long lock_flags = 0;
 
 	while (dec--) {
-		k = (inc++ & (CFLASH_NUM_CMDS - 1));
+		k = (p_afu->cmd_couts++ & (CFLASH_NUM_CMDS - 1));
 
 		/* The last command structure is reserved for SYNC */
 		if (unlikely(k == AFU_SYNC_INDEX))
