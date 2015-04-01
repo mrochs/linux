@@ -60,7 +60,6 @@ static inline void cxl_slbia(struct mm_struct *mm) {}
 void cxl_pci_dma_dev_setup(struct pci_dev *pdev);
 int cxl_dma_set_mask(struct device *dev, u64 dma_mask);
 int cxl_pci_probe_mode(struct pci_bus *bus);
-int cxl_msi_check_device(struct pci_dev* pdev, int nvec, int type);
 int cxl_setup_msi_irqs(struct pci_dev *pdev, int nvec, int type);
 int cxl_teardown_msi_irqs(struct pci_dev *pdev);
 int cxl_pci_enable_device_hook(struct pci_dev *dev);
