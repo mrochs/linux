@@ -283,7 +283,7 @@ static int cflash_eh_host_reset_handler(struct scsi_cmnd *scp)
 {
 	int rc = SUCCESS;
 	struct Scsi_Host *host = scp->device->host;
-	struct dk_capi_recover_afu arg = {0};
+	struct cflash *p_cflash = (struct cflash *)host->hostdata;
 
 	cflash_info("(scp=%p) %d/%d/%d/%llu "
 		    "cdb=(%08x-%08x-%08x-%08x)", scp,
@@ -295,7 +295,7 @@ static int cflash_eh_host_reset_handler(struct scsi_cmnd *scp)
 		    cpu_to_be32(((u32 *) scp->cmnd)[3]));
 
 	scp->result = (DID_OK << 16);;
-	cflash_afu_recover(scp->device, &arg);
+	afu_reset(p_cflash);
 
 	cflash_info("returning rc=%d", rc);
 	return rc;
@@ -1720,7 +1720,7 @@ void cflash_term_mc(struct cflash *p_cflash, enum undo_level level)
  * Returns:
  *      NONE
  */
-int cflash_init_mc(struct cflash *p_cflash)
+int cflash_init_mc(struct cflash *p_cflash, bool reset)
 {
 	struct cxl_context *ctx;
 	struct device *dev = &p_cflash->p_dev->dev;
@@ -1735,6 +1735,10 @@ int cflash_init_mc(struct cflash *p_cflash)
 
 	/* Set it up as a master with the CXL */
 	cxl_set_master(ctx);
+
+	if (reset)
+		cxl_afu_reset(p_cflash->p_mcctx);
+
 
 	/* Allocate AFU generated interrupt handler */
 	rc = cxl_allocate_afu_irqs(ctx, 4);
@@ -1812,7 +1816,7 @@ int cflash_init_afu(struct cflash *p_cflash)
 	struct afu *p_afu = p_cflash->p_afu;
 	struct device *dev = &p_cflash->p_dev->dev;
 
-	rc = cflash_init_mc(p_cflash);
+	rc = cflash_init_mc(p_cflash, TRUE);
 	if (rc) {
 		cflash_dev_err(dev, "call to init_mc failed, rc=%d!", rc);
 		goto err1;
@@ -2032,6 +2036,25 @@ int afu_sync(struct afu *p_afu,
 
 	cflash_info("returning rc=%d", rc);
 	return rc;
+}
+
+void afu_reset(struct cflash *p_cflash)
+{
+	/* Stop the context before the reset. Since the context is
+	 * no longer available restart it after the reset is complete 
+	 */
+
+	cflash_stop_context(p_cflash);
+
+	cxl_afu_reset(p_cflash->p_mcctx);
+
+	cxl_release_context(p_cflash->p_mcctx);
+	p_cflash->p_mcctx = NULL;
+
+	cflash_init_mc(p_cflash, FALSE);
+
+	/* XXX: Need to restart/reattach all user contexts */
+	cflash_info("returning");
 }
 
 

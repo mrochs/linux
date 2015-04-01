@@ -999,8 +999,8 @@ int cflash_afu_recover(struct scsi_device *sdev, void __user * arg)
 
 	/* MMIO returning 0xff, need to reset */
 	if (reg == -1) {
-		/* XXX: Once MIkey provides a service to reset the AFU */
 		cflash_info("p_afu=%p reason 0x%llx", p_afu, parg->reason);
+		afu_reset (p_cflash);
 
 	} else {
 		cflash_info("reason 0x%llx MMIO is working, no reset performed",
