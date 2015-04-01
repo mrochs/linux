@@ -34,12 +34,6 @@ int cxl_pci_probe_mode(struct pci_bus *bus)
 	return PCI_PROBE_NORMAL;
 }
 
-int cxl_msi_check_device(struct pci_dev* pdev, int nvec, int type)
-{
-	printk("WARNING %s", __func__);
-	return -ENODEV;
-}
-
 int cxl_setup_msi_irqs(struct pci_dev *pdev, int nvec, int type)
 {
 	printk("WARNING %s", __func__);
