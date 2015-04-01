@@ -216,7 +216,6 @@ struct afu {
 				   e. g. to access afu */
 	struct mutex err_mutex;	/* for signalling error thread */
 	wait_queue_head_t err_cv;
-	u64 cmd_couts;		/* Number of command checkouts */
 	int err_flag;
 #define E_SYNC_INTR   0x1	/* synchronous error interrupt */
 #define E_ASYNC_INTR  0x2	/* asynchronous error interrupt */
@@ -224,6 +223,9 @@ struct afu {
 	/* AFU Shared Data */
 	struct sisl_rht_entry rht[MAX_CONTEXT][MAX_RHT_PER_CONTEXT];
 	/* LXTs are allocated dynamically in groups */
+	/* Beware of alignment till here. Preferably introduce new
+	 * fields after this point 
+	 */
 
 	/* AFU HW */
 	int afu_fd;
@@ -239,6 +241,7 @@ struct afu {
 	unsigned int toggle;
 	u64 room;
 	u64 hb;
+	u64 cmd_couts;		/* Number of command checkouts */
 
 	char version[8];
 	u64 interface_version;
