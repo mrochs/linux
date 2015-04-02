@@ -151,23 +151,19 @@ static int cflash_queuecommand(struct Scsi_Host *host,
 	struct afu *p_afu = p_cflash->p_afu;
 	int rc = 0;
 
-	/* XXX: Until the scsi_dma_map works, this stuff is meaningless
-	 * Make the queuecommand entry point a dummy one for now.
-	 */
-
 	switch (scp->cmnd[0]) {
 	case REPORT_LUNS:
-		cflash_info("REPORT_LUNS received!!!");
+		cflash_dbg("REPORT_LUNS received!!!");
 		break;
 	case INQUIRY:
-		cflash_info("INQUIRY received!!!");
+		cflash_dbg("INQUIRY received!!!");
 		break;
 	}
 
 	if (!fullqc) {
 		scp->scsi_done(scp);
 	} else {
-		cflash_info("(scp=%p) %d/%d/%d/%llu "
+		cflash_dbg("(scp=%p) %d/%d/%d/%llu "
 			"cdb=(%08x-%08x-%08x-%08x)", scp,
 			host->host_no, scp->device->channel,
 			scp->device->id, scp->device->lun,
@@ -178,37 +174,6 @@ static int cflash_queuecommand(struct Scsi_Host *host,
 
 		rc = cflash_send_scsi(p_afu, scp);
 	}
-	return rc;
-}
-
-/**
- * cflash_eh_abort_handler - Abort a single op
- * @scsi_cmd:                scsi command struct
- *
- * Return value:
- *      SUCCESS / FAILED
- **/
-static int cflash_eh_abort_handler(struct scsi_cmnd *scp)
-{
-	int rc = FAILED;
-	struct Scsi_Host *host = scp->device->host;
-	struct cflash *p_cflash = (struct cflash *)host->hostdata;
-	struct afu *p_afu = p_cflash->p_afu;
-
-	cflash_info("(scp=%p) %d/%d/%d/%llu "
-		    "cdb=(%08x-%08x-%08x-%08x)", scp,
-		    host->host_no, scp->device->channel,
-		    scp->device->id, scp->device->lun,
-		    cpu_to_be32(((u32 *) scp->cmnd)[0]),
-		    cpu_to_be32(((u32 *) scp->cmnd)[1]),
-		    cpu_to_be32(((u32 *) scp->cmnd)[2]),
-		    cpu_to_be32(((u32 *) scp->cmnd)[3]));
-
-	scp->result = (DID_OK << 16);;
-	cflash_send_scsi(p_afu, scp);
-
-	/* XXX: Return FAILED until we know the AFU reset works */
-	cflash_info("returning rc=%d", rc);
 	return rc;
 }
 
@@ -238,38 +203,7 @@ static int cflash_eh_device_reset_handler(struct scsi_cmnd *scp)
 	scp->result = (DID_OK << 16);;
 	cflash_send_tmf(p_afu, scp, TMF_LUN_RESET);
 
-	/* XXX: Return FAILED until we know the AFU reset works */
-	cflash_info("returning rc=%d", rc);
-	return rc;
-}
-
-/**
- * cflash_eh_target_reset_handler - Reset the target
- * @cmd:        scsi command struct
- *
- * Returns:
- *      SUCCESS / FAST_IO_FAIL / FAILED
- **/
-static int cflash_eh_target_reset_handler(struct scsi_cmnd *scp)
-{
-	int rc = FAILED;
-	struct Scsi_Host *host = scp->device->host;
-	struct cflash *p_cflash = (struct cflash *)host->hostdata;
-	struct afu *p_afu = p_cflash->p_afu;
-
-	cflash_info("(scp=%p) %d/%d/%d/%llu "
-		    "cdb=(%08x-%08x-%08x-%08x)", scp,
-		    host->host_no, scp->device->channel,
-		    scp->device->id, scp->device->lun,
-		    cpu_to_be32(((u32 *) scp->cmnd)[0]),
-		    cpu_to_be32(((u32 *) scp->cmnd)[1]),
-		    cpu_to_be32(((u32 *) scp->cmnd)[2]),
-		    cpu_to_be32(((u32 *) scp->cmnd)[3]));
-
-	scp->result = (DID_OK << 16);;
-	cflash_send_scsi(p_afu, scp);
-
-	/* XXX: Return FAILED until we know the AFU reset works */
+	/* XXX: Return FAILED until we know the AFU provided LUN reset works */
 	cflash_info("returning rc=%d", rc);
 	return rc;
 }
@@ -534,62 +468,6 @@ static ssize_t cflash_show_port_status(struct device *dev,
 	return snprintf(buf, PAGE_SIZE, "%s\n", disp_status);
 }
 
-static ssize_t cflash_show_host_partition_name(struct device *dev,
-					       struct device_attribute *attr,
-					       char *buf)
-{
-
-	/* XXX: Dummy */
-
-	return 0;
-}
-
-static ssize_t cflash_show_host_device_name(struct device *dev,
-					    struct device_attribute *attr,
-					    char *buf)
-{
-
-	/* XXX: Dummy */
-
-	return 0;
-}
-
-static ssize_t cflash_show_host_loc_code(struct device *dev,
-					 struct device_attribute *attr,
-					 char *buf)
-{
-	/* XXX: Dummy */
-
-	return 0;
-}
-
-static ssize_t cflash_show_host_drc_name(struct device *dev,
-					 struct device_attribute *attr,
-					 char *buf)
-{
-	/* XXX: Dummy */
-
-	return 0;
-}
-
-static ssize_t cflash_show_host_npiv_version(struct device *dev,
-					     struct device_attribute *attr,
-					     char *buf)
-{
-	/* XXX: Dummy */
-
-	return 0;
-}
-
-static ssize_t cflash_show_host_capabilities(struct device *dev,
-					     struct device_attribute *attr,
-					     char *buf)
-{
-	/* XXX: Dummy */
-
-	return 0;
-}
-
 /**
  * cflash_show_log_level - Show the adapter's error logging level
  * @dev:        class device struct
@@ -736,13 +614,6 @@ cflash_ioctl_exit:
  * structure. I'm thinking that might be more appropriate for us, at least for
  * the MC communications path.
  */
-static DEVICE_ATTR(partition_name, S_IRUGO, cflash_show_host_partition_name,
-		   NULL);
-static DEVICE_ATTR(device_name, S_IRUGO, cflash_show_host_device_name, NULL);
-static DEVICE_ATTR(port_loc_code, S_IRUGO, cflash_show_host_loc_code, NULL);
-static DEVICE_ATTR(drc_name, S_IRUGO, cflash_show_host_drc_name, NULL);
-static DEVICE_ATTR(npiv_version, S_IRUGO, cflash_show_host_npiv_version, NULL);
-static DEVICE_ATTR(capabilities, S_IRUGO, cflash_show_host_capabilities, NULL);
 static DEVICE_ATTR(log_level, S_IRUGO | S_IWUSR,
 		   cflash_show_log_level, cflash_store_log_level);
 static DEVICE_ATTR(port0, S_IRUGO, cflash_show_port_status, NULL);
@@ -751,12 +622,6 @@ static DEVICE_ATTR(port1, S_IRUGO, cflash_show_port_status, NULL);
 static struct device_attribute *cflash_attrs[] = {
 	&dev_attr_port0,
 	&dev_attr_port1,
-	&dev_attr_partition_name,
-	&dev_attr_device_name,
-	&dev_attr_port_loc_code,
-	&dev_attr_drc_name,
-	&dev_attr_npiv_version,
-	&dev_attr_capabilities,
 	&dev_attr_log_level,
 	NULL
 };
@@ -768,9 +633,7 @@ static struct scsi_host_template driver_template = {
 	.ioctl = cflash_ioctl,
 	.proc_name = CFLASH_NAME,
 	.queuecommand = cflash_queuecommand,
-	.eh_abort_handler = cflash_eh_abort_handler,
 	.eh_device_reset_handler = cflash_eh_device_reset_handler,
-	.eh_target_reset_handler = cflash_eh_target_reset_handler,
 	.eh_host_reset_handler = cflash_eh_host_reset_handler,
 	.slave_alloc = cflash_slave_alloc,
 	.slave_configure = cflash_slave_configure,
@@ -1321,8 +1184,11 @@ static irqreturn_t cflash_rrq_irq(int irq, void *data)
 			} else {
 				scp->result = (DID_OK << 16);
 			}
-			cflash_info("calling scsi_set_resid, scp=0x%llx len=%d",
-				    p_cmd->rcb.rsvd2, p_cmd->sa.resid);
+			cflash_dbg("calling scsi_set_resid, scp=0x%llx "
+				   "resid=%d afu_rc=%d scsi_rc=%d fc_rc=%d",
+				    p_cmd->rcb.rsvd2, p_cmd->sa.resid,
+				    p_cmd->sa.rc.afu_rc, p_cmd->sa.rc.scsi_rc,
+				    p_cmd->sa.rc.fc_rc);
 
 			scsi_set_resid(scp, p_cmd->sa.resid);
 			scsi_dma_unmap(scp);
@@ -1346,9 +1212,6 @@ static irqreturn_t cflash_rrq_irq(int irq, void *data)
 		}
 	}
 
-	/* XXX
-	   cflash_info("returning rc=%d", IRQ_HANDLED);
-	 */
 	return IRQ_HANDLED;
 }
 
@@ -2217,7 +2080,7 @@ static int cflash_probe(struct pci_dev *pdev,
 		rc = -ENOMEM;
 		goto out;
 	}
-	/* XXX: Need to double check with the sislite spec */
+
 	host->max_id = CFLASH_MAX_NUM_TARGETS_PER_BUS;
 	host->max_lun = CFLASH_MAX_NUM_LUNS_PER_TARGET;
 	host->max_channel = NUM_FC_PORTS-1;

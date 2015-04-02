@@ -80,7 +80,6 @@ int cflash_afu_attach(struct cflash *p_cflash, u64 context_id)
 	write_64(&p_ctx_info->p_ctrl_map->ctx_cap,
 		 SISL_CTX_CAP_READ_CMD | SISL_CTX_CAP_WRITE_CMD);
 
-	asm volatile ("eieio"::);
 	reg = read_64(&p_ctx_info->p_ctrl_map->ctx_cap);
 
 	/* if the write failed, the ctx must have been
