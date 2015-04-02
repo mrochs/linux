@@ -1,26 +1,48 @@
 Introduction
 ============
 
+    Power 8 architecture provides support for CAPI (Coherent
+    Accelerator Power Interface), which is available to certain PCIe
+    slots on Power 8 systems. CAPI can be thought of as a special
+    tunneling protocol through PCIe that allow PCIe adapters to look
+    like special purpose co-processors which can read or write an
+    application's memory and generate page faults. As a result, the
+    host interface to an adapter running in CAPI mode does not require
+    the data buffers to be mapped via TCEs nor does it require memory
+    to be pinned.
+
+    On Linux, Coherent Accelerator (CXL) kernel services present CAPI
+    devices as a PCI device by implementing a virtual PCI host bridge.
+    This abstraction simplifies the infrastructure and programming model,
+    allowing for drivers to look similar to other native PCI device drivers.
+
     CAPI provides a mechanism by which user space applications can
     directly talk to a device (network or storage) bypassing the
     typical kernel/device driver stack. The CAPI Flash Adapter Driver
     enables a user space application direct access to Flash storage.
 
     The CAPI Flash Adapter Driver is a kernel module that sits in
-    the SCSI stack as a low leve device driver (below the SCSI disk
+    the SCSI stack as a low level device driver (below the SCSI disk
     and protocol drivers) for the IBM CAPI Flash Adapter. This driver
-    performs initialization of the adapter, sets up the special path
-    for user space access and does error recovery. It communicates
-    directly the Flash Accelerator Functional Unit (AFU) as described
-    in Documentation/powerpc/cxl.txt. 
+    is responsible for the initialization of the adapter, setting up
+    the special path for user space access, and performing error
+    recovery. It communicates directly the Flash Accelerator Functional
+    Unit (AFU) as described in Documentation/powerpc/cxl.txt. 
 
-    This driver has two modes in which it operates. Any flash
-    device (LUN) can be configured to be accessed as a regular disk
-    device or accessed from user space with a special block library.
-    This user space access provides either raw access to the LUN 
-    (physical mode) or access to a partition of a LUN (virtual mode).
-    The segmentation of a disk device into virtual LUNs is assisted
-    by special translation services provided by the Flash AFU.
+    The CFlash driver supports two, mutually exclusive, modes of
+    operation at the device (LUN) level:
+
+        - Any flash device (LUN) can be configured to be accessed as a
+          regular disk device (ie: /dev/sdc). This is the default mode.
+
+        - Any flash device (LUN) can be configured to be accessed from
+          user space with a special block library. This mode further
+          specifies the means of accessing the device and provides for
+          either raw access to the entire LUN (referred to as direct or
+          physical LUN access) or access to a kernel/AFU-mediated partition
+          of the LUN (referred to as virtual LUN access). The segmentation
+          of a disk device into virtual LUNs is assisted by special
+          translation services provided by the Flash AFU.
 
 Overview
 ========
@@ -86,55 +108,164 @@ Overview
 Block library API
 =================
 
-    For applications intending to get access to the CAPI Flash from
-    user space through the block library, the following services are
-    provided by the CAPI Flash Adapter Driver.
+    Applications intending to get access to the CAPI Flash from user
+    space should use the block library, as it abstracts the details
+    of interfacing directly with the CFlash driver that are neccessary
+    for performing administrative actions (ie: setup, teardown, resize).
+    The block library can be thought of as a 'user' of services, implemented
+    as IOCTLs, that are provided by the CFlash driver specifically for
+    devices (LUNs) operating in user space access mode. While it is not
+    a requirement that applications understand the interface between the
+    block library and the CFlash driver, a high-level overview of each
+    supported service (IOCTL) is provided below.
 
-    The structure definitions are available in:
+    The block library can be found on GitHub:
+    http://www.github.com/mikehollinger/blocklib
+
+
+CFlash Driver IOCTLs
+====================
+
+    Users, such as the block library, that wish to interface with a
+    flash device (LUN) via user space access need to use the services
+    provided by the CFlash driver. As these services are implemented
+    as ioctls, a file descriptor handle must first be obtained in order
+    to establish the communciation channel between a user and the kernel.
+    This file descriptor is obtained by opening the device special file
+    associated with the scsi disk device (/dev/sdb) that was created
+    during LUN discovery. As per the location of the CFlash driver within
+    the SCSI protocol stack, this open is actually not seen by the CFlash
+    driver. Upon successful open, the user receives a file descriptor
+    (herein referrfed to as fd1) that should be used for issuing the
+    subsequent ioctls listed below.
+
+    The structure definitions for these IOCTLs are available in:
     drivers/scsi/cflash/cflash_ioctl.h
 
-open
-----
+DK_CAPI_ATTACH
+--------------
 
-    The block library will open the device special file associated
-    with the scsi disk device (/dev/sdb) created during LUN discovery.
-    As per the SCSI protocol stack, this open is actually not
-    seen by the CAPI Flash Adapter Driver. The block library
-    receives a file descriptor as a result of this open (fd1).
-    All of the subsequent ioctls listed below are performed on
-    that file descriptor (fd1).
+    This ioctl obtains, initializes, and starts a context using the CXL
+    kernel services. These services specify a context id (u16) by which
+    to uniquely identify the context and its allocated resources. The
+    services additionally provide a second file descriptor (herein
+    referred to as fd2) that is used by the block library to initiate
+    memory mapped I/O (via mmap()) to the CAPI flash device and poll for
+    completion events. This file descriptor is intentionally installed by
+    this driver and not the CXL kernel services to allow for intermediary
+    notification and access in the event of a non-user-initiated close(),
+    such as a killed process. This design point is described in further
+    detail in the description for the DK_CAPI_DETACH ioctl.
 
-attach
-------
+    There are three important aspects regarding the "tokens" (context id
+    and fd2) that are provided back to the user:
 
-    The attach ioctl on the file descriptor (fd1) opened by the block
-    library performs the context initialization and returns a new
-    file descriptor (fd2) associated with the Adapter. This new
-    descriptor is used by the block library to then mmap() and initiate
-    memory mapped I/O to the CAPI flash device. This attach ioctl
-    also provides a context handle (ctx). When the context is no longer
-    needed, a close (fd2) should be performed.
+        - These tokens are only valid for the process under which they
+          were created. The child of a forked process cannot continue
+          to use the context id or file descriptor created by its parent
+          (see DK_CAPI_CLONE for further details).
 
-udirect
--------
-   This ioctl returns the block size and last Logical Block Address (LBA)
-   on LUN.
+        - These tokens are only valid for the lifetime of the context.
+          Once the context is destroyed, the tokens are to be considered
+          stale and subsequent usage will result in errors.
 
-uvirtual
---------
-   This ioctl requests a virtual LUN of a specified size.
-   The ioctl returns the block size and the last LBA of the virtual LUN.
+        - When a context is no longer needed, the user shall detach from
+          the context via the DK_CAPI_DETACH ioctl and MUST also perform
+          a close on fd2 upon a successful DK_CAPI_ATTACH ioctl. 
 
+DK_CAPI_USER_DIRECT
+-------------------
+    This ioctl is responsible for transitioning the LUN to direct (physical)
+    mode access and configuring the AFU for direct access from user space on
+    a per-context basis. Additinally, the block size and last logical block
+    address (LBA) are returned to the user.
 
-release
--------
-   ???
+    As mentioned previously, when operating in user space access mode, LUNs
+    may be accessed in whole or in part. Only one mode is allowed at a time
+    and if one mode is active (outstanding references exist), requests to use
+    the LUN in a different mode are denied.
 
-resize
-------
-    This ioctl is used to resize a virtual lun. Returns the last LBA
-    of the resized LUN.
+    The AFU is configured for direct access from user space by adding an entry
+    to the AFU's resource handle table. The index of the entry is treated as a
+    resource handle that is returned to the user. The user is then able to use
+    the handle to reference the LUN during I/O.
+    
+DK_CAPI_USER_VIRTUAL
+--------------------
+    This ioctl is responsible for transitioning the LUN to virtual mode of
+    access and configuring the AFU for virtual access from user space on a
+    per-context basis. Additinally, the block size and last logical block
+    address (LBA) are returned to the user.
 
-verify
-------
-   ???
+    As mentioned previously, when operating in user space access mode, LUNs
+    may be accessed in whole or in part. Only one mode is allowed at a time
+    and if one mode is active (outstanding references exist), requests to use
+    the LUN in a different mode are denied.
+
+    The AFU is configured for virtual access from user space by adding an entry
+    to the AFU's resource handle table. The index of the entry is treated as a
+    resource handle that is returned to the user. The user is then able to use
+    the handle to reference the LUN during I/O.
+
+    By default, the virtual LUN is created with a size of 0. The user would
+    need to use the DK_CAPI_VLUN_RESIZE ioctl to adjust the grow the virtual
+    LUN to a desired size. To avoid having to perform this resize for the
+    initial creation of the virtual LUN, the user has the option of specifying
+    a size as part of the DK_CAPI_USER_VIRTUAL ioctl, such that when success is
+    returned to the user, the resource handle that is provided is already
+    referencing provisioned storage. This is reflected by the last LBA being
+    a non-zero value.
+
+DK_CAPI_VLUN_RESIZE
+-------------------
+    This ioctl is responsible for resizing a previously created virtual LUN
+    and will fail if invoked upon a LUN that is not in virtual mode. Upon
+    success, an updated last LBA is returned to the user indicating the new
+    size of the virtual LUN associated with the resource handle.
+
+    The partitioning of virtual LUNs is jointly mediated by the CFlash driver
+    and the AFU. An allocation table is kept for each LUN that is operating
+    in the virtual mode and used to program a LUN translation table that the
+    AFU references when provided with a resource handle. 
+
+DK_CAPI_RELEASE
+---------------
+    This ioctl is responsible for releasing a previously obtained reference
+    to either a physical or virtual LUN. This can be thought of as the inverse
+    of the DK_CAPI_USER_DIRECT or DK_CAPI_USER_VIRTUAL ioctls. Upon success,
+    the resource handle is no longer valid and the entry in the resource
+    handle table is made available to be used again.
+
+    As part of the release process for virtual LUNs, the virtual LUN is first
+    resized to 0 to clear out and free the translation tables associated with
+    the virtual LUN reference.
+
+DK_CAPI_DETACH
+--------------
+    This ioctl is responsible for unregistering a context with the CFlash driver
+    and release outstanding resources that were not explicitly released via the
+    DK_CAPI_RELEASE ioctl. As described in the DK_CAPI_ATTACH section, it is
+    extemely important that in addition to invoking this ioctl, the user must
+    also perform a close on fd2 to remove any resources that the CXL kernel
+    services created. Upon success, all "tokens" which had been provided to the
+    user from the DK_CAPI_ATTACH onward are no longer valid.
+
+DK_CAPI_CLONE
+-------------
+    This ioctl is responsible for cloning a previously created context to a more
+    recently created context. It exists solely to support maintaining user space
+    access to storage after a process forks. Upon success, the child process
+    (which invoked the ioctl) will have access to the same LUNs via the same
+    resource handle(s) and fd2 as the parent, but under a different context.
+
+    Context sharing across processes is not supported with CAPI and threfore each
+    fork must be met with establishing a new context for the child process. This
+    ioctl simplifies the state management and playback required by a user in such
+    a scenario. When a process forks, child process can clone the parents context
+    by first creating a context (via DK_CAPI_ATTACH) and then using this ioctl to
+    perform the clone from the parent to the child.
+
+    The clone itself is failry simple. The resource handle and lun translation
+    tables are copied from the parent context to the child's and then synced with
+    the AFU.
+
