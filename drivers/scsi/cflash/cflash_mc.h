@@ -40,6 +40,12 @@ struct cflash_ctx {
 	pid_t pid;
 };
 
+enum cflash_lr_state {
+	LINK_RESET_INVALID,
+	LINK_RESET_REQUIRED,
+	LINK_RESET_COMPLETE
+};
+
 struct cflash {
 	struct afu *p_afu;
 	struct cxl_context *p_mcctx;
@@ -54,6 +60,10 @@ struct cflash {
 	wait_queue_head_t reset_wait_q;
 	wait_queue_head_t msi_wait_q;
 	wait_queue_head_t eeh_wait_q;
+
+	struct work_struct work_q ;
+	enum cflash_lr_state lr_state;
+	int lr_port;
 
 	struct cxl_afu *afu;
 	timer_t timer_hb;

@@ -715,6 +715,8 @@ static void cflash_remove(struct pci_dev *pdev)
 		scsi_remove_host(p_cflash->host);
 		cflash_dev_err(&pdev->dev, "after scsi_remove_host!");
 	}
+	flush_work(&p_cflash->work_q);
+
 
 	cflash_term_afu(p_cflash);
 	cflash_dev_dbg(&pdev->dev, "after struct cflash_term_afu!");
@@ -1024,6 +1026,71 @@ int afu_set_wwpn(struct afu *p_afu, int port, volatile u64 * p_fc_regs,
 	return ret;
 }
 
+
+// this function can block up to a few seconds
+void afu_link_reset(struct afu *p_afu, int port, volatile __u64 *p_fc_regs)
+{
+	__u64 port_sel;
+	// first switch the AFU to the other links, if any 
+
+	port_sel = read_64(&p_afu->p_afu_map->global.regs.afu_port_sel);
+	port_sel &= ~(1 << port);
+	write_64(&p_afu->p_afu_map->global.regs.afu_port_sel, port_sel);
+	afu_sync(p_afu, 0, 0, AFU_GSYNC);
+
+	set_port_offline(p_fc_regs);
+	if (!wait_port_offline(p_fc_regs, FC_PORT_STATUS_RETRY_INTERVAL_US,
+			       FC_PORT_STATUS_RETRY_CNT)) {
+		cflash_err("wait on port %d to go offline timed out", port);
+	}
+
+	set_port_online(p_fc_regs);
+	if (!wait_port_online(p_fc_regs, FC_PORT_STATUS_RETRY_INTERVAL_US,
+			      FC_PORT_STATUS_RETRY_CNT)) {
+		cflash_err("wait on port %d to go online timed out", port);
+	}
+
+	// switch back to include this port 
+	port_sel |= (1 << port);
+	write_64(&p_afu->p_afu_map->global.regs.afu_port_sel, port_sel);
+	afu_sync(p_afu, 0, 0, AFU_GSYNC);
+
+}
+
+struct asyc_intr_info ainfo[] = {
+	{ SISL_ASTATUS_FC0_OTHER,    "fc 0: other error", 0, CLR_FC_ERROR | LINK_RESET },
+	{ SISL_ASTATUS_FC0_LOGO,     "fc 0: target initiated LOGO", 0, 0 },
+	{ SISL_ASTATUS_FC0_CRC_T,    "fc 0: CRC threshold exceeded", 0, LINK_RESET },
+	{ SISL_ASTATUS_FC0_LOGI_R,   "fc 0: login timed out, retrying", 0, 0 },
+	{ SISL_ASTATUS_FC0_LOGI_F,   "fc 0: login failed", 0, CLR_FC_ERROR },
+	{ SISL_ASTATUS_FC0_LOGI_S,   "fc 0: login succeeded", 0, 0 },
+	{ SISL_ASTATUS_FC0_LINK_DN,  "fc 0: link down", 0, 0 },
+	{ SISL_ASTATUS_FC0_LINK_UP,  "fc 0: link up", 0, 0 },
+
+	{ SISL_ASTATUS_FC1_OTHER,    "fc 1: other error", 1, CLR_FC_ERROR | LINK_RESET },
+	{ SISL_ASTATUS_FC1_LOGO,     "fc 1: target initiated LOGO", 1, 0 },
+	{ SISL_ASTATUS_FC1_CRC_T,    "fc 1: CRC threshold exceeded", 1, LINK_RESET },
+	{ SISL_ASTATUS_FC1_LOGI_R,   "fc 1: login timed out, retrying", 1, 0 },
+	{ SISL_ASTATUS_FC1_LOGI_F,   "fc 1: login failed", 1, CLR_FC_ERROR },
+	{ SISL_ASTATUS_FC1_LOGI_S,   "fc 1: login succeeded", 1, 0 },
+	{ SISL_ASTATUS_FC1_LINK_DN,  "fc 1: link down", 1, 0 },
+	{ SISL_ASTATUS_FC1_LINK_UP,  "fc 1: link up", 1, 0 },
+	{ 0x0,                       "", 0, 0 } /* terminator */
+};
+
+struct asyc_intr_info *find_ainfo(__u64 status)
+{
+	struct asyc_intr_info *p_info;
+
+	for (p_info = &ainfo[0]; p_info->status; p_info++) {
+		if (p_info->status == status) {
+			return p_info;
+		}
+	}
+
+	return NULL;
+}
+
 /**
  * cflash_stop_afu - Stop AFU
  * @p_cflash:       struct cflash
@@ -1149,7 +1216,7 @@ static irqreturn_t cflash_rrq_irq(int irq, void *data)
 	struct afu_cmd *p_cmd;
 	unsigned long lock_flags = 0UL;
 
-       	p_cflash = (struct cflash *) (p_afu - offsetof(struct cflash, p_afu));
+	p_cflash = (struct cflash *) (p_afu - offsetof(struct cflash, p_afu));
 	/*
 	 * XXX - might want to look at using locals for loop control
 	 * as an optimization
@@ -1218,13 +1285,64 @@ static irqreturn_t cflash_rrq_irq(int irq, void *data)
 static irqreturn_t cflash_async_err_irq(int irq, void *data)
 {
 	struct afu *p_afu = (struct afu *)data;
+	struct cflash *p_cflash;
+	__u64 reg_unmasked;
+	struct asyc_intr_info *p_info;
+	volatile struct sisl_global_map *p_global = &p_afu->p_afu_map->global;
+	__u64 reg;
+	int i;
 
-	/*
-	 * XXX - Matt to work on this next, need to create a thread
-	 * as this type of interrupt can drive a link reset which
-	 * will block.
-	 */
+	p_cflash = (struct cflash *) (p_afu - offsetof(struct cflash, p_afu));
 
+	reg = read_64(&p_global->regs.aintr_status);
+	reg_unmasked = (reg & SISL_ASTATUS_UNMASK);
+
+	if (reg_unmasked == 0) {
+		cflash_err("spurious interrupt, aintr_status 0x%016llx", reg);
+		goto out;
+	}
+
+	/* it is OK to clear AFU status before FC_ERROR */
+	write_64(&p_global->regs.aintr_clear, reg_unmasked);
+
+	/* check each bit that is on */
+	for (i = 0; reg_unmasked; i++, reg_unmasked = (reg_unmasked >> 1)) {
+		if ((reg_unmasked & 0x1) == 0 ||
+		    (p_info = find_ainfo(1ull << i)) == NULL) {
+			continue;
+		}
+
+		cflash_err("%s, fc_status 0x%08llx", p_info->desc,
+			   read_64(&p_global->fc_regs
+				   [p_info->port][FC_STATUS/8]));
+
+		// do link reset first, some OTHER errors will set FC_ERROR 
+		// again if cleared before or w/o a reset
+
+		if (p_info->action & LINK_RESET) {
+			cflash_err("fc %d: resetting link", p_info->port);
+			p_cflash->lr_port = p_info->port;
+			schedule_work(&p_cflash->work_q);
+		}
+
+		if (p_info->action & CLR_FC_ERROR) {
+			reg = read_64(&p_global->fc_regs[p_info->port]
+				      [FC_ERROR/8]);
+
+			// since all errors are unmasked, FC_ERROR and FC_ERRCAP
+			// should be the same and tracing one is sufficient. 
+
+			cflash_err("fc %d: clearing fc_error 0x%08llx",
+				   p_info->port, reg);
+
+			write_64(&p_global->fc_regs[p_info->port][FC_ERROR/8],
+				 reg);
+			write_64(&p_global->fc_regs[p_info->port][FC_ERRCAP/8],
+				 0);
+		}
+	}
+
+out:
 	cflash_info("returning rc=%d, afu=%p", IRQ_HANDLED, p_afu);
 	return IRQ_HANDLED;
 }
@@ -1701,7 +1819,7 @@ int cflash_init_afu(struct cflash *p_cflash)
 	memcpy(p_afu->version, &reg, 8);
 	p_afu->interface_version = read_64(&p_afu->p_afu_map->
 					   global.regs.interface_version);
-	cflash_info("afu version %s, interface version 0x%llx", 
+	cflash_info("afu version %s, interface version 0x%llx",
 		    p_afu->version, p_afu->interface_version);
 
 	rc = cflash_start_afu(p_cflash);
@@ -1918,6 +2036,40 @@ void afu_reset(struct cflash *p_cflash)
 
 
 /**
+ * cflash_worker_thread - Worker thread
+ * @work:               work queue pointer
+ *
+ * Called at task level from a work thread. This function takes care
+ * of adding and removing device from the mid-layer as configuration
+ * changes are detected by the adapter.
+ *
+ * Return value:
+ *      nothing
+ **/
+static void cflash_worker_thread(struct work_struct *work)
+{
+        struct cflash *p_cflash =
+                container_of(work, struct cflash, work_q);
+	struct afu *p_afu = p_cflash->p_afu;
+	int port;
+	unsigned long lock_flags;
+
+	spin_lock_irqsave(p_cflash->host->host_lock, lock_flags);
+
+	if (p_cflash->lr_state == LINK_RESET_REQUIRED) {
+		port = p_cflash->lr_port;
+		if (port < 0)
+			cflash_err("invalid port index %d", port);
+		else
+			afu_link_reset(p_afu, port, &p_afu->p_afu_map->global.
+				       fc_regs[port][0]);
+		p_cflash->lr_state = LINK_RESET_COMPLETE;
+	}
+
+	spin_unlock_irqrestore(p_cflash->host->host_lock, lock_flags);
+}
+
+/**
  * cflash_send_scsi - Send a generic SCSI CDB down
  * @p_afu:        struct afu pointer
  * @scp:          scsi command passed in 
@@ -2104,6 +2256,10 @@ static int cflash_probe(struct pci_dev *pdev,
 	p_cflash->p_mcctx = NULL;
 	p_cflash->context_reset_active = 0;
         init_waitqueue_head(&p_cflash->tmf_wait_q);
+
+	INIT_WORK(&p_cflash->work_q, cflash_worker_thread);
+	p_cflash->lr_state = LINK_RESET_INVALID;
+	p_cflash->lr_port = -1;
 
 	pci_set_drvdata(pdev, p_cflash);
 
