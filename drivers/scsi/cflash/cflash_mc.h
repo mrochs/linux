@@ -75,50 +75,13 @@ struct cflash {
 /* The write_nn or read_nn routines can be used to do byte reversed MMIO
    or byte reversed SCSI CDB/data.
 */
-static inline void write_64(volatile u64 * addr, u64 val)
-{
-	u64 zero = 0;
-	asm volatile ("stdbrx %0, %1, %2"::"r" (val), "r"(zero), "r"(addr));
-}
 
-static inline void write_32(volatile u32 * addr, u32 val)
-{
-	u32 zero = 0;
-	asm volatile ("stwbrx %0, %1, %2"::"r" (val), "r"(zero), "r"(addr));
-}
-
-static inline void write_16(volatile u16 * addr, u16 val)
-{
-	u16 zero = 0;
-	asm volatile ("sthbrx %0, %1, %2"::"r" (val), "r"(zero), "r"(addr));
-}
-
-static inline u64 read_64(volatile u64 * addr)
-{
-	u64 val;
-	u64 zero = 0;
-	asm volatile ("ldbrx %0, %1, %2":"=r" (val):"r"(zero), "r"(addr));
-
-	return val;
-}
-
-static inline u32 read_32(volatile u32 * addr)
-{
-	u32 val;
-	u32 zero = 0;
-	asm volatile ("lwbrx %0, %1, %2":"=r" (val):"r"(zero), "r"(addr));
-
-	return val;
-}
-
-static inline u16 read_16(volatile u16 * addr)
-{
-	u16 val;
-	u16 zero = 0;
-	asm volatile ("lhbrx %0, %1, %2":"=r" (val):"r"(zero), "r"(addr));
-
-	return val;
-}
+#define read_16(addr) __do_readw_be(addr)
+#define read_32(addr) __do_readl_be(addr)
+#define read_64(addr) __do_readq_be(addr)
+#define write_16(addr, val) __do_writew_be(val, addr)
+#define write_32(addr, val) __do_writel_be(val, addr)
+#define write_64(addr, val) __do_writeq_be(val, addr)
 
 static inline u64 lun_to_lunid(u64 lun) 
 {

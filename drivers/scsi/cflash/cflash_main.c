@@ -1489,7 +1489,6 @@ void cflash_context_reset(struct afu *p_afu)
 	cflash_info("p_afu=%p", p_afu);
 
 	if (p_afu->room == 0) {
-		asm volatile ("eieio"::); /* let IOARRIN writes complete */
 		do {
 			p_afu->room = read_64(&p_afu->p_host_map->cmd_room);
 			udelay(nretry);
@@ -1498,7 +1497,6 @@ void cflash_context_reset(struct afu *p_afu)
 
 	if (p_afu->room) {
 		write_64(&p_afu->p_host_map->ioarrin, (u64) rrin);
-		asm volatile ("eieio"::); /* let IOARRIN writes complete */
 		do {
 			rrin = read_64(&p_afu->p_host_map->ioarrin);
 			/* Double delay each time */
@@ -1615,7 +1613,6 @@ int init_global(struct cflash *p_cflash)
 	/* tbls, afu cmds and read/write GSCSI cmds. */
 	/* First, unlock ctx_cap write by reading mbox */
 	(void)read_64(&p_afu->p_ctrl_map->mbox_r);	/* unlock ctx_cap */
-	asm volatile ("eieio"::);
 	write_64(&p_afu->p_ctrl_map->ctx_cap,
 		 SISL_CTX_CAP_REAL_MODE | SISL_CTX_CAP_HOST_XLATE |
 		 SISL_CTX_CAP_READ_CMD | SISL_CTX_CAP_WRITE_CMD |
@@ -1917,7 +1914,6 @@ void cflash_send_cmd(struct afu *p_afu, struct afu_cmd *p_cmd)
 	int nretry = 0;
 
 	if (p_afu->room == 0) {
-		asm volatile ("eieio"::); /* let IOARRIN writes complete */
 		do {
 			p_afu->room = read_64(&p_afu->p_host_map->cmd_room);
 			udelay(nretry);
