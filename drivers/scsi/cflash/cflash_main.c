@@ -16,6 +16,7 @@
 #include <linux/module.h>
 #include <linux/mutex.h>
 #include <linux/semaphore.h>
+#include <linux/io.h>
 #include <linux/fs.h>
 #include <linux/cdev.h>
 #include <linux/list.h>

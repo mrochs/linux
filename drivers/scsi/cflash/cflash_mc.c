@@ -15,6 +15,7 @@
 #include <linux/pci.h>
 #include <linux/module.h>
 #include <linux/semaphore.h>
+#include <linux/io.h>
 #include <linux/fs.h>
 #include <linux/file.h>
 #include <linux/cdev.h>

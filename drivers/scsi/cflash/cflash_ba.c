@@ -12,6 +12,7 @@
  * 2 of the License, or (at your option) any later version.
  */
 
+#include <linux/bitops.h>
 #include <linux/module.h>
 #include <linux/slab.h>
 
@@ -19,39 +20,24 @@
 #include "cflash_ba.h"
 #include "cflash_ba_internal.h"
 
-/**************************************************************
- *                                                            *
- *            LUN BIT map table                               *
- *                                                            *
- *     0    1    2   3   4   5   6   ...    63                *
- *    64   65   66  67  68  69  70   ...   127                *
- *    ......                                                  *
- *                                                            *
- **************************************************************/
-
-/**************************************************************
- *                                                            *
- *                      Defines                               *
- *                                                            *
- **************************************************************/
-
-/* Bit operations */
-#define SET_BIT(num, bit_pos)  num |= (u64)0x01 << (63-bit_pos);
-#define CLR_BIT(num, bit_pos)  num &= ~((u64)0x01 << (63-bit_pos));
-#define TEST_BIT(num, bit_pos)  (num & ((u64)0x01 << (63-bit_pos)))
-
-/**************************************************************
- *                                                            *
- *                Function Prototypes                         *
- *                                                            *
- **************************************************************/
-static int find_free_bit(u64 lun_map_entry);
 
 int ba_init(struct ba_lun *ba_lun)
 {
 	struct ba_lun_info *lun_info = NULL;
 	int lun_size_au = 0, i = 0;
 	int last_word_underflow = 0;
+	u64 *p_lam;
+
+	cflash_info("Initializing LUN: lun_id = %llX, "
+		    "ba_lun->lsize = %lX, ba_lun->au_size = %lX",
+		    ba_lun->lun_id, ba_lun->lsize, ba_lun->au_size);
+
+	/* Calculate bit map size */
+	lun_size_au = ba_lun->lsize / ba_lun->au_size;
+	if (lun_size_au == 0) {
+		cflash_err("Requested LUN size of 0!");
+		return -EINVAL;
+	}
 
 	/* Allocate lun_fino */
 	lun_info = kzalloc(sizeof(struct ba_lun_info), GFP_KERNEL);
@@ -60,21 +46,6 @@ int ba_init(struct ba_lun *ba_lun)
 			   ba_lun->lun_id);
 		return -ENOMEM;
 	}
-
-	cflash_info("Initializing LUN: lun_id = %llX, "
-		    "ba_lun->lsize = %lX, ba_lun->au_size = %lX",
-		    ba_lun->lun_id, ba_lun->lsize, ba_lun->au_size);
-
-	/* Calculate bit map size */
-	lun_size_au = ba_lun->lsize / ba_lun->au_size;
-
-	/* XXX - do we need this? Thinking no...how should we handle a 0 lun
-	 * size, just return?
-	 */
-#ifdef _FILEMODE_
-	if (lun_size_au == 0)
-		lun_size_au = 1;
-#endif /* _FILEMODE_ */
 
 	lun_info->total_aus = lun_size_au;
 	lun_info->lun_bmap_size = lun_size_au / 64;
@@ -102,9 +73,9 @@ int ba_init(struct ba_lun *ba_lun)
 	last_word_underflow = (lun_info->lun_bmap_size * 64) -
 	    lun_info->free_aun_cnt;
 	if (last_word_underflow > 0) {
+		p_lam = &lun_info->lun_alloc_map[lun_info->lun_bmap_size - 1];
 		for (i = (63 - last_word_underflow + 1); i < 64; i++)
-			CLR_BIT(lun_info->lun_alloc_map[lun_info->lun_bmap_size
-							- 1], i);
+			clear_bit(i, (ulong *)p_lam);
 	}
 
 	/* Initialize high elevator index, low/curr already at 0 from kzalloc */
@@ -146,34 +117,26 @@ void ba_terminate(struct ba_lun *ba_lun)
 	}
 }
 
-static int find_free_bit(u64 lun_map_entry)
-{
-	int pos = -1;
-
-	asm volatile ("cntlzd %0, %1":"=r" (pos):"r"(lun_map_entry));
-	return pos;
-}
-
 static int find_free_range(u32 low,
 			   u32 high,
 			   struct ba_lun_info *lun_info, int *bit_word)
 {
 	int i;
 	u64 bit_pos = -1;
+	ulong *p_lam;
 
 	for (i = low; i < high; i++)
 		if (lun_info->lun_alloc_map[i] != 0) {
-			bit_pos = find_free_bit(lun_info->lun_alloc_map[i]);
+			p_lam = (ulong *)&lun_info->lun_alloc_map[i];
+			bit_pos = find_first_bit(p_lam, sizeof(u64));
 
-#if 0
-			cflash_info("Found free bit %lX in lun "
-				    "map entry %llX at bitmap index = %X",
-				    bit_pos, lun_info->lun_alloc_map[i], i);
-#endif
+			cflash_dbg("Found free bit %llX in lun "
+				   "map entry %llX at bitmap index = %X",
+				   bit_pos, lun_info->lun_alloc_map[i], i);
 
 			*bit_word = i;
 			lun_info->free_aun_cnt--;
-			CLR_BIT(lun_info->lun_alloc_map[i], bit_pos);
+			clear_bit(bit_pos, p_lam);
 			break;
 		}
 
@@ -188,11 +151,9 @@ u64 ba_alloc(struct ba_lun * ba_lun)
 
 	lun_info = (struct ba_lun_info *)ba_lun->ba_lun_handle;
 
-#if 0
-	cflash_info("Received block allocation request: "
-		    "lun_id = %llX, free_aun_cnt = %llX",
-		    ba_lun->lun_id, lun_info->free_aun_cnt);
-#endif
+	cflash_dbg("Received block allocation request: "
+		   "lun_id = %llX, free_aun_cnt = %llX",
+		   ba_lun->lun_id, lun_info->free_aun_cnt);
 
 	if (lun_info->free_aun_cnt == 0) {
 		cflash_err("No space left on LUN: lun_id = %llX",
@@ -220,12 +181,9 @@ u64 ba_alloc(struct ba_lun * ba_lun)
 	else
 		lun_info->free_curr_idx = bit_word;
 
-#if 0
-	cflash_info("Allocating AU number %lX, on lun_id %llX, "
-		    "free_aun_cnt = %llX",
-		    ((bit_word * 64) + bit_pos), ba_lun->lun_id,
-		    lun_info->free_aun_cnt);
-#endif
+	cflash_dbg("Allocating AU number %llX, on lun_id %llX, "
+		   "free_aun_cnt = %llX", ((bit_word * 64) + bit_pos),
+		   ba_lun->lun_id, lun_info->free_aun_cnt);
 
 	return (u64) ((bit_word * 64) + bit_pos);
 }
@@ -237,7 +195,7 @@ static int validate_alloc(struct ba_lun_info *lun_info, u64 aun)
 	idx = aun / 64;
 	bit_pos = aun % 64;
 
-	if (TEST_BIT(lun_info->lun_alloc_map[idx], bit_pos))
+	if (test_bit(bit_pos, (ulong *)&lun_info->lun_alloc_map[idx]))
 		return -1;
 
 	return 0;
@@ -255,11 +213,10 @@ int ba_free(struct ba_lun *ba_lun, u64 to_free)
 		     to_free, ba_lun->lun_id);
 		return -1;
 	}
-#if 0
-	cflash_info("Received a request to free AU %lX on lun_id %llX, "
-		    "free_aun_cnt = %llX",
-		    to_free, ba_lun->lun_id, lun_info->free_aun_cnt);
-#endif
+
+	cflash_dbg("Received a request to free AU %llX on lun_id %llX, "
+		   "free_aun_cnt = %llX", to_free, ba_lun->lun_id,
+		   lun_info->free_aun_cnt);
 
 	if (lun_info->aun_clone_map[to_free] > 0) {
 		cflash_info("AUN %llX on lun_id %llX has been cloned. Clone "
@@ -272,7 +229,7 @@ int ba_free(struct ba_lun *ba_lun, u64 to_free)
 	idx = to_free / 64;
 	bit_pos = to_free % 64;
 
-	SET_BIT(lun_info->lun_alloc_map[idx], bit_pos);
+	set_bit(bit_pos, (ulong *)&lun_info->lun_alloc_map[idx]);
 	lun_info->free_aun_cnt++;
 
 	if (idx < lun_info->free_low_idx)
@@ -280,11 +237,10 @@ int ba_free(struct ba_lun *ba_lun, u64 to_free)
 	else if (idx > lun_info->free_high_idx)
 		lun_info->free_high_idx = idx;
 
-#if 0
-	cflash_info("Successfully freed AU at bit_pos %X, bit map index %X on "
-		    "lun_id %llX, free_aun_cnt = %llX",
-	     bit_pos, idx, ba_lun->lun_id, lun_info->free_aun_cnt);
-#endif
+	cflash_dbg("Successfully freed AU at bit_pos %X, bit map index %X on "
+		   "lun_id %llX, free_aun_cnt = %llX", bit_pos, idx,
+		   ba_lun->lun_id, lun_info->free_aun_cnt);
+
 	return 0;
 }
 
@@ -340,8 +296,8 @@ void dump_ba_map(struct ba_lun *ba_lun)
 				pr_debug(" ");
 
 			pr_debug("%1d",
-				 TEST_BIT(lun_info->lun_alloc_map[i],
-					  j) ? 1 : 0);
+				 test_bit((j ? 1 : 0),
+					  (ulong *)&lun_info->lun_alloc_map[i]);
 		}
 
 		pr_debug("\n");

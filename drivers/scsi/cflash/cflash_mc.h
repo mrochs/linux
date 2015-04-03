@@ -82,23 +82,20 @@ struct cflash {
 	u8 tmf_active:1;
 };
 
-/* The write_nn or read_nn routines can be used to do byte reversed MMIO
-   or byte reversed SCSI CDB/data.
-*/
+/* The should be used to do byte reversed MMIO */
+#define read_16(addr)		readw_be(addr)
+#define read_32(addr)		readl_be(addr)
+#define read_64(addr)		readq_be(addr)
+#define write_16(addr, val)	writew_be(val, addr)
+#define write_32(addr, val)	writel_be(val, addr)
+#define write_64(addr, val)	writeq_be(val, addr)
 
-#define read_16(addr) __do_readw_be(addr)
-#define read_32(addr) __do_readl_be(addr)
-#define read_64(addr) __do_readq_be(addr)
-#define write_16(addr, val) __do_writew_be(val, addr)
-#define write_32(addr, val) __do_writel_be(val, addr)
-#define write_64(addr, val) __do_writeq_be(val, addr)
-
-static inline u64 lun_to_lunid(u64 lun) 
+static inline u64 lun_to_lunid(u64 lun)
 {
 	u64 lun_id;
 
 	int_to_scsilun(lun, (struct scsi_lun *)&lun_id);
-	return read_64(&lun_id);
+	return swab64(lun_id);
 
 }
 /* mc_stat is analogous to fstat in POSIX. It returns information on
