@@ -284,11 +284,13 @@ int cflash_disk_attach(struct scsi_device *sdev, void __user * arg)
 	parg->return_flags = 0;
 	parg->block_size = p_lun_info->blk_len;
 	parg->mmio_size = sizeof(p_afu->p_afu_map->hosts[0].harea);
+	parg->last_lba = p_lun_info->max_lba;
 
 out:
 	parg->adap_fd = fd;
 
-	cflash_info("returning fd=%d bs=%lld rc=%d", fd, parg->block_size, rc);
+	cflash_info("returning fd=%d bs=%lld rc=%d llba=%lld", 
+		    fd, parg->block_size, rc, parg->last_lba);
 	return rc;
 }
 

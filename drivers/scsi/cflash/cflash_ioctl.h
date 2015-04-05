@@ -41,10 +41,10 @@ struct dk_capi_attach {
 	u64 flags;		/* Input flags for the attach */
 	u64 return_flags;	/* Returned flags */
 	u64 context_id;		/* Returned context ID */
-	void *mmio_start;	/* Returned address of MMIO area */
 	u64 mmio_size;		/* Returned size of MMIO area */
 	u64 block_size;		/* Returned block size, in bytes */
 	u32 adap_fd;		/* Returned adapter file descriptor */
+	u64 last_lba;		/* Returned last LBA on the device */
 };
 
 struct dk_capi_detach {
