@@ -98,7 +98,7 @@ struct afu_cmd *cflash_cmd_cout(struct afu *p_afu)
 		k = (p_afu->cmd_couts++ & (CFLASH_NUM_CMDS - 1));
 
 		/* The last command structure is reserved for SYNC */
-		if (unlikely(k == AFU_SYNC_INDEX))
+		if (k == AFU_SYNC_INDEX)
 			continue;
 
 		p_cmd = &p_afu->cmd[k];
