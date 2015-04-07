@@ -62,10 +62,8 @@ int cflash_afu_attach(struct cflash *p_cflash, u64 context_id)
 	 * owner if this is a fraudulent registration attempt.
 	 */
 	reg = read_64(&p_ctx_info->p_ctrl_map->mbox_r);
-
-	/* zeroed mbox is a locked mbox */
 	if (reg == 0) {
-		cflash_err("zero mbox reg 0x%llx", reg);
+		cflash_err("zero mbox reg!");
 	}
 
 	/* This context is not duped and is in a group by
@@ -196,6 +194,7 @@ int cflash_disk_attach(struct scsi_device *sdev, void __user * arg)
 	struct lun_info *p_lun_info = sdev->hostdata;
 	struct cxl_ioctl_start_work *p_work;
 	int rc = 0;
+	u32 perms, context_id;
 	struct file *file;
 
 	struct dk_capi_attach *parg = (struct dk_capi_attach *)arg;
@@ -226,15 +225,15 @@ int cflash_disk_attach(struct scsi_device *sdev, void __user * arg)
 		goto out;
 	}
 
-	parg->context_id = (u64) cxl_process_element(ctx);
-	if (parg->context_id > MAX_CONTEXT) {
-		cflash_err("context_id (%llu) is too large!", parg->context_id);
+	context_id = cxl_process_element(ctx);
+	if (context_id > MAX_CONTEXT) {
+		cflash_err("context_id (%u) is too large!", context_id);
 		rc = -EPERM;
 		goto out;
 	}
 
-	//BUG_ON(p_cflash->per_context[parg->context_id].lfd != -1);
-	//BUG_ON(p_cflash->per_context[parg->context_id].pid != 0);
+	//BUG_ON(p_cflash->per_context[context_id].lfd != -1);
+	//BUG_ON(p_cflash->per_context[context_id].pid != 0);
 
 	/*
 	 * Create and attach a new file descriptor. This must be the last
@@ -242,7 +241,7 @@ int cflash_disk_attach(struct scsi_device *sdev, void __user * arg)
 	 * userspace and can't be undone. No error paths after this as we
 	 * can't free the fd safely.
 	 */
-	p_work = &p_cflash->per_context[parg->context_id].work;
+	p_work = &p_cflash->per_context[context_id].work;
 	memset(p_work, 0, sizeof(*p_work));
 	p_work->num_interrupts = parg->num_interrupts;
 	p_work->flags = CXL_START_WORK_NUM_IRQS;
@@ -265,7 +264,7 @@ int cflash_disk_attach(struct scsi_device *sdev, void __user * arg)
 		goto out;
 	}
 
-	rc = cflash_afu_attach(p_cflash, parg->context_id);
+	rc = cflash_afu_attach(p_cflash, context_id);
 	if (rc) {
 		cflash_err("Could not attach AFU rc %d", rc);
 		cxl_release_context(ctx);
@@ -278,10 +277,15 @@ int cflash_disk_attach(struct scsi_device *sdev, void __user * arg)
 	/* No error paths after installing the fd */
 	fd_install(fd, file);
 
-	p_cflash->per_context[parg->context_id].lfd = fd;
-	p_cflash->per_context[parg->context_id].pid = current->pid;
+	p_cflash->per_context[context_id].lfd = fd;
+	p_cflash->per_context[context_id].pid = current->pid;
+
+	/* Translate read/write O_* flags from fnctl.h to AFU permission bits */
+	perms = ((parg->flags + 1) & 0x3);
+	p_afu->ctx_info[context_id].p_rht_info->perms = perms;
 
 	parg->return_flags = 0;
+	parg->context_id = context_id;
 	parg->block_size = p_lun_info->blk_len;
 	parg->mmio_size = sizeof(p_afu->p_afu_map->hosts[0].harea);
 	parg->last_lba = p_lun_info->max_lba;
@@ -443,7 +447,7 @@ int cflash_disk_open(struct scsi_device *sdev, void __user * arg,
 	struct dk_capi_udirect *pphys = (struct dk_capi_udirect *)arg;
 	struct dk_capi_resize  resize;
 
-	u32 perm;
+	u32 perms;
 	u64 context_id;
 	u64 lun_size = 0;
 	u64 block_size = 0;
@@ -503,16 +507,15 @@ int cflash_disk_open(struct scsi_device *sdev, void __user * arg,
 		}
 	}
 
-	/* Translate read/write O_* flags from fnctl.h to AFU permission bits */
-	//perm = ((pvirt->flags + 1) & 0x3);
-	perm = 0x3;
+	/* User specified permission on attach */
+	perms = p_rht_info->perms;
 
 	rsrc_handle = (p_rht_entry - p_rht_info->rht_start);
 	block_size = p_lun_info->blk_len;
 
 	if (mode == MODE_VIRTUAL) {
 		p_rht_entry->nmask = MC_RHT_NMASK;
-		p_rht_entry->fp = SISL_RHT_FP(0U, perm);
+		p_rht_entry->fp = SISL_RHT_FP(0U, perms);
 		/* format 0 & perms */
 
 		if (lun_size != 0) {
@@ -529,7 +532,7 @@ int cflash_disk_open(struct scsi_device *sdev, void __user * arg,
 		pvirt->last_lba = last_lba;
 		pvirt->rsrc_handle = rsrc_handle;
 	} else if (mode == MODE_PHYSICAL) {
-		cflash_rht_format1(p_rht_entry, p_lun_info->lun_id, perm);
+		cflash_rht_format1(p_rht_entry, p_lun_info->lun_id, perms);
 		afu_sync(p_afu, context_id, rsrc_handle, AFU_LW_SYNC);
 
 		last_lba = p_lun_info->max_lba;
@@ -1194,7 +1197,7 @@ int cflash_disk_clone(struct scsi_device *sdev, void __user * arg)
 			*p_ctx_info_dst;
 	struct rht_info *p_rht_info_src,
 			*p_rht_info_dst;
-	u32 perm;
+	u32 perms;
 	u64 reg;
 	int i, j;
 	int rc = 0;
@@ -1228,14 +1231,14 @@ int cflash_disk_clone(struct scsi_device *sdev, void __user * arg)
 			goto out;
 		}
 
+	/* zeroed mbox is a locked mbox */
 	reg = read_64(&p_ctx_info_src->p_ctrl_map->mbox_r);
-	if (reg == 0) {		/* zeroed mbox is a locked mbox */
-		rc = -EACCES;	/* return Permission denied */
-		goto out;
+	if (reg == 0) {
+		cflash_err("zero mbox reg!");
 	}
 
-	/* Translate read/write O_* flags from fnctl.h to AFU permission bits */
-	perm = ((pclone->flags + 1) & 0x3);
+	/* User specified permission on attach */
+	perms = p_rht_info_dst->perms;
 
 	/*
 	 * This loop is equivalent to cflash_disk_open & cflash_vlun_resize.
@@ -1246,7 +1249,7 @@ int cflash_disk_clone(struct scsi_device *sdev, void __user * arg)
 		p_rht_info_dst->rht_start[i].nmask =
 		    p_rht_info_src->rht_start[i].nmask;
 		p_rht_info_dst->rht_start[i].fp =
-		    SISL_RHT_FP_CLONE(p_rht_info_src->rht_start[i].fp, perm);
+		    SISL_RHT_FP_CLONE(p_rht_info_src->rht_start[i].fp, perms);
 
 		rc = clone_lxt(p_afu, p_blka, pclone->context_id_dst, i,
 			       &p_rht_info_dst->rht_start[i],

@@ -111,7 +111,8 @@ struct scsi_inquiry_p83_id_desc_hdr {
  */
 struct rht_info {
 	struct sisl_rht_entry *rht_start;	/* initialized at startup */
-	int ref_cnt;		/* num ctx_infos pointing to me */
+	int ref_cnt;	/* num ctx_infos pointing to me */
+	u32 perms;	/* User-defined (@attach) permissions for RHT entries */
 };
 
 /* Single AFU context can be pointed to by multiple client connections.
