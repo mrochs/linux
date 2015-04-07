@@ -21,7 +21,6 @@
 #include <scsi/scsi_device.h>
 
 extern u32 internal_lun;
-extern u32 cflash_debug;
 extern u32 fullqc;
 extern u32 checkpid;
 
@@ -50,7 +49,7 @@ extern u32 checkpid;
 /*
  * Error logging macros
  *
- * These wrappers around pr_* add the function name and newline character
+ * These wrappers around pr|dev_* add the function name and newline character
  * automatically, avoiding the need to include them inline with each trace
  * statement and saving line width.
  *
@@ -70,9 +69,7 @@ extern u32 checkpid;
 #define cflash_warn(_s,  ...)	pr_warn(CONFN(_s),  __func__, ##__VA_ARGS__)
 #define cflash_info(_s,  ...)	pr_info(CONFN(_s),  __func__, ##__VA_ARGS__)
 #define cflash_devel(_s, ...)	pr_devel(CONFN(_s), __func__, ##__VA_ARGS__)
-
-#define cflash_dbg(_s, ...)	\
-	do { if (cflash_debug) cflash_info(_s, ##__VA_ARGS__);} while(0)
+#define cflash_dbg(_s, ...)	pr_debug(CONFN(_s), __func__, ##__VA_ARGS__)
 
 #define cflash_dev_emerg(_d, _s, ...)	\
 	dev_emerg(_d, CONFN(_s), __func__, ##__VA_ARGS__)
@@ -86,9 +83,8 @@ extern u32 checkpid;
 	dev_warn(_d, CONFN(_s), __func__, ##__VA_ARGS__)
 #define cflash_dev_info(_d, _s, ...)	\
 	dev_info(_d, CONFN(_s), __func__, ##__VA_ARGS__)
-
 #define cflash_dev_dbg(_d, _s, ...)	\
-	do { if (cflash_debug) cflash_dev_info(_d, _s, ##__VA_ARGS__);} while(0)
+	dev_dbg(_d, CONFN(_s), __func__, ##__VA_ARGS__)
 
 enum open_mode_type {
 	MODE_NONE = 0,

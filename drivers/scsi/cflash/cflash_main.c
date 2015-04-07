@@ -49,7 +49,6 @@ MODULE_AUTHOR("Matthew R. Ochs <mrochs@linux.vnet.ibm.com>");
 MODULE_LICENSE("GPL");
 
 u32 internal_lun = 0;
-u32 cflash_debug = 0;
 u32 fullqc = 0;
 u32 checkpid = 0;
 module_param_named(lun_mode, internal_lun, uint, 0);
@@ -58,8 +57,6 @@ MODULE_PARM_DESC(lun_mode, " 0 = external LUN[s](default),\n"
 			   " 2 = internal LUN (1 x 64K, 4K blocks, id 0),\n"
 			   " 3 = internal LUN (2 x 32K, 512B blocks, ids 0,1),\n"
 			   " 4 = internal LUN (2 x 32K, 4K blocks, ids 0,1)");
-module_param_named(debug, cflash_debug, uint, 0);
-MODULE_PARM_DESC(debug, " 1 = enabled");
 
 module_param_named(qc, fullqc, uint, 0);
 MODULE_PARM_DESC(qc, " 1 = Regular SCSI queuecommand");
@@ -2440,11 +2437,6 @@ static int __init init_cflash(void)
 	if (internal_lun > 4) {
 		cflash_err("Invalid lun_mode parameter! (%d > 4)",
 			   internal_lun);
-		return(-EINVAL);
-	}
-	if (cflash_debug > 1) {
-		cflash_err("Invalid debug parameter! (%d > 1)",
-			   cflash_debug);
 		return(-EINVAL);
 	}
 
