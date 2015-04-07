@@ -95,6 +95,10 @@ enum open_mode_type {
 	MODE_PHYSICAL
 };
 
+struct dev_dependent_vals {
+	u64 max_sectors;
+};
+
 /*
  * Prototypes
  */

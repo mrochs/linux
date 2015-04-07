@@ -651,9 +651,12 @@ static struct scsi_host_template driver_template = {
 	.shost_attrs = cflash_attrs,
 };
 
+static struct dev_dependent_vals dev_corsa_vals = { CFLASH_MAX_SECTORS };
+
 static struct pci_device_id cflash_pci_table[] = {
-	{PCI_DEVICE(PCI_VENDOR_ID_IBM, PCI_DEVICE_ID_IBM_CORSA),},
-	{}
+	{ PCI_VENDOR_ID_IBM, PCI_DEVICE_ID_IBM_CORSA,
+	  PCI_ANY_ID, PCI_ANY_ID, 0, 0, (kernel_ulong_t)&dev_corsa_vals
+	}
 };
 
 /**
@@ -2206,6 +2209,7 @@ out:
 	return rc;
 
 }
+
 /**
  * cflash_probe - Adapter hot plug add entry point
  * @pdev:       pci device struct
@@ -2220,12 +2224,16 @@ static int cflash_probe(struct pci_dev *pdev,
 	struct Scsi_Host *host;
 	struct cflash *p_cflash = NULL;
 	struct device *phys_dev;
+	struct dev_dependent_vals *p_ddv;
 	int rc = 0;
 
 	cflash_dev_dbg(&pdev->dev, "Found CFLASH with IRQ: %d", pdev->irq);
 
 	if (fullqc)
 		driver_template.scan_finished = NULL;
+
+	p_ddv = (struct dev_dependent_vals *)dev_id->driver_data;
+	driver_template.max_sectors = p_ddv->max_sectors;
 
 	host = scsi_host_alloc(&driver_template, sizeof(struct cflash));
 	if (!host) {
