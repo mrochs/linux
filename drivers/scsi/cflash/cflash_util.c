@@ -191,14 +191,13 @@ void marshall_virt_to_resize(struct dk_capi_uvirtual *pvirt,
 			     struct dk_capi_resize *psize)
 {
 	psize->version = pvirt->version;
-	psize->path_id = pvirt->path_id;
 	psize->rsvd[0] = pvirt->rsvd[0];
 	psize->rsvd[1] = pvirt->rsvd[1];
+	psize->rsvd[2] = pvirt->rsvd[2];
 	psize->flags = pvirt->flags;
 	psize->return_flags = pvirt->return_flags;
 	psize->context_id = pvirt->context_id;
 	psize->rsrc_handle = pvirt->rsrc_handle;
-	psize->challenge = pvirt->challenge;
 	psize->req_size = pvirt->lun_size;
 	psize->last_lba = pvirt->last_lba;
 }
@@ -207,23 +206,22 @@ void marshall_rele_to_resize(struct dk_capi_release *prele,
 			     struct dk_capi_resize *psize)
 {
 	psize->version = prele->version;
-	psize->path_id = prele->path_id;
 	psize->rsvd[0] = prele->rsvd[0];
 	psize->rsvd[1] = prele->rsvd[1];
+	psize->rsvd[2] = prele->rsvd[2];
 	psize->flags = prele->flags;
 	psize->return_flags = prele->return_flags;
 	psize->context_id = prele->context_id;
 	psize->rsrc_handle = prele->rsrc_handle;
-	psize->challenge = prele->challenge;
 }
 
 void marshall_det_to_rele(struct dk_capi_detach *pdet,
 			  struct dk_capi_release *prel)
 {
 	prel->version = pdet->version;
-	prel->path_id = pdet->path_id;
 	prel->rsvd[0] = pdet->rsvd[0];
 	prel->rsvd[1] = pdet->rsvd[1];
+	prel->rsvd[2] = pdet->rsvd[2];
 	prel->flags = pdet->flags;
 	prel->return_flags = pdet->return_flags;
 	prel->context_id = pdet->context_id;
@@ -233,9 +231,9 @@ void marshall_clone_to_rele(struct dk_capi_clone *pclone,
 			    struct dk_capi_release *prel)
 {
 	prel->version = pclone->version;
-	prel->path_id = pclone->path_id;
 	prel->rsvd[0] = pclone->rsvd[0];
 	prel->rsvd[1] = pclone->rsvd[1];
+	prel->rsvd[2] = pclone->rsvd[2];
 	prel->flags = pclone->flags;
 	prel->context_id = pclone->context_id_dst;
 }

@@ -285,6 +285,7 @@ int cflash_disk_attach(struct scsi_device *sdev, void __user * arg)
 	parg->block_size = p_lun_info->blk_len;
 	parg->mmio_size = sizeof(p_afu->p_afu_map->hosts[0].harea);
 	parg->last_lba = p_lun_info->max_lba;
+	parg->max_xfer = sdev->host->max_sectors;
 
 out:
 	parg->adap_fd = fd;
@@ -580,8 +581,8 @@ int cflash_disk_release(struct scsi_device *sdev, void __user * arg)
 	struct rht_info *p_rht_info;
 	struct sisl_rht_entry *p_rht_entry;
 
-	cflash_info("context=0x%llx res_hndl=0x%llx, challenge=0x%llx",
-		    prele->context_id, prele->rsrc_handle, prele->challenge);
+	cflash_info("context=0x%llx res_hndl=0x%llx",
+		    prele->context_id, prele->rsrc_handle);
 
 	p_ctx_info = get_validated_context(p_cflash, prele->context_id, FALSE);
 	if (!p_ctx_info) {
@@ -771,7 +772,7 @@ int cflash_vlun_resize(struct scsi_device *sdev, void __user * arg)
 	/* req_size is always assumed to be in 4k blocks. So we have to convert
 	 * it from 4k to chunk size
 	 */
-	nsectors = (parg->req_size * DK_CAPI_BLOCK) / (p_lun_info->blk_len);
+	nsectors = (parg->req_size * CFLASH_BLOCK_SIZE) / (p_lun_info->blk_len);
 	new_size = (nsectors + MC_CHUNK_SIZE - 1) / MC_CHUNK_SIZE;
 
 	cflash_info("context=0x%llx res_hndl=0x%llx, req_size=0x%llx,"
@@ -830,7 +831,7 @@ int cflash_vlun_resize(struct scsi_device *sdev, void __user * arg)
 	}
 	parg->return_flags = 0;
 	parg->last_lba = (p_act_new_size * MC_CHUNK_SIZE *
-			  p_lun_info->blk_len) / DK_CAPI_BLOCK;
+			  p_lun_info->blk_len) / CFLASH_BLOCK_SIZE;
 
 out:
 	cflash_info("resized to %lld returning rc=%d", parg->last_lba, rc);
@@ -1277,7 +1278,6 @@ out:
  *		p_conn_info	- Pointer to connection the request came in
  *				  This is the context to dup to (target)
  *		ctx_hndl_cand	- This is the context to dup from source)
- *		challenge	- used to validate access to ctx_hndl_cand
  *
  * OUTPUTS:
  *		None
