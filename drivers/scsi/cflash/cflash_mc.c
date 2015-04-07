@@ -244,7 +244,7 @@ int cflash_disk_attach(struct scsi_device *sdev, void __user * arg)
 	 */
 	p_work = &p_cflash->per_context[parg->context_id].work;
 	memset(p_work, 0, sizeof(*p_work));
-	p_work->num_interrupts = 4;
+	p_work->num_interrupts = parg->num_interrupts;
 	p_work->flags = CXL_START_WORK_NUM_IRQS;
 
 	file = cxl_get_fd(ctx, NULL, &fd);
