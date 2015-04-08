@@ -466,6 +466,35 @@ static ssize_t cflash_show_port_status(struct device *dev,
 	return snprintf(buf, PAGE_SIZE, "%s\n", disp_status);
 }
 
+static ssize_t cflash_show_lun_mode(struct device *dev,
+				    struct device_attribute *attr, char *buf)
+{
+	struct Scsi_Host *shost = class_to_shost(dev);
+	struct cflash *p_cflash = (struct cflash *)shost->hostdata;
+	struct afu *p_afu = p_cflash->p_afu;
+
+	return snprintf(buf, PAGE_SIZE, "%u\n", p_afu->internal_lun);
+}
+
+static ssize_t cflash_store_lun_mode(struct device *dev,
+				    struct device_attribute *attr,
+				    const char *buf, size_t count)
+{
+	struct Scsi_Host *shost = class_to_shost(dev);
+	struct cflash *p_cflash = (struct cflash *)shost->hostdata;
+	struct afu *p_afu = p_cflash->p_afu;
+	int rc;
+	u32 lun_mode;
+
+	rc = kstrtouint(buf, 10, &lun_mode);
+	if (!rc && (lun_mode < 5) && (lun_mode != p_afu->internal_lun))
+		p_afu->internal_lun = lun_mode;
+
+	/* XXX - need to reset device w/ new lun mode */
+
+	return count;
+}
+
 /**
  * cflash_show_log_level - Show the adapter's error logging level
  * @dev:        class device struct
@@ -616,11 +645,14 @@ static DEVICE_ATTR(log_level, S_IRUGO | S_IWUSR,
 		   cflash_show_log_level, cflash_store_log_level);
 static DEVICE_ATTR(port0, S_IRUGO, cflash_show_port_status, NULL);
 static DEVICE_ATTR(port1, S_IRUGO, cflash_show_port_status, NULL);
+static DEVICE_ATTR(lun_mode, S_IRUGO | S_IWUSR, cflash_show_lun_mode,
+		   cflash_store_lun_mode);
 
 static struct device_attribute *cflash_attrs[] = {
 	&dev_attr_port0,
 	&dev_attr_port1,
 	&dev_attr_log_level,
+	&dev_attr_lun_mode,
 	NULL
 };
 

@@ -242,7 +242,8 @@ struct afu {
 	unsigned int toggle;
 	u64 room;
 	u64 hb;
-	u64 cmd_couts;		/* Number of command checkouts */
+	u32 cmd_couts;		/* Number of command checkouts */
+	u32 internal_lun;	/* User-desired LUN mode for this AFU */
 
 	char version[8];
 	u64 interface_version;
