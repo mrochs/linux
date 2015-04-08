@@ -165,6 +165,24 @@ void cflash_scan_luns(struct cflash *p_cflash)
 	}
 }
 
+int cflash_cxl_release(struct inode *inode, struct file *file)
+{
+	struct cxl_context *ctx = file->private_data;
+	struct cflash *p_cflash = container_of(file->f_op, struct cflash,
+					       cxl_fops);
+	u32 context_id = cxl_process_element(ctx);
+
+	cflash_info("close(%d) for context %d",
+		    p_cflash->per_context[context_id].lfd, context_id);
+
+	return cxl_fd_release(inode, file);
+}
+
+const struct file_operations cflash_cxl_fops = {
+        .owner          = THIS_MODULE,
+        .release        = cflash_cxl_release,
+};
+
 /*
  * NAME:        cflash_disk_attach
  *
@@ -246,7 +264,7 @@ int cflash_disk_attach(struct scsi_device *sdev, void __user * arg)
 	p_work->num_interrupts = parg->num_interrupts;
 	p_work->flags = CXL_START_WORK_NUM_IRQS;
 
-	file = cxl_get_fd(ctx, NULL, &fd);
+	file = cxl_get_fd(ctx, &p_cflash->cxl_fops, &fd);
 	if (fd < 0) {
 		rc = -ENODEV;
 		cxl_release_context(ctx);
@@ -267,6 +285,7 @@ int cflash_disk_attach(struct scsi_device *sdev, void __user * arg)
 	rc = cflash_afu_attach(p_cflash, context_id);
 	if (rc) {
 		cflash_err("Could not attach AFU rc %d", rc);
+		cxl_stop_context(ctx);
 		cxl_release_context(ctx);
 		fput(file);
 		put_unused_fd(fd);

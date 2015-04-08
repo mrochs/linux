@@ -781,6 +781,8 @@ static int cflash_gb_alloc(struct cflash *p_cflash)
 		p_cflash->p_afu->cmd[i].special = 0;
 	}
 
+	p_cflash->cxl_fops = cflash_cxl_fops;
+
 	for  (i=0; i<MAX_CONTEXT; i++) {
 		p_cflash->per_context[i].lfd = -1;
 	}

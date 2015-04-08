@@ -73,6 +73,7 @@ struct cflash {
 	struct pci_dev *parent_dev;
 
 	struct cflash_ctx per_context[MAX_CONTEXT];
+	struct file_operations cxl_fops;
 
 	int last_lun_index;
 	int task_set;

@@ -97,8 +97,9 @@ struct dev_dependent_vals {
 };
 
 /*
- * Prototypes
+ * Externs and Prototypes
  */
+extern const struct file_operations cflash_cxl_fops;
 extern int cflash_disk_attach(struct scsi_device *sdev, void __user * arg);
 extern int cflash_disk_open(struct scsi_device *sdev, void __user * arg,
 			    enum open_mode_type mode);
