@@ -107,6 +107,7 @@ extern int cflash_disk_detach(struct scsi_device *sdev, void __user * arg);
 extern int cflash_vlun_resize(struct scsi_device *sdev, void __user * arg);
 extern int cflash_disk_release(struct scsi_device *sdev, void __user * arg);
 extern int cflash_disk_clone(struct scsi_device *sdev, void __user * arg);
+extern int cflash_disk_verify(struct scsi_device *sdev, void __user * arg);
 extern int cflash_afu_recover(struct scsi_device *sdev, void __user * arg);
 
 #endif

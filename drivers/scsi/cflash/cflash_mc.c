@@ -1319,6 +1319,44 @@ int cflash_disk_stat(struct scsi_device *sdev, void __user * arg)
 	return 0;
 }
 
+/*
+ * NAME:        cflash_disk_verify
+ *
+ * FUNCTION:    Verify that the LUN is the same, whether its size has changed
+ *
+ * INPUTS:
+ *              sdev       - Pointer to scsi device structure
+ *              arg        - Pointer to ioctl specific structure
+ *
+ * OUTPUTS:
+ *              none
+ *
+ * RETURNS:
+ *              0           - Success
+ *              errno       - Failure
+ *
+ * NOTES:
+ *              When successful, the RHT entry is cleared.
+ */
+int cflash_disk_verify(struct scsi_device *sdev, void __user * arg)
+{
+	struct lun_info *p_lun_info = sdev->hostdata;
+
+	struct dk_capi_verify *pver = (struct dk_capi_verify *)arg;
+
+	int rc = 0;
+
+	/* XXX: We would have to look at the hint/sense to see if it 
+	 * requires us to redrive inquiry (i.e. the Unit attention is
+	 * due to the WWN changing), or read capacity again (in case
+	 * the Unit attention was due to a resize)
+	 */
+	pver->last_lba = p_lun_info->max_lba;
+
+	cflash_info("returning rc=%d", rc);
+	return rc;
+}
+
 int read_cap16(struct afu *p_afu, struct lun_info *p_lun_info, u32 port_sel)
 {
 

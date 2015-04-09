@@ -565,6 +565,7 @@ decode_ioctl(int cmd)
 	_CASE2STR(DK_CAPI_VLUN_RESIZE);
 	_CASE2STR(DK_CAPI_RELEASE);
 	_CASE2STR(DK_CAPI_CLONE);
+	_CASE2STR(DK_CAPI_VERIFY);
 	}
 
 	return("UNKNOWN");
@@ -625,6 +626,9 @@ static int cflash_ioctl(struct scsi_device *sdev, int cmd, void __user * arg)
 		break;
 	case DK_CAPI_RECOVER_AFU:
 		rc = cflash_afu_recover(sdev, arg);
+		break;
+	case DK_CAPI_VERIFY:
+		rc = cflash_disk_verify(sdev, arg);
 		break;
 	default:
 		rc = -EINVAL;
