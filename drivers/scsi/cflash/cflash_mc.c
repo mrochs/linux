@@ -56,26 +56,11 @@ int cflash_afu_attach(struct cflash *p_cflash, u64 context_id)
 	int rc = 0;
 	u64 reg;
 
-	/* This code reads the mbox w/o knowing if the requester is
-	 * the true owner of the context it wants to register. The
-	 * read has no side effect and does not affect the true
-	 * owner if this is a fraudulent registration attempt.
-	 */
-	reg = read_64(&p_ctx_info->p_ctrl_map->mbox_r);
-	if (reg == 0) {
-		cflash_err("zero mbox reg!");
-	}
-
-	/* This context is not duped and is in a group by
-	 * itself.
-	 */
-	p_ctx_info->p_next = p_ctx_info;
-	p_ctx_info->p_forw = p_ctx_info;
-
 	/* restrict user to read/write cmds in translated
 	 * mode. User has option to choose read and/or write
 	 * permissions again in mc_open.
 	 */
+	(void)read_64(&p_ctx_info->p_ctrl_map->mbox_r); /* unlock ctx_cap */
 	write_64(&p_ctx_info->p_ctrl_map->ctx_cap,
 		 SISL_CTX_CAP_READ_CMD | SISL_CTX_CAP_WRITE_CMD);
 
@@ -91,9 +76,7 @@ int cflash_afu_attach(struct cflash *p_cflash, u64 context_id)
 		goto out;
 	}
 
-	/* the context gets a dedicated RHT tbl unless it
-	 * is dup'ed later.
-	 */
+	/* the context gets a dedicated RHT tbl */
 	p_ctx_info->p_rht_info = &p_afu->rht_info[context_id];
 	p_ctx_info->p_rht_info->ref_cnt = 1;
 	memset(p_ctx_info->p_rht_info->rht_start, 0,
@@ -1217,7 +1200,6 @@ int cflash_disk_clone(struct scsi_device *sdev, void __user * arg)
 	struct rht_info *p_rht_info_src,
 			*p_rht_info_dst;
 	u32 perms;
-	u64 reg;
 	int i, j;
 	int rc = 0;
 
@@ -1249,12 +1231,6 @@ int cflash_disk_clone(struct scsi_device *sdev, void __user * arg)
 			rc = -EINVAL;
 			goto out;
 		}
-
-	/* zeroed mbox is a locked mbox */
-	reg = read_64(&p_ctx_info_src->p_ctrl_map->mbox_r);
-	if (reg == 0) {
-		cflash_err("zero mbox reg!");
-	}
 
 	/* User specified permission on attach */
 	perms = p_rht_info_dst->perms;
@@ -1288,71 +1264,6 @@ int cflash_disk_clone(struct scsi_device *sdev, void __user * arg)
 out:
 	cflash_info("returning rc=%d", rc);
 	return rc;
-}
-
-/*
- * NAME:	do_mc_dup()
- *
- * FUNCTION:	dup 2 contexts by linking their RHTs
- *
- * INPUTS:
- *		p_afu		- Pointer to afu struct
- *		p_conn_info	- Pointer to connection the request came in
- *				  This is the context to dup to (target)
- *		ctx_hndl_cand	- This is the context to dup from source)
- *
- * OUTPUTS:
- *		None
- *
- * RETURNS:
- *		0	- Success
- *		errno	- Failure
- */
-/* XXX - what is the significance of this comment? */
-/* dest ctx must be unduped and with no open res_hndls */
-int cflash_disk_dup(struct scsi_device *sdev, void __user * arg)
-{
-	struct cflash *p_cflash = (struct cflash *)sdev->host->hostdata;
-	struct afu *p_afu = p_cflash->p_afu;
-
-	/* XXX: Input arguments */
-	u64 challenge = 0;
-	u64 ctx_hndl_cand = 0;
-	u64 context_id = 0;
-	struct ctx_info *p_ctx_info = NULL;
-
-	struct rht_info *p_rht_info = p_ctx_info->p_rht_info;
-
-	struct ctx_info *p_ctx_info_cand;
-	u64 reg;
-	int i;
-
-	cflash_info("challenge=%lld cand=%lld ctx_hdl=%lld",
-		    challenge, ctx_hndl_cand, context_id);
-
-	/* verify there is no open resource handle in the target context of the clone */
-	for (i = 0; i < MAX_RHT_PER_CONTEXT; i++)
-		if (p_rht_info->rht_start[i].nmask != 0)
-			return -EINVAL;
-
-	/* do not dup yourself */
-	if (context_id == ctx_hndl_cand)
-		return -EINVAL;
-
-	if (ctx_hndl_cand < MAX_CONTEXT)
-		p_ctx_info_cand = &p_afu->ctx_info[ctx_hndl_cand];
-	else
-		return -EINVAL;
-
-	reg = read_64(&p_ctx_info_cand->p_ctrl_map->mbox_r);
-
-	/* fyi, zeroed mbox is a locked mbox */
-	if ((reg == 0) || (challenge != reg))
-		return -EACCES;	/* return Permission denied */
-
-	/* XXX - what does this mean? */
-	cflash_info("returning");
-	return -EIO;		/* todo later!!! */
 }
 
 /*

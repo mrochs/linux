@@ -101,9 +101,7 @@ struct scsi_inquiry_p83_id_desc_hdr {
 };
 
 /*
- * A resource handle table (RHT) can be pointed to by multiple contexts.
- * This happens when one context is duped to another.
- * W/o dup, each context has its own resource handles that is visible
+ * Each context has its own set of resource handles that is visible
  * only from that context.
  *
  * The rht_info refers to all resource handles of a context and not to
@@ -121,15 +119,7 @@ struct rht_info {
  */
 struct ctx_info {
 	volatile struct sisl_ctrl_map *p_ctrl_map;	/* initialized at startup */
-
-	/* The rht_info pointer is initialized when the context is first
-	   registered, can be changed on dup.
-	 */
-	struct rht_info *p_rht_info;
-
-	/* all dup'ed contexts are in a doubly linked circular list */
-	struct ctx_info *p_forw;
-	struct ctx_info *p_next;
+	struct rht_info *p_rht_info;	/* initialized when context created */
 
 	int ref_cnt;		/* num conn_infos pointing to me */
 };
