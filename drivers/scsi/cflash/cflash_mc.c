@@ -153,12 +153,18 @@ int cflash_cxl_release(struct inode *inode, struct file *file)
 	struct cxl_context *ctx = file->private_data;
 	struct cflash *p_cflash = container_of(file->f_op, struct cflash,
 					       cxl_fops);
-	u32 context_id = cxl_process_element(ctx);
+	int context_id = cxl_process_element(ctx);
 
-	cflash_info("close(%d) for context %d",
-		    p_cflash->per_context[context_id].lfd, context_id);
+	if (context_id < 0)
+	{
+		cflash_err("context %d closed", context_id);
+		return 0;
+	} else {
+		cflash_info("close(%d) for context %d",
+			p_cflash->per_context[context_id].lfd, context_id);
 
-	return cxl_fd_release(inode, file);
+		return cxl_fd_release(inode, file);
+	}
 }
 
 const struct file_operations cflash_cxl_fops = {
@@ -195,7 +201,8 @@ int cflash_disk_attach(struct scsi_device *sdev, void __user * arg)
 	struct lun_info *p_lun_info = sdev->hostdata;
 	struct cxl_ioctl_start_work *p_work;
 	int rc = 0;
-	u32 perms, context_id;
+	u32 perms; 
+	int context_id;
 	struct file *file;
 
 	struct dk_capi_attach *parg = (struct dk_capi_attach *)arg;
@@ -227,8 +234,8 @@ int cflash_disk_attach(struct scsi_device *sdev, void __user * arg)
 	}
 
 	context_id = cxl_process_element(ctx);
-	if (context_id > MAX_CONTEXT) {
-		cflash_err("context_id (%u) is too large!", context_id);
+	if ((context_id > MAX_CONTEXT) || (context_id < 0)) {
+		cflash_err("context_id (%u) invalid!", context_id);
 		rc = -EPERM;
 		goto out;
 	}
