@@ -99,26 +99,6 @@ static inline u64 lun_to_lunid(u64 lun)
 	return swab64(lun_id);
 
 }
-/* mc_stat is analogous to fstat in POSIX. It returns information on
- * a virtual disk.
- *
- * Inputs:
- *   mc_hndl         - client handle that specifies a (context + AFU)
- *   res_hndl        - resource handle identifying the virtual disk
- *                     to query
- *
- * Output:
- *   p_mc_stat       - pointer to location that will contain the
- *                     output data
- */
-typedef struct mc_stat_s {
-	u32 blk_len;		/* length of 1 block in bytes as reported by
-				   device */
-	u8 nmask;		/* chunk_size = (1 << nmask) in device blocks */
-	u8 rsvd[3];
-	u64 size;		/* current size of the res_hndl in chunks */
-	u64 flags;		/* permission flags */
-} mc_stat_t;
 
 /* In the course of doing IOs, the user may be the first to notice certain
  * critical events on the AFU or the backend storage. mc_notify allows a

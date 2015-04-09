@@ -1274,59 +1274,6 @@ out:
 }
 
 /*
- * NAME:	do_mc_stat()
- *
- * FUNCTION:	Query the current information on a resource handle
- *
- * INPUTS:
- *		p_afu		- Pointer to afu struct
- *		p_conn_info	- Pointer to connection the request came in
- *		res_hndl	- resource handle to query
- *
- * OUTPUTS:
- *		p_mc_stat	- pointer to output stat information
- *
- * RETURNS:
- *		0		- Success
- *		errno		- Failure
- *
- */
-int cflash_disk_stat(struct scsi_device *sdev, void __user * arg)
-{
-	struct lun_info *p_lun_info = sdev->hostdata;
-	struct blka *p_blka = &p_lun_info->blka;
-
-	/* XXX: Input arguments; */
-	mc_stat_t *p_mc_stat = NULL;
-	struct ctx_info *p_ctx_info = NULL;
-	u64 context_id = 0;
-	u64 rsrc_handle = 0;
-
-	struct rht_info *p_rht_info = p_ctx_info->p_rht_info;
-	struct sisl_rht_entry *p_rht_entry;
-
-	cflash_info("context_id=%lld", context_id);
-
-	if (rsrc_handle < MAX_RHT_PER_CONTEXT) {
-		p_rht_entry = &p_rht_info->rht_start[rsrc_handle];
-
-		/* not open */
-		if (p_rht_entry->nmask == 0)
-			return -EINVAL;
-
-		p_mc_stat->blk_len = p_blka->ba_lun.lba_size;
-		p_mc_stat->nmask = p_rht_entry->nmask;
-		p_mc_stat->size = p_rht_entry->lxt_cnt;
-		p_mc_stat->flags = SISL_RHT_PERM(p_rht_entry->fp);
-	} else {
-		return -EINVAL;
-	}
-
-	cflash_info("returning");
-	return 0;
-}
-
-/*
  * NAME:        cflash_disk_verify
  *
  * FUNCTION:    Verify that the LUN is the same, whether its size has changed
