@@ -184,7 +184,7 @@ static int cflash_queuecommand(struct Scsi_Host *host,
  **/
 static int cflash_eh_device_reset_handler(struct scsi_cmnd *scp)
 {
-	int rc = FAILED;
+	int rc = SUCCESS;
 	struct Scsi_Host *host = scp->device->host;
 	struct cflash *p_cflash = (struct cflash *)host->hostdata;
 	struct afu *p_afu = p_cflash->p_afu;
@@ -201,7 +201,6 @@ static int cflash_eh_device_reset_handler(struct scsi_cmnd *scp)
 	scp->result = (DID_OK << 16);;
 	cflash_send_tmf(p_afu, scp, TMF_LUN_RESET);
 
-	/* XXX: Return FAILED until we know the AFU provided LUN reset works */
 	cflash_info("returning rc=%d", rc);
 	return rc;
 }
@@ -214,6 +213,7 @@ static int cflash_eh_device_reset_handler(struct scsi_cmnd *scp)
 static int cflash_eh_host_reset_handler(struct scsi_cmnd *scp)
 {
 	int rc = SUCCESS;
+	int rcr = 0;
 	struct Scsi_Host *host = scp->device->host;
 	struct cflash *p_cflash = (struct cflash *)host->hostdata;
 
@@ -227,7 +227,11 @@ static int cflash_eh_host_reset_handler(struct scsi_cmnd *scp)
 		    cpu_to_be32(((u32 *) scp->cmnd)[3]));
 
 	scp->result = (DID_OK << 16);;
-	afu_reset(p_cflash);
+	rcr = afu_reset(p_cflash);
+	if (rcr)
+		rc = SUCCESS;
+	else
+		rc = FAILED;
 
 	cflash_info("returning rc=%d", rc);
 	return rc;
@@ -751,7 +755,7 @@ static void cflash_remove(struct pci_dev *pdev)
 	flush_work(&p_cflash->work_q);
 
 
-	cflash_term_afu(p_cflash);
+	cflash_term_afu(p_cflash, FALSE);
 	cflash_dev_dbg(&pdev->dev, "after struct cflash_term_afu!");
 
 	/* XXX: Commented out for now
@@ -1298,7 +1302,10 @@ static irqreturn_t cflash_rrq_irq(int irq, void *data)
 			p_cmd->rcb.rsvd2 = 0ULL;
 			if (p_cmd->special) {
 				p_cflash->tmf_active = 0;
+#if 0
+				/* XXX: Figure out why this does not work */
 				wake_up_all(&p_cflash->tmf_wait_q);
+#endif
 			}
 		}
 
@@ -1356,6 +1363,7 @@ static irqreturn_t cflash_async_err_irq(int irq, void *data)
 
 		if (p_info->action & LINK_RESET) {
 			cflash_err("fc %d: resetting link", p_info->port);
+			p_cflash->lr_state = LINK_RESET_REQUIRED;
 			p_cflash->lr_port = p_info->port;
 			schedule_work(&p_cflash->work_q);
 		}
@@ -1733,7 +1741,7 @@ void cflash_term_mc(struct cflash *p_cflash, enum undo_level level)
  * Returns:
  *      NONE
  */
-int cflash_init_mc(struct cflash *p_cflash, bool reset)
+int cflash_init_mc(struct cflash *p_cflash, bool init)
 {
 	struct cxl_context *ctx;
 	struct device *dev = &p_cflash->p_dev->dev;
@@ -1749,9 +1757,15 @@ int cflash_init_mc(struct cflash *p_cflash, bool reset)
 	/* Set it up as a master with the CXL */
 	cxl_set_master(ctx);
 
-	if (reset)
-		cxl_afu_reset(p_cflash->p_mcctx);
-
+	/* During initialization reset the AFU to start from a clean slate */
+	if (init) {
+		rc = cxl_afu_reset(p_cflash->p_mcctx);
+		if (rc) {
+			cflash_dev_err(dev, "initial AFU reset failed rc=%d", rc);
+			level =  RELEASE_CONTEXT;
+			goto out;
+		}
+	}
 
 	/* Allocate AFU generated interrupt handler */
 	rc = cxl_allocate_afu_irqs(ctx, 4);
@@ -1822,14 +1836,14 @@ out:
 }
 
 
-int cflash_init_afu(struct cflash *p_cflash)
+int cflash_init_afu(struct cflash *p_cflash, bool reset)
 {
 	u64 reg;
 	int rc = 0;
 	struct afu *p_afu = p_cflash->p_afu;
 	struct device *dev = &p_cflash->p_dev->dev;
 
-	rc = cflash_init_mc(p_cflash, TRUE);
+	rc = cflash_init_mc(p_cflash, !reset);
 	if (rc) {
 		cflash_dev_err(dev, "call to init_mc failed, rc=%d!", rc);
 		goto err1;
@@ -1865,17 +1879,24 @@ int cflash_init_afu(struct cflash *p_cflash)
 		p_afu->p_afu_map = NULL;
 	}
 
+	/* XXX: Add threads for afu_rrq_rx and afu_err_rx */
+	/* after creating afu_err_rx thread, unmask error interrupts */
+	afu_err_intr_init(p_cflash->p_afu);
+
 err1:
 	cflash_info("returning rc=%d", rc);
 	return rc;
 }
 
-void cflash_term_afu(struct cflash *p_cflash)
+void cflash_term_afu(struct cflash *p_cflash, bool reset)
 {
 	struct afu *p_afu = p_cflash->p_afu;
 	struct lun_info *p_lun_info, *p_temp;
 
-	cflash_term_mc(p_cflash, UNDO_START);
+	if (reset)
+		cflash_term_mc(p_cflash, UNDO_START);
+	else
+		cflash_term_mc(p_cflash, UNMAP_FOUR);
 
 	/* Need to stop timers before unmapping */
 	if (p_cflash->p_afu) {
@@ -2050,23 +2071,33 @@ int afu_sync(struct afu *p_afu,
 	return rc;
 }
 
-void afu_reset(struct cflash *p_cflash)
+int afu_reset(struct cflash *p_cflash)
 {
+	int rc = 0;
 	/* Stop the context before the reset. Since the context is
 	 * no longer available restart it after the reset is complete 
 	 */
 
 	cflash_stop_context(p_cflash);
 
-	cxl_afu_reset(p_cflash->p_mcctx);
+	rc = cxl_afu_reset(p_cflash->p_mcctx);
+	if (rc) {
+		cflash_err("AFU reset failed rc=%d", rc);
+		goto out;
+	}
 
+	/*
 	cxl_release_context(p_cflash->p_mcctx);
 	p_cflash->p_mcctx = NULL;
+	*/
+	cflash_term_afu(p_cflash, TRUE);
 
-	cflash_init_mc(p_cflash, FALSE);
+	rc = cflash_init_afu(p_cflash, TRUE);
 
+out:
 	/* XXX: Need to restart/reattach all user contexts */
-	cflash_info("returning");
+	cflash_info("returning rc=%d", rc);
+	return rc;
 }
 
 
@@ -2235,7 +2266,7 @@ int cflash_send_tmf(struct afu *p_afu, struct scsi_cmnd *scp, u64 cmd)
 
 	/* Send the command */
 	cflash_send_cmd(p_afu, p_cmd);
-
+	p_cflash->tmf_active = 0x0;
 out:
 	return rc;
 
@@ -2316,16 +2347,12 @@ static int cflash_probe(struct pci_dev *pdev,
 	p_cflash->parent_dev = to_pci_dev(phys_dev);
 
 	p_cflash->afu = cxl_pci_to_afu(pdev, NULL);
-	rc = cflash_init_afu(p_cflash);
+	rc = cflash_init_afu(p_cflash, FALSE);
 	if (rc) {
 		cflash_dev_err(&pdev->dev,
 			       "call to cflash_init_afu failed rc=%d!", rc);
 		goto out_remove;
 	}
-
-	/* XXX: Add threads for afu_rrq_rx and afu_err_rx */
-	/* after creating afu_err_rx thread, unmask error interrupts */
-	afu_err_intr_init(p_cflash->p_afu);
 
 	rc = cflash_init_pci(p_cflash);
 	if (rc) {

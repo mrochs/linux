@@ -167,8 +167,8 @@ typedef struct mc_notify_s {
 	};
 } mc_notify_t;
 
-int cflash_init_afu(struct cflash *);
-void cflash_term_afu(struct cflash *);
+int cflash_init_afu(struct cflash *, bool);
+void cflash_term_afu(struct cflash *, bool);
 struct afu_cmd *cflash_cmd_cout(struct afu *p_afu);
 void cflash_cmd_cin(struct afu_cmd *p_cmd);
 int cflash_send_scsi(struct afu *, struct scsi_cmnd *);
@@ -180,5 +180,5 @@ int check_status(struct sisl_ioasa_s *);
 void cflash_send_cmd(struct afu *, struct afu_cmd *);
 void cflash_wait_resp(struct afu *, struct afu_cmd *);
 void cflash_scan_luns(struct cflash *);
-void afu_reset(struct cflash *);
+int afu_reset(struct cflash *);
 #endif /* ifndef _CFLASHMC_H */
