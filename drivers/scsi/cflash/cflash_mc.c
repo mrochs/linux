@@ -1106,68 +1106,6 @@ int clone_lxt(struct afu *p_afu,
 }
 
 /*
- * NAME:        do_mc_xlate_lba
- *
- * FUNCTION:    Query the physical LBA mapped to a virtual LBA
- *
- * INPUTS:
- *              p_afu       - Pointer to afu struct
- *              p_conn_info - Pointer to connection the request came in
- *              res_hndl    - resource handle to query on
- *              v_lba       - virtual LBA on res_hndl
- *
- * OUTPUTS:
- *              p_p_lba     - pointer to output physical LBA
- *
- * RETURNS:
- *              0           - Success
- *              errno       - Failure
- *
- */
-int cflash_xlate_lba(struct scsi_device *sdev, void __user * arg)
-{
-	/* XXX: Original arguments. */
-	u64 v_lba = 0;
-	u64 *p_p_lba = NULL;
-	u64 rsrc_handle = 0;
-	/* XXX: How to determine p_ctx_info? */
-	u64 context_id = 0;
-	struct ctx_info *p_ctx_info = NULL;
-
-	struct rht_info *p_rht_info = p_ctx_info->p_rht_info;
-	struct sisl_rht_entry *p_rht_entry;
-	u64 chunk_id, chunk_off, rlba_base;
-
-	cflash_info("rsrc_handle=%lld v_lba=%lld ctx_hdl=%lld",
-		    rsrc_handle, v_lba, context_id);
-
-	if (rsrc_handle < MAX_RHT_PER_CONTEXT) {
-		p_rht_entry = &p_rht_info->rht_start[rsrc_handle];
-		if (p_rht_entry->nmask == 0) {
-			/* not open */
-			return -EINVAL;
-		}
-
-		chunk_id = (v_lba >> MC_CHUNK_SHIFT);
-		chunk_off = (v_lba & MC_CHUNK_OFF_MASK);
-
-		if (chunk_id < p_rht_entry->lxt_cnt) {
-			rlba_base =
-			    (p_rht_entry->lxt_start[chunk_id].rlba_base &
-			     (~MC_CHUNK_OFF_MASK));
-			*p_p_lba = (rlba_base | chunk_off);
-		} else {
-			return -EINVAL;
-		}
-	} else {
-		return -EINVAL;
-	}
-
-	cflash_info("returning");
-	return 0;
-}
-
-/*
  * NAME:        cflash_disk_clone
  *
  * FUNCTION:    Clone a context by making a snapshot copy of another, specified
