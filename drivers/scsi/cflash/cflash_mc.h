@@ -147,6 +147,21 @@ typedef struct mc_notify_s {
 	};
 } mc_notify_t;
 
+union cflash_ioctls {
+	struct dk_capi_attach		attach;
+	struct dk_capi_detach		detach;
+	struct dk_capi_udirect		udirect;
+	struct dk_capi_uvirtual		uvirtual;
+	struct dk_capi_release		release;
+	struct dk_capi_resize		resize;
+	struct dk_capi_clone		clone;
+	struct dk_capi_verify		verify;
+	struct dk_capi_log		log;
+	struct dk_capi_recover_afu	recover_afu;
+};
+
+#define MAX_CFLASH_IOCTL_SZ	(sizeof(union cflash_ioctls))
+
 int cflash_init_afu(struct cflash *, bool);
 void cflash_term_afu(struct cflash *, bool);
 struct afu_cmd *cflash_cmd_cout(struct afu *p_afu);

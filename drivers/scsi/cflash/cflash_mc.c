@@ -194,18 +194,17 @@ const struct file_operations cflash_cxl_fops = {
  *               a. initialize AFU for this context
  *
  */
-int cflash_disk_attach(struct scsi_device *sdev, void __user * arg)
+int cflash_disk_attach(struct scsi_device *sdev, struct dk_capi_attach *patt)
 {
 	struct cflash *p_cflash = (struct cflash *)sdev->host->hostdata;
 	struct afu *p_afu = p_cflash->p_afu;
 	struct lun_info *p_lun_info = sdev->hostdata;
 	struct cxl_ioctl_start_work *p_work;
 	int rc = 0;
-	u32 perms; 
+	u32 perms;
 	int context_id;
 	struct file *file;
 
-	struct dk_capi_attach *parg = (struct dk_capi_attach *)arg;
 	struct cxl_context *ctx;
 
 	int fd = -1;
@@ -251,7 +250,7 @@ int cflash_disk_attach(struct scsi_device *sdev, void __user * arg)
 	 */
 	p_work = &p_cflash->per_context[context_id].work;
 	memset(p_work, 0, sizeof(*p_work));
-	p_work->num_interrupts = parg->num_interrupts;
+	p_work->num_interrupts = patt->num_interrupts;
 	p_work->flags = CXL_START_WORK_NUM_IRQS;
 
 	file = cxl_get_fd(ctx, &p_cflash->cxl_fops, &fd);
@@ -290,21 +289,21 @@ int cflash_disk_attach(struct scsi_device *sdev, void __user * arg)
 	p_cflash->per_context[context_id].pid = current->pid;
 
 	/* Translate read/write O_* flags from fnctl.h to AFU permission bits */
-	perms = ((parg->flags + 1) & 0x3);
+	perms = ((patt->flags + 1) & 0x3);
 	p_afu->ctx_info[context_id].p_rht_info->perms = perms;
 
-	parg->return_flags = 0;
-	parg->context_id = context_id;
-	parg->block_size = p_lun_info->blk_len;
-	parg->mmio_size = sizeof(p_afu->p_afu_map->hosts[0].harea);
-	parg->last_lba = p_lun_info->max_lba;
-	parg->max_xfer = sdev->host->max_sectors;
+	patt->return_flags = 0;
+	patt->context_id = context_id;
+	patt->block_size = p_lun_info->blk_len;
+	patt->mmio_size = sizeof(p_afu->p_afu_map->hosts[0].harea);
+	patt->last_lba = p_lun_info->max_lba;
+	patt->max_xfer = sdev->host->max_sectors;
 
 out:
-	parg->adap_fd = fd;
+	patt->adap_fd = fd;
 
-	cflash_info("returning fd=%d bs=%lld rc=%d llba=%lld", 
-		    fd, parg->block_size, rc, parg->last_lba);
+	cflash_info("returning fd=%d bs=%lld rc=%d llba=%lld",
+		    fd, patt->block_size, rc, patt->last_lba);
 	return rc;
 }
 
@@ -339,7 +338,7 @@ get_validated_context(struct cflash *p_cflash, u64 ctxid, bool clone_path)
 }
 
 /* Checkout a free/empty RHT entry */
-struct sisl_rht_entry *cflash_rhte_cout(struct cflash *p_cflash, 
+struct sisl_rht_entry *cflash_rhte_cout(struct cflash *p_cflash,
 					u64 context_id)
 {
 	struct ctx_info *p_ctx_info;
@@ -361,7 +360,7 @@ struct sisl_rht_entry *cflash_rhte_cout(struct cflash *p_cflash,
 				break;
 			}
 		}
-		cflash_info("i %d rhti %p rhte %p", 
+		cflash_info("i %d rhti %p rhte %p",
 			    i, p_rht_info, p_rht_entry);
 
 		/* if we did not find a free entry, reached max opens allowed
@@ -445,7 +444,7 @@ void cflash_rht_format1(struct sisl_rht_entry *p_rht_entry, u64 lun_id,
  *               a. find a free RHT entry
  *
  */
-int cflash_disk_open(struct scsi_device *sdev, void __user * arg,
+int cflash_disk_open(struct scsi_device *sdev, void *arg,
 		     enum open_mode_type mode)
 {
 	struct cflash *p_cflash = (struct cflash *)sdev->host->hostdata;
@@ -577,13 +576,12 @@ out:
  * NOTES:
  *              When successful, the RHT entry is cleared.
  */
-int cflash_disk_release(struct scsi_device *sdev, void __user * arg)
+int cflash_disk_release(struct scsi_device *sdev, struct dk_capi_release *prele)
 {
 	struct cflash *p_cflash = (struct cflash *)sdev->host->hostdata;
 	struct lun_info *p_lun_info = sdev->hostdata;
 	struct afu *p_afu = p_cflash->p_afu;
 
-	struct dk_capi_release *prele = (struct dk_capi_release *)arg;
 	struct dk_capi_resize size;
 	res_hndl_t res_hndl = prele->rsrc_handle;
 
@@ -620,13 +618,13 @@ int cflash_disk_release(struct scsi_device *sdev, void __user * arg)
 		 * Afterwards we clear the remaining fields.
 		 */
 		if (p_lun_info->mode ==  MODE_VIRTUAL) {
-			marshall_rele_to_resize (prele, &size);
+			marshall_rele_to_resize(prele, &size);
 			size.req_size = 0;
-			rc = cflash_vlun_resize(sdev, &size);/* p_conn good ? */
+			rc = cflash_vlun_resize(sdev, &size);
 			if (rc) {
 				cflash_err("resize failed rc %d", rc);
 				goto out;
-			}			
+			}
 			cflash_rhte_cin(p_rht_entry);
 		} else if (p_lun_info->mode ==  MODE_PHYSICAL) {
 			/*
@@ -685,14 +683,12 @@ out:
  *               b. There is no need to clear RHT entries since
  *                  RHT_CNT=0.
  */
-int cflash_disk_detach(struct scsi_device *sdev, void __user * arg)
+int cflash_disk_detach(struct scsi_device *sdev, struct dk_capi_detach *pdet)
 {
 	struct cflash *p_cflash = (struct cflash *)sdev->host->hostdata;
 	struct lun_info *p_lun_info = sdev->hostdata;
 
-	struct dk_capi_detach *pdet = (struct dk_capi_detach *)arg;
 	struct dk_capi_release rel;
-
 	struct ctx_info *p_ctx_info;
 
 	int i;
@@ -762,16 +758,15 @@ out:
  *		Setting new_size=0 will clear LXT_START and LXT_CNT fields
  *		in the RHT entry.
  */
-int cflash_vlun_resize(struct scsi_device *sdev, void __user * arg)
+int cflash_vlun_resize(struct scsi_device *sdev, struct dk_capi_resize *prsz)
 {
 	struct cflash *p_cflash = (struct cflash *)sdev->host->hostdata;
 	struct lun_info *p_lun_info = sdev->hostdata;
 	struct blka *p_blka = &p_lun_info->blka;
 	struct afu *p_afu = p_cflash->p_afu;
 
-	struct dk_capi_resize *parg = (struct dk_capi_resize *)arg;
 	u64 p_act_new_size = 0;
-	res_hndl_t res_hndl = parg->rsrc_handle;
+	res_hndl_t res_hndl = prsz->rsrc_handle;
 	u64 new_size;
 	u64 nsectors;
 
@@ -784,12 +779,12 @@ int cflash_vlun_resize(struct scsi_device *sdev, void __user * arg)
 	/* req_size is always assumed to be in 4k blocks. So we have to convert
 	 * it from 4k to chunk size
 	 */
-	nsectors = (parg->req_size * CFLASH_BLOCK_SIZE) / (p_lun_info->blk_len);
+	nsectors = (prsz->req_size * CFLASH_BLOCK_SIZE) / (p_lun_info->blk_len);
 	new_size = (nsectors + MC_CHUNK_SIZE - 1) / MC_CHUNK_SIZE;
 
 	cflash_info("context=0x%llx res_hndl=0x%llx, req_size=0x%llx,"
-		    "new_size=%llx", parg->context_id,
-		    parg->rsrc_handle, parg->req_size, new_size);
+		    "new_size=%llx", prsz->context_id,
+		    prsz->rsrc_handle, prsz->req_size, new_size);
 
 	if (p_lun_info->mode != MODE_VIRTUAL) {
 		cflash_err("cannot resize lun that is not virtual %d",
@@ -799,7 +794,7 @@ int cflash_vlun_resize(struct scsi_device *sdev, void __user * arg)
 
 	}
 
-	p_ctx_info = get_validated_context(p_cflash, parg->context_id, FALSE);
+	p_ctx_info = get_validated_context(p_cflash, prsz->context_id, FALSE);
 	if (!p_ctx_info) {
 		cflash_err("invalid context!");
 		rc = -EINVAL;
@@ -821,7 +816,7 @@ int cflash_vlun_resize(struct scsi_device *sdev, void __user * arg)
 		if (new_size > p_rht_entry->lxt_cnt) {
 			grow_lxt(p_afu,
 				 p_blka,
-				 parg->context_id,
+				 prsz->context_id,
 				 res_hndl,
 				 p_rht_entry,
 				 new_size - p_rht_entry->lxt_cnt,
@@ -829,7 +824,7 @@ int cflash_vlun_resize(struct scsi_device *sdev, void __user * arg)
 		} else if (new_size < p_rht_entry->lxt_cnt) {
 			shrink_lxt(p_afu,
 				   p_blka,
-				   parg->context_id,
+				   prsz->context_id,
 				   res_hndl,
 				   p_rht_entry,
 				   p_rht_entry->lxt_cnt - new_size,
@@ -841,12 +836,12 @@ int cflash_vlun_resize(struct scsi_device *sdev, void __user * arg)
 		cflash_err("res_hndl %d invalid", res_hndl);
 		rc = -EINVAL;
 	}
-	parg->return_flags = 0;
-	parg->last_lba = (p_act_new_size * MC_CHUNK_SIZE *
+	prsz->return_flags = 0;
+	prsz->last_lba = (p_act_new_size * MC_CHUNK_SIZE *
 			  p_lun_info->blk_len) / CFLASH_BLOCK_SIZE;
 
 out:
-	cflash_info("resized to %lld returning rc=%d", parg->last_lba, rc);
+	cflash_info("resized to %lld returning rc=%d", prsz->last_lba, rc);
 	return rc;
 }
 
@@ -1002,11 +997,11 @@ int shrink_lxt(struct afu *p_afu,
 	return 0;
 }
 
-int cflash_afu_recover(struct scsi_device *sdev, void __user * arg)
+int cflash_afu_recover(struct scsi_device *sdev,
+		       struct dk_capi_recover_afu *prec)
 {
 	struct cflash *p_cflash = (struct cflash *)sdev->host->hostdata;
 	struct afu *p_afu = p_cflash->p_afu;
-	struct dk_capi_recover_afu *parg = (struct dk_capi_recover_afu *)arg;
 	long reg;
 	int rc = 0;
 
@@ -1014,12 +1009,12 @@ int cflash_afu_recover(struct scsi_device *sdev, void __user * arg)
 
 	/* MMIO returning 0xff, need to reset */
 	if (reg == -1) {
-		cflash_info("p_afu=%p reason 0x%llx", p_afu, parg->reason);
+		cflash_info("p_afu=%p reason 0x%llx", p_afu, prec->reason);
 		afu_reset (p_cflash);
 
 	} else {
 		cflash_info("reason 0x%llx MMIO is working, no reset performed",
-			    parg->reason);
+			    prec->reason);
 		rc = -EINVAL;
 	}
 
@@ -1193,13 +1188,12 @@ int cflash_xlate_lba(struct scsi_device *sdev, void __user * arg)
  *              0           - Success
  *              errno       - Failure
  */
-int cflash_disk_clone(struct scsi_device *sdev, void __user * arg)
+int cflash_disk_clone(struct scsi_device *sdev, struct dk_capi_clone *pclone)
 {
 	struct cflash *p_cflash = (struct cflash *)sdev->host->hostdata;
 	struct lun_info *p_lun_info = sdev->hostdata;
 	struct blka *p_blka = &p_lun_info->blka;
 	struct afu *p_afu = p_cflash->p_afu;
-	struct dk_capi_clone *pclone = (struct dk_capi_clone *)arg;
 	struct dk_capi_release release = { 0 };
 
 	struct ctx_info *p_ctx_info_src,
@@ -1292,11 +1286,9 @@ out:
  * NOTES:
  *              When successful, the RHT entry is cleared.
  */
-int cflash_disk_verify(struct scsi_device *sdev, void __user * arg)
+int cflash_disk_verify(struct scsi_device *sdev, struct dk_capi_verify *pver)
 {
 	struct lun_info *p_lun_info = sdev->hostdata;
-
-	struct dk_capi_verify *pver = (struct dk_capi_verify *)arg;
 
 	int rc = 0;
 

@@ -20,6 +20,8 @@
 #include <scsi/scsi.h>
 #include <scsi/scsi_device.h>
 
+#include "cflash_ioctl.h"
+
 extern u32 internal_lun;
 extern u32 fullqc;
 extern u32 checkpid;
@@ -100,14 +102,14 @@ struct dev_dependent_vals {
  * Externs and Prototypes
  */
 extern const struct file_operations cflash_cxl_fops;
-extern int cflash_disk_attach(struct scsi_device *sdev, void __user * arg);
-extern int cflash_disk_open(struct scsi_device *sdev, void __user * arg,
-			    enum open_mode_type mode);
-extern int cflash_disk_detach(struct scsi_device *sdev, void __user * arg);
-extern int cflash_vlun_resize(struct scsi_device *sdev, void __user * arg);
-extern int cflash_disk_release(struct scsi_device *sdev, void __user * arg);
-extern int cflash_disk_clone(struct scsi_device *sdev, void __user * arg);
-extern int cflash_disk_verify(struct scsi_device *sdev, void __user * arg);
-extern int cflash_afu_recover(struct scsi_device *sdev, void __user * arg);
+extern int cflash_disk_attach(struct scsi_device *, struct dk_capi_attach *);
+extern int cflash_disk_open(struct scsi_device *, void *, enum open_mode_type);
+extern int cflash_disk_detach(struct scsi_device *, struct dk_capi_detach *);
+extern int cflash_vlun_resize(struct scsi_device *, struct dk_capi_resize *);
+extern int cflash_disk_release(struct scsi_device *, struct dk_capi_release *);
+extern int cflash_disk_clone(struct scsi_device *, struct dk_capi_clone *);
+extern int cflash_disk_verify(struct scsi_device *, struct dk_capi_verify *);
+extern int cflash_afu_recover(struct scsi_device *,
+			      struct dk_capi_recover_afu *);
 
 #endif

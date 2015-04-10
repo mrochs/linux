@@ -582,13 +582,20 @@ decode_ioctl(int cmd)
  **/
 static int cflash_ioctl(struct scsi_device *sdev, int cmd, void __user * arg)
 {
-	struct cflash *p_cflash;
-	int rc;
+	typedef int (*sioctl1)(struct scsi_device *, void *);
+	typedef int (*sioctl2)(struct scsi_device *, void *, u32);
 
-	p_cflash = (struct cflash *)sdev->hostdata;
+	struct cflash *p_cflash = (struct cflash *)sdev->host->hostdata;
+	struct afu *p_afu = p_cflash->p_afu;
+	char buf[MAX_CFLASH_IOCTL_SZ];
+	size_t size = 0;
+	int rc = 0;
+	u32 parm = 0;
+	sioctl1 do_ioctl1 = NULL;
+	sioctl2 do_ioctl2 = NULL;
 
 	/* Restrict command set to physical support only for internal LUN */
-	if (internal_lun)
+	if (internal_lun || p_afu->internal_lun)
 	{
 		switch (cmd) {
 		case DK_CAPI_USER_VIRTUAL:
@@ -604,35 +611,68 @@ static int cflash_ioctl(struct scsi_device *sdev, int cmd, void __user * arg)
 
 	switch (cmd) {
 	case DK_CAPI_ATTACH:
-		rc = cflash_disk_attach(sdev, arg);
+		size = sizeof(struct dk_capi_attach);
+		do_ioctl1 = (sioctl1)cflash_disk_attach;
 		break;
 	case DK_CAPI_USER_DIRECT:
-		rc = cflash_disk_open(sdev, arg, MODE_PHYSICAL);
+		size = sizeof(struct dk_capi_udirect);
+		parm = MODE_PHYSICAL;
+		do_ioctl2 = (sioctl2)cflash_disk_open;
 		break;
 	case DK_CAPI_USER_VIRTUAL:
-		rc = cflash_disk_open(sdev, arg, MODE_VIRTUAL);
+		size = sizeof(struct dk_capi_uvirtual);
+		parm = MODE_VIRTUAL;
+		do_ioctl2 = (sioctl2)cflash_disk_open;
 		break;
 	case DK_CAPI_DETACH:
-		rc = cflash_disk_detach(sdev, arg);
+		size = sizeof(struct dk_capi_detach);
+		do_ioctl1 = (sioctl1)cflash_disk_detach;
 		break;
 	case DK_CAPI_VLUN_RESIZE:
-		rc = cflash_vlun_resize(sdev, arg);
+		size = sizeof(struct dk_capi_resize);
+		do_ioctl1 = (sioctl1)cflash_vlun_resize;
 		break;
 	case DK_CAPI_RELEASE:
-		rc = cflash_disk_release(sdev, arg);
+		size = sizeof(struct dk_capi_release);
+		do_ioctl1 = (sioctl1)cflash_disk_release;
 		break;
 	case DK_CAPI_CLONE:
-		rc = cflash_disk_clone(sdev, arg);
+		size = sizeof(struct dk_capi_clone);
+		do_ioctl1 = (sioctl1)cflash_disk_clone;
 		break;
 	case DK_CAPI_RECOVER_AFU:
-		rc = cflash_afu_recover(sdev, arg);
+		size = sizeof(struct dk_capi_recover_afu);
+		do_ioctl1 = (sioctl1)cflash_afu_recover;
 		break;
 	case DK_CAPI_VERIFY:
-		rc = cflash_disk_verify(sdev, arg);
+		size = sizeof(struct dk_capi_verify);
+		do_ioctl1 = (sioctl1)cflash_disk_verify;
 		break;
 	default:
 		rc = -EINVAL;
-		break;
+		goto cflash_ioctl_exit;
+	}
+
+	if (unlikely(copy_from_user(&buf, arg, size))) {
+		cflash_err("copy_from_user() fail! size=%lu cmd=%d (%s) arg=%p",
+			   size, cmd, decode_ioctl(cmd), arg);
+	    rc = -EFAULT;
+	    goto cflash_ioctl_exit;
+	}
+
+	if (do_ioctl1)
+		rc = do_ioctl1(sdev, (void *)&buf);
+	else if (do_ioctl2)
+		rc = do_ioctl2(sdev, (void *)&buf, parm);
+	else
+		BUG();
+
+	if (unlikely(copy_to_user(arg, &buf, size))) {
+		cflash_err("copy_to_user() fail! size=%lu cmd=%d (%s) arg=%p",
+			   size, cmd, decode_ioctl(cmd), arg);
+		/* Don't mask ioctl failure if copy out fails */
+		if (!rc)
+		    rc = -EFAULT;
 	}
 
 	/* fall thru to exit */
@@ -643,12 +683,6 @@ cflash_ioctl_exit:
 	return rc;
 }
 
-/* XXX - These are examples of attributes that will be pushed/populated in
- * sysfs, the last argument is the callback. We can use cflash_store_log_level
- * as an example. There is also a 'sdev_attrs' member of the scsi_host_template
- * structure. I'm thinking that might be more appropriate for us, at least for
- * the MC communications path.
- */
 static DEVICE_ATTR(log_level, S_IRUGO | S_IWUSR,
 		   cflash_show_log_level, cflash_store_log_level);
 static DEVICE_ATTR(port0, S_IRUGO, cflash_show_port_status, NULL);
