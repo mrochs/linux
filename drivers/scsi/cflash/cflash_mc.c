@@ -925,9 +925,6 @@ int grow_lxt(struct afu *p_afu,
 	/* free old lxt if reallocated */
 	if (p_lxt != p_lxt_old)
 		kfree(p_lxt_old);
-
-	/* XXX - what is the significance of this comment? */
-	/* sync up AFU on each context in the doubly linked list */
 	cflash_info("returning");
 	return 0;
 }
@@ -991,8 +988,6 @@ int shrink_lxt(struct afu *p_afu,
 	/* free old lxt if reallocated */
 	if (p_lxt != p_lxt_old)
 		kfree(p_lxt_old);
-	/* XXX - what is the significance of this comment? */
-	/* sync up AFU on each context in the doubly linked list!!! */
 	cflash_info("returning");
 	return 0;
 }
@@ -1099,8 +1094,6 @@ int clone_lxt(struct afu *p_afu,
 
 	afu_sync(p_afu, ctx_hndl_u, res_hndl_u, AFU_LW_SYNC);
 
-	/* XXX - what is the significance of this comment? */
-	/* sync up AFU on each context in the doubly linked list */
 	cflash_info("returning");
 	return 0;
 }

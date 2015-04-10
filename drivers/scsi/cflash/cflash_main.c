@@ -1089,7 +1089,6 @@ int afu_set_wwpn(struct afu *p_afu, int port, volatile u64 * p_fc_regs,
 
 		/*
 		 * Override for internal lun!!!
-		 * XXX - is a wrap plug mandatory?
 		 */
 		if (internal_lun) {
 			cflash_info("Overriding port %d online timeout!!!",
@@ -2001,10 +2000,6 @@ void cflash_send_cmd(struct afu *p_afu, struct afu_cmd *p_cmd)
 	/* make memory updates visible to AFU before MMIO */
 	asm volatile ("lwsync"::);
 
-	/*
-	 * XXX - find out why this code originally (and still does)
-	 * have a doubler (*2) for the timeout value
-	 */
 	timer_start(&p_cmd->timer, (p_cmd->rcb.timeout * 2 * HZ));
 
 	/* Write IOARRIN */
@@ -2025,13 +2020,6 @@ void cflash_wait_resp(struct afu *p_afu, struct afu_cmd *p_cmd)
 
 	spin_lock_irqsave(p_cmd->slock, lock_flags);
 	while (!(p_cmd->sa.host_use_b[0] & B_DONE)) {
-
-		/*
-		 * XXX - how do we want to handle this...
-		 * need to study how send_cmd/wait_resp
-		 * is used in interrupt context.
-		 */
-
 		spin_unlock_irqrestore(p_cmd->slock, lock_flags);
 		udelay(10);
 		spin_lock_irqsave(p_cmd->slock, lock_flags);
