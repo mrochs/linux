@@ -29,6 +29,7 @@
 #define MC_CHUNK_SHIFT    MC_RHT_NMASK	/* shift to go from LBA to chunk# */
 #define MC_CHUNK_OFF_MASK (MC_CHUNK_SIZE - 1)	/* apply to LBA get offset
 						   into a chunk */
+#define LXT_LUNIDX_SHIFT  8     /* LXT entry, shift for LUN index */
 
 /* Sizing parms: same context can be registered multiple times.
    Therefore we allow MAX_CONNS > MAX_CONTEXT.
@@ -139,6 +140,7 @@ struct lun_info {
 	u64 lun_id;	/* from REPORT_LUNS */
 	u64 max_lba;	/* from read cap(16) */
 	u32 blk_len;	/* from read cap(16) */
+	u32 lun_index;
 	enum open_mode_type mode;
 
 	spinlock_t _slock;
@@ -267,14 +269,14 @@ int afu_set_wwpn(struct afu *p_afu, int port,
 void afu_link_reset(struct afu *p_afu, int port, volatile u64 * p_fc_regs);
 
 int grow_lxt(struct afu *p_afu,
-	     struct blka *p_blka,
+	     struct lun_info *p_lun_info,
 	     ctx_hndl_t ctx_hndl_u,
 	     res_hndl_t res_hndl_u,
 	     struct sisl_rht_entry *p_rht_entry,
 	     u64 delta, u64 * p_act_new_size);
 
 int shrink_lxt(struct afu *p_afu,
-	       struct blka *p_blka,
+	       struct lun_info *p_lun_info,
 	       ctx_hndl_t ctx_hndl_u,
 	       res_hndl_t res_hndl_u,
 	       struct sisl_rht_entry *p_rht_entry,

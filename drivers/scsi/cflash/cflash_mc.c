@@ -628,9 +628,9 @@ int cflash_disk_release(struct scsi_device *sdev, struct dk_capi_release *prele)
 			cflash_rhte_cin(p_rht_entry);
 		} else if (p_lun_info->mode ==  MODE_PHYSICAL) {
 			/*
-			 * Clear the Format 1 RHT entry for direct access (physical
-			 * LUN) using the synchronization sequence defined in the
-			 * SISLite specification.
+			 * Clear the Format 1 RHT entry for direct access 
+			 * (physical LUN) using the synchronization sequence 
+			 * defined in the SISLite specification.
 			 */
 			struct sisl_rht_entry_f1 *p_rht_entry_f1 =
 				(struct sisl_rht_entry_f1 *)p_rht_entry;
@@ -762,7 +762,6 @@ int cflash_vlun_resize(struct scsi_device *sdev, struct dk_capi_resize *prsz)
 {
 	struct cflash *p_cflash = (struct cflash *)sdev->host->hostdata;
 	struct lun_info *p_lun_info = sdev->hostdata;
-	struct blka *p_blka = &p_lun_info->blka;
 	struct afu *p_afu = p_cflash->p_afu;
 
 	u64 p_act_new_size = 0;
@@ -815,7 +814,7 @@ int cflash_vlun_resize(struct scsi_device *sdev, struct dk_capi_resize *prsz)
 
 		if (new_size > p_rht_entry->lxt_cnt) {
 			grow_lxt(p_afu,
-				 p_blka,
+				 p_lun_info,
 				 prsz->context_id,
 				 res_hndl,
 				 p_rht_entry,
@@ -823,7 +822,7 @@ int cflash_vlun_resize(struct scsi_device *sdev, struct dk_capi_resize *prsz)
 				 &p_act_new_size);
 		} else if (new_size < p_rht_entry->lxt_cnt) {
 			shrink_lxt(p_afu,
-				   p_blka,
+				   p_lun_info,
 				   prsz->context_id,
 				   res_hndl,
 				   p_rht_entry,
@@ -846,7 +845,7 @@ out:
 }
 
 int grow_lxt(struct afu *p_afu,
-	     struct blka *p_blka,
+	     struct lun_info *p_lun_info,
 	     ctx_hndl_t ctx_hndl_u,
 	     res_hndl_t res_hndl_u,
 	     struct sisl_rht_entry *p_rht_entry,
@@ -857,6 +856,7 @@ int grow_lxt(struct afu *p_afu,
 	unsigned int ngrps, ngrps_old;
 	u64 aun;		/* chunk# allocated by block allocator */
 	int i;
+	struct blka *p_blka = &p_lun_info->blka;
 
 	/*
 	 * Check what is available in the block allocator before re-allocating
@@ -905,8 +905,10 @@ int grow_lxt(struct afu *p_afu,
 				   "max %llX", aun, p_blka->nchunk - 1);
 		}
 
-		/* lun_indx = 0, select both ports, use r/w perms from RHT */
-		p_lxt[i].rlba_base = ((aun << MC_CHUNK_SHIFT) | 0x33);
+		/* select both ports, use r/w perms from RHT */
+		p_lxt[i].rlba_base = ((aun << MC_CHUNK_SHIFT) |
+				      (p_lun_info->lun_index << 
+				       LXT_LUNIDX_SHIFT ) | 0x33);
 	}
 
 	mutex_unlock(&p_blka->mutex);
@@ -929,8 +931,8 @@ int grow_lxt(struct afu *p_afu,
 	return 0;
 }
 
-int shrink_lxt(struct afu *p_afu,
-	       struct blka *p_blka,
+int shrink_lxt(struct afu *p_afu, 
+	       struct lun_info *p_lun_info,
 	       ctx_hndl_t ctx_hndl_u,
 	       res_hndl_t res_hndl_u,
 	       struct sisl_rht_entry *p_rht_entry,
@@ -940,6 +942,7 @@ int shrink_lxt(struct afu *p_afu,
 	unsigned int ngrps, ngrps_old;
 	u64 aun;		/* chunk# allocated by block allocator */
 	int i;
+	struct blka *p_blka = &p_lun_info->blka;
 
 	p_lxt_old = p_rht_entry->lxt_start;
 	ngrps_old = LXT_NUM_GROUPS(p_rht_entry->lxt_cnt);
@@ -1381,6 +1384,7 @@ int find_lun(struct cflash *p_cflash, u32 port_sel)
 		p_lun_info = list_first_entry(&p_afu->luns, struct lun_info,
 					      list);
 		p_lun_info->lun_id = *p_currid;
+		p_lun_info->lun_index = p_cflash->last_lun_index;
 
 		/* program FC_PORT LUN Tbl */
 		write_64(&p_afu->p_afu_map->global.fc_port[port_sel - 1]
