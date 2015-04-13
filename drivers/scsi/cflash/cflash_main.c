@@ -43,7 +43,7 @@
 #include "cflash_util.h"
 #include "mserv.h"
 
-MODULE_DESCRIPTION("IBM CAPI Flash Adapter Driver");
+MODULE_DESCRIPTION(CFLASH_ADAPTER_NAME);
 MODULE_AUTHOR("Manoj N. Kumar <manoj@linux.vnet.ibm.com>");
 MODULE_AUTHOR("Matthew R. Ochs <mrochs@linux.vnet.ibm.com>");
 MODULE_LICENSE("GPL");
@@ -63,26 +63,6 @@ MODULE_PARM_DESC(qc, " 1 = Regular SCSI queuecommand");
 
 module_param_named(checkpid, checkpid, uint, 0);
 MODULE_PARM_DESC(qc, " 1 = Enforce PID/context ownership policy");
-
-
-/**
- * cflash_driver_info - Get information about the card/driver
- * @scsi_host:       scsi host struct
- *
- * Return value:
- *      pointer to buffer with description string
- **/
-static const char *cflash_driver_info(struct Scsi_Host *host)
-{
-	static char buffer[512];
-	unsigned long lock_flags = 0;
-
-	spin_lock_irqsave(host->host_lock, lock_flags);
-	sprintf(buffer, "IBM CAPI Flash Storage Adapter");
-	spin_unlock_irqrestore(host->host_lock, lock_flags);
-
-	return buffer;
-}
 
 /* Check out a command */
 struct afu_cmd *cflash_cmd_cout(struct afu *p_afu)
@@ -128,6 +108,25 @@ void cflash_cmd_cin(struct afu_cmd *p_cmd)
 	spin_unlock_irqrestore(p_cmd->slock, lock_flags);
 	cflash_dbg("releasing cmd index=%d", p_cmd->slot);
 
+}
+
+/**
+ * cflash_driver_info - Get information about the card/driver
+ * @scsi_host:       scsi host struct
+ *
+ * Return value:
+ *      pointer to buffer with description string
+ **/
+static const char *cflash_driver_info(struct Scsi_Host *host)
+{
+	static char buffer[512];
+	unsigned long lock_flags = 0;
+
+	spin_lock_irqsave(host->host_lock, lock_flags);
+	sprintf(buffer, CFLASH_ADAPTER_NAME);
+	spin_unlock_irqrestore(host->host_lock, lock_flags);
+
+	return buffer;
 }
 
 /**
@@ -394,7 +393,6 @@ static void cflash_slave_destroy(struct scsi_device *sdev)
  **/
 static int cflash_target_alloc(struct scsi_target *starget)
 {
-	/* XXX: Dummy */
 	int rc = 0;
 	struct Scsi_Host *shost = dev_to_shost(starget->dev.parent);
 	struct cflash *p_cflash = shost_priv(shost);
@@ -414,7 +412,6 @@ static int cflash_target_alloc(struct scsi_target *starget)
 static int cflash_scan_finished(struct Scsi_Host *shost, unsigned long time)
 {
 	int done = 1;
-	/* XXX: Dummy */
 	cflash_info("returning done=%d", done);
 	return done;
 }
@@ -700,7 +697,7 @@ static struct device_attribute *cflash_attrs[] = {
 
 static struct scsi_host_template driver_template = {
 	.module = THIS_MODULE,
-	.name = "IBM POWER CAPI Flash Adapter",
+	.name = CFLASH_ADAPTER_NAME,
 	.info = cflash_driver_info,
 	.ioctl = cflash_ioctl,
 	.proc_name = CFLASH_NAME,
@@ -727,8 +724,11 @@ static struct dev_dependent_vals dev_corsa_vals = { CFLASH_MAX_SECTORS };
 static struct pci_device_id cflash_pci_table[] = {
 	{ PCI_VENDOR_ID_IBM, PCI_DEVICE_ID_IBM_CORSA,
 	  PCI_ANY_ID, PCI_ANY_ID, 0, 0, (kernel_ulong_t)&dev_corsa_vals
-	}
+	},
+	{}
 };
+
+MODULE_DEVICE_TABLE(pci, cflash_pci_table);
 
 /**
  * cflash_free_mem - Frees memory allocated for an adapter
@@ -796,18 +796,16 @@ static void cflash_remove(struct pci_dev *pdev)
 	cflash_term_afu(p_cflash, FALSE);
 	cflash_dev_dbg(&pdev->dev, "after struct cflash_term_afu!");
 
-	/* XXX: Commented out for now
-	   iounmap(p_cflash->cflash_regs);
-	   pci_release_regions(p_cflash->p_dev);
-	 */
+	if (p_cflash->cflash_regs)
+		iounmap(p_cflash->cflash_regs);
+
+	pci_release_regions(p_cflash->p_dev);
 
 	cflash_free_mem(p_cflash);
 	scsi_host_put(p_cflash->host);
 	cflash_dev_dbg(&pdev->dev, "after scsi_host_put!");
 
-	/* XXX: Commented out for now
-	   pci_disable_device(pdev);
-	 */
+	pci_disable_device(pdev);
 
 	cflash_dbg("returning");
 }
@@ -901,16 +899,15 @@ static int cflash_init_pci(struct cflash *p_cflash)
 		}
 	}
 
-	/* XXX: Need to investigate
-	   p_cflash->cflash_regs = pci_ioremap_bar(pdev, 0);
-
-	   if (!p_cflash->cflash_regs) {
-	   cflash_dev_err(&pdev->dev,
-	   "Couldn't map memory range of registers");
-	   rc = -ENOMEM;
-	   goto out_disable;
-	   }
-	 */
+	/*
+	p_cflash->cflash_regs = pci_ioremap_bar(pdev, 0);
+	if (!p_cflash->cflash_regs) {
+		cflash_dev_err(&pdev->dev,
+			       "Couldn't map memory range of registers");
+		rc = -ENOMEM;
+		goto out_disable;
+	}
+	*/
 
 	rc = pci_set_dma_mask(pdev, DMA_BIT_MASK(64));
 	if (rc < 0) {
@@ -935,35 +932,27 @@ static int cflash_init_pci(struct cflash *p_cflash)
 
 	pci_set_master(pdev);
 
-	/*
-	   if (pci_channel_offline(pdev)) {
-	   cflash_wait_for_pci_err_recovery(p_cflash);
-	   pci_set_master(pdev);
-	   if (pci_channel_offline(pdev)) {
-	   rc = -EIO;
-	   goto out_msi_disable;
-	   }
+	if (pci_channel_offline(pdev)) {
+		cflash_wait_for_pci_err_recovery(p_cflash);
+		if (pci_channel_offline(pdev)) {
+			rc = -EIO;
+			goto out_msi_disable;
+		}
+	}
 
-	 */
+	rc = pci_save_state(pdev);
 
-	/* Save away PCI config space for use following CFLASH reset
-	   rc = pci_save_state(pdev);
-
-	   if (rc != PCIBIOS_SUCCESSFUL) {
-	   cflash_dev_err(&pdev->dev, "Failed to save PCI config space");
-	   rc = -EIO;
-	   goto cleanup_nolog;
-	   }
-	 */
+	if (rc != PCIBIOS_SUCCESSFUL) {
+		cflash_dev_err(&pdev->dev, "Failed to save PCI config space");
+		rc = -EIO;
+		goto cleanup_nolog;
+	}
 
 out:
 	cflash_info("returning rc=%d", rc);
 	return rc;
 
 cleanup_nolog:
-	/* XXX: free up any resources allocated here.
-	   cflash_free_mem(p_cflash);
-	 */
 out_msi_disable:
 	cflash_wait_for_pci_err_recovery(p_cflash);
 	iounmap(p_cflash->cflash_regs);

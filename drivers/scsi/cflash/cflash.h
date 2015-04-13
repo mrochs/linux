@@ -27,8 +27,9 @@ extern u32 fullqc;
 extern u32 checkpid;
 
 #define CFLASH_NAME                      "cflash"
-#define CFLASH_DRIVER_VERSION           "1.0.1"
-#define CFLASH_DRIVER_DATE              "(March 6, 2015)"
+#define CFLASH_ADAPTER_NAME              "IBM POWER CAPI Flash Adapter"
+#define CFLASH_DRIVER_VERSION           "1.0.2"
+#define CFLASH_DRIVER_DATE              "(April 13, 2015)"
 
 #define PCI_DEVICE_ID_IBM_CORSA		0x04F0
 #define CFLASH_SUBS_DEV_ID		0x04F0
