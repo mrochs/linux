@@ -1,15 +1,15 @@
 Introduction
 ============
 
-    Power 8 architecture provides support for CAPI (Coherent
+    The IBM Power architecture provides support for CAPI (Coherent
     Accelerator Power Interface), which is available to certain PCIe
     slots on Power 8 systems. CAPI can be thought of as a special
     tunneling protocol through PCIe that allow PCIe adapters to look
     like special purpose co-processors which can read or write an
     application's memory and generate page faults. As a result, the
     host interface to an adapter running in CAPI mode does not require
-    the data buffers to be mapped via TCEs nor does it require memory
-    to be pinned.
+    the data buffers to be mapped to the device's memory (IOMMU bypass)
+    nor does it require memory to be pinned.
 
     On Linux, Coherent Accelerator (CXL) kernel services present CAPI
     devices as a PCI device by implementing a virtual PCI host bridge.
@@ -157,7 +157,7 @@ DK_CAPI_ATTACH
     such as a killed process. This design point is described in further
     detail in the description for the DK_CAPI_DETACH ioctl.
 
-    There are three important aspects regarding the "tokens" (context id
+    There are a few important aspects regarding the "tokens" (context id
     and fd2) that are provided back to the user:
 
         - These tokens are only valid for the process under which they
@@ -165,13 +165,16 @@ DK_CAPI_ATTACH
           to use the context id or file descriptor created by its parent
           (see DK_CAPI_CLONE for further details).
 
-        - These tokens are only valid for the lifetime of the context.
-          Once the context is destroyed, the tokens are to be considered
-          stale and subsequent usage will result in errors.
+        - These tokens are only valid for the lifetime of the context and
+          the process under which they were created. Once either is destroyed,
+          the tokens are to be considered stale and subsequent usage will
+          result in errors.
 
         - When a context is no longer needed, the user shall detach from
-          the context via the DK_CAPI_DETACH ioctl and MUST also perform
-          a close on fd2 upon a successful DK_CAPI_ATTACH ioctl. 
+          the context via the DK_CAPI_DETACH ioctl.
+
+        - A close on fd2 will invalidate the tokens. This operation is not
+          required by the user.
 
 DK_CAPI_USER_DIRECT
 -------------------
@@ -244,11 +247,8 @@ DK_CAPI_DETACH
 --------------
     This ioctl is responsible for unregistering a context with the CFlash driver
     and release outstanding resources that were not explicitly released via the
-    DK_CAPI_RELEASE ioctl. As described in the DK_CAPI_ATTACH section, it is
-    extemely important that in addition to invoking this ioctl, the user must
-    also perform a close on fd2 to remove any resources that the CXL kernel
-    services created. Upon success, all "tokens" which had been provided to the
-    user from the DK_CAPI_ATTACH onward are no longer valid.
+    DK_CAPI_RELEASE ioctl. Upon success, all "tokens" which had been provided to
+    the user from the DK_CAPI_ATTACH onward are no longer valid.
 
 DK_CAPI_CLONE
 -------------
