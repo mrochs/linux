@@ -49,6 +49,19 @@
 /* Mask off the low nibble of the length to ensure 16 byte multiple */
 #define SISLITE_LEN_MASK 0xFFFFFFF0
 
+/*
+ * Function Prototypes
+ */
+static int cflash_disk_attach(struct scsi_device *, struct dk_capi_attach *);
+static int cflash_disk_open(struct scsi_device *, void *, enum open_mode_type);
+static int cflash_disk_detach(struct scsi_device *, struct dk_capi_detach *);
+static int cflash_vlun_resize(struct scsi_device *, struct dk_capi_resize *);
+static int cflash_disk_release(struct scsi_device *, struct dk_capi_release *);
+static int cflash_disk_clone(struct scsi_device *, struct dk_capi_clone *);
+static int cflash_disk_verify(struct scsi_device *, struct dk_capi_verify *);
+static int cflash_afu_recover(struct scsi_device *,
+			      struct dk_capi_recover_afu *);
+
 int cflash_afu_attach(struct cflash *p_cflash, u64 context_id)
 {
 	struct afu *p_afu = p_cflash->p_afu;
@@ -194,7 +207,8 @@ const struct file_operations cflash_cxl_fops = {
  *               a. initialize AFU for this context
  *
  */
-int cflash_disk_attach(struct scsi_device *sdev, struct dk_capi_attach *patt)
+static int cflash_disk_attach(struct scsi_device *sdev,
+			      struct dk_capi_attach *patt)
 {
 	struct cflash *p_cflash = (struct cflash *)sdev->host->hostdata;
 	struct afu *p_afu = p_cflash->p_afu;
@@ -444,8 +458,8 @@ void cflash_rht_format1(struct sisl_rht_entry *p_rht_entry, u64 lun_id,
  *               a. find a free RHT entry
  *
  */
-int cflash_disk_open(struct scsi_device *sdev, void *arg,
-		     enum open_mode_type mode)
+static int cflash_disk_open(struct scsi_device *sdev, void *arg,
+			    enum open_mode_type mode)
 {
 	struct cflash *p_cflash = (struct cflash *)sdev->host->hostdata;
 	struct afu *p_afu = p_cflash->p_afu;
@@ -576,7 +590,8 @@ out:
  * NOTES:
  *              When successful, the RHT entry is cleared.
  */
-int cflash_disk_release(struct scsi_device *sdev, struct dk_capi_release *prele)
+static int cflash_disk_release(struct scsi_device *sdev,
+			       struct dk_capi_release *prele)
 {
 	struct cflash *p_cflash = (struct cflash *)sdev->host->hostdata;
 	struct lun_info *p_lun_info = sdev->hostdata;
@@ -683,7 +698,8 @@ out:
  *               b. There is no need to clear RHT entries since
  *                  RHT_CNT=0.
  */
-int cflash_disk_detach(struct scsi_device *sdev, struct dk_capi_detach *pdet)
+static int cflash_disk_detach(struct scsi_device *sdev,
+			      struct dk_capi_detach *pdet)
 {
 	struct cflash *p_cflash = (struct cflash *)sdev->host->hostdata;
 	struct lun_info *p_lun_info = sdev->hostdata;
@@ -758,7 +774,8 @@ out:
  *		Setting new_size=0 will clear LXT_START and LXT_CNT fields
  *		in the RHT entry.
  */
-int cflash_vlun_resize(struct scsi_device *sdev, struct dk_capi_resize *prsz)
+static int cflash_vlun_resize(struct scsi_device *sdev,
+			      struct dk_capi_resize *prsz)
 {
 	struct cflash *p_cflash = (struct cflash *)sdev->host->hostdata;
 	struct lun_info *p_lun_info = sdev->hostdata;
@@ -995,8 +1012,8 @@ int shrink_lxt(struct afu *p_afu,
 	return 0;
 }
 
-int cflash_afu_recover(struct scsi_device *sdev,
-		       struct dk_capi_recover_afu *prec)
+static int cflash_afu_recover(struct scsi_device *sdev,
+			      struct dk_capi_recover_afu *prec)
 {
 	struct cflash *p_cflash = (struct cflash *)sdev->host->hostdata;
 	struct afu *p_afu = p_cflash->p_afu;
@@ -1122,7 +1139,8 @@ int clone_lxt(struct afu *p_afu,
  *              0           - Success
  *              errno       - Failure
  */
-int cflash_disk_clone(struct scsi_device *sdev, struct dk_capi_clone *pclone)
+static int cflash_disk_clone(struct scsi_device *sdev,
+			     struct dk_capi_clone *pclone)
 {
 	struct cflash *p_cflash = (struct cflash *)sdev->host->hostdata;
 	struct lun_info *p_lun_info = sdev->hostdata;
@@ -1220,7 +1238,8 @@ out:
  * NOTES:
  *              When successful, the RHT entry is cleared.
  */
-int cflash_disk_verify(struct scsi_device *sdev, struct dk_capi_verify *pver)
+static int cflash_disk_verify(struct scsi_device *sdev,
+			      struct dk_capi_verify *pver)
 {
 	struct lun_info *p_lun_info = sdev->hostdata;
 
@@ -1414,3 +1433,138 @@ out:
 	cflash_info("returning rc %d pcmd%p", rc, p_cmd);
 	return rc;
 }
+
+static char *
+decode_ioctl(int cmd)
+{
+	#define _CASE2STR(_x) case _x: return #_x
+
+	switch (cmd) {
+	_CASE2STR(DK_CAPI_ATTACH);
+	_CASE2STR(DK_CAPI_USER_DIRECT);
+	_CASE2STR(DK_CAPI_USER_VIRTUAL);
+	_CASE2STR(DK_CAPI_DETACH);
+	_CASE2STR(DK_CAPI_VLUN_RESIZE);
+	_CASE2STR(DK_CAPI_RELEASE);
+	_CASE2STR(DK_CAPI_CLONE);
+	_CASE2STR(DK_CAPI_VERIFY);
+	}
+
+	return("UNKNOWN");
+}
+
+static int cflash_disk_virtual_open(struct scsi_device *sdev, void *arg)
+{
+	return cflash_disk_open(sdev, arg, MODE_VIRTUAL);
+}
+
+static int cflash_disk_direct_open(struct scsi_device *sdev, void *arg)
+{
+	return cflash_disk_open(sdev, arg, MODE_PHYSICAL);
+}
+
+/**
+ * cflash_ioctl - IOCTL handler
+ * @sdev:       scsi device struct
+ * @cmd:        IOCTL cmd
+ * @arg:        IOCTL arg
+ *
+ * Return value:
+ *      0 on success / other on failure
+ **/
+int cflash_ioctl(struct scsi_device *sdev, int cmd, void __user * arg)
+{
+	typedef int (*sioctl)(struct scsi_device *, void *);
+
+	struct cflash *p_cflash = (struct cflash *)sdev->host->hostdata;
+	struct afu *p_afu = p_cflash->p_afu;
+	char buf[MAX_CFLASH_IOCTL_SZ];
+	size_t size = 0;
+	int rc = 0;
+	sioctl do_ioctl = NULL;
+
+	/* Restrict command set to physical support only for internal LUN */
+	if (internal_lun || p_afu->internal_lun)
+	{
+		switch (cmd) {
+		case DK_CAPI_USER_VIRTUAL:
+		case DK_CAPI_VLUN_RESIZE:
+		case DK_CAPI_RELEASE:
+		case DK_CAPI_CLONE:
+			cflash_err("%s not supported for lun_mode=%d",
+				   decode_ioctl(cmd), internal_lun);
+			rc = -EINVAL;
+			goto cflash_ioctl_exit;
+		}
+	}
+
+	switch (cmd) {
+	case DK_CAPI_ATTACH:
+		size = sizeof(struct dk_capi_attach);
+		do_ioctl = (sioctl)cflash_disk_attach;
+		break;
+	case DK_CAPI_USER_DIRECT:
+		size = sizeof(struct dk_capi_udirect);
+		do_ioctl = (sioctl)cflash_disk_direct_open;
+		break;
+	case DK_CAPI_USER_VIRTUAL:
+		size = sizeof(struct dk_capi_uvirtual);
+		do_ioctl = (sioctl)cflash_disk_virtual_open;
+		break;
+	case DK_CAPI_DETACH:
+		size = sizeof(struct dk_capi_detach);
+		do_ioctl = (sioctl)cflash_disk_detach;
+		break;
+	case DK_CAPI_VLUN_RESIZE:
+		size = sizeof(struct dk_capi_resize);
+		do_ioctl = (sioctl)cflash_vlun_resize;
+		break;
+	case DK_CAPI_RELEASE:
+		size = sizeof(struct dk_capi_release);
+		do_ioctl = (sioctl)cflash_disk_release;
+		break;
+	case DK_CAPI_CLONE:
+		size = sizeof(struct dk_capi_clone);
+		do_ioctl = (sioctl)cflash_disk_clone;
+		break;
+	case DK_CAPI_RECOVER_AFU:
+		size = sizeof(struct dk_capi_recover_afu);
+		do_ioctl = (sioctl)cflash_afu_recover;
+		break;
+	case DK_CAPI_VERIFY:
+		size = sizeof(struct dk_capi_verify);
+		do_ioctl = (sioctl)cflash_disk_verify;
+		break;
+	default:
+		rc = -EINVAL;
+		goto cflash_ioctl_exit;
+	}
+
+	if (unlikely(!do_ioctl))
+		BUG();
+
+	if (unlikely(copy_from_user(&buf, arg, size))) {
+		cflash_err("copy_from_user() fail! size=%lu cmd=%d (%s) arg=%p",
+			   size, cmd, decode_ioctl(cmd), arg);
+	    rc = -EFAULT;
+	    goto cflash_ioctl_exit;
+	}
+
+	rc = do_ioctl(sdev, (void *)&buf);
+
+	if (unlikely(copy_to_user(arg, &buf, size))) {
+		cflash_err("copy_to_user() fail! size=%lu cmd=%d (%s) arg=%p",
+			   size, cmd, decode_ioctl(cmd), arg);
+		/* Don't mask ioctl failure if copy out fails */
+		if (!rc)
+		    rc = -EFAULT;
+	}
+
+	/* fall thru to exit */
+
+cflash_ioctl_exit:
+	cflash_info("ioctl %s (%08X) returned rc %d",
+		    decode_ioctl(cmd), cmd, rc);
+	return rc;
+}
+
