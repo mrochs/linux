@@ -61,7 +61,7 @@ module_param_named(qc, fullqc, uint, 0);
 MODULE_PARM_DESC(qc, " 1 = Regular SCSI queuecommand");
 
 module_param_named(checkpid, checkpid, uint, 0);
-MODULE_PARM_DESC(qc, " 1 = Enforce PID/context ownership policy");
+MODULE_PARM_DESC(checkpid, " 1 = Enforce PID/context ownership policy");
 
 /* Check out a command */
 struct afu_cmd *cflash_cmd_cout(struct afu *p_afu)
