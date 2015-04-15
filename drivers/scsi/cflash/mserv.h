@@ -241,6 +241,7 @@ struct afu {
 	u64 interface_version;
 
 	struct list_head luns;	/* list of lun_info structs */
+	struct cflash *p_back;  /* Pointer back to parent cflash */
 
 } __attribute__ ((aligned(0x1000)));
 

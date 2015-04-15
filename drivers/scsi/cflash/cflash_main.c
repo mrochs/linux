@@ -226,7 +226,7 @@ static int cflash_eh_host_reset_handler(struct scsi_cmnd *scp)
 
 	scp->result = (DID_OK << 16);;
 	rcr = afu_reset(p_cflash);
-	if (rcr)
+	if (rcr == 0)
 		rc = SUCCESS;
 	else
 		rc = FAILED;
@@ -703,6 +703,7 @@ static int cflash_gb_alloc(struct cflash *p_cflash)
 		rc = -ENOMEM;
 		goto out;
 	}
+	p_cflash->p_afu->p_back = p_cflash;
 	p_cflash->p_afu->p_afu_map = NULL;
 
 	/* Allocate one extra, just in case the SYNC command needs a buffer */
@@ -1150,7 +1151,7 @@ static irqreturn_t cflash_rrq_irq(int irq, void *data)
 	struct afu_cmd *p_cmd;
 	unsigned long lock_flags = 0UL;
 
-	p_cflash = (struct cflash *) (p_afu - offsetof(struct cflash, p_afu));
+	p_cflash = p_afu->p_back;
 	/*
 	 * XXX - might want to look at using locals for loop control
 	 * as an optimization
@@ -1197,10 +1198,7 @@ static irqreturn_t cflash_rrq_irq(int irq, void *data)
 			p_cmd->rcb.rsvd2 = 0ULL;
 			if (p_cmd->special) {
 				p_cflash->tmf_active = 0;
-#if 0
-				/* XXX: Figure out why this does not work */
 				wake_up_all(&p_cflash->tmf_wait_q);
-#endif
 			}
 		}
 
@@ -1229,7 +1227,7 @@ static irqreturn_t cflash_async_err_irq(int irq, void *data)
 	__u64 reg;
 	int i;
 
-	p_cflash = (struct cflash *) (p_afu - offsetof(struct cflash, p_afu));
+	p_cflash = p_afu->p_back;
 
 	reg = read_64(&p_global->regs.aintr_status);
 	reg_unmasked = (reg & SISL_ASTATUS_UNMASK);
@@ -2150,7 +2148,7 @@ int cflash_send_tmf(struct afu *p_afu, struct scsi_cmnd *scp, u64 cmd)
 
 	/* Send the command */
 	cflash_send_cmd(p_afu, p_cmd);
-	p_cflash->tmf_active = 0x0;
+	wait_event(p_cflash->tmf_wait_q, !p_cflash->tmf_active);
 out:
 	return rc;
 
@@ -2211,6 +2209,7 @@ static int cflash_probe(struct pci_dev *pdev,
 	p_cflash->p_mcctx = NULL;
 	p_cflash->context_reset_active = 0;
         init_waitqueue_head(&p_cflash->tmf_wait_q);
+        init_waitqueue_head(&p_cflash->eeh_wait_q);
 
 	INIT_WORK(&p_cflash->work_q, cflash_worker_thread);
 	p_cflash->lr_state = LINK_RESET_INVALID;
