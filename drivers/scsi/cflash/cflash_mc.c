@@ -381,9 +381,8 @@ struct sisl_rht_entry *cflash_rhte_cout(struct cflash *p_cflash,
 		 * per context
 		 */
 
-		if (p_rht_entry == NULL) {
+		if (!p_rht_entry)
 			goto out;
-		}
 
 	} else {
 		goto out;
@@ -512,22 +511,21 @@ static int cflash_disk_open(struct scsi_device *sdev, void *arg,
 	cflash_info("context=0x%llx ls=0x%llx", context_id, lun_size);
 
 	p_rht_entry = cflash_rhte_cout(p_cflash, context_id);
-
-	if (p_rht_entry == NULL)
+	if (!p_rht_entry)
 	{
 		cflash_err("too many opens for this context");
 		rc = -EMFILE;	/* too many opens  */
 		goto out;
-	} else {
-		p_ctx_info = get_validated_context(p_cflash, context_id, false);
-		if (p_ctx_info) {
-			p_rht_info = p_ctx_info->rht_info;
-		} else {
-			cflash_err("in %s context not valid\n", __func__);
-			rc = -EINVAL;
-			goto out;
-		}
 	}
+
+	p_ctx_info = get_validated_context(p_cflash, context_id, false);
+	if (!p_ctx_info) {
+		cflash_err("in %s context not valid\n", __func__);
+		rc = -EINVAL;
+		goto out;
+	}
+
+	p_rht_info = p_ctx_info->rht_info;
 
 	/* User specified permission on attach */
 	perms = p_rht_info->perms;

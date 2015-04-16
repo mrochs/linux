@@ -983,7 +983,7 @@ void cflash_stop_afu(struct cflash *p_cflash)
 	int i;
 	struct afu *p_afu = p_cflash->afu;
 
-	if (p_afu == NULL) {
+	if (!p_afu) {
 		cflash_info("returning because afu is NULl");
 		return;
 	}
@@ -1539,7 +1539,7 @@ void cflash_term_mc(struct cflash *p_cflash, enum undo_level level)
 {
 	struct afu *p_afu = p_cflash->afu;
 
-	if ((p_afu == NULL) || (p_cflash->mcctx == NULL))
+	if (!p_afu || !p_cflash->mcctx)
 	{
 		cflash_info("returning from term_mc with NULL afu or MC");
 		return;
