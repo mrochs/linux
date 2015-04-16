@@ -803,7 +803,7 @@ out:
 /* online means the FC link layer has sync and has completed the link
  * layer handshake. It is ready for login to start.
  */
-void set_port_online(volatile u64 * p_fc_regs)
+static void set_port_online(volatile u64 * p_fc_regs)
 {
 	u64 cmdcfg;
 
@@ -813,7 +813,7 @@ void set_port_online(volatile u64 * p_fc_regs)
 	writeq_be(cmdcfg, &p_fc_regs[FC_MTIP_CMDCONFIG / 8]);
 }
 
-void set_port_offline(volatile u64 * p_fc_regs)
+static void set_port_offline(volatile u64 * p_fc_regs)
 {
 	u64 cmdcfg;
 
@@ -825,8 +825,9 @@ void set_port_offline(volatile u64 * p_fc_regs)
 
 /* returns 1 - went online */
 /* wait_port_xxx will timeout when cable is not pluggd in */
-int wait_port_online(volatile u64 * p_fc_regs,
-		     useconds_t delay_us, unsigned int nretry)
+static int wait_port_online(volatile u64 * p_fc_regs,
+			    useconds_t delay_us,
+			    unsigned int nretry)
 {
 	u64 status;
 
@@ -845,8 +846,9 @@ int wait_port_online(volatile u64 * p_fc_regs,
 }
 
 /* returns 1 - went offline */
-int wait_port_offline(volatile u64 * p_fc_regs,
-		      useconds_t delay_us, unsigned int nretry)
+static int wait_port_offline(volatile u64 * p_fc_regs,
+			     useconds_t delay_us,
+			     unsigned int nretry)
 {
 	u64 status;
 
@@ -865,8 +867,10 @@ int wait_port_offline(volatile u64 * p_fc_regs,
 }
 
 /* this function can block up to a few seconds */
-int afu_set_wwpn(struct afu *p_afu, int port, volatile u64 * p_fc_regs,
-		 u64 wwpn)
+static int afu_set_wwpn(struct afu *p_afu,
+			int port,
+			volatile u64 * p_fc_regs,
+			u64 wwpn)
 {
 	int ret = 0;
 
@@ -906,7 +910,9 @@ int afu_set_wwpn(struct afu *p_afu, int port, volatile u64 * p_fc_regs,
 
 
 // this function can block up to a few seconds
-void afu_link_reset(struct afu *p_afu, int port, volatile __u64 *p_fc_regs)
+static void afu_link_reset(struct afu *p_afu,
+			   int port,
+			   volatile __u64 *p_fc_regs)
 {
 	__u64 port_sel;
 	// first switch the AFU to the other links, if any 
@@ -956,7 +962,7 @@ struct asyc_intr_info ainfo[] = {
 	{ 0x0,                       "", 0, 0 } /* terminator */
 };
 
-struct asyc_intr_info *find_ainfo(__u64 status)
+static struct asyc_intr_info *find_ainfo(__u64 status)
 {
 	struct asyc_intr_info *p_info;
 
@@ -999,7 +1005,7 @@ void cflash_stop_afu(struct cflash *p_cflash)
 	}
 }
 
-void afu_err_intr_init(struct afu *p_afu)
+static void afu_err_intr_init(struct afu *p_afu)
 {
 	int i;
 	volatile u64 reg;

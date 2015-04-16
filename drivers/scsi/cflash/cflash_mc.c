@@ -49,19 +49,6 @@
 /* Mask off the low nibble of the length to ensure 16 byte multiple */
 #define SISLITE_LEN_MASK 0xFFFFFFF0
 
-/*
- * Function Prototypes
- */
-static int cflash_disk_attach(struct scsi_device *, struct dk_capi_attach *);
-static int cflash_disk_open(struct scsi_device *, void *, enum open_mode_type);
-static int cflash_disk_detach(struct scsi_device *, struct dk_capi_detach *);
-static int cflash_vlun_resize(struct scsi_device *, struct dk_capi_resize *);
-static int cflash_disk_release(struct scsi_device *, struct dk_capi_release *);
-static int cflash_disk_clone(struct scsi_device *, struct dk_capi_clone *);
-static int cflash_disk_verify(struct scsi_device *, struct dk_capi_verify *);
-static int cflash_afu_recover(struct scsi_device *,
-			      struct dk_capi_recover_afu *);
-
 int cflash_afu_attach(struct cflash *p_cflash, u64 context_id)
 {
 	struct afu *p_afu = p_cflash->afu;
@@ -320,6 +307,7 @@ err1:
 	cxl_release_context(ctx);
 	goto out;
 }
+
 struct ctx_info *
 get_validated_context(struct cflash *p_cflash, u64 ctxid, bool clone_path)
 {
@@ -433,6 +421,267 @@ void cflash_rht_format1(struct sisl_rht_entry *p_rht_entry, u64 lun_id,
 	smp_wmb();
 
 	return;
+}
+
+static int grow_lxt(struct afu *p_afu,
+		    struct lun_info *p_lun_info,
+		    ctx_hndl_t ctx_hndl_u,
+		    res_hndl_t res_hndl_u,
+		    struct sisl_rht_entry *p_rht_entry,
+		    u64 delta,
+		    u64 * p_act_new_size)
+{
+	struct sisl_lxt_entry *p_lxt = NULL, *p_lxt_old = NULL;
+	unsigned int av_size;
+	unsigned int ngrps, ngrps_old;
+	u64 aun;		/* chunk# allocated by block allocator */
+	int i;
+	struct blka *p_blka = &p_lun_info->blka;
+
+	/*
+	 * Check what is available in the block allocator before re-allocating
+	 * LXT array. This is done up front under the mutex which must not be
+	 * released until after allocation is complete.
+	 */
+	mutex_lock(&p_blka->mutex);
+	av_size = ba_space(&p_blka->ba_lun);
+	if (av_size < delta)
+		delta = av_size;
+
+	p_lxt_old = p_rht_entry->lxt_start;
+	ngrps_old = LXT_NUM_GROUPS(p_rht_entry->lxt_cnt);
+	ngrps = LXT_NUM_GROUPS(p_rht_entry->lxt_cnt + delta);
+
+	if (ngrps != ngrps_old) {
+		/* reallocate to fit new size */
+		p_lxt = kzalloc((sizeof(*p_lxt) * LXT_GROUP_SIZE * ngrps),
+				GFP_KERNEL);
+		if (!p_lxt) {
+			mutex_unlock(&p_blka->mutex);
+			return -ENOMEM;
+		}
+
+		/* copy over all old entries */
+		memcpy(p_lxt, p_lxt_old, (sizeof(*p_lxt) *
+					  p_rht_entry->lxt_cnt));
+	} else {
+		p_lxt = p_lxt_old;
+	}
+
+	/* nothing can fail from now on */
+	*p_act_new_size = p_rht_entry->lxt_cnt + delta;
+
+	/* add new entries to the end */
+	for (i = p_rht_entry->lxt_cnt; i < *p_act_new_size; i++) {
+		/*
+		 * Due to the earlier check of available space, ba_alloc
+		 * cannot fail here. If it did due to internal error,
+		 * leave a rlba_base of -1u which will likely be a
+		 * invalid LUN (too large).
+		 */
+		aun = ba_alloc(&p_blka->ba_lun);
+		if ((aun == -1ULL) || (aun >= p_blka->nchunk)) {
+			cflash_err("ba_alloc error: allocated chunk# %llX, "
+				   "max %llX", aun, p_blka->nchunk - 1);
+		}
+
+		/* select both ports, use r/w perms from RHT */
+		p_lxt[i].rlba_base = ((aun << MC_CHUNK_SHIFT) |
+				      (p_lun_info->lun_index << 
+				       LXT_LUNIDX_SHIFT ) | 0x33);
+	}
+
+	mutex_unlock(&p_blka->mutex);
+
+	asm volatile ("lwsync"::);	/* make lxt updates visible */
+
+	/* Now sync up AFU - this can take a while */
+	p_rht_entry->lxt_start = p_lxt;	/* even if p_lxt didn't change */
+	asm volatile ("lwsync"::);
+
+	p_rht_entry->lxt_cnt = *p_act_new_size;
+	asm volatile ("lwsync"::);
+
+	afu_sync(p_afu, ctx_hndl_u, res_hndl_u, AFU_LW_SYNC);
+
+	/* free old lxt if reallocated */
+	if (p_lxt != p_lxt_old)
+		kfree(p_lxt_old);
+	cflash_info("returning");
+	return 0;
+}
+
+static int shrink_lxt(struct afu *p_afu,
+		      struct lun_info *p_lun_info,
+		      ctx_hndl_t ctx_hndl_u,
+		      res_hndl_t res_hndl_u,
+		      struct sisl_rht_entry *p_rht_entry,
+		      u64 delta,
+		      u64 * p_act_new_size)
+{
+	struct sisl_lxt_entry *p_lxt, *p_lxt_old;
+	unsigned int ngrps, ngrps_old;
+	u64 aun;		/* chunk# allocated by block allocator */
+	int i;
+	struct blka *p_blka = &p_lun_info->blka;
+
+	p_lxt_old = p_rht_entry->lxt_start;
+	ngrps_old = LXT_NUM_GROUPS(p_rht_entry->lxt_cnt);
+	ngrps = LXT_NUM_GROUPS(p_rht_entry->lxt_cnt - delta);
+
+	if (ngrps != ngrps_old) {
+		/* reallocate to fit new size unless new size is 0 */
+		if (ngrps) {
+			p_lxt = kzalloc((sizeof(*p_lxt) * LXT_GROUP_SIZE *
+					 ngrps), GFP_KERNEL);
+			if (!p_lxt)
+				return -ENOMEM;
+
+			/* copy over old entries that will remain */
+			memcpy(p_lxt, p_lxt_old, (sizeof(*p_lxt) *
+						  (p_rht_entry->lxt_cnt -
+						   delta)));
+		} else {
+			p_lxt = NULL;
+		}
+	} else {
+		p_lxt = p_lxt_old;
+	}
+
+	/* nothing can fail from now on */
+	*p_act_new_size = p_rht_entry->lxt_cnt - delta;
+
+	/* Now sync up AFU - this can take a while */
+	p_rht_entry->lxt_cnt = *p_act_new_size;
+	asm volatile ("lwsync"::);	/* also makes lxt updates visible */
+
+	p_rht_entry->lxt_start = p_lxt;	/* even if p_lxt didn't change */
+	asm volatile ("lwsync"::);
+
+	afu_sync(p_afu, ctx_hndl_u, res_hndl_u, AFU_HW_SYNC);
+
+	/* free LBAs allocated to freed chunks */
+	mutex_lock(&p_blka->mutex);
+	for (i = delta - 1; i >= 0; i--) {
+		aun = (p_lxt_old[*p_act_new_size + i].rlba_base >>
+		       MC_CHUNK_SHIFT);
+		ba_free(&p_blka->ba_lun, aun);
+	}
+	mutex_unlock(&p_blka->mutex);
+
+	/* free old lxt if reallocated */
+	if (p_lxt != p_lxt_old)
+		kfree(p_lxt_old);
+	cflash_info("returning");
+	return 0;
+}
+/*
+ * NAME:	cflash_vlun_resize()
+ *
+ * FUNCTION:	Resize a resource handle by changing the RHT entry and LXT
+ *		Tbl it points to. Synchronize all contexts that refer to
+ *		the RHT.
+ *
+ * INPUTS:
+ *              sdev       - Pointer to scsi device structure
+ *              arg        - Pointer to ioctl specific structure
+ *
+ * OUTPUTS:
+ *		p_act_new_size	- pointer to actual new size in chunks
+ *
+ * RETURNS:
+ *		0	- Success
+ *		errno	- Failure
+ *
+ * NOTES:
+ *		Setting new_size=0 will clear LXT_START and LXT_CNT fields
+ *		in the RHT entry.
+ */
+static int cflash_vlun_resize(struct scsi_device *sdev,
+			      struct dk_capi_resize *prsz)
+{
+	struct cflash *p_cflash = (struct cflash *)sdev->host->hostdata;
+	struct lun_info *p_lun_info = sdev->hostdata;
+	struct afu *p_afu = p_cflash->afu;
+
+	u64 p_act_new_size = 0;
+	res_hndl_t res_hndl = prsz->rsrc_handle;
+	u64 new_size;
+	u64 nsectors;
+
+	struct ctx_info *p_ctx_info;
+	struct rht_info *p_rht_info;
+	struct sisl_rht_entry *p_rht_entry;
+
+	int rc = 0;
+
+	/* req_size is always assumed to be in 4k blocks. So we have to convert
+	 * it from 4k to chunk size
+	 */
+	nsectors = (prsz->req_size * CFLASH_BLOCK_SIZE) / (p_lun_info->blk_len);
+	new_size = (nsectors + MC_CHUNK_SIZE - 1) / MC_CHUNK_SIZE;
+
+	cflash_info("context=0x%llx res_hndl=0x%llx, req_size=0x%llx,"
+		    "new_size=%llx", prsz->context_id,
+		    prsz->rsrc_handle, prsz->req_size, new_size);
+
+	if (p_lun_info->mode != MODE_VIRTUAL) {
+		cflash_err("cannot resize lun that is not virtual %d",
+			   p_lun_info->mode);
+		rc = -EINVAL;
+		goto out;
+
+	}
+
+	p_ctx_info = get_validated_context(p_cflash, prsz->context_id, false);
+	if (!p_ctx_info) {
+		cflash_err("invalid context!");
+		rc = -EINVAL;
+		goto out;
+	}
+
+	p_rht_info = p_ctx_info->rht_info;
+
+	if (res_hndl < MAX_RHT_PER_CONTEXT) {
+		p_rht_entry = &p_rht_info->rht_start[res_hndl];
+
+		if (p_rht_entry->nmask == 0) {	/* not open */
+			cflash_err("not open rhti %p rhte %p",
+				   p_rht_info, p_rht_entry);
+			rc = -EINVAL;
+			goto out;
+		}
+
+		if (new_size > p_rht_entry->lxt_cnt) {
+			grow_lxt(p_afu,
+				 p_lun_info,
+				 prsz->context_id,
+				 res_hndl,
+				 p_rht_entry,
+				 new_size - p_rht_entry->lxt_cnt,
+				 &p_act_new_size);
+		} else if (new_size < p_rht_entry->lxt_cnt) {
+			shrink_lxt(p_afu,
+				   p_lun_info,
+				   prsz->context_id,
+				   res_hndl,
+				   p_rht_entry,
+				   p_rht_entry->lxt_cnt - new_size,
+				   &p_act_new_size);
+		} else {
+			p_act_new_size = new_size;
+		}
+	} else {
+		cflash_err("res_hndl %d invalid", res_hndl);
+		rc = -EINVAL;
+	}
+	prsz->return_flags = 0;
+	prsz->last_lba = (p_act_new_size * MC_CHUNK_SIZE *
+			  p_lun_info->blk_len) / CFLASH_BLOCK_SIZE;
+
+out:
+	cflash_info("resized to %lld returning rc=%d", prsz->last_lba, rc);
+	return rc;
 }
 
 /*
@@ -749,266 +998,6 @@ out:
 	return rc;
 }
 
-/*
- * NAME:	cflash_vlun_resize()
- *
- * FUNCTION:	Resize a resource handle by changing the RHT entry and LXT
- *		Tbl it points to. Synchronize all contexts that refer to
- *		the RHT.
- *
- * INPUTS:
- *              sdev       - Pointer to scsi device structure
- *              arg        - Pointer to ioctl specific structure
- *
- * OUTPUTS:
- *		p_act_new_size	- pointer to actual new size in chunks
- *
- * RETURNS:
- *		0	- Success
- *		errno	- Failure
- *
- * NOTES:
- *		Setting new_size=0 will clear LXT_START and LXT_CNT fields
- *		in the RHT entry.
- */
-static int cflash_vlun_resize(struct scsi_device *sdev,
-			      struct dk_capi_resize *prsz)
-{
-	struct cflash *p_cflash = (struct cflash *)sdev->host->hostdata;
-	struct lun_info *p_lun_info = sdev->hostdata;
-	struct afu *p_afu = p_cflash->afu;
-
-	u64 p_act_new_size = 0;
-	res_hndl_t res_hndl = prsz->rsrc_handle;
-	u64 new_size;
-	u64 nsectors;
-
-	struct ctx_info *p_ctx_info;
-	struct rht_info *p_rht_info;
-	struct sisl_rht_entry *p_rht_entry;
-
-	int rc = 0;
-
-	/* req_size is always assumed to be in 4k blocks. So we have to convert
-	 * it from 4k to chunk size
-	 */
-	nsectors = (prsz->req_size * CFLASH_BLOCK_SIZE) / (p_lun_info->blk_len);
-	new_size = (nsectors + MC_CHUNK_SIZE - 1) / MC_CHUNK_SIZE;
-
-	cflash_info("context=0x%llx res_hndl=0x%llx, req_size=0x%llx,"
-		    "new_size=%llx", prsz->context_id,
-		    prsz->rsrc_handle, prsz->req_size, new_size);
-
-	if (p_lun_info->mode != MODE_VIRTUAL) {
-		cflash_err("cannot resize lun that is not virtual %d",
-			   p_lun_info->mode);
-		rc = -EINVAL;
-		goto out;
-
-	}
-
-	p_ctx_info = get_validated_context(p_cflash, prsz->context_id, false);
-	if (!p_ctx_info) {
-		cflash_err("invalid context!");
-		rc = -EINVAL;
-		goto out;
-	}
-
-	p_rht_info = p_ctx_info->rht_info;
-
-	if (res_hndl < MAX_RHT_PER_CONTEXT) {
-		p_rht_entry = &p_rht_info->rht_start[res_hndl];
-
-		if (p_rht_entry->nmask == 0) {	/* not open */
-			cflash_err("not open rhti %p rhte %p",
-				   p_rht_info, p_rht_entry);
-			rc = -EINVAL;
-			goto out;
-		}
-
-		if (new_size > p_rht_entry->lxt_cnt) {
-			grow_lxt(p_afu,
-				 p_lun_info,
-				 prsz->context_id,
-				 res_hndl,
-				 p_rht_entry,
-				 new_size - p_rht_entry->lxt_cnt,
-				 &p_act_new_size);
-		} else if (new_size < p_rht_entry->lxt_cnt) {
-			shrink_lxt(p_afu,
-				   p_lun_info,
-				   prsz->context_id,
-				   res_hndl,
-				   p_rht_entry,
-				   p_rht_entry->lxt_cnt - new_size,
-				   &p_act_new_size);
-		} else {
-			p_act_new_size = new_size;
-		}
-	} else {
-		cflash_err("res_hndl %d invalid", res_hndl);
-		rc = -EINVAL;
-	}
-	prsz->return_flags = 0;
-	prsz->last_lba = (p_act_new_size * MC_CHUNK_SIZE *
-			  p_lun_info->blk_len) / CFLASH_BLOCK_SIZE;
-
-out:
-	cflash_info("resized to %lld returning rc=%d", prsz->last_lba, rc);
-	return rc;
-}
-
-int grow_lxt(struct afu *p_afu,
-	     struct lun_info *p_lun_info,
-	     ctx_hndl_t ctx_hndl_u,
-	     res_hndl_t res_hndl_u,
-	     struct sisl_rht_entry *p_rht_entry,
-	     u64 delta, u64 * p_act_new_size)
-{
-	struct sisl_lxt_entry *p_lxt = NULL, *p_lxt_old = NULL;
-	unsigned int av_size;
-	unsigned int ngrps, ngrps_old;
-	u64 aun;		/* chunk# allocated by block allocator */
-	int i;
-	struct blka *p_blka = &p_lun_info->blka;
-
-	/*
-	 * Check what is available in the block allocator before re-allocating
-	 * LXT array. This is done up front under the mutex which must not be
-	 * released until after allocation is complete.
-	 */
-	mutex_lock(&p_blka->mutex);
-	av_size = ba_space(&p_blka->ba_lun);
-	if (av_size < delta)
-		delta = av_size;
-
-	p_lxt_old = p_rht_entry->lxt_start;
-	ngrps_old = LXT_NUM_GROUPS(p_rht_entry->lxt_cnt);
-	ngrps = LXT_NUM_GROUPS(p_rht_entry->lxt_cnt + delta);
-
-	if (ngrps != ngrps_old) {
-		/* reallocate to fit new size */
-		p_lxt = kzalloc((sizeof(*p_lxt) * LXT_GROUP_SIZE * ngrps),
-				GFP_KERNEL);
-		if (!p_lxt) {
-			mutex_unlock(&p_blka->mutex);
-			return -ENOMEM;
-		}
-
-		/* copy over all old entries */
-		memcpy(p_lxt, p_lxt_old, (sizeof(*p_lxt) *
-					  p_rht_entry->lxt_cnt));
-	} else {
-		p_lxt = p_lxt_old;
-	}
-
-	/* nothing can fail from now on */
-	*p_act_new_size = p_rht_entry->lxt_cnt + delta;
-
-	/* add new entries to the end */
-	for (i = p_rht_entry->lxt_cnt; i < *p_act_new_size; i++) {
-		/*
-		 * Due to the earlier check of available space, ba_alloc
-		 * cannot fail here. If it did due to internal error,
-		 * leave a rlba_base of -1u which will likely be a
-		 * invalid LUN (too large).
-		 */
-		aun = ba_alloc(&p_blka->ba_lun);
-		if ((aun == -1ULL) || (aun >= p_blka->nchunk)) {
-			cflash_err("ba_alloc error: allocated chunk# %llX, "
-				   "max %llX", aun, p_blka->nchunk - 1);
-		}
-
-		/* select both ports, use r/w perms from RHT */
-		p_lxt[i].rlba_base = ((aun << MC_CHUNK_SHIFT) |
-				      (p_lun_info->lun_index << 
-				       LXT_LUNIDX_SHIFT ) | 0x33);
-	}
-
-	mutex_unlock(&p_blka->mutex);
-
-	smp_wmb();	/* make lxt updates visible */
-
-	/* Now sync up AFU - this can take a while */
-	p_rht_entry->lxt_start = p_lxt;	/* even if p_lxt didn't change */
-	smp_wmb();
-
-	p_rht_entry->lxt_cnt = *p_act_new_size;
-	smp_wmb();
-
-	afu_sync(p_afu, ctx_hndl_u, res_hndl_u, AFU_LW_SYNC);
-
-	/* free old lxt if reallocated */
-	if (p_lxt != p_lxt_old)
-		kfree(p_lxt_old);
-	cflash_info("returning");
-	return 0;
-}
-
-int shrink_lxt(struct afu *p_afu, 
-	       struct lun_info *p_lun_info,
-	       ctx_hndl_t ctx_hndl_u,
-	       res_hndl_t res_hndl_u,
-	       struct sisl_rht_entry *p_rht_entry,
-	       u64 delta, u64 * p_act_new_size)
-{
-	struct sisl_lxt_entry *p_lxt, *p_lxt_old;
-	unsigned int ngrps, ngrps_old;
-	u64 aun;		/* chunk# allocated by block allocator */
-	int i;
-	struct blka *p_blka = &p_lun_info->blka;
-
-	p_lxt_old = p_rht_entry->lxt_start;
-	ngrps_old = LXT_NUM_GROUPS(p_rht_entry->lxt_cnt);
-	ngrps = LXT_NUM_GROUPS(p_rht_entry->lxt_cnt - delta);
-
-	if (ngrps != ngrps_old) {
-		/* reallocate to fit new size unless new size is 0 */
-		if (ngrps) {
-			p_lxt = kzalloc((sizeof(*p_lxt) * LXT_GROUP_SIZE *
-					 ngrps), GFP_KERNEL);
-			if (!p_lxt)
-				return -ENOMEM;
-
-			/* copy over old entries that will remain */
-			memcpy(p_lxt, p_lxt_old, (sizeof(*p_lxt) *
-						  (p_rht_entry->lxt_cnt -
-						   delta)));
-		} else {
-			p_lxt = NULL;
-		}
-	} else {
-		p_lxt = p_lxt_old;
-	}
-
-	/* nothing can fail from now on */
-	*p_act_new_size = p_rht_entry->lxt_cnt - delta;
-
-	/* Now sync up AFU - this can take a while */
-	p_rht_entry->lxt_cnt = *p_act_new_size;
-	smp_wmb();	/* also makes lxt updates visible */
-
-	p_rht_entry->lxt_start = p_lxt;	/* even if p_lxt didn't change */
-	smp_wmb();
-
-	afu_sync(p_afu, ctx_hndl_u, res_hndl_u, AFU_HW_SYNC);
-
-	/* free LBAs allocated to freed chunks */
-	mutex_lock(&p_blka->mutex);
-	for (i = delta - 1; i >= 0; i--) {
-		aun = (p_lxt_old[*p_act_new_size + i].rlba_base >>
-		       MC_CHUNK_SHIFT);
-		ba_free(&p_blka->ba_lun, aun);
-	}
-	mutex_unlock(&p_blka->mutex);
-
-	/* free old lxt if reallocated */
-	if (p_lxt != p_lxt_old)
-		kfree(p_lxt_old);
-	cflash_info("returning");
-	return 0;
-}
-
 static int cflash_afu_recover(struct scsi_device *sdev,
 			      struct dk_capi_recover_afu *prec)
 {
@@ -1027,7 +1016,6 @@ static int cflash_afu_recover(struct scsi_device *sdev,
 	}
 
 	reg = readq_be(&p_afu->ctrl_map->mbox_r);	/* Try MMIO */
-
 	/* MMIO returning 0xff, need to reset */
 	if (reg == -1) {
 		cflash_info("p_afu=%p reason 0x%llx", p_afu, prec->reason);
@@ -1063,12 +1051,12 @@ out:
  *
  * NOTES:
  */
-int clone_lxt(struct afu *p_afu,
-	      struct blka *p_blka,
-	      ctx_hndl_t ctx_hndl_u,
-	      res_hndl_t res_hndl_u,
-	      struct sisl_rht_entry *p_rht_entry,
-	      struct sisl_rht_entry *p_rht_entry_src)
+static int clone_lxt(struct afu *p_afu,
+		     struct blka *p_blka,
+		     ctx_hndl_t ctx_hndl_u,
+		     res_hndl_t res_hndl_u,
+		     struct sisl_rht_entry *p_rht_entry,
+		     struct sisl_rht_entry *p_rht_entry_src)
 {
 	struct sisl_lxt_entry *p_lxt;
 	unsigned int ngrps;

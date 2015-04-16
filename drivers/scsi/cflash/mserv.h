@@ -254,64 +254,10 @@ struct asyc_intr_info {
 #define LINK_RESET     0x02
 };
 
-int afu_init(struct afu *p_afu, struct capikv_ini_elm *p_elm);
-void undo_afu_init(struct afu *p_afu, enum undo_level level);
-int afu_term(struct afu *p_afu);
-void afu_err_intr_init(struct afu *p_afu);
-
-void set_port_online(volatile u64 * p_fc_regs);
-void set_port_offline(volatile u64 * p_fc_regs);
-int wait_port_online(volatile u64 * p_fc_regs,
-		     useconds_t delay_us, unsigned int nretry);
-int wait_port_offline(volatile u64 * p_fc_regs,
-		      useconds_t delay_us, unsigned int nretry);
-int afu_set_wwpn(struct afu *p_afu, int port,
-		 volatile u64 * p_fc_regs, u64 wwpn);
-void afu_link_reset(struct afu *p_afu, int port, volatile u64 * p_fc_regs);
-
-int grow_lxt(struct afu *p_afu,
-	     struct lun_info *p_lun_info,
-	     ctx_hndl_t ctx_hndl_u,
-	     res_hndl_t res_hndl_u,
-	     struct sisl_rht_entry *p_rht_entry,
-	     u64 delta, u64 * p_act_new_size);
-
-int shrink_lxt(struct afu *p_afu,
-	       struct lun_info *p_lun_info,
-	       ctx_hndl_t ctx_hndl_u,
-	       res_hndl_t res_hndl_u,
-	       struct sisl_rht_entry *p_rht_entry,
-	       u64 delta, u64 * p_act_new_size);
-
-int clone_lxt(struct afu *p_afu,
-	      struct blka *p_blka,
-	      ctx_hndl_t ctx_hndl_u,
-	      res_hndl_t res_hndl_u,
-	      struct sisl_rht_entry *p_rht_entry,
-	      struct sisl_rht_entry *p_rht_entry_src);
-
-struct asyc_intr_info *find_ainfo(u64 status);
-void afu_rrq_intr(struct afu *p_afu);
-void afu_sync_intr(struct afu *p_afu);
-void afu_async_intr(struct afu *p_afu);
-void notify_err(struct afu *p_afu, int err_flag);
-
-void *afu_ipc_rx(void *arg);
-void *afu_rrq_rx(void *arg);
-void *afu_err_rx(void *arg);
-
-void send_cmd(struct afu *p_afu, struct afu_cmd *p_cmd);
-void wait_resp(struct afu *p_afu, struct afu_cmd *p_cmd);
-
 int find_lun(struct cflash *p_cflash, u32 port_sel);
 int read_cap16(struct afu *p_afu, struct lun_info *p_lun_info, u32 port_sel);
-int page83_inquiry(struct afu *p_afu, struct lun_info *p_lun_info,
-		   u32 port_sel);
 int afu_sync(struct afu *p_afu, ctx_hndl_t ctx_hndl_u, res_hndl_t res_hndl_u,
 	     u8 mode);
 
-void periodic_hb(void);
-void periodic_fc(void);
-void *sig_rx(void *arg);
 
 #endif /* _MSERVE_H */
