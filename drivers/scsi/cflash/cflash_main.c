@@ -2151,32 +2151,11 @@ out_remove:
 	goto out;
 }
 
-/**
- * cflash_shutdown - Shutdown handler.
- * @pdev:       pci device struct
- *
- * This function is invoked upon system shutdown/reboot. It will issue
- * an adapter shutdown to the adapter to flush the write cache.
- *
- * Return value:
- *      none
- **/
-static void cflash_shutdown(struct pci_dev *pdev)
-{
-	/* XXX: Dummy */
-	struct cflash *p_cflash = pci_get_drvdata(pdev);
-
-	while (p_cflash->tmf_active)
-		wait_event(p_cflash->tmf_wait_q, !p_cflash->tmf_active);
-
-}
-
 static struct pci_driver cflash_driver = {
 	.name = CFLASH_NAME,
 	.id_table = cflash_pci_table,
 	.probe = cflash_probe,
 	.remove = cflash_remove,
-	.shutdown = cflash_shutdown,
 };
 
 static int __init init_cflash(void)
