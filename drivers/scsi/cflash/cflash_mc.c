@@ -308,7 +308,7 @@ err1:
 	goto out;
 }
 
-struct ctx_info *
+static struct ctx_info *
 get_validated_context(struct cflash *p_cflash, u64 ctxid, bool clone_path)
 {
 	struct afu *p_afu = p_cflash->afu;
@@ -339,8 +339,8 @@ get_validated_context(struct cflash *p_cflash, u64 ctxid, bool clone_path)
 }
 
 /* Checkout a free/empty RHT entry */
-struct sisl_rht_entry *cflash_rhte_cout(struct cflash *p_cflash,
-					u64 context_id)
+static struct sisl_rht_entry *rhte_checkout(struct cflash *p_cflash,
+					    u64 context_id)
 {
 	struct ctx_info *p_ctx_info;
 	struct rht_info *p_rht_info = NULL;
@@ -379,7 +379,7 @@ out:
 	return p_rht_entry;
 }
 
-void  cflash_rhte_cin(struct sisl_rht_entry *p_rht_entry)
+static void  rhte_checkin(struct sisl_rht_entry *p_rht_entry)
 {
 	p_rht_entry->nmask = 0;
 	p_rht_entry->fp = 0;
@@ -758,7 +758,7 @@ static int cflash_disk_open(struct scsi_device *sdev, void *arg,
 
 	cflash_info("context=0x%llx ls=0x%llx", context_id, lun_size);
 
-	p_rht_entry = cflash_rhte_cout(p_cflash, context_id);
+	p_rht_entry = rhte_checkout(p_cflash, context_id);
 	if (!p_rht_entry)
 	{
 		cflash_err("too many opens for this context");
@@ -886,7 +886,7 @@ static int cflash_disk_release(struct scsi_device *sdev,
 				cflash_err("resize failed rc %d", rc);
 				goto out;
 			}
-			cflash_rhte_cin(p_rht_entry);
+			rhte_checkin(p_rht_entry);
 		} else if (p_lun_info->mode ==  MODE_PHYSICAL) {
 			/*
 			 * Clear the Format 1 RHT entry for direct access 
@@ -1204,7 +1204,7 @@ static int cflash_disk_clone(struct scsi_device *sdev,
 				cflash_disk_release(sdev, &release);
 			}
 
-			cflash_rhte_cin(&p_rht_info_dst->rht_start[i]);
+			rhte_checkin(&p_rht_info_dst->rht_start[i]);
 			goto out;
 		}
 	}
@@ -1259,7 +1259,7 @@ int read_cap16(struct afu *p_afu, struct lun_info *p_lun_info, u32 port_sel)
 	struct afu_cmd *p_cmd;
 	int rc=0;
 
-	p_cmd = cflash_cmd_cout(p_afu);
+	p_cmd = cmd_checkout(p_afu);
 	if (!p_cmd) {
 		cflash_err("could not get a free command");
 		return -1;
@@ -1305,7 +1305,7 @@ int read_cap16(struct afu *p_afu, struct lun_info *p_lun_info, u32 port_sel)
 	spin_unlock(p_lun_info->slock);
 
 out:
-	cflash_cmd_cin(p_cmd);
+	cmd_checkin(p_cmd);
 
 	cflash_info("maxlba=%lld blklen=%d pcmd %p",
 		    p_lun_info->max_lba, p_lun_info->blk_len, p_cmd);
@@ -1329,7 +1329,7 @@ int find_lun(struct cflash *p_cflash, u32 port_sel)
 	int rc = 0;
 	u64 *lunidarray = NULL;
 
-	p_cmd = cflash_cmd_cout(p_afu);
+	p_cmd = cmd_checkout(p_afu);
 	if (!p_cmd) {
 		cflash_err("could not get a free command");
 		return -1;
@@ -1359,7 +1359,7 @@ int find_lun(struct cflash *p_cflash, u32 port_sel)
 	} while (check_status(&p_cmd->sa));
 
 	if (p_cmd->sa.host_use_b[0] & B_ERROR) {
-		cflash_cmd_cin(p_cmd);
+		cmd_checkin(p_cmd);
 		return -1;
 	}
 	/* report luns success  */
@@ -1380,7 +1380,7 @@ int find_lun(struct cflash *p_cflash, u32 port_sel)
 	cflash_info("found %d luns", i);
 
 	/* Release the CMD only after looking through the response */
-	cflash_cmd_cin(p_cmd);
+	cmd_checkin(p_cmd);
 
 	p_currid = lunidarray;
 

@@ -64,7 +64,7 @@ module_param_named(checkpid, checkpid, uint, 0);
 MODULE_PARM_DESC(checkpid, " 1 = Enforce PID/context ownership policy");
 
 /* Check out a command */
-struct afu_cmd *cflash_cmd_cout(struct afu *p_afu)
+struct afu_cmd *cmd_checkout(struct afu *p_afu)
 {
 	int k, dec = CFLASH_NUM_CMDS;
 	struct afu_cmd *p_cmd;
@@ -97,7 +97,7 @@ struct afu_cmd *cflash_cmd_cout(struct afu *p_afu)
 }
 
 /* Check in the command */
-void cflash_cmd_cin(struct afu_cmd *p_cmd)
+void cmd_checkin(struct afu_cmd *p_cmd)
 {
 	unsigned long lock_flags = 0;
 
@@ -106,6 +106,141 @@ void cflash_cmd_cin(struct afu_cmd *p_cmd)
 	p_cmd->special = 0;
 	spin_unlock_irqrestore(p_cmd->slock, lock_flags);
 	cflash_dbg("releasing cmd index=%d", p_cmd->slot);
+
+}
+
+/**
+ * cflash_send_scsi - Send a generic SCSI CDB down
+ * @p_afu:        struct afu pointer
+ * @scp:          scsi command passed in 
+ *
+ * Returns:
+ *      SUCCESS, BUSY
+ */
+int cflash_send_scsi(struct afu *p_afu, struct scsi_cmnd *scp)
+{
+	struct afu_cmd *p_cmd;
+
+	u64 port_sel = scp->device->channel + 1;
+	int nseg, i, ncount;
+	struct scatterlist *sg;
+	short lflag = 0;
+	int rc = 0;
+
+	unsigned long lock_flags = 0;
+	struct Scsi_Host *host = scp->device->host;
+	struct cflash *p_cflash = (struct cflash *)host->hostdata;
+
+	spin_lock_irqsave(host->host_lock, lock_flags);
+	while (p_cflash->tmf_active) {
+		spin_unlock_irqrestore(host->host_lock, lock_flags);
+		wait_event(p_cflash->tmf_wait_q, !p_cflash->tmf_active);
+		spin_lock_irqsave(host->host_lock, lock_flags);
+	}
+	spin_unlock_irqrestore(host->host_lock, lock_flags);
+
+	p_cmd = cmd_checkout(p_afu);
+	if (!p_cmd) {
+		cflash_err("could not get a free command");
+		rc = SCSI_MLQUEUE_HOST_BUSY;
+		goto out;
+	}
+
+	p_cmd->rcb.ctx_id = p_afu->ctx_hndl;
+	p_cmd->rcb.port_sel = port_sel;
+	p_cmd->rcb.lun_id = lun_to_lunid(scp->device->lun);
+
+	if (scp->sc_data_direction == DMA_TO_DEVICE)
+		lflag = SISL_REQ_FLAGS_HOST_WRITE;
+	else
+		lflag = SISL_REQ_FLAGS_HOST_READ;
+
+	p_cmd->rcb.req_flags = (SISL_REQ_FLAGS_PORT_LUN_ID |
+				SISL_REQ_FLAGS_SUP_UNDERRUN | lflag);
+	p_cmd->rcb.timeout = MC_DISCOVERY_TIMEOUT;
+
+	/* Stash the scp in the reserved field, for reuse during interrupt */
+	p_cmd->rcb.rsvd2 = (u64) scp;
+
+	p_cmd->sa.host_use_b[1] = 0;	/* reset retry cnt */
+
+	nseg = scsi_dma_map(scp);
+	ncount = scsi_sg_count(scp);
+	scsi_for_each_sg(scp, sg, ncount, i) {
+		p_cmd->rcb.data_len = (sg_dma_len(sg));
+                p_cmd->rcb.data_ea = (sg_dma_address(sg));
+	}
+
+	/* Copy the CDB from the scsi_cmnd passed in */
+	memcpy(p_cmd->rcb.cdb, scp->cmnd, sizeof(p_cmd->rcb.cdb));
+
+	/* Send the command */
+	cflash_send_cmd(p_afu, p_cmd);
+
+out:
+	return rc;
+}
+
+/**
+ * cflash_send_tmf - Send a Task Management Function
+ * @p_afu:        struct afu pointer
+ * @scp:          scsi command passed in 
+ * cmd:           Kind of TMF command
+ *
+ * Returns:
+ *      SUCCESS, BUSY
+ */
+int cflash_send_tmf(struct afu *p_afu, struct scsi_cmnd *scp, u64 cmd)
+{
+	struct afu_cmd *p_cmd;
+
+	u64 port_sel = scp->device->channel + 1;
+	short lflag = 0;
+	unsigned long lock_flags = 0;
+	struct Scsi_Host *host = scp->device->host;
+	struct cflash *p_cflash = (struct cflash *)host->hostdata;
+	int rc = 0;
+
+	spin_lock_irqsave(host->host_lock, lock_flags);
+	while (p_cflash->tmf_active) {
+		spin_unlock_irqrestore(host->host_lock, lock_flags);
+		wait_event(p_cflash->tmf_wait_q, !p_cflash->tmf_active);
+		spin_lock_irqsave(host->host_lock, lock_flags);
+	}
+	spin_unlock_irqrestore(host->host_lock, lock_flags);
+
+	p_cmd = cmd_checkout(p_afu);
+	if (!p_cmd) {
+		cflash_err("could not get a free command");
+		rc = SCSI_MLQUEUE_HOST_BUSY;
+		goto out;
+	}
+
+	p_cmd->rcb.ctx_id = p_afu->ctx_hndl;
+	p_cmd->rcb.port_sel = port_sel;
+	p_cmd->rcb.lun_id = lun_to_lunid(scp->device->lun);
+
+	lflag = SISL_REQ_FLAGS_TMF_CMD;
+
+	p_cmd->rcb.req_flags = (SISL_REQ_FLAGS_PORT_LUN_ID |
+				SISL_REQ_FLAGS_SUP_UNDERRUN | lflag);
+	p_cmd->rcb.timeout = MC_DISCOVERY_TIMEOUT;
+
+	/* Stash the scp in the reserved field, for reuse during interrupt */
+	p_cmd->rcb.rsvd2 = (u64) scp;
+	p_cmd->special = 0x1;
+	p_cflash->tmf_active = 0x1;
+
+	p_cmd->sa.host_use_b[1] = 0;	/* reset retry cnt */
+
+	/* Copy the CDB from the cmd passed in */
+	memcpy(p_cmd->rcb.cdb, &cmd, sizeof(cmd));
+
+	/* Send the command */
+	cflash_send_cmd(p_afu, p_cmd);
+	wait_event(p_cflash->tmf_wait_q, !p_cflash->tmf_active);
+out:
+	return rc;
 
 }
 
@@ -326,12 +461,7 @@ static int cflash_slave_configure(struct scsi_device *sdev)
 	 * entries. The spec has a blurb about this but I'm not convinced
 	 * we're doing it right.
 	 */
-#if 0
 	if (fullqc) {
-        	struct ctx_info *p_ctx_info;
-        	struct rht_info *p_rht_info = NULL;
-        	struct sisl_rht_entry *p_rht_entry = NULL;
-	        u64 rsrc_handle = -1;
 		struct Scsi_Host *shost = sdev->host;
 		struct cflash *p_cflash = shost_priv(shost);
 		struct afu *p_afu = p_cflash->afu;
@@ -344,6 +474,7 @@ static int cflash_slave_configure(struct scsi_device *sdev)
 		cflash_info("LBA = %016llX", p_lun_info->max_lba);
 		cflash_info("BLK_LEN = %08X", p_lun_info->blk_len);
 
+#if 0
 		rc = cflash_init_ba(p_lun_info);
 		if (rc) {
 			cflash_err("call to cflash_init_ba failed rc=%d!",
@@ -351,16 +482,8 @@ static int cflash_slave_configure(struct scsi_device *sdev)
 			rc = -ENOMEM;
 			goto out;
 		}
-                p_ctx_info = get_validated_context(p_cflash, p_afu->ctx_hndl, 
-						   false);
-		p_ctx_info->rht_info = &p_afu->rht_info[p_afu->ctx_hndl];
-	        p_rht_entry  = cflash_rhte_cout(p_cflash, p_afu->ctx_hndl);
-                p_rht_info = p_ctx_info->rht_info;
-        	rsrc_handle = (p_rht_entry - p_rht_info->rht_start);
-                cflash_rht_format1(p_rht_entry, p_lun_info->lun_id);
-                afu_sync(p_afu, p_afu->ctx_hndl, rsrc_handle, AFU_LW_SYNC);
-	}
 #endif
+	}
 
 	cflash_info("returning rc=%d", rc);
 	return rc;
@@ -571,6 +694,103 @@ static void cflash_free_mem(struct cflash *p_cflash)
 	return;
 }
 
+/**
+ * cflash_stop_afu - Stop AFU
+ * @p_cflash:       struct cflash
+ *
+ * Tear down timers, Unmap the MMIO space
+ *
+ * Return value:
+ *      none
+ **/
+static void cflash_stop_afu(struct cflash *p_cflash)
+{
+	int i;
+	struct afu *p_afu = p_cflash->afu;
+
+	if (!p_afu) {
+		cflash_info("returning because afu is NULl");
+		return;
+	}
+
+	/* Need to stop timers before unmapping */
+	for (i=0; i<CFLASH_NUM_CMDS; i++) {
+		del_timer_sync(&p_cflash->afu->cmd[i].timer);
+	}
+
+	if (p_afu->afu_map) {
+		cxl_psa_unmap((void *)p_afu->afu_map);
+		p_afu->afu_map = NULL;
+	}
+}
+
+/**
+ * cflash_term_mc - Terminate the master context
+ * @p_cflash:        struct cflash pointer
+ * @level:           level to back out from
+ *
+ * Returns:
+ *      NONE
+ */
+void cflash_term_mc(struct cflash *p_cflash, enum undo_level level)
+{
+	struct afu *p_afu = p_cflash->afu;
+
+	if (!p_afu || !p_cflash->mcctx)
+	{
+		cflash_info("returning from term_mc with NULL afu or MC");
+		return;
+	}
+
+	switch (level) { 
+	case UNDO_START:
+		cxl_stop_context(p_cflash->mcctx);
+	case UNMAP_FOUR:
+		cflash_info("before unmap 4");
+		cxl_unmap_afu_irq(p_cflash->mcctx, 4, p_afu);
+	case UNMAP_THREE:
+		cflash_info("before unmap 3");
+		cxl_unmap_afu_irq(p_cflash->mcctx, 3, p_afu);
+	case UNMAP_TWO:
+		cflash_info("before unmap 2");
+		cxl_unmap_afu_irq(p_cflash->mcctx, 2, p_afu);
+	case UNMAP_ONE:
+		cflash_info("before unmap 1");
+		cxl_unmap_afu_irq(p_cflash->mcctx, 1, p_afu);
+	case FREE_IRQ:
+		cflash_info("before cxl_free_afu_irqs");
+		cxl_free_afu_irqs(p_cflash->mcctx);
+		cflash_info("before cxl_release_context");
+	case RELEASE_CONTEXT:
+		cxl_release_context(p_cflash->mcctx);
+		p_cflash->mcctx = NULL;
+	}
+}
+
+static void cflash_term_afu(struct cflash *p_cflash, bool reset)
+{
+	struct afu *p_afu = p_cflash->afu;
+	struct lun_info *p_lun_info, *p_temp;
+
+	if (reset)
+		cflash_term_mc(p_cflash, UNDO_START);
+	else
+		cflash_term_mc(p_cflash, UNMAP_FOUR);
+
+	/* Need to stop timers before unmapping */
+	if (p_cflash->afu) {
+		cflash_stop_afu(p_cflash);
+
+		list_for_each_entry_safe(p_lun_info, p_temp, &p_afu->luns,
+					 list) {
+			list_del(&p_lun_info->list);
+			ba_terminate(&p_lun_info->blka.ba_lun);
+			kfree(p_lun_info);
+		}
+	}
+
+	cflash_info("returning");
+}
 /**
  * cflash_remove - CFLASH hot plug remove entry point
  * @pdev:       pci device struct
@@ -975,36 +1195,6 @@ static struct asyc_intr_info *find_ainfo(__u64 status)
 	return NULL;
 }
 
-/**
- * cflash_stop_afu - Stop AFU
- * @p_cflash:       struct cflash
- *
- * Tear down timers, Unmap the MMIO space
- *
- * Return value:
- *      none
- **/
-void cflash_stop_afu(struct cflash *p_cflash)
-{
-	int i;
-	struct afu *p_afu = p_cflash->afu;
-
-	if (!p_afu) {
-		cflash_info("returning because afu is NULl");
-		return;
-	}
-
-	/* Need to stop timers before unmapping */
-	for (i=0; i<CFLASH_NUM_CMDS; i++) {
-		del_timer_sync(&p_cflash->afu->cmd[i].timer);
-	}
-
-	if (p_afu->afu_map) {
-		cxl_psa_unmap((void *)p_afu->afu_map);
-		p_afu->afu_map = NULL;
-	}
-}
-
 static void afu_err_intr_init(struct afu *p_afu)
 {
 	int i;
@@ -1152,7 +1342,7 @@ static irqreturn_t cflash_rrq_irq(int irq, void *data)
 		}
 
 		/* Done with command */
-		cflash_cmd_cin(p_cmd);
+		cmd_checkin(p_cmd);
 
 		/* Advance to next entry or wrap and flip the toggle bit */
 		if (p_afu->hrrq_curr < p_afu->hrrq_end) {
@@ -1246,15 +1436,6 @@ int cflash_start_context(struct cflash *p_cflash)
 
 	cflash_info("returning rc=%d", rc);
 	return rc;
-}
-
-/*
- * Stop the afu context.  This is calling into the generic CXL driver code
- */
-void cflash_stop_context(struct cflash *p_cflash)
-{
-	cxl_stop_context(p_cflash->mcctx);
-	cflash_info("returning");
 }
 
 #define WWPN_LEN	16
@@ -1532,50 +1713,6 @@ int cflash_start_afu(struct cflash *p_cflash)
 	cflash_info("returning rc=%d", rc);
 	return rc;
 }
-
-/**
- * cflash_term_mc - Terminate the master context
- * @p_cflash:        struct cflash pointer
- * @level:           level to back out from
- *
- * Returns:
- *      NONE
- */
-void cflash_term_mc(struct cflash *p_cflash, enum undo_level level)
-{
-	struct afu *p_afu = p_cflash->afu;
-
-	if (!p_afu || !p_cflash->mcctx)
-	{
-		cflash_info("returning from term_mc with NULL afu or MC");
-		return;
-	}
-
-	switch (level) { 
-	case UNDO_START:
-		cflash_stop_context(p_cflash);
-	case UNMAP_FOUR:
-		cflash_info("before unmap 4");
-		cxl_unmap_afu_irq(p_cflash->mcctx, 4, p_afu);
-	case UNMAP_THREE:
-		cflash_info("before unmap 3");
-		cxl_unmap_afu_irq(p_cflash->mcctx, 3, p_afu);
-	case UNMAP_TWO:
-		cflash_info("before unmap 2");
-		cxl_unmap_afu_irq(p_cflash->mcctx, 2, p_afu);
-	case UNMAP_ONE:
-		cflash_info("before unmap 1");
-		cxl_unmap_afu_irq(p_cflash->mcctx, 1, p_afu);
-	case FREE_IRQ:
-		cflash_info("before cxl_free_afu_irqs");
-		cxl_free_afu_irqs(p_cflash->mcctx);
-		cflash_info("before cxl_release_context");
-	case RELEASE_CONTEXT:
-		cxl_release_context(p_cflash->mcctx);
-		p_cflash->mcctx = NULL;
-	}
-}
-
 /**
  * cflash_init_mc - setup the master context
  * @p_cflash:        struct cflash pointer
@@ -1678,7 +1815,7 @@ out:
 }
 
 
-int cflash_init_afu(struct cflash *p_cflash, bool reset)
+static int cflash_init_afu(struct cflash *p_cflash, bool reset)
 {
 	u64 reg;
 	int rc = 0;
@@ -1730,30 +1867,6 @@ err1:
 	return rc;
 }
 
-void cflash_term_afu(struct cflash *p_cflash, bool reset)
-{
-	struct afu *p_afu = p_cflash->afu;
-	struct lun_info *p_lun_info, *p_temp;
-
-	if (reset)
-		cflash_term_mc(p_cflash, UNDO_START);
-	else
-		cflash_term_mc(p_cflash, UNMAP_FOUR);
-
-	/* Need to stop timers before unmapping */
-	if (p_cflash->afu) {
-		cflash_stop_afu(p_cflash);
-
-		list_for_each_entry_safe(p_lun_info, p_temp, &p_afu->luns,
-					 list) {
-			list_del(&p_lun_info->list);
-			ba_terminate(&p_lun_info->blka.ba_lun);
-			kfree(p_lun_info);
-		}
-	}
-
-	cflash_info("returning");
-}
 
 /* do we need to retry AFU_CMDs (sync) on afu_rc = 0x30 ? */
 /* can we not avoid that ? */
@@ -1894,7 +2007,7 @@ int afu_reset(struct cflash *p_cflash)
 	 * no longer available restart it after the reset is complete 
 	 */
 
-	cflash_stop_context(p_cflash);
+	cxl_stop_context(p_cflash->mcctx);
 
 	rc = cxl_afu_reset(p_cflash->mcctx);
 	if (rc) {
@@ -1949,141 +2062,6 @@ static void cflash_worker_thread(struct work_struct *work)
 	}
 
 	spin_unlock_irqrestore(p_cflash->host->host_lock, lock_flags);
-}
-
-/**
- * cflash_send_scsi - Send a generic SCSI CDB down
- * @p_afu:        struct afu pointer
- * @scp:          scsi command passed in 
- *
- * Returns:
- *      SUCCESS, BUSY
- */
-int cflash_send_scsi(struct afu *p_afu, struct scsi_cmnd *scp)
-{
-	struct afu_cmd *p_cmd;
-
-	u64 port_sel = scp->device->channel + 1;
-	int nseg, i, ncount;
-	struct scatterlist *sg;
-	short lflag = 0;
-	int rc = 0;
-
-	unsigned long lock_flags = 0;
-	struct Scsi_Host *host = scp->device->host;
-	struct cflash *p_cflash = (struct cflash *)host->hostdata;
-
-	spin_lock_irqsave(host->host_lock, lock_flags);
-	while (p_cflash->tmf_active) {
-		spin_unlock_irqrestore(host->host_lock, lock_flags);
-		wait_event(p_cflash->tmf_wait_q, !p_cflash->tmf_active);
-		spin_lock_irqsave(host->host_lock, lock_flags);
-	}
-	spin_unlock_irqrestore(host->host_lock, lock_flags);
-
-	p_cmd = cflash_cmd_cout(p_afu);
-	if (!p_cmd) {
-		cflash_err("could not get a free command");
-		rc = SCSI_MLQUEUE_HOST_BUSY;
-		goto out;
-	}
-
-	p_cmd->rcb.ctx_id = p_afu->ctx_hndl;
-	p_cmd->rcb.port_sel = port_sel;
-	p_cmd->rcb.lun_id = lun_to_lunid(scp->device->lun);
-
-	if (scp->sc_data_direction == DMA_TO_DEVICE)
-		lflag = SISL_REQ_FLAGS_HOST_WRITE;
-	else
-		lflag = SISL_REQ_FLAGS_HOST_READ;
-
-	p_cmd->rcb.req_flags = (SISL_REQ_FLAGS_PORT_LUN_ID |
-				SISL_REQ_FLAGS_SUP_UNDERRUN | lflag);
-	p_cmd->rcb.timeout = MC_DISCOVERY_TIMEOUT;
-
-	/* Stash the scp in the reserved field, for reuse during interrupt */
-	p_cmd->rcb.rsvd2 = (u64) scp;
-
-	p_cmd->sa.host_use_b[1] = 0;	/* reset retry cnt */
-
-	nseg = scsi_dma_map(scp);
-	ncount = scsi_sg_count(scp);
-	scsi_for_each_sg(scp, sg, ncount, i) {
-		p_cmd->rcb.data_len = (sg_dma_len(sg));
-                p_cmd->rcb.data_ea = (sg_dma_address(sg));
-	}
-
-	/* Copy the CDB from the scsi_cmnd passed in */
-	memcpy(p_cmd->rcb.cdb, scp->cmnd, sizeof(p_cmd->rcb.cdb));
-
-	/* Send the command */
-	cflash_send_cmd(p_afu, p_cmd);
-
-out:
-	return rc;
-}
-
-/**
- * cflash_send_tmf - Send a Task Management Function
- * @p_afu:        struct afu pointer
- * @scp:          scsi command passed in 
- * cmd:           Kind of TMF command
- *
- * Returns:
- *      SUCCESS, BUSY
- */
-int cflash_send_tmf(struct afu *p_afu, struct scsi_cmnd *scp, u64 cmd)
-{
-	struct afu_cmd *p_cmd;
-
-	u64 port_sel = scp->device->channel + 1;
-	short lflag = 0;
-	unsigned long lock_flags = 0;
-	struct Scsi_Host *host = scp->device->host;
-	struct cflash *p_cflash = (struct cflash *)host->hostdata;
-	int rc = 0;
-
-	spin_lock_irqsave(host->host_lock, lock_flags);
-	while (p_cflash->tmf_active) {
-		spin_unlock_irqrestore(host->host_lock, lock_flags);
-		wait_event(p_cflash->tmf_wait_q, !p_cflash->tmf_active);
-		spin_lock_irqsave(host->host_lock, lock_flags);
-	}
-	spin_unlock_irqrestore(host->host_lock, lock_flags);
-
-	p_cmd = cflash_cmd_cout(p_afu);
-	if (!p_cmd) {
-		cflash_err("could not get a free command");
-		rc = SCSI_MLQUEUE_HOST_BUSY;
-		goto out;
-	}
-
-	p_cmd->rcb.ctx_id = p_afu->ctx_hndl;
-	p_cmd->rcb.port_sel = port_sel;
-	p_cmd->rcb.lun_id = lun_to_lunid(scp->device->lun);
-
-	lflag = SISL_REQ_FLAGS_TMF_CMD;
-
-	p_cmd->rcb.req_flags = (SISL_REQ_FLAGS_PORT_LUN_ID |
-				SISL_REQ_FLAGS_SUP_UNDERRUN | lflag);
-	p_cmd->rcb.timeout = MC_DISCOVERY_TIMEOUT;
-
-	/* Stash the scp in the reserved field, for reuse during interrupt */
-	p_cmd->rcb.rsvd2 = (u64) scp;
-	p_cmd->special = 0x1;
-	p_cflash->tmf_active = 0x1;
-
-	p_cmd->sa.host_use_b[1] = 0;	/* reset retry cnt */
-
-	/* Copy the CDB from the cmd passed in */
-	memcpy(p_cmd->rcb.cdb, &cmd, sizeof(cmd));
-
-	/* Send the command */
-	cflash_send_cmd(p_afu, p_cmd);
-	wait_event(p_cflash->tmf_wait_q, !p_cflash->tmf_active);
-out:
-	return rc;
-
 }
 
 /**
