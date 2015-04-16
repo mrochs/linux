@@ -15,17 +15,7 @@
 #ifndef _SISLITE_H
 #define _SISLITE_H
 
-#ifndef __KERNEL__
-#include <unistd.h>
-#include <inttypes.h>
-#endif /* __KERNEL__ */
-
-#if !defined(_AIX) && !defined(_MACOSX)
 #include <linux/types.h>
-#endif /* !_AIX && ! _MACOSX */
-#if defined(_AIX) || defined(_MACOSX)
-#include <capi_aix_types.h>
-#endif /* AIX */
 
 /************************************************************************/
 /* CAPI Flash SIS LITE Register offsets                                 */
