@@ -270,30 +270,20 @@ static int cflash_disk_attach(struct scsi_device *sdev,
 	file = cxl_get_fd(ctx, &p_cflash->cxl_fops, &fd);
 	if (fd < 0) {
 		rc = -ENODEV;
-		cxl_release_context(ctx);
 		cflash_err("Could not get file descriptor");
-		goto out;
+		goto err1;
 	}
 
 	rc = cxl_start_work(ctx, p_work);
 	if (rc) {
 		cflash_err("Could not start context rc=%d", rc);
-		cxl_release_context(ctx);
-		fput(file);
-		put_unused_fd(fd);
-		fd = -1;
-		goto out;
+		goto err2;
 	}
 
 	rc = cflash_afu_attach(p_cflash, context_id);
 	if (rc) {
 		cflash_err("Could not attach AFU rc %d", rc);
-		cxl_stop_context(ctx);
-		cxl_release_context(ctx);
-		fput(file);
-		put_unused_fd(fd);
-		fd = -1;
-		goto out;
+		goto err3;
 	}
 
 	/* No error paths after installing the fd */
@@ -319,8 +309,17 @@ out:
 	cflash_info("returning fd=%d bs=%lld rc=%d llba=%lld",
 		    fd, patt->block_size, rc, patt->last_lba);
 	return rc;
-}
 
+err3:
+	cxl_stop_context(ctx);
+err2:
+	fput(file);
+	put_unused_fd(fd);
+	fd = -1;
+err1:
+	cxl_release_context(ctx);
+	goto out;
+}
 struct ctx_info *
 get_validated_context(struct cflash *p_cflash, u64 ctxid, bool clone_path)
 {
