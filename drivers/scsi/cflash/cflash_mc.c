@@ -360,7 +360,7 @@ struct sisl_rht_entry *cflash_rhte_cout(struct cflash *p_cflash,
 	struct sisl_rht_entry *p_rht_entry = NULL;
 	int i;
 
-	p_ctx_info = get_validated_context(p_cflash, context_id, FALSE);
+	p_ctx_info = get_validated_context(p_cflash, context_id, false);
 	if (p_ctx_info != NULL) {
 		p_rht_info = p_ctx_info->p_rht_info;
 
@@ -519,7 +519,7 @@ static int cflash_disk_open(struct scsi_device *sdev, void *arg,
 		rc = -EMFILE;	/* too many opens  */
 		goto out;
 	} else {
-		p_ctx_info = get_validated_context(p_cflash, context_id, FALSE);
+		p_ctx_info = get_validated_context(p_cflash, context_id, false);
 		if (p_ctx_info) {
 			p_rht_info = p_ctx_info->p_rht_info;
 		} else {
@@ -609,7 +609,7 @@ static int cflash_disk_release(struct scsi_device *sdev,
 	cflash_info("context=0x%llx res_hndl=0x%llx",
 		    prele->context_id, prele->rsrc_handle);
 
-	p_ctx_info = get_validated_context(p_cflash, prele->context_id, FALSE);
+	p_ctx_info = get_validated_context(p_cflash, prele->context_id, false);
 	if (!p_ctx_info) {
 		cflash_err("invalid context!");
 		rc = -EINVAL;
@@ -712,7 +712,7 @@ static int cflash_disk_detach(struct scsi_device *sdev,
 
 	cflash_info("context=0x%llx", pdet->context_id);
 
-	p_ctx_info = get_validated_context(p_cflash, pdet->context_id, FALSE);
+	p_ctx_info = get_validated_context(p_cflash, pdet->context_id, false);
 	if (!p_ctx_info) {
 		cflash_err("invalid context!");
 		rc = -EINVAL;
@@ -810,7 +810,7 @@ static int cflash_vlun_resize(struct scsi_device *sdev,
 
 	}
 
-	p_ctx_info = get_validated_context(p_cflash, prsz->context_id, FALSE);
+	p_ctx_info = get_validated_context(p_cflash, prsz->context_id, false);
 	if (!p_ctx_info) {
 		cflash_err("invalid context!");
 		rc = -EINVAL;
@@ -1166,9 +1166,9 @@ static int cflash_disk_clone(struct scsi_device *sdev,
 	}
 
 	p_ctx_info_src = get_validated_context(p_cflash, pclone->context_id_src,
-					       TRUE);
+					       true);
 	p_ctx_info_dst = get_validated_context(p_cflash, pclone->context_id_dst,
-					       FALSE);
+					       false);
 	if (!p_ctx_info_src || !p_ctx_info_dst) {
 		cflash_err("invalid context!");
 		rc = -EINVAL;

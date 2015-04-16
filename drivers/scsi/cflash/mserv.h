@@ -314,12 +314,4 @@ void periodic_hb(void);
 void periodic_fc(void);
 void *sig_rx(void *arg);
 
-#ifndef TRUE
-#define TRUE	1
-#endif
-
-#ifndef FALSE
-#define FALSE	0
-#endif
-
 #endif /* _MSERVE_H */

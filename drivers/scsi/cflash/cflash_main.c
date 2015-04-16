@@ -352,7 +352,7 @@ static int cflash_slave_configure(struct scsi_device *sdev)
 			goto out;
 		}
                 p_ctx_info = get_validated_context(p_cflash, p_afu->ctx_hndl, 
-						   FALSE);
+						   false);
 		p_ctx_info->p_rht_info = &p_afu->rht_info[p_afu->ctx_hndl];
 	        p_rht_entry  = cflash_rhte_cout(p_cflash, p_afu->ctx_hndl);
                 p_rht_info = p_ctx_info->p_rht_info;
@@ -626,7 +626,7 @@ static void cflash_remove(struct pci_dev *pdev)
 	flush_work(&p_cflash->work_q);
 
 
-	cflash_term_afu(p_cflash, FALSE);
+	cflash_term_afu(p_cflash, false);
 	cflash_dev_dbg(&pdev->dev, "after struct cflash_term_afu!");
 
 	if (p_cflash->cflash_regs)
@@ -1924,9 +1924,9 @@ int afu_reset(struct cflash *p_cflash)
 	cxl_release_context(p_cflash->p_mcctx);
 	p_cflash->p_mcctx = NULL;
 	*/
-	cflash_term_afu(p_cflash, TRUE);
+	cflash_term_afu(p_cflash, true);
 
-	rc = cflash_init_afu(p_cflash, TRUE);
+	rc = cflash_init_afu(p_cflash, true);
 
 out:
 	/* XXX: Need to restart/reattach all user contexts */
@@ -2182,7 +2182,7 @@ static int cflash_probe(struct pci_dev *pdev,
 	p_cflash->parent_dev = to_pci_dev(phys_dev);
 
 	p_cflash->afu = cxl_pci_to_afu(pdev, NULL);
-	rc = cflash_init_afu(p_cflash, FALSE);
+	rc = cflash_init_afu(p_cflash, false);
 	if (rc) {
 		cflash_dev_err(&pdev->dev,
 			       "call to cflash_init_afu failed rc=%d!", rc);
