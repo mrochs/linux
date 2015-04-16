@@ -3,7 +3,7 @@
 #
 
 config CFLASH
-	tristate "Support for CAPI Flash (Surelock)"
+	tristate "Support for IBM CAPI Flash"
 	depends on CXL
 	default m
 	help

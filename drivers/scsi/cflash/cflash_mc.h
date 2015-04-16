@@ -27,7 +27,7 @@ typedef unsigned int useconds_t;	/* time in microseconds */
 /* Types                                                                      */
 /*----------------------------------------------------------------------------*/
 
-#define MAX_CONTEXT  SURELOCK_MAX_CONTEXT       /* num contexts per afu */
+#define MAX_CONTEXT  CFLASH_MAX_CONTEXT       /* num contexts per afu */
 
 struct cflash_ctx {
 	struct cxl_ioctl_start_work work;

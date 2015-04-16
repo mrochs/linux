@@ -38,7 +38,7 @@
 #define MAX_CONNS (MAX_CONTEXT*2)	/* num client connections per AFU */
 #define MAX_CONN_TO_POLL 64	/* num fds to poll once */
 #define NUM_RRQ_ENTRY    16	/* for master issued cmds */
-#define NUM_FC_PORTS     SURELOCK_NUM_FC_PORTS	/* ports per AFU */
+#define NUM_FC_PORTS     CFLASH_NUM_FC_PORTS	/* ports per AFU */
 
 /* LXT tables are allocated dynamically in groups. This is done to
    avoid a malloc/free overhead each time the LXT has to grow
@@ -130,7 +130,7 @@ struct capikv_ini_elm;
 
 /* Block Alocator */
 struct blka {
-	struct ba_lun ba_lun;	/* single LUN for SureLock */
+	struct ba_lun ba_lun;
 	u64 nchunk;		/* number of chunks */
 	struct mutex mutex;
 };
@@ -223,7 +223,7 @@ struct afu {
 	/* AFU HW */
 	int afu_fd;
 	struct cxl_ioctl_start_work work;
-	volatile struct surelock_afu_map *p_afu_map;	/* entire MMIO map */
+	volatile struct cflash_afu_map *p_afu_map;	/* entire MMIO map */
 	volatile struct sisl_host_map *p_host_map;	/* master's sislite host map */
 	volatile struct sisl_ctrl_map *p_ctrl_map;	/* master's control map */
 
