@@ -382,26 +382,6 @@ static void cflash_slave_destroy(struct scsi_device *sdev)
 }
 
 /**
- * cflash_target_alloc - Setup the target's task set value
- * @starget:    struct scsi_target
- *
- * Set the target's task set value so that error handling works as
- * expected.
- *
- * Returns:
- *      0 on success / -ENXIO if device does not exist
- **/
-static int cflash_target_alloc(struct scsi_target *starget)
-{
-	int rc = 0;
-	struct Scsi_Host *shost = dev_to_shost(starget->dev.parent);
-	struct cflash *p_cflash = shost_priv(shost);
-
-	cflash_info("returning rc=%d ts%d", rc, p_cflash->task_set);
-	return 0;
-}
-
-/**
  * cflash_scan_finished - Check if the device scan is done.
  * @shost:      scsi host struct
  * @time:       current elapsed time
@@ -540,7 +520,6 @@ static struct scsi_host_template driver_template = {
 	.slave_alloc = cflash_slave_alloc,
 	.slave_configure = cflash_slave_configure,
 	.slave_destroy = cflash_slave_destroy,
-	.target_alloc = cflash_target_alloc,
 	.scan_finished = cflash_scan_finished,
 	.change_queue_depth = cflash_change_queue_depth,
 	.cmd_per_lun = 16,
