@@ -2173,8 +2173,8 @@ static int cflash_probe(struct pci_dev *pdev,
 	p_cflash->tmf_active = 0;
 	p_cflash->p_mcctx = NULL;
 	p_cflash->context_reset_active = 0;
-        init_waitqueue_head(&p_cflash->tmf_wait_q);
-        init_waitqueue_head(&p_cflash->eeh_wait_q);
+	init_waitqueue_head(&p_cflash->tmf_wait_q);
+	init_waitqueue_head(&p_cflash->eeh_wait_q);
 
 	INIT_WORK(&p_cflash->work_q, cflash_worker_thread);
 	p_cflash->lr_state = LINK_RESET_INVALID;
