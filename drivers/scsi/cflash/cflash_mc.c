@@ -1549,8 +1549,7 @@ int cflash_ioctl(struct scsi_device *sdev, int cmd, void __user * arg)
 		goto cflash_ioctl_exit;
 	}
 
-	if (unlikely(!do_ioctl))
-		BUG();
+	BUG_ON(!do_ioctl);
 
 	if (unlikely(copy_from_user(&buf, arg, size))) {
 		cflash_err("copy_from_user() fail! size=%lu cmd=%d (%s) arg=%p",
