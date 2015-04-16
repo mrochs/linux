@@ -27,6 +27,4 @@ void marshall_det_to_rele(struct dk_capi_detach *pdet,
 void marshall_clone_to_rele(struct dk_capi_clone *pclone,
 			    struct dk_capi_release *prel);
 
-void hexdump(void *data, long len, const char *hdr);
-
 #endif /* ifndef _CFLASHUTIL_H */

@@ -1291,12 +1291,6 @@ static irqreturn_t cflash_rrq_irq(int irq, void *data)
 		/* already stopped if timer fired */
 		del_timer(&p_cmd->timer);
 
-		/*
-		   hexdump ((void *)&p_cmd->rcb, sizeof(sisl_ioarcb_t), "rcb");
-		   hexdump ((void *)&p_cmd->sa, sizeof(sisl_ioasa_t), "sa");
-		   hexdump ((void *)p_cmd->rcb.data_ea, 64, "data");
-		 */
-
 		if (p_cmd->rcb.rsvd2) {
 			scp = (struct scsi_cmnd *)p_cmd->rcb.rsvd2;
 			if (p_cmd->sa.rc.afu_rc || p_cmd->sa.rc.scsi_rc ||

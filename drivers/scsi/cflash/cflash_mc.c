@@ -1364,7 +1364,6 @@ int find_lun(struct cflash *p_cflash, u32 port_sel)
 	}
 	/* report luns success  */
 	len = readl_be((u32 *)&p_cmd->buf[0]);
-	hexdump((void *)p_cmd->buf, len + 8, "report luns data");
 
 	p_u64 = (u64 *) & p_cmd->buf[8];	/* start of lun list */
 
