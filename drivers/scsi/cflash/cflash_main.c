@@ -1756,15 +1756,13 @@ void cflash_term_afu(struct cflash *p_cflash, bool reset)
 /* sets B_ERROR flag based on IOASA */
 int check_status(struct sisl_ioasa_s *p_ioasa)
 {
-	if (p_ioasa->ioasc == 0) {
+	if (p_ioasa->ioasc == 0)
 		return 0;
-	}
 
 	p_ioasa->host_use_b[0] |= B_ERROR;
 
-	if (!(p_ioasa->host_use_b[1]++ < MC_RETRY_CNT)) {
+	if (!(p_ioasa->host_use_b[1]++ < MC_RETRY_CNT))
 		return 0;
-	}
 
 	switch (p_ioasa->rc.afu_rc) {
 	case SISL_AFU_RC_NO_CHANNELS:
