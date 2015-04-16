@@ -337,8 +337,9 @@ static int cflash_slave_configure(struct scsi_device *sdev)
 		struct afu *p_afu = p_cflash->p_afu;
 
 
-		write_64(&p_afu->p_afu_map->global.fc_port[sdev->channel]
-				 [p_cflash->last_lun_index++], p_lun_info->lun_id);
+		writeq_be(p_lun_info->lun_id,
+			  &p_afu->p_afu_map->global.fc_port[sdev->channel]
+			  [p_cflash->last_lun_index++]);
 		//read_cap16(p_afu, p_lun_info, sdev->channel + 1);
 		cflash_info("LBA = %016llX", p_lun_info->max_lba);
 		cflash_info("BLK_LEN = %08X", p_lun_info->blk_len);
@@ -454,7 +455,7 @@ static ssize_t cflash_show_port_status(struct device *dev,
 
 	p_fc_regs = &p_afu->p_afu_map->global.fc_regs[port][0];
 	status =
-	    (read_64(&p_fc_regs[FC_MTIP_STATUS / 8]) & FC_MTIP_STATUS_MASK);
+	    (readq_be(&p_fc_regs[FC_MTIP_STATUS / 8]) & FC_MTIP_STATUS_MASK);
 
 	if (status == FC_MTIP_STATUS_ONLINE)
 		disp_status = "online";
@@ -864,20 +865,20 @@ void set_port_online(volatile u64 * p_fc_regs)
 {
 	u64 cmdcfg;
 
-	cmdcfg = read_64(&p_fc_regs[FC_MTIP_CMDCONFIG / 8]);
+	cmdcfg = readq_be(&p_fc_regs[FC_MTIP_CMDCONFIG / 8]);
 	cmdcfg &= (~FC_MTIP_CMDCONFIG_OFFLINE);	/* clear OFF_LINE */
 	cmdcfg |= (FC_MTIP_CMDCONFIG_ONLINE);	/* set ON_LINE */
-	write_64(&p_fc_regs[FC_MTIP_CMDCONFIG / 8], cmdcfg);
+	writeq_be(cmdcfg, &p_fc_regs[FC_MTIP_CMDCONFIG / 8]);
 }
 
 void set_port_offline(volatile u64 * p_fc_regs)
 {
 	u64 cmdcfg;
 
-	cmdcfg = read_64(&p_fc_regs[FC_MTIP_CMDCONFIG / 8]);
+	cmdcfg = readq_be(&p_fc_regs[FC_MTIP_CMDCONFIG / 8]);
 	cmdcfg &= (~FC_MTIP_CMDCONFIG_ONLINE);	/* clear ON_LINE */
 	cmdcfg |= (FC_MTIP_CMDCONFIG_OFFLINE);	/* set OFF_LINE */
-	write_64(&p_fc_regs[FC_MTIP_CMDCONFIG / 8], cmdcfg);
+	writeq_be(cmdcfg, &p_fc_regs[FC_MTIP_CMDCONFIG / 8]);
 }
 
 /* returns 1 - went online */
@@ -894,7 +895,7 @@ int wait_port_online(volatile u64 * p_fc_regs,
 
 	do {
 		msleep(delay_us / 1000);
-		status = read_64(&p_fc_regs[FC_MTIP_STATUS / 8]);
+		status = readq_be(&p_fc_regs[FC_MTIP_STATUS / 8]);
 	} while ((status & FC_MTIP_STATUS_MASK) != FC_MTIP_STATUS_ONLINE &&
 		 nretry--);
 
@@ -914,7 +915,7 @@ int wait_port_offline(volatile u64 * p_fc_regs,
 
 	do {
 		msleep(delay_us / 1000);
-		status = read_64(&p_fc_regs[FC_MTIP_STATUS / 8]);
+		status = readq_be(&p_fc_regs[FC_MTIP_STATUS / 8]);
 	} while ((status & FC_MTIP_STATUS_MASK) != FC_MTIP_STATUS_OFFLINE &&
 		 nretry--);
 
@@ -936,7 +937,7 @@ int afu_set_wwpn(struct afu *p_afu, int port, volatile u64 * p_fc_regs,
 	}
 
 	if (ret == 0) {
-		write_64(&p_fc_regs[FC_PNAME / 8], wwpn);
+		writeq_be(wwpn, &p_fc_regs[FC_PNAME / 8]);
 	}
 
 	set_port_online(p_fc_regs);
@@ -968,9 +969,9 @@ void afu_link_reset(struct afu *p_afu, int port, volatile __u64 *p_fc_regs)
 	__u64 port_sel;
 	// first switch the AFU to the other links, if any 
 
-	port_sel = read_64(&p_afu->p_afu_map->global.regs.afu_port_sel);
+	port_sel = readq_be(&p_afu->p_afu_map->global.regs.afu_port_sel);
 	port_sel &= ~(1 << port);
-	write_64(&p_afu->p_afu_map->global.regs.afu_port_sel, port_sel);
+	writeq_be(port_sel, &p_afu->p_afu_map->global.regs.afu_port_sel);
 	afu_sync(p_afu, 0, 0, AFU_GSYNC);
 
 	set_port_offline(p_fc_regs);
@@ -987,7 +988,7 @@ void afu_link_reset(struct afu *p_afu, int port, volatile __u64 *p_fc_regs)
 
 	// switch back to include this port 
 	port_sel |= (1 << port);
-	write_64(&p_afu->p_afu_map->global.regs.afu_port_sel, port_sel);
+	writeq_be(port_sel, &p_afu->p_afu_map->global.regs.afu_port_sel);
 	afu_sync(p_afu, 0, 0, AFU_GSYNC);
 
 }
@@ -1069,37 +1070,37 @@ void afu_err_intr_init(struct afu *p_afu)
 	 */
 
 	/* mask all */
-	write_64(&p_afu->p_afu_map->global.regs.aintr_mask, -1ull);
+	writeq_be(-1ULL, &p_afu->p_afu_map->global.regs.aintr_mask);
 	/* set LISN# to send and point to master context */
 	reg = ((u64)(((p_afu->ctx_hndl << 8) | SISL_MSI_ASYNC_ERROR)) << 40);
 
 	if (internal_lun)
 		reg |= 1; /* Bit 63 indicates local lun */
-	write_64(&p_afu->p_afu_map->global.regs.afu_ctrl, reg);
+	writeq_be(reg, &p_afu->p_afu_map->global.regs.afu_ctrl);
 	/* clear all */
-	write_64(&p_afu->p_afu_map->global.regs.aintr_clear, -1ull);
+	writeq_be(-1ULL, &p_afu->p_afu_map->global.regs.aintr_clear);
 	/* unmask bits that are of interest */
 	/* note: afu can send an interrupt after this step */
-	write_64(&p_afu->p_afu_map->global.regs.aintr_mask, SISL_ASTATUS_MASK);
+	writeq_be(SISL_ASTATUS_MASK, &p_afu->p_afu_map->global.regs.aintr_mask);
 	/* clear again in case a bit came on after previous clear but before */
 	/* unmask */
-	write_64(&p_afu->p_afu_map->global.regs.aintr_clear, -1ull);
+	writeq_be(-1ULL, &p_afu->p_afu_map->global.regs.aintr_clear);
 
 	/* Clear/Set internal lun bits */
-	reg = read_64(&p_afu->p_afu_map->global.fc_regs[0][FC_CONFIG2 / 8]);
+	reg = readq_be(&p_afu->p_afu_map->global.fc_regs[0][FC_CONFIG2 / 8]);
 	cflash_info("ilun p0 = %016llX", reg);
 	reg &= ~(0x3ULL << 32);
 	if (internal_lun)
 		reg |= ((u64)(internal_lun - 1) << 32);
 	cflash_info("ilun p0 = %016llX", reg);
-	write_64(&p_afu->p_afu_map->global.fc_regs[0][FC_CONFIG2 / 8], reg);
+	writeq_be(reg, &p_afu->p_afu_map->global.fc_regs[0][FC_CONFIG2 / 8]);
 
 	/* now clear FC errors */
 	for (i = 0; i < NUM_FC_PORTS; i++) {
-		write_64(&p_afu->p_afu_map->global.fc_regs[i][FC_ERROR / 8],
-			 (u32) - 1);
-		write_64(&p_afu->p_afu_map->global.fc_regs[i][FC_ERRCAP / 8],
-			 0);
+		writeq_be(((u32) - 1),
+			  &p_afu->p_afu_map->global.fc_regs[i][FC_ERROR / 8]);
+		writeq_be(0,
+			  &p_afu->p_afu_map->global.fc_regs[i][FC_ERRCAP / 8]);
 	}
 
 	/* sync interrupts for master's IOARRIN write */
@@ -1108,8 +1109,8 @@ void afu_err_intr_init(struct afu *p_afu)
 	/* IOARRIN yet), so there is nothing to clear. */
 
 	/* set LISN#, it is always sent to the context that wrote IOARRIN */
-	write_64(&p_afu->p_host_map->ctx_ctrl, SISL_MSI_SYNC_ERROR);
-	write_64(&p_afu->p_host_map->intr_mask, SISL_ISTATUS_MASK);
+	writeq_be(SISL_MSI_SYNC_ERROR, &p_afu->p_host_map->ctx_ctrl);
+	writeq_be(SISL_ISTATUS_MASK, &p_afu->p_host_map->intr_mask);
 }
 
 static irqreturn_t cflash_dummy_irq_handler(int irq, void *data)
@@ -1125,7 +1126,7 @@ static irqreturn_t cflash_sync_err_irq(int irq, void *data)
 	u64 reg;
 	u64 reg_unmasked;
 
-	reg = read_64(&p_afu->p_host_map->intr_status);
+	reg = readq_be(&p_afu->p_host_map->intr_status);
 	reg_unmasked = (reg & SISL_ISTATUS_UNMASK);
 
 	if (reg_unmasked == 0UL) {
@@ -1137,7 +1138,7 @@ static irqreturn_t cflash_sync_err_irq(int irq, void *data)
 	cflash_err("%llX: unexpected interrupt, intr_status %016llX",
 		   (u64) p_afu, reg);
 
-	write_64(&p_afu->p_host_map->intr_clear, reg_unmasked);
+	writeq_be(reg_unmasked, &p_afu->p_host_map->intr_clear);
 
 cflash_sync_err_irq_exit:
 	cflash_info("returning rc=%d", IRQ_HANDLED);
@@ -1229,7 +1230,7 @@ static irqreturn_t cflash_async_err_irq(int irq, void *data)
 
 	p_cflash = p_afu->p_back;
 
-	reg = read_64(&p_global->regs.aintr_status);
+	reg = readq_be(&p_global->regs.aintr_status);
 	reg_unmasked = (reg & SISL_ASTATUS_UNMASK);
 
 	if (reg_unmasked == 0) {
@@ -1238,7 +1239,7 @@ static irqreturn_t cflash_async_err_irq(int irq, void *data)
 	}
 
 	/* it is OK to clear AFU status before FC_ERROR */
-	write_64(&p_global->regs.aintr_clear, reg_unmasked);
+	writeq_be(reg_unmasked, &p_global->regs.aintr_clear);
 
 	/* check each bit that is on */
 	for (i = 0; reg_unmasked; i++, reg_unmasked = (reg_unmasked >> 1)) {
@@ -1248,7 +1249,7 @@ static irqreturn_t cflash_async_err_irq(int irq, void *data)
 		}
 
 		cflash_err("%s, fc_status 0x%08llx", p_info->desc,
-			   read_64(&p_global->fc_regs
+			   readq_be(&p_global->fc_regs
 				   [p_info->port][FC_STATUS/8]));
 
 		// do link reset first, some OTHER errors will set FC_ERROR 
@@ -1262,7 +1263,7 @@ static irqreturn_t cflash_async_err_irq(int irq, void *data)
 		}
 
 		if (p_info->action & CLR_FC_ERROR) {
-			reg = read_64(&p_global->fc_regs[p_info->port]
+			reg = readq_be(&p_global->fc_regs[p_info->port]
 				      [FC_ERROR/8]);
 
 			// since all errors are unmasked, FC_ERROR and FC_ERRCAP
@@ -1271,10 +1272,10 @@ static irqreturn_t cflash_async_err_irq(int irq, void *data)
 			cflash_err("fc %d: clearing fc_error 0x%08llx",
 				   p_info->port, reg);
 
-			write_64(&p_global->fc_regs[p_info->port][FC_ERROR/8],
-				 reg);
-			write_64(&p_global->fc_regs[p_info->port][FC_ERRCAP/8],
-				 0);
+			writeq_be(reg,
+				  &p_global->fc_regs[p_info->port][FC_ERROR/8]);
+			writeq_be(0,
+				 &p_global->fc_regs[p_info->port][FC_ERRCAP/8]);
 		}
 	}
 
@@ -1407,15 +1408,15 @@ void cflash_context_reset(struct afu *p_afu)
 
 	if (p_afu->room == 0) {
 		do {
-			p_afu->room = read_64(&p_afu->p_host_map->cmd_room);
+			p_afu->room = readq_be(&p_afu->p_host_map->cmd_room);
 			udelay(nretry);
 		} while ((p_afu->room == 0) && (nretry++ < MC_ROOM_RETRY_CNT));
 	}
 
 	if (p_afu->room) {
-		write_64(&p_afu->p_host_map->ioarrin, (u64) rrin);
+		writeq_be((u64)rrin, &p_afu->p_host_map->ioarrin);
 		do {
-			rrin = read_64(&p_afu->p_host_map->ioarrin);
+			rrin = readq_be(&p_afu->p_host_map->ioarrin);
 			/* Double delay each time */
 			udelay(2^nretry);
 		} while ((rrin == 0x1) && (nretry++ < MC_ROOM_RETRY_CNT));
@@ -1442,9 +1443,9 @@ void init_pcr(struct cflash *p_cflash)
 		    &p_afu->p_afu_map->ctrls[i].ctrl;
 		/* disrupt any clients that could be running */
 		/* e. g. clients that survived a master restart */
-		write_64(&p_afu->ctx_info[i].p_ctrl_map->rht_start, 0);
-		write_64(&p_afu->ctx_info[i].p_ctrl_map->rht_cnt_id, 0);
-		write_64(&p_afu->ctx_info[i].p_ctrl_map->ctx_cap, 0);
+		writeq_be(0, &p_afu->ctx_info[i].p_ctrl_map->rht_start);
+		writeq_be(0, &p_afu->ctx_info[i].p_ctrl_map->rht_cnt_id);
+		writeq_be(0, &p_afu->ctx_info[i].p_ctrl_map->ctx_cap);
 	}
 
 	/* copy frequently used fields into p_afu */
@@ -1485,34 +1486,35 @@ int init_global(struct cflash *p_cflash)
 	cflash_info("wwpn0=0x%llx wwpn1=0x%llx", wwpn[0], wwpn[1]);
 
 	/* set up RRQ in AFU for master issued cmds */
-	write_64(&p_afu->p_host_map->rrq_start, (u64) p_afu->p_hrrq_start);
-	write_64(&p_afu->p_host_map->rrq_end, (u64) p_afu->p_hrrq_end);
+	writeq_be((u64)p_afu->p_hrrq_start, &p_afu->p_host_map->rrq_start);
+	writeq_be((u64)p_afu->p_hrrq_end, &p_afu->p_host_map->rrq_end);
 
 	/* AFU configuration */
-	reg = read_64(&p_afu->p_afu_map->global.regs.afu_config);
+	reg = readq_be(&p_afu->p_afu_map->global.regs.afu_config);
 	reg |= 0x7F20; /* enable all auto retry options and LE */
 	/* leave others at default: */
 	/* CTX_CAP write protected, mbox_r does not clear on read and */
 	/* checker on if dual afu */
-	write_64(&p_afu->p_afu_map->global.regs.afu_config, reg);
+	writeq_be(reg, &p_afu->p_afu_map->global.regs.afu_config);
 
 	/* global port select: select either port */
 #if 0   /* XXX - check with Andy/Todd b/c this doesn't work */
 	if (internal_lun)
-		write_64(&p_afu->p_afu_map->global.regs.afu_port_sel, 0x1);
+		writeq_be(0x1, &p_afu->p_afu_map->global.regs.afu_port_sel);
 	else
 #endif
-		write_64(&p_afu->p_afu_map->global.regs.afu_port_sel, 0x3);
+		writeq_be(0x3, &p_afu->p_afu_map->global.regs.afu_port_sel);
 
 	for (i = 0; i < NUM_FC_PORTS; i++) {
 		/* unmask all errors (but they are still masked at AFU) */
-		write_64(&p_afu->p_afu_map->global.fc_regs[i][FC_ERRMSK / 8],
-			 0);
+		writeq_be(0,
+			  &p_afu->p_afu_map->global.fc_regs[i][FC_ERRMSK / 8]);
 		/* clear CRC error cnt & set a threshold */
-		(void)read_64(&p_afu->p_afu_map->
+		(void)readq_be(&p_afu->p_afu_map->
 			      global.fc_regs[i][FC_CNT_CRCERR / 8]);
-		write_64(&p_afu->p_afu_map->global.fc_regs[i]
-			 [FC_CRC_THRESH / 8], MC_CRC_THRESH);
+		writeq_be(MC_CRC_THRESH,
+			  &p_afu->p_afu_map->global.fc_regs[i]
+			  [FC_CRC_THRESH / 8]);
 
 		/* set WWPNs. If already programmed, wwpn[i] is 0 */
 		if (wwpn[i] != 0 &&
@@ -1529,13 +1531,13 @@ int init_global(struct cflash *p_cflash)
 	/* set up master's own CTX_CAP to allow real mode, host translation */
 	/* tbls, afu cmds and read/write GSCSI cmds. */
 	/* First, unlock ctx_cap write by reading mbox */
-	(void)read_64(&p_afu->p_ctrl_map->mbox_r);	/* unlock ctx_cap */
-	write_64(&p_afu->p_ctrl_map->ctx_cap,
-		 SISL_CTX_CAP_REAL_MODE | SISL_CTX_CAP_HOST_XLATE |
-		 SISL_CTX_CAP_READ_CMD | SISL_CTX_CAP_WRITE_CMD |
-		 SISL_CTX_CAP_AFU_CMD | SISL_CTX_CAP_GSCSI_CMD);
+	(void)readq_be(&p_afu->p_ctrl_map->mbox_r);	/* unlock ctx_cap */
+	writeq_be((SISL_CTX_CAP_REAL_MODE | SISL_CTX_CAP_HOST_XLATE |
+		  SISL_CTX_CAP_READ_CMD | SISL_CTX_CAP_WRITE_CMD |
+		  SISL_CTX_CAP_AFU_CMD | SISL_CTX_CAP_GSCSI_CMD),
+		  &p_afu->p_ctrl_map->ctx_cap);
 	/* init heartbeat */
-	p_afu->hb = read_64(&p_afu->p_afu_map->global.regs.afu_hb);
+	p_afu->hb = readq_be(&p_afu->p_afu_map->global.regs.afu_hb);
 
 out:
 	return rc;
@@ -1759,7 +1761,7 @@ int cflash_init_afu(struct cflash *p_cflash, bool reset)
 	/*     will be backwards */
 	reg = p_afu->p_afu_map->global.regs.afu_version;
 	memcpy(p_afu->version, &reg, 8);
-	p_afu->interface_version = read_64(&p_afu->p_afu_map->
+	p_afu->interface_version = readq_be(&p_afu->p_afu_map->
 					   global.regs.interface_version);
 	cflash_info("afu version %s, interface version 0x%llx",
 		    p_afu->version, p_afu->interface_version);
@@ -1845,7 +1847,7 @@ void cflash_send_cmd(struct afu *p_afu, struct afu_cmd *p_cmd)
 
 	if (p_afu->room == 0) {
 		do {
-			p_afu->room = read_64(&p_afu->p_host_map->cmd_room);
+			p_afu->room = readq_be(&p_afu->p_host_map->cmd_room);
 			udelay(nretry);
 		} while ((p_afu->room == 0) && (nretry++ < MC_ROOM_RETRY_CNT));
 	}
@@ -1860,7 +1862,7 @@ void cflash_send_cmd(struct afu *p_afu, struct afu_cmd *p_cmd)
 
 	/* Write IOARRIN */
 	if (p_afu->room)
-		write_64(&p_afu->p_host_map->ioarrin, (u64) & p_cmd->rcb);
+		writeq_be((u64)&p_cmd->rcb, &p_afu->p_host_map->ioarrin);
 	else
 		cflash_err("no cmd_room to send 0x%X", p_cmd->rcb.cdb[0]);
 
@@ -1937,9 +1939,9 @@ int afu_sync(struct afu *p_afu,
 	p_cmd->rcb.cdb[0] = 0xC0;	/* AFU Sync */
 	p_cmd->rcb.cdb[1] = mode;
 	p_u16 = (u16 *) & p_cmd->rcb.cdb[2];
-	write_16(p_u16, ctx_hndl_u);	/* context to sync up */
+	writew_be(ctx_hndl_u, p_u16);	/* context to sync up */
 	p_u32 = (u32 *) & p_cmd->rcb.cdb[4];
-	write_32(p_u32, res_hndl_u);	/* res_hndl to sync up */
+	writel_be(res_hndl_u, p_u32);	/* res_hndl to sync up */
 
 	cflash_send_cmd(p_afu, p_cmd);
 	cflash_wait_resp(p_afu, p_cmd);

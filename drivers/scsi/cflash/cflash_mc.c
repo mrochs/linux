@@ -73,11 +73,11 @@ int cflash_afu_attach(struct cflash *p_cflash, u64 context_id)
 	 * mode. User has option to choose read and/or write
 	 * permissions again in mc_open.
 	 */
-	(void)read_64(&p_ctx_info->p_ctrl_map->mbox_r); /* unlock ctx_cap */
-	write_64(&p_ctx_info->p_ctrl_map->ctx_cap,
-		 SISL_CTX_CAP_READ_CMD | SISL_CTX_CAP_WRITE_CMD);
+	(void)readq_be(&p_ctx_info->p_ctrl_map->mbox_r); /* unlock ctx_cap */
+	writeq_be((SISL_CTX_CAP_READ_CMD | SISL_CTX_CAP_WRITE_CMD),
+		  &p_ctx_info->p_ctrl_map->ctx_cap);
 
-	reg = read_64(&p_ctx_info->p_ctrl_map->ctx_cap);
+	reg = readq_be(&p_ctx_info->p_ctrl_map->ctx_cap);
 
 	/* if the write failed, the ctx must have been
 	 * closed since the mbox read and the ctx_cap
@@ -100,11 +100,11 @@ int cflash_afu_attach(struct cflash *p_cflash, u64 context_id)
 	asm volatile ("lwsync"::);
 
 	/* set up MMIO registers pointing to the RHT */
-	write_64(&p_ctx_info->p_ctrl_map->rht_start,
-		 (u64) p_ctx_info->p_rht_info->rht_start);
-	write_64(&p_ctx_info->p_ctrl_map->rht_cnt_id,
-		 SISL_RHT_CNT_ID((u64) MAX_RHT_PER_CONTEXT,
-				 (u64) (p_afu->ctx_hndl)));
+	writeq_be((u64)p_ctx_info->p_rht_info->rht_start,
+		  &p_ctx_info->p_ctrl_map->rht_start);
+	writeq_be(SISL_RHT_CNT_ID((u64)MAX_RHT_PER_CONTEXT,
+				  (u64)(p_afu->ctx_hndl)),
+		  &p_ctx_info->p_ctrl_map->rht_cnt_id);
 	p_ctx_info->ref_cnt = 1;
 out:
 	cflash_info("returning rc=%d", rc);
@@ -735,10 +735,10 @@ static int cflash_disk_detach(struct scsi_device *sdev,
 		}
 
 		/* clear RHT registers for this context */
-		write_64(&p_ctx_info->p_ctrl_map->rht_start, 0);
-		write_64(&p_ctx_info->p_ctrl_map->rht_cnt_id, 0);
+		writeq_be(0, &p_ctx_info->p_ctrl_map->rht_start);
+		writeq_be(0, &p_ctx_info->p_ctrl_map->rht_cnt_id);
 		/* drop all capabilities */
-		write_64(&p_ctx_info->p_ctrl_map->ctx_cap, 0);
+		writeq_be(0, &p_ctx_info->p_ctrl_map->ctx_cap);
 	}
 	spin_lock(p_lun_info->slock);
 	p_lun_info->mode = MODE_NONE;
@@ -1020,7 +1020,7 @@ static int cflash_afu_recover(struct scsi_device *sdev,
 	long reg;
 	int rc = 0;
 
-	reg = read_64(&p_afu->p_ctrl_map->mbox_r);	/* Try MMIO */
+	reg = readq_be(&p_afu->p_ctrl_map->mbox_r);	/* Try MMIO */
 
 	/* MMIO returning 0xff, need to reset */
 	if (reg == -1) {
@@ -1283,7 +1283,7 @@ int read_cap16(struct afu *p_afu, struct lun_info *p_lun_info, u32 port_sel)
 	p_cmd->rcb.cdb[0] = 0x9E;	/* read cap(16) */
 	p_cmd->rcb.cdb[1] = 0x10;	/* service action */
 	p_u32 = (u32 *) & p_cmd->rcb.cdb[10];
-	write_32(p_u32, CMD_BUFSIZE);
+	writel_be(CMD_BUFSIZE, p_u32);
 	p_cmd->sa.host_use_b[1] = 0;	/* reset retry cnt */
 
 	cflash_info("sending cmd(0x%x) with RCB EA=%p data EA=0x%llx",
@@ -1303,10 +1303,10 @@ int read_cap16(struct afu *p_afu, struct lun_info *p_lun_info, u32 port_sel)
 	/* read cap success  */
 	spin_lock(p_lun_info->slock);
 	p_u64 = (u64 *) & p_cmd->buf[0];
-	p_lun_info->max_lba = read_64(p_u64);
+	p_lun_info->max_lba = readq_be(p_u64);
 
 	p_u32 = (u32 *) & p_cmd->buf[8];
-	p_lun_info->blk_len = read_32(p_u32);
+	p_lun_info->blk_len = readl_be(p_u32);
 	spin_unlock(p_lun_info->slock);
 
 out:
@@ -1352,7 +1352,7 @@ int find_lun(struct cflash *p_cflash, u32 port_sel)
 
 	p_cmd->rcb.cdb[0] = 0xA0;	/* report luns */
 	p_u32 = (u32 *) & p_cmd->rcb.cdb[6];
-	write_32(p_u32, CMD_BUFSIZE);	/* allocation length */
+	writel_be(CMD_BUFSIZE, p_u32);	/* allocation length */
 	p_cmd->sa.host_use_b[1] = 0;	/* reset retry cnt */
 
 	cflash_info("sending cmd(0x%x) with RCB EA=%p data EA=0x%p",
@@ -1368,7 +1368,7 @@ int find_lun(struct cflash *p_cflash, u32 port_sel)
 		return -1;
 	}
 	/* report luns success  */
-	len = read_32((u32 *) & p_cmd->buf[0]);
+	len = readl_be((u32 *)&p_cmd->buf[0]);
 	hexdump((void *)p_cmd->buf, len + 8, "report luns data");
 
 	p_u64 = (u64 *) & p_cmd->buf[8];	/* start of lun list */
@@ -1376,7 +1376,7 @@ int find_lun(struct cflash *p_cflash, u32 port_sel)
 	p_currid = lunidarray = kzalloc(len, GFP_KERNEL);
 
 	while (len) {
-		*p_currid = read_64(p_u64);
+		*p_currid = readq_be(p_u64);
 		len -= 8;
 		p_u64++;
 		i++;
@@ -1406,8 +1406,9 @@ int find_lun(struct cflash *p_cflash, u32 port_sel)
 		p_lun_info->lun_index = p_cflash->last_lun_index;
 
 		/* program FC_PORT LUN Tbl */
-		write_64(&p_afu->p_afu_map->global.fc_port[port_sel - 1]
-			 [p_cflash->last_lun_index], *p_currid);
+		writeq_be(*p_currid,
+			  &p_afu->p_afu_map->global.fc_port[port_sel - 1]
+			  [p_cflash->last_lun_index]);
 
 		read_cap16(p_afu, p_lun_info, port_sel);
 

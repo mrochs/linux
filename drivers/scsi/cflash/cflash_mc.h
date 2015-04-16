@@ -78,14 +78,6 @@ struct cflash {
 	u8 tmf_active:1;
 };
 
-/* The should be used to do byte reversed MMIO */
-#define read_16(addr)		readw_be(addr)
-#define read_32(addr)		readl_be(addr)
-#define read_64(addr)		readq_be(addr)
-#define write_16(addr, val)	writew_be(val, addr)
-#define write_32(addr, val)	writel_be(val, addr)
-#define write_64(addr, val)	writeq_be(val, addr)
-
 static inline u64 lun_to_lunid(u64 lun)
 {
 	u64 lun_id;
