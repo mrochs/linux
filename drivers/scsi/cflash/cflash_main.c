@@ -270,15 +270,6 @@ static int cflash_queuecommand(struct Scsi_Host *host,
 	struct afu *p_afu = p_cflash->afu;
 	int rc = 0;
 
-	switch (scp->cmnd[0]) {
-	case REPORT_LUNS:
-		cflash_dbg("REPORT_LUNS received!!!");
-		break;
-	case INQUIRY:
-		cflash_dbg("INQUIRY received!!!");
-		break;
-	}
-
 	if (!fullqc) {
 		scp->scsi_done(scp);
 	} else {
