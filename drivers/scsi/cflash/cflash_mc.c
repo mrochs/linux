@@ -168,8 +168,7 @@ int cflash_cxl_release(struct inode *inode, struct file *file)
 					       cxl_fops);
 	int context_id = cxl_process_element(ctx);
 
-	if (context_id < 0)
-	{
+	if (context_id < 0) {
 		cflash_err("context %d closed", context_id);
 		return 0;
 	} else {
@@ -224,18 +223,19 @@ static int cflash_disk_attach(struct scsi_device *sdev,
 	int fd = -1;
 
 	if (fullqc) {
-	if (p_lun_info->max_lba == 0) {
-		cflash_info("No capacity info yet for this LUN (%016llX)",
-			    p_lun_info->lun_id);
-		read_cap16(p_afu, p_lun_info, sdev->channel + 1);
-		cflash_info("LBA = %016llX", p_lun_info->max_lba);
-		cflash_info("BLK_LEN = %08X", p_lun_info->blk_len);
-		rc = cflash_init_ba(p_lun_info);
-		if (rc) {
-			cflash_err("call to cflash_init_ba failed rc=%d!", rc);
-			rc = -ENOMEM;
-			goto out;
-		}
+		if (p_lun_info->max_lba == 0) {
+			cflash_info("No capacity info yet for this LUN "
+				    "(%016llX)", p_lun_info->lun_id);
+			read_cap16(p_afu, p_lun_info, sdev->channel + 1);
+			cflash_info("LBA = %016llX", p_lun_info->max_lba);
+			cflash_info("BLK_LEN = %08X", p_lun_info->blk_len);
+			rc = cflash_init_ba(p_lun_info);
+			if (rc) {
+				cflash_err("call to cflash_init_ba failed "
+					   "rc=%d!", rc);
+				rc = -ENOMEM;
+				goto out;
+			}
 		}
 	}
 
