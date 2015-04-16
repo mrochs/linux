@@ -620,7 +620,7 @@ static void cflash_free_mem(struct cflash *p_cflash)
 					   get_order(CMD_BUFSIZE));
 		}
 
-		nbytes = sizeof(struct afu) * CFLASH_NAFU;
+		nbytes = sizeof(struct afu);
 		free_pages((unsigned long)p_cflash->p_afu, get_order(nbytes));
 		p_cflash->p_afu = NULL;
 	}
@@ -695,7 +695,7 @@ static int cflash_gb_alloc(struct cflash *p_cflash)
 	int i;
 	char *buf = NULL;
 
-	nbytes = sizeof(struct afu) * CFLASH_NAFU;
+	nbytes = sizeof(struct afu);
 	p_cflash->p_afu = (void *)__get_free_pages(GFP_KERNEL | __GFP_ZERO,
 						   get_order(nbytes));
 	if (!p_cflash->p_afu) {

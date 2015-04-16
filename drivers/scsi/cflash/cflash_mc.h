@@ -17,11 +17,6 @@
 
 typedef unsigned int useconds_t;	/* time in microseconds */
 
-/* Max pathlen - e.g. for AFU device path */
-#define MC_PATHLEN       64
-
-#define CFLASH_NAFU      2
-
 /*----------------------------------------------------------------------------*/
 /* Constants                                                                  */
 /*----------------------------------------------------------------------------*/
