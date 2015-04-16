@@ -64,7 +64,7 @@ static int cflash_afu_recover(struct scsi_device *,
 
 int cflash_afu_attach(struct cflash *p_cflash, u64 context_id)
 {
-	struct afu *p_afu = p_cflash->p_afu;
+	struct afu *p_afu = p_cflash->afu;
 	struct ctx_info *p_ctx_info = &p_afu->ctx_info[context_id];
 	int rc = 0;
 	u64 reg;
@@ -73,11 +73,11 @@ int cflash_afu_attach(struct cflash *p_cflash, u64 context_id)
 	 * mode. User has option to choose read and/or write
 	 * permissions again in mc_open.
 	 */
-	(void)readq_be(&p_ctx_info->p_ctrl_map->mbox_r); /* unlock ctx_cap */
+	(void)readq_be(&p_ctx_info->ctrl_map->mbox_r); /* unlock ctx_cap */
 	writeq_be((SISL_CTX_CAP_READ_CMD | SISL_CTX_CAP_WRITE_CMD),
-		  &p_ctx_info->p_ctrl_map->ctx_cap);
+		  &p_ctx_info->ctrl_map->ctx_cap);
 
-	reg = readq_be(&p_ctx_info->p_ctrl_map->ctx_cap);
+	reg = readq_be(&p_ctx_info->ctrl_map->ctx_cap);
 
 	/* if the write failed, the ctx must have been
 	 * closed since the mbox read and the ctx_cap
@@ -90,9 +90,9 @@ int cflash_afu_attach(struct cflash *p_cflash, u64 context_id)
 	}
 
 	/* the context gets a dedicated RHT tbl */
-	p_ctx_info->p_rht_info = &p_afu->rht_info[context_id];
-	p_ctx_info->p_rht_info->ref_cnt = 1;
-	memset(p_ctx_info->p_rht_info->rht_start, 0,
+	p_ctx_info->rht_info = &p_afu->rht_info[context_id];
+	p_ctx_info->rht_info->ref_cnt = 1;
+	memset(p_ctx_info->rht_info->rht_start, 0,
 	       sizeof(struct sisl_rht_entry) * MAX_RHT_PER_CONTEXT);
 	/* make clearing of the RHT visible to AFU before
 	 * MMIO
@@ -100,11 +100,11 @@ int cflash_afu_attach(struct cflash *p_cflash, u64 context_id)
 	smp_wmb();
 
 	/* set up MMIO registers pointing to the RHT */
-	writeq_be((u64)p_ctx_info->p_rht_info->rht_start,
-		  &p_ctx_info->p_ctrl_map->rht_start);
+	writeq_be((u64)p_ctx_info->rht_info->rht_start,
+		  &p_ctx_info->ctrl_map->rht_start);
 	writeq_be(SISL_RHT_CNT_ID((u64)MAX_RHT_PER_CONTEXT,
 				  (u64)(p_afu->ctx_hndl)),
-		  &p_ctx_info->p_ctrl_map->rht_cnt_id);
+		  &p_ctx_info->ctrl_map->rht_cnt_id);
 	p_ctx_info->ref_cnt = 1;
 out:
 	cflash_info("returning rc=%d", rc);
@@ -211,7 +211,7 @@ static int cflash_disk_attach(struct scsi_device *sdev,
 			      struct dk_capi_attach *patt)
 {
 	struct cflash *p_cflash = (struct cflash *)sdev->host->hostdata;
-	struct afu *p_afu = p_cflash->p_afu;
+	struct afu *p_afu = p_cflash->afu;
 	struct lun_info *p_lun_info = sdev->hostdata;
 	struct cxl_ioctl_start_work *p_work;
 	int rc = 0;
@@ -239,7 +239,7 @@ static int cflash_disk_attach(struct scsi_device *sdev,
 		}
 	}
 
-	ctx = cxl_dev_context_init(p_cflash->p_dev);
+	ctx = cxl_dev_context_init(p_cflash->dev);
 	if (!ctx) {
 		cflash_err("Could not initialize context");
 		rc = -ENODEV;
@@ -304,12 +304,12 @@ static int cflash_disk_attach(struct scsi_device *sdev,
 
 	/* Translate read/write O_* flags from fnctl.h to AFU permission bits */
 	perms = ((patt->flags + 1) & 0x3);
-	p_afu->ctx_info[context_id].p_rht_info->perms = perms;
+	p_afu->ctx_info[context_id].rht_info->perms = perms;
 
 	patt->return_flags = 0;
 	patt->context_id = context_id;
 	patt->block_size = p_lun_info->blk_len;
-	patt->mmio_size = sizeof(p_afu->p_afu_map->hosts[0].harea);
+	patt->mmio_size = sizeof(p_afu->afu_map->hosts[0].harea);
 	patt->last_lba = p_lun_info->max_lba;
 	patt->max_xfer = sdev->host->max_sectors;
 
@@ -324,7 +324,7 @@ out:
 struct ctx_info *
 get_validated_context(struct cflash *p_cflash, u64 ctxid, bool clone_path)
 {
-	struct afu *p_afu = p_cflash->p_afu;
+	struct afu *p_afu = p_cflash->afu;
 	struct ctx_info *p_ctx_info = NULL;
 	bool mc_override = ctxid == p_afu->ctx_hndl;
 	pid_t pid = current->pid,
@@ -362,7 +362,7 @@ struct sisl_rht_entry *cflash_rhte_cout(struct cflash *p_cflash,
 
 	p_ctx_info = get_validated_context(p_cflash, context_id, false);
 	if (p_ctx_info != NULL) {
-		p_rht_info = p_ctx_info->p_rht_info;
+		p_rht_info = p_ctx_info->rht_info;
 
 		cflash_info("ctx 0x%llx ctxinfo %p rhtinfo %p",
 			    context_id, p_ctx_info, p_rht_info);
@@ -462,7 +462,7 @@ static int cflash_disk_open(struct scsi_device *sdev, void *arg,
 			    enum open_mode_type mode)
 {
 	struct cflash *p_cflash = (struct cflash *)sdev->host->hostdata;
-	struct afu *p_afu = p_cflash->p_afu;
+	struct afu *p_afu = p_cflash->afu;
 	struct lun_info *p_lun_info = sdev->hostdata;
 
 	struct dk_capi_uvirtual *pvirt = (struct dk_capi_uvirtual *)arg;
@@ -521,7 +521,7 @@ static int cflash_disk_open(struct scsi_device *sdev, void *arg,
 	} else {
 		p_ctx_info = get_validated_context(p_cflash, context_id, false);
 		if (p_ctx_info) {
-			p_rht_info = p_ctx_info->p_rht_info;
+			p_rht_info = p_ctx_info->rht_info;
 		} else {
 			cflash_err("in %s context not valid\n", __func__);
 			rc = -EINVAL;
@@ -595,7 +595,7 @@ static int cflash_disk_release(struct scsi_device *sdev,
 {
 	struct cflash *p_cflash = (struct cflash *)sdev->host->hostdata;
 	struct lun_info *p_lun_info = sdev->hostdata;
-	struct afu *p_afu = p_cflash->p_afu;
+	struct afu *p_afu = p_cflash->afu;
 
 	struct dk_capi_resize size;
 	res_hndl_t res_hndl = prele->rsrc_handle;
@@ -616,7 +616,7 @@ static int cflash_disk_release(struct scsi_device *sdev,
 		goto out;
 	}
 
-	p_rht_info = p_ctx_info->p_rht_info;
+	p_rht_info = p_ctx_info->rht_info;
 
 	if (res_hndl < MAX_RHT_PER_CONTEXT) {
 		p_rht_entry = &p_rht_info->rht_start[res_hndl];
@@ -726,7 +726,7 @@ static int cflash_disk_detach(struct scsi_device *sdev,
 		 * if nobody else is using it.
 		 */
 
-		if (p_ctx_info->p_rht_info->ref_cnt-- == 1) {
+		if (p_ctx_info->rht_info->ref_cnt-- == 1) {
 			marshall_det_to_rele(pdet, &rel);
 			for (i = 0; i < MAX_RHT_PER_CONTEXT; i++) {
 				rel.rsrc_handle = i;
@@ -735,10 +735,10 @@ static int cflash_disk_detach(struct scsi_device *sdev,
 		}
 
 		/* clear RHT registers for this context */
-		writeq_be(0, &p_ctx_info->p_ctrl_map->rht_start);
-		writeq_be(0, &p_ctx_info->p_ctrl_map->rht_cnt_id);
+		writeq_be(0, &p_ctx_info->ctrl_map->rht_start);
+		writeq_be(0, &p_ctx_info->ctrl_map->rht_cnt_id);
 		/* drop all capabilities */
-		writeq_be(0, &p_ctx_info->p_ctrl_map->ctx_cap);
+		writeq_be(0, &p_ctx_info->ctrl_map->ctx_cap);
 	}
 	spin_lock(p_lun_info->slock);
 	p_lun_info->mode = MODE_NONE;
@@ -779,7 +779,7 @@ static int cflash_vlun_resize(struct scsi_device *sdev,
 {
 	struct cflash *p_cflash = (struct cflash *)sdev->host->hostdata;
 	struct lun_info *p_lun_info = sdev->hostdata;
-	struct afu *p_afu = p_cflash->p_afu;
+	struct afu *p_afu = p_cflash->afu;
 
 	u64 p_act_new_size = 0;
 	res_hndl_t res_hndl = prsz->rsrc_handle;
@@ -817,7 +817,7 @@ static int cflash_vlun_resize(struct scsi_device *sdev,
 		goto out;
 	}
 
-	p_rht_info = p_ctx_info->p_rht_info;
+	p_rht_info = p_ctx_info->rht_info;
 
 	if (res_hndl < MAX_RHT_PER_CONTEXT) {
 		p_rht_entry = &p_rht_info->rht_start[res_hndl];
@@ -1016,11 +1016,11 @@ static int cflash_afu_recover(struct scsi_device *sdev,
 			      struct dk_capi_recover_afu *prec)
 {
 	struct cflash *p_cflash = (struct cflash *)sdev->host->hostdata;
-	struct afu *p_afu = p_cflash->p_afu;
+	struct afu *p_afu = p_cflash->afu;
 	long reg;
 	int rc = 0;
 
-	reg = readq_be(&p_afu->p_ctrl_map->mbox_r);	/* Try MMIO */
+	reg = readq_be(&p_afu->ctrl_map->mbox_r);	/* Try MMIO */
 
 	/* MMIO returning 0xff, need to reset */
 	if (reg == -1) {
@@ -1145,7 +1145,7 @@ static int cflash_disk_clone(struct scsi_device *sdev,
 	struct cflash *p_cflash = (struct cflash *)sdev->host->hostdata;
 	struct lun_info *p_lun_info = sdev->hostdata;
 	struct blka *p_blka = &p_lun_info->blka;
-	struct afu *p_afu = p_cflash->p_afu;
+	struct afu *p_afu = p_cflash->afu;
 	struct dk_capi_release release = { 0 };
 
 	struct ctx_info *p_ctx_info_src,
@@ -1175,8 +1175,8 @@ static int cflash_disk_clone(struct scsi_device *sdev,
 		goto out;
 	}
 
-	p_rht_info_src = p_ctx_info_src->p_rht_info;
-	p_rht_info_dst = p_ctx_info_dst->p_rht_info;
+	p_rht_info_src = p_ctx_info_src->rht_info;
+	p_rht_info_dst = p_ctx_info_dst->rht_info;
 
 	/* Verify there is no open resource handle in the destination context */
 	for (i = 0; i < MAX_RHT_PER_CONTEXT; i++)
@@ -1325,7 +1325,7 @@ int find_lun(struct cflash *p_cflash, u32 port_sel)
 	u32 *p_u32;
 	u32 len;
 	u64 *p_u64;
-	struct afu *p_afu = p_cflash->p_afu;
+	struct afu *p_afu = p_cflash->afu;
 	struct afu_cmd *p_cmd;
 	struct lun_info *p_lun_info = NULL;
 	u64 *p_currid;
@@ -1407,7 +1407,7 @@ int find_lun(struct cflash *p_cflash, u32 port_sel)
 
 		/* program FC_PORT LUN Tbl */
 		writeq_be(*p_currid,
-			  &p_afu->p_afu_map->global.fc_port[port_sel - 1]
+			  &p_afu->afu_map->global.fc_port[port_sel - 1]
 			  [p_cflash->last_lun_index]);
 
 		read_cap16(p_afu, p_lun_info, port_sel);
@@ -1478,7 +1478,7 @@ int cflash_ioctl(struct scsi_device *sdev, int cmd, void __user * arg)
 	typedef int (*sioctl)(struct scsi_device *, void *);
 
 	struct cflash *p_cflash = (struct cflash *)sdev->host->hostdata;
-	struct afu *p_afu = p_cflash->p_afu;
+	struct afu *p_afu = p_cflash->afu;
 	char buf[MAX_CFLASH_IOCTL_SZ];
 	size_t size = 0;
 	int rc = 0;

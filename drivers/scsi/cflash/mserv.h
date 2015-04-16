@@ -119,8 +119,8 @@ struct rht_info {
  * (context + AFU).
  */
 struct ctx_info {
-	volatile struct sisl_ctrl_map *p_ctrl_map;	/* initialized at startup */
-	struct rht_info *p_rht_info;	/* initialized when context created */
+	volatile struct sisl_ctrl_map *ctrl_map;	/* initialized at startup */
+	struct rht_info *rht_info;	/* initialized when context created */
 
 	int ref_cnt;		/* num conn_infos pointing to me */
 };
@@ -223,14 +223,14 @@ struct afu {
 	/* AFU HW */
 	int afu_fd;
 	struct cxl_ioctl_start_work work;
-	volatile struct cflash_afu_map *p_afu_map;	/* entire MMIO map */
-	volatile struct sisl_host_map *p_host_map;	/* master's sislite host map */
-	volatile struct sisl_ctrl_map *p_ctrl_map;	/* master's control map */
+	volatile struct cflash_afu_map *afu_map;	/* entire MMIO map */
+	volatile struct sisl_host_map *host_map;	/* master's sislite host map */
+	volatile struct sisl_ctrl_map *ctrl_map;	/* master's control map */
 
 	ctx_hndl_t ctx_hndl;	/* master's context handle */
-	u64 *p_hrrq_start;
-	u64 *p_hrrq_end;
-	volatile u64 *p_hrrq_curr;
+	u64 *hrrq_start;
+	u64 *hrrq_end;
+	volatile u64 *hrrq_curr;
 	unsigned int toggle;
 	u64 room;
 	u64 hb;
@@ -241,7 +241,7 @@ struct afu {
 	u64 interface_version;
 
 	struct list_head luns;	/* list of lun_info structs */
-	struct cflash *p_back;  /* Pointer back to parent cflash */
+	struct cflash *back;  /* Pointer back to parent cflash */
 
 } __attribute__ ((aligned(0x1000)));
 

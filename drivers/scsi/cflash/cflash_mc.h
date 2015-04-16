@@ -42,11 +42,11 @@ enum cflash_lr_state {
 };
 
 struct cflash {
-	struct afu *p_afu;
-	struct cxl_context *p_mcctx;
+	struct afu *afu;
+	struct cxl_context *mcctx;
 
-	struct pci_dev *p_dev;
-	struct pci_device_id *p_dev_id;
+	struct pci_dev *dev;
+	struct pci_device_id *dev_id;
 	struct Scsi_Host *host;
 
 	unsigned long cflash_regs_pci;
@@ -60,7 +60,7 @@ struct cflash {
 	enum cflash_lr_state lr_state;
 	int lr_port;
 
-	struct cxl_afu *afu;
+	struct cxl_afu *cxl_afu;
 	timer_t timer_hb;
 	timer_t timer_fc;
 
