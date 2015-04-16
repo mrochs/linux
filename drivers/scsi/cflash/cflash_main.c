@@ -1819,7 +1819,7 @@ void cflash_send_cmd(struct afu *p_afu, struct afu_cmd *p_cmd)
 	p_cmd->sa.ioasc = 0;
 
 	/* make memory updates visible to AFU before MMIO */
-	asm volatile ("lwsync"::);
+	smp_wmb();
 
 	timer_start(&p_cmd->timer, (p_cmd->rcb.timeout * 2 * HZ));
 

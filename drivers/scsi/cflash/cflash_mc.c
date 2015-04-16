@@ -97,7 +97,7 @@ int cflash_afu_attach(struct cflash *p_cflash, u64 context_id)
 	/* make clearing of the RHT visible to AFU before
 	 * MMIO
 	 */
-	asm volatile ("lwsync"::);
+	smp_wmb();
 
 	/* set up MMIO registers pointing to the RHT */
 	writeq_be((u64)p_ctx_info->p_rht_info->rht_start,
@@ -412,10 +412,10 @@ void cflash_rht_format1(struct sisl_rht_entry *p_rht_entry, u64 lun_id,
 		(struct sisl_rht_entry_f1 *)p_rht_entry;
 	memset(p_rht_entry_f1, 0, sizeof(struct sisl_rht_entry_f1));
 	p_rht_entry_f1->fp = SISL_RHT_FP(1U, 0);
-	asm volatile ("lwsync"::);
+	smp_wmb();
 
 	p_rht_entry_f1->lun_id = lun_id;
-	asm volatile ("lwsync"::);
+	smp_wmb();
 
 	/*
 	 * Use a dummy RHT Format 1 entry to build the second dword
@@ -432,7 +432,7 @@ void cflash_rht_format1(struct sisl_rht_entry *p_rht_entry, u64 lun_id,
 		dummy.port_sel = 0x3;
 	p_rht_entry_f1->dw = dummy.dw;
 
-	asm volatile ("lwsync"::);
+	smp_wmb();
 
 	return;
 }
@@ -651,13 +651,13 @@ static int cflash_disk_release(struct scsi_device *sdev,
 				(struct sisl_rht_entry_f1 *)p_rht_entry;
 
 			p_rht_entry_f1->valid = 0;
-			asm volatile ("lwsync"::);
+			smp_wmb();
 
 			p_rht_entry_f1->lun_id = 0ULL;
-			asm volatile ("lwsync"::);
+			smp_wmb();
 
 			p_rht_entry_f1->dw = 0ULL;
-			asm volatile ("lwsync"::);
+			smp_wmb();
 			afu_sync(p_afu, prele->context_id, res_hndl,
 				 AFU_HW_SYNC);
 		}
@@ -930,14 +930,14 @@ int grow_lxt(struct afu *p_afu,
 
 	mutex_unlock(&p_blka->mutex);
 
-	asm volatile ("lwsync"::);	/* make lxt updates visible */
+	smp_wmb();	/* make lxt updates visible */
 
 	/* Now sync up AFU - this can take a while */
 	p_rht_entry->lxt_start = p_lxt;	/* even if p_lxt didn't change */
-	asm volatile ("lwsync"::);
+	smp_wmb();
 
 	p_rht_entry->lxt_cnt = *p_act_new_size;
-	asm volatile ("lwsync"::);
+	smp_wmb();
 
 	afu_sync(p_afu, ctx_hndl_u, res_hndl_u, AFU_LW_SYNC);
 
@@ -989,10 +989,10 @@ int shrink_lxt(struct afu *p_afu,
 
 	/* Now sync up AFU - this can take a while */
 	p_rht_entry->lxt_cnt = *p_act_new_size;
-	asm volatile ("lwsync"::);	/* also makes lxt updates visible */
+	smp_wmb();	/* also makes lxt updates visible */
 
 	p_rht_entry->lxt_start = p_lxt;	/* even if p_lxt didn't change */
-	asm volatile ("lwsync"::);
+	smp_wmb();
 
 	afu_sync(p_afu, ctx_hndl_u, res_hndl_u, AFU_HW_SYNC);
 
@@ -1103,14 +1103,14 @@ int clone_lxt(struct afu *p_afu,
 		p_lxt = NULL;
 	}
 
-	asm volatile ("lwsync"::);	/* make lxt updates visible */
+	smp_wmb();	/* make lxt updates visible */
 
 	/* Now sync up AFU - this can take a while */
 	p_rht_entry->lxt_start = p_lxt;	/* even if p_lxt is NULL */
-	asm volatile ("lwsync"::);
+	smp_wmb();
 
 	p_rht_entry->lxt_cnt = p_rht_entry_src->lxt_cnt;
-	asm volatile ("lwsync"::);
+	smp_wmb();
 
 	afu_sync(p_afu, ctx_hndl_u, res_hndl_u, AFU_LW_SYNC);
 
