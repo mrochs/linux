@@ -84,55 +84,7 @@ static inline u64 lun_to_lunid(u64 lun)
 
 	int_to_scsilun(lun, (struct scsi_lun *)&lun_id);
 	return swab64(lun_id);
-
 }
-
-/* In the course of doing IOs, the user may be the first to notice certain
- * critical events on the AFU or the backend storage. mc_notify allows a
- * user to pass such information to the master. The master will verify the
- * events and can take appropriate action.
- *
- * Inputs:
- *   mc_hndl         - client handle that specifies a (context + AFU)
- *                     The event pertains to this AFU.
- *
- *   p_mc_notify     - pointer to location that contains the event
- *
- * Output:
- */
-typedef struct mc_notify_s {
-	u8 event;		/* MC_NOTIF_xxx */
-#define MC_NOTIFY_CMD_TIMEOUT    0x01	/* user command timeout */
-#define MC_NOTIFY_SCSI_SENSE     0x02	/* interesting sense data */
-#define MC_NOTIFY_AFU_EEH        0x03	/* user detected AFU is frozen */
-#define MC_NOTIFY_AFU_RST        0x04	/* user detected AFU has been reset */
-#define MC_NOTIFY_AFU_ERR        0x05	/* other AFU error, unexpected response */
-	/*
-	 * Note: the event must be sent on a mc_hndl_t that pertains to the
-	 * affected AFU. This is important when the user interacts with multiple
-	 * AFUs.
-	 */
-
-	union {
-		struct {
-			res_hndl_t res_hndl;
-		} cmd_timeout;
-
-		struct {
-			res_hndl_t res_hndl;
-			char data[20];	/* 20 bytes of sense data */
-		} scsi_sense;
-
-		struct {
-		} afu_eeh;
-
-		struct {
-		} afu_rst;
-
-		struct {
-		} afu_err;
-	};
-} mc_notify_t;
 
 union cflash_ioctls {
 	struct dk_capi_attach		attach;
