@@ -118,6 +118,7 @@ struct dk_capi_recover_afu {
 	__u16 rsvd[3];		/* Reserved for future use */
 	__u64 flags;		/* Flags for recovery */
 	__u64 return_flags;	/* Returned flags */
+	__u64 context_id;	/* Context ID of LUN to resize */
 	__u64 rsrc_handle;	/* Resource handle for LUN to recover */
 	__u64 reason;		/* Reason for recovery request */
 };

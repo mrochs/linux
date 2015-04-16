@@ -1015,8 +1015,17 @@ static int cflash_afu_recover(struct scsi_device *sdev,
 {
 	struct cflash *p_cflash = (struct cflash *)sdev->host->hostdata;
 	struct afu *p_afu = p_cflash->afu;
+	struct ctx_info *p_ctx_info;
 	long reg;
 	int rc = 0;
+
+	/* Ensure that this process is attached to the context */
+	p_ctx_info = get_validated_context(p_cflash, prec->context_id, false);
+	if (!p_ctx_info) {
+		cflash_err("invalid context!");
+		rc = -EINVAL;
+		goto out;
+	}
 
 	reg = readq_be(&p_afu->ctrl_map->mbox_r);	/* Try MMIO */
 
@@ -1031,6 +1040,7 @@ static int cflash_afu_recover(struct scsi_device *sdev,
 		rc = -EINVAL;
 	}
 
+out:
 	return rc;
 }
 
