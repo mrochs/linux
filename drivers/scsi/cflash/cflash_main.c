@@ -2171,89 +2171,12 @@ static void cflash_shutdown(struct pci_dev *pdev)
 
 }
 
-/**
- * cflash_pci_error_detected - Called when a PCI error is detected.
- * @pdev:       PCI device struct
- * @state:      PCI channel state
- *
- * Description: Called when a PCI error is detected.
- *
- * Return value:
- *      PCI_ERS_RESULT_NEED_RESET or PCI_ERS_RESULT_DISCONNECT
- */
-static pci_ers_result_t cflash_pci_error_detected(struct pci_dev *pdev,
-						  pci_channel_state_t state)
-{
-	switch (state) {
-	case pci_channel_io_frozen:
-		/* XXX: Dummy */
-		return PCI_ERS_RESULT_CAN_RECOVER;
-	case pci_channel_io_perm_failure:
-		/* XXX: Dummy */
-		return PCI_ERS_RESULT_DISCONNECT;
-		break;
-	default:
-		break;
-	}
-	return PCI_ERS_RESULT_NEED_RESET;
-}
-
-/**
- * cflash_pci_mmio_enabled - Called when MMIO has been re-enabled
- * @pdev:       PCI device struct
- *
- * Description: This routine is called to tell us that the MMIO
- * access to the CFLASH has been restored
- */
-static pci_ers_result_t cflash_pci_mmio_enabled(struct pci_dev *pdev)
-{
-	/* XXX: Dummy */
-	return PCI_ERS_RESULT_NEED_RESET;
-}
-
-/**
- * cflash_pci_slot_reset - Called when PCI slot has been reset.
- * @pdev:       PCI device struct
- *
- * Description: This routine is called by the pci error recovery
- * code after the PCI slot has been reset, just before we
- * should resume normal operations.
- */
-static pci_ers_result_t cflash_pci_slot_reset(struct pci_dev *pdev)
-{
-	/* XXX: Dummy */
-	return PCI_ERS_RESULT_RECOVERED;
-}
-
-static const struct pci_error_handlers cflash_err_handler = {
-	.error_detected = cflash_pci_error_detected,
-	.mmio_enabled = cflash_pci_mmio_enabled,
-	.slot_reset = cflash_pci_slot_reset,
-};
-
 static struct pci_driver cflash_driver = {
 	.name = CFLASH_NAME,
 	.id_table = cflash_pci_table,
 	.probe = cflash_probe,
 	.remove = cflash_remove,
 	.shutdown = cflash_shutdown,
-	.err_handler = &cflash_err_handler,
-};
-
-/**
- * cflash_halt - Issue shutdown prepare to all adapters
- *
- * Return value:
- *      NOTIFY_OK on success / NOTIFY_DONE on failure
- **/
-static int cflash_halt(struct notifier_block *nb, ulong event, void *buf)
-{
-	/* XXX: Dummy */
-	return NOTIFY_OK;
-}
-
-static struct notifier_block cflash_notifier = {
-	cflash_halt, NULL, 0
 };
 
 static int __init init_cflash(void)
@@ -2268,13 +2191,11 @@ static int __init init_cflash(void)
 		return(-EINVAL);
 	}
 
-	register_reboot_notifier(&cflash_notifier);
 	return pci_register_driver(&cflash_driver);
 }
 
 static void exit_cflash(void)
 {
-	unregister_reboot_notifier(&cflash_notifier);
 	pci_unregister_driver(&cflash_driver);
 }
 
