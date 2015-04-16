@@ -127,17 +127,11 @@ int cflash_send_scsi(struct afu *p_afu, struct scsi_cmnd *scp)
 	short lflag = 0;
 	int rc = 0;
 
-	unsigned long lock_flags = 0;
 	struct Scsi_Host *host = scp->device->host;
 	struct cflash *p_cflash = (struct cflash *)host->hostdata;
 
-	spin_lock_irqsave(host->host_lock, lock_flags);
-	while (p_cflash->tmf_active) {
-		spin_unlock_irqrestore(host->host_lock, lock_flags);
+	while (p_cflash->tmf_active)
 		wait_event(p_cflash->tmf_wait_q, !p_cflash->tmf_active);
-		spin_lock_irqsave(host->host_lock, lock_flags);
-	}
-	spin_unlock_irqrestore(host->host_lock, lock_flags);
 
 	p_cmd = cmd_checkout(p_afu);
 	if (!p_cmd) {
@@ -196,18 +190,12 @@ int cflash_send_tmf(struct afu *p_afu, struct scsi_cmnd *scp, u64 cmd)
 
 	u64 port_sel = scp->device->channel + 1;
 	short lflag = 0;
-	unsigned long lock_flags = 0;
 	struct Scsi_Host *host = scp->device->host;
 	struct cflash *p_cflash = (struct cflash *)host->hostdata;
 	int rc = 0;
 
-	spin_lock_irqsave(host->host_lock, lock_flags);
-	while (p_cflash->tmf_active) {
-		spin_unlock_irqrestore(host->host_lock, lock_flags);
+	while (p_cflash->tmf_active)
 		wait_event(p_cflash->tmf_wait_q, !p_cflash->tmf_active);
-		spin_lock_irqsave(host->host_lock, lock_flags);
-	}
-	spin_unlock_irqrestore(host->host_lock, lock_flags);
 
 	p_cmd = cmd_checkout(p_afu);
 	if (!p_cmd) {
@@ -803,18 +791,11 @@ static void cflash_term_afu(struct cflash *p_cflash, bool reset)
 static void cflash_remove(struct pci_dev *pdev)
 {
 	struct cflash *p_cflash = pci_get_drvdata(pdev);
-	struct Scsi_Host *host = p_cflash->host;
-	unsigned long lock_flags = 0;
 
 	cflash_dev_err(&pdev->dev, "enter cflash_remove!");
 
-	spin_lock_irqsave(host->host_lock, lock_flags);
-	while (p_cflash->tmf_active) {
-		spin_unlock_irqrestore(host->host_lock, lock_flags);
+	while (p_cflash->tmf_active)
 		wait_event(p_cflash->tmf_wait_q, !p_cflash->tmf_active);
-		spin_lock_irqsave(host->host_lock, lock_flags);
-	}
-	spin_unlock_irqrestore(host->host_lock, lock_flags);
 
 
 	/* Use this for now to indicate that scsi_add_host() was performed */
@@ -2184,16 +2165,9 @@ static void cflash_shutdown(struct pci_dev *pdev)
 {
 	/* XXX: Dummy */
 	struct cflash *p_cflash = pci_get_drvdata(pdev);
-	struct Scsi_Host *host = p_cflash->host;
-	unsigned long lock_flags = 0;
 
-	spin_lock_irqsave(host->host_lock, lock_flags);
-	while (p_cflash->tmf_active) {
-		spin_unlock_irqrestore(host->host_lock, lock_flags);
+	while (p_cflash->tmf_active)
 		wait_event(p_cflash->tmf_wait_q, !p_cflash->tmf_active);
-		spin_lock_irqsave(host->host_lock, lock_flags);
-	}
-	spin_unlock_irqrestore(host->host_lock, lock_flags);
 
 }
 
