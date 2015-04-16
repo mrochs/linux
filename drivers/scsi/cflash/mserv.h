@@ -38,7 +38,7 @@
 #define MAX_CONNS (MAX_CONTEXT*2)	/* num client connections per AFU */
 #define MAX_CONN_TO_POLL 64	/* num fds to poll once */
 #define NUM_RRQ_ENTRY    16	/* for master issued cmds */
-#define NUM_FC_PORTS     CFLASH_NUM_FC_PORTS	/* ports per AFU */
+#define NUM_FC_PORTS     CXLFLASH_NUM_FC_PORTS	/* ports per AFU */
 
 /* LXT tables are allocated dynamically in groups. This is done to
    avoid a malloc/free overhead each time the LXT has to grow
@@ -161,20 +161,20 @@ enum undo_level {
 	UNDO_START
 };
 
-#define CFLASH_NUM_CMDS	(2 * CFLASH_MAX_CMDS) /* Must be a pow2 for alignment
+#define CXLFLASH_NUM_CMDS	(2 * CXLFLASH_MAX_CMDS) /* Must be a pow2 for alignment
 					       * and more efficient array index
 					       * derivation
 					       */
 
 #define NOT_POW2(_x) ((_x) & ((_x) & ((_x) -1)))
-#if NOT_POW2(CFLASH_NUM_CMDS)
-#error "CFLASH_NUM_CMDS is not a power of 2!"
+#if NOT_POW2(CXLFLASH_NUM_CMDS)
+#error "CXLFLASH_NUM_CMDS is not a power of 2!"
 #endif
 
 #define AFU_INIT_INDEX   0	/* first cmd is used in init/discovery,
 	                         * free for other use thereafter
 				 */
-#define AFU_SYNC_INDEX  (CFLASH_NUM_CMDS - 1)/* last cmd is rsvd for afu sync */
+#define AFU_SYNC_INDEX  (CXLFLASH_NUM_CMDS - 1)/* last cmd is rsvd for afu sync */
 
 #define CMD_FREE   0x0
 #define CMD_IN_USE 0x1
@@ -200,7 +200,7 @@ struct afu {
 	/*
 	 * Command & data for AFU commands.
 	 */
-	struct afu_cmd cmd[CFLASH_NUM_CMDS];
+	struct afu_cmd cmd[CXLFLASH_NUM_CMDS];
 
 	/* Housekeeping data */
 	struct ctx_info ctx_info[MAX_CONTEXT];
@@ -223,7 +223,7 @@ struct afu {
 	/* AFU HW */
 	int afu_fd;
 	struct cxl_ioctl_start_work work;
-	volatile struct cflash_afu_map *afu_map;	/* entire MMIO map */
+	volatile struct cxlflash_afu_map *afu_map;	/* entire MMIO map */
 	volatile struct sisl_host_map *host_map;	/* master's sislite host map */
 	volatile struct sisl_ctrl_map *ctrl_map;	/* master's control map */
 
@@ -241,7 +241,7 @@ struct afu {
 	u64 interface_version;
 
 	struct list_head luns;	/* list of lun_info structs */
-	struct cflash *back;  /* Pointer back to parent cflash */
+	struct cxlflash *back;  /* Pointer back to parent cxlflash */
 
 } __attribute__ ((aligned(0x1000)));
 
@@ -254,7 +254,7 @@ struct asyc_intr_info {
 #define LINK_RESET     0x02
 };
 
-int find_lun(struct cflash *p_cflash, u32 port_sel);
+int find_lun(struct cxlflash *p_cxlflash, u32 port_sel);
 int read_cap16(struct afu *p_afu, struct lun_info *p_lun_info, u32 port_sel);
 int afu_sync(struct afu *p_afu, ctx_hndl_t ctx_hndl_u, res_hndl_t res_hndl_u,
 	     u8 mode);

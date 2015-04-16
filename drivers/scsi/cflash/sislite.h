@@ -277,7 +277,7 @@ struct sisl_ctrl_map {
 /* single copy global regs */
 struct sisl_global_regs {
 	u64 aintr_status;
-	/* In cflash, each FC port/link gets a byte of status */
+	/* In cxlflash, each FC port/link gets a byte of status */
 #define SISL_ASTATUS_FC0_OTHER    0x8000ull	/* b48, other err, FC_ERRCAP[31:20] */
 #define SISL_ASTATUS_FC0_LOGO     0x4000ull	/* b49, target sent FLOGI/PLOGI/LOGO
 						   while logged in */
@@ -313,9 +313,9 @@ struct sisl_global_regs {
 	u64 interface_version;
 };
 
-#define CFLASH_NUM_FC_PORTS   2
-#define CFLASH_MAX_CONTEXT  512	/* how many contexts per afu */
-#define CFLASH_NUM_VLUNS    512
+#define CXLFLASH_NUM_FC_PORTS   2
+#define CXLFLASH_MAX_CONTEXT  512	/* how many contexts per afu */
+#define CXLFLASH_NUM_VLUNS    512
 
 struct sisl_global_map {
 	union {
@@ -324,8 +324,8 @@ struct sisl_global_map {
 	};
 
 	char page1[0x1000];	/* page 1 */
-	u64 fc_regs[CFLASH_NUM_FC_PORTS][CFLASH_NUM_VLUNS];	/* pages 2 & 3, see afu_fc.h */
-	u64 fc_port[CFLASH_NUM_FC_PORTS][CFLASH_NUM_VLUNS];	/* pages 4 & 5 (lun tbl) */
+	u64 fc_regs[CXLFLASH_NUM_FC_PORTS][CXLFLASH_NUM_VLUNS];	/* pages 2 & 3, see afu_fc.h */
+	u64 fc_port[CXLFLASH_NUM_FC_PORTS][CXLFLASH_NUM_VLUNS];	/* pages 4 & 5 (lun tbl) */
 
 };
 
@@ -344,16 +344,16 @@ struct sisl_global_map {
                      +-------------------------------+
 */
 
-struct cflash_afu_map {
+struct cxlflash_afu_map {
 	union {
 		struct sisl_host_map host;
 		char harea[0x10000];	/* 64KB each */
-	} hosts[CFLASH_MAX_CONTEXT];
+	} hosts[CXLFLASH_MAX_CONTEXT];
 
 	union {
 		struct sisl_ctrl_map ctrl;
 		char carea[128];	/* 128B each */
-	} ctrls[CFLASH_MAX_CONTEXT];
+	} ctrls[CXLFLASH_MAX_CONTEXT];
 
 	union {
 		struct sisl_global_map global;
