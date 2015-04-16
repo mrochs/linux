@@ -577,7 +577,7 @@ static void cflash_free_mem(struct cflash *p_cflash)
 
 	if (p_cflash->p_afu) {
 		for (i=0; i<CFLASH_NUM_CMDS; i++) {
-			timer_stop(&p_cflash->p_afu->cmd[i].timer, TRUE);
+			del_timer_sync(&p_cflash->p_afu->cmd[i].timer);
 			buf = p_cflash->p_afu->cmd[i].buf;
 			if (buf)
 				free_pages((unsigned long)buf,
@@ -1011,7 +1011,7 @@ void cflash_stop_afu(struct cflash *p_cflash)
 
 	/* Need to stop timers before unmapping */
 	for (i=0; i<CFLASH_NUM_CMDS; i++) {
-		timer_stop(&p_cflash->p_afu->cmd[i].timer, TRUE);
+		del_timer_sync(&p_cflash->p_afu->cmd[i].timer);
 	}
 
 	if (p_afu->p_afu_map) {
@@ -1133,7 +1133,7 @@ static irqreturn_t cflash_rrq_irq(int irq, void *data)
 		spin_unlock_irqrestore(p_cmd->slock, lock_flags);
 
 		/* already stopped if timer fired */
-		timer_stop(&p_cmd->timer, FALSE);
+		del_timer(&p_cmd->timer);
 
 		/*
 		   hexdump ((void *)&p_cmd->rcb, sizeof(sisl_ioarcb_t), "rcb");
@@ -1821,7 +1821,8 @@ void cflash_send_cmd(struct afu *p_afu, struct afu_cmd *p_cmd)
 	/* make memory updates visible to AFU before MMIO */
 	smp_wmb();
 
-	timer_start(&p_cmd->timer, (p_cmd->rcb.timeout * 2 * HZ));
+	p_cmd->timer.expires = (jiffies + (p_cmd->rcb.timeout * 2 * HZ));
+	add_timer(&p_cmd->timer);
 
 	/* Write IOARRIN */
 	if (p_afu->room)
@@ -1847,7 +1848,7 @@ void cflash_wait_resp(struct afu *p_afu, struct afu_cmd *p_cmd)
 	}
 	spin_unlock_irqrestore(p_cmd->slock, lock_flags);
 
-	timer_stop(&p_cmd->timer, FALSE); /* already stopped if timer fired */
+	del_timer(&p_cmd->timer); /* already stopped if timer fired */
 
 	if (p_cmd->sa.ioasc != 0)
 		cflash_err("CMD 0x%x failed, IOASC: flags 0x%x, afu_rc 0x%x, "
@@ -1856,20 +1857,6 @@ void cflash_wait_resp(struct afu *p_afu, struct afu_cmd *p_cmd)
 			   p_cmd->sa.rc.flags,
 			   p_cmd->sa.rc.afu_rc,
 			   p_cmd->sa.rc.scsi_rc, p_cmd->sa.rc.fc_rc);
-}
-
-void timer_start(struct timer_list *p_timer, unsigned long timeout_in_jiffies)
-{
-	p_timer->expires = (jiffies + timeout_in_jiffies);
-	add_timer(p_timer);
-}
-
-void timer_stop(struct timer_list *p_timer, bool sync)
-{
-	if (unlikely(sync))
-		del_timer_sync(p_timer);
-	else
-		del_timer(p_timer);
 }
 
 /*

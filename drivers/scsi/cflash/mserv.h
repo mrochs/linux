@@ -322,7 +322,4 @@ void *sig_rx(void *arg);
 #define FALSE	0
 #endif
 
-void timer_start(struct timer_list *p_timer, unsigned long timeout_in_jiffies);
-void timer_stop(struct timer_list *p_timer, bool sync);
-
 #endif /* _MSERVE_H */
