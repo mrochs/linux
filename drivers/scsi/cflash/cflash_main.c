@@ -2011,8 +2011,6 @@ int cflash_send_scsi(struct afu *p_afu, struct scsi_cmnd *scp)
 	scsi_for_each_sg(scp, sg, ncount, i) {
 		p_cmd->rcb.data_len = (sg_dma_len(sg));
                 p_cmd->rcb.data_ea = (sg_dma_address(sg));
-		//p_cmd->rcb.data_len = (sg_dma_len(sg) & SISLITE_LEN_MASK);
-		//p_cmd->rcb.data_ea = (sg_phys(sg));
 	}
 
 	/* Copy the CDB from the scsi_cmnd passed in */
