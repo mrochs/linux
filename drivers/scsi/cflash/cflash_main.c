@@ -1419,9 +1419,6 @@ int cflash_start_context(struct cflash *p_cflash)
 	return rc;
 }
 
-#define WWPN_LEN	16
-#define WWPN_BUF_LEN	(WWPN_LEN + 1)
-
 /**
  * cflash_read_vpd - Read the Vital Product Data on the Card.
  * @p_cflash:       struct cflash
@@ -1433,72 +1430,80 @@ int cflash_start_context(struct cflash *p_cflash)
  **/
 int cflash_read_vpd(struct cflash *p_cflash, u64 wwpn[])
 {
-
-	char *buf = NULL;
+	struct pci_dev *dev = p_cflash->parent_dev;
 	int rc = 0;
-	int bytes = 0;
-	bool l_rc;
-	int l_kw_length;
-	char localwwpn[NUM_FC_PORTS][WWPN_BUF_LEN];
+	int ro_start, ro_size, i, j, k;
+	ssize_t vpd_size;
+	char vpd_data[CFLASH_VPD_LEN];
+	char tmp_buf[WWPN_BUF_LEN] = { 0 };
+	char *wwpn_vpd_tags[NUM_FC_PORTS] = { "V5", "V6" };
 
-	cflash_info("pci_dev=%p", p_cflash->parent_dev);
-
-	buf = kzalloc(KWDATA_SZ, GFP_KERNEL);
-	if (!buf) {
-		cflash_err("could not allocate mem");
-		rc = -ENOMEM;
-		goto out;
-	}
-	bytes = pci_read_vpd(p_cflash->parent_dev, 0, KWDATA_SZ, buf);
-	if (bytes <= 0) {
-		cflash_err("could not read VPD rc %d", rc);
-		rc = -ENODEV;
-		goto out;
-	}
-	hexdump((void *)buf, KWDATA_SZ, "vpd");
-
-	/* Decode Port 0 */
-	l_kw_length = WWPN_LEN;
-	l_rc =
-	    prov_find_vpd_kw("V5", buf, KWDATA_SZ, (u8 *) & localwwpn[0],
-			     &l_kw_length);
-	if (l_rc == false) {
-		cflash_err("Error: Unable to find Port name VPD for Port 0 "
-			   "(VPD KW V5)");
+	/* Get the VPD data from the device */
+	vpd_size = pci_read_vpd(dev, 0, sizeof(vpd_data), vpd_data);
+	if (unlikely(vpd_size <= 0)) {
+		cflash_err("Unable to read VPD (size = %ld)", vpd_size);
 		rc = -ENODEV;
 		goto out;
 	}
 
-	hexdump((void *)localwwpn[0], WWPN_LEN, "wwpn0");
-	/* NULL terminate before calling kstrtoul */
-	localwwpn[0][WWPN_BUF_LEN - 1] = '\0';
-	rc = kstrtoul(localwwpn[0], WWPN_LEN, (unsigned long *)&wwpn[0]);
-	if (rc)
-		goto out;
-
-	/* Decode Port 1 */
-	l_kw_length = WWPN_LEN;
-	l_rc =
-	    prov_find_vpd_kw("V6", buf, KWDATA_SZ, (u8 *) & localwwpn[1],
-			     &l_kw_length);
-	if (l_rc == false) {
-		cflash_err("Error: Unable to find Port name VPD for Port 1 "
-			   "(VPD KW V6)");
+	/* Get the read only section offset */
+        ro_start = pci_vpd_find_tag(vpd_data, 0, vpd_size,
+				    PCI_VPD_LRDT_RO_DATA);
+        if (unlikely(ro_start < 0)) {
+		cflash_err("VPD Read-only not found");
 		rc = -ENODEV;
 		goto out;
+        }
+
+	/* Get the read only section size, cap when extends beyond read VPD */
+        ro_size = pci_vpd_lrdt_size(&vpd_data[ro_start]);
+	j = ro_size;
+	i = ro_start + PCI_VPD_LRDT_TAG_SIZE;
+	if (unlikely((i + j) > vpd_size))
+	{
+		cflash_warn("Might need to read more VPD (%d > %ld)",
+			    (i + j), vpd_size);
+		ro_size = vpd_size - i;
 	}
 
-	hexdump((void *)localwwpn[1], WWPN_LEN, "wwpn1");
-	/* NULL terminate before calling kstrtoul */
-	localwwpn[1][WWPN_BUF_LEN - 1] = '\0';
-	rc = kstrtoul(localwwpn[1], WWPN_LEN, (unsigned long *)&wwpn[1]);
-	if (rc)
-		goto out;
+	/*
+	 * Find the offset of the WWPN tag within the read only
+	 * VPD data and validate the found field (partials are
+	 * no good to us). Convert the ASCII data to an integer
+	 * value. Note that we must copy to a temporary buffer
+	 * because the conversion service requires that the ASCII
+	 * string be terminated.
+	 */
+	for (k = 0; k < NUM_FC_PORTS; k++) {
+		j = ro_size;
+		i = ro_start + PCI_VPD_LRDT_TAG_SIZE;
+
+		i = pci_vpd_find_info_keyword(vpd_data, i, j, wwpn_vpd_tags[k]);
+		if (unlikely(i < 0)) {
+			cflash_err("Port %d WWPN not found in VPD", k);
+			rc = -ENODEV;
+			goto out;
+		}
+
+		j = pci_vpd_info_field_size(&vpd_data[i]);
+		i += PCI_VPD_INFO_FLD_HDR_SIZE;
+		if (unlikely((i + j > vpd_size) || (j != WWPN_LEN))) {
+			cflash_err("Port %d WWPN incomplete or VPD corrupt", k);
+			rc = -ENODEV;
+			goto out;
+		}
+
+		memcpy(tmp_buf, &vpd_data[i], WWPN_LEN);
+		rc = kstrtoul(tmp_buf, WWPN_LEN, (unsigned long *)&wwpn[k]);
+		if (unlikely(rc)) {
+			cflash_err("Unable to convert port 0 WWPN to integer");
+			rc = -ENODEV;
+			goto out;
+		}
+	}
 
 out:
-	if (buf)
-		kfree(buf);
-	cflash_info("returning rc=%d", rc);
+	cflash_dbg("returning rc=%d", rc);
 	return rc;
 }
 

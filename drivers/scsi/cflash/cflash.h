@@ -49,6 +49,11 @@ extern u32 checkpid;
 
 #define CFLASH_PCI_ERROR_RECOVERY_TIMEOUT  (120 * HZ)
 
+/* VPD defines */
+#define CFLASH_VPD_LEN	256
+#define WWPN_LEN	16
+#define WWPN_BUF_LEN	(WWPN_LEN + 1)
+
 /*
  * Error logging macros
  *
