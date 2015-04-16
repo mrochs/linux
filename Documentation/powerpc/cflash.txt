@@ -56,7 +56,7 @@ Overview
     allowed to send requests directly to the AFU.
 
     The CXL Flash Adapter Driver establishes a master context with
-    the AFU. It user memory mapped I/O (MMIO) for this control and
+    the AFU. It uses memory mapped I/O (MMIO) for this control and
     setup. The Adapter Problem Space Memory Map looks like this:
 
                      +-------------------------------+
@@ -72,8 +72,11 @@ Overview
                      |   Trusted Process accessible  |
                      +-------------------------------+
 
-    This Driver configures itself into the SCSI software stack
-    as an adapter driver. It discovers all LUNs attached to the
+    This driver configures itself into the SCSI software stack
+    as an adapter driver. The driver is the only entity that
+    is considered a Trusted Process to program the Provisioning and 
+    Control and Global areas in the MMIO Space shown above.
+    The master context driver discovers all LUNs attached to the
     CXL Flash adapter and instantiates scsi block devices
     (/dev/sdb, /dev/sdc etc.) for each unique LUN seen from each path.
 
