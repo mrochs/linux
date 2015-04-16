@@ -497,39 +497,6 @@ static ssize_t cflash_store_lun_mode(struct device *dev,
 }
 
 /**
- * cflash_show_log_level - Show the adapter's error logging level
- * @dev:        class device struct
- * @buf:        buffer
- *
- * Return value:
- *      number of bytes printed to buffer
- **/
-static ssize_t cflash_show_log_level(struct device *dev,
-				     struct device_attribute *attr, char *buf)
-{
-	/* XXX: Dummy */
-
-	return 0;
-}
-
-/**
- * cflash_store_log_level - Change the adapter's error logging level
- * @dev:        class device struct
- * @buf:        buffer
- *
- * Return value:
- *      number of bytes printed to buffer
- **/
-static ssize_t cflash_store_log_level(struct device *dev,
-				      struct device_attribute *attr,
-				      const char *buf, size_t count)
-{
-	/* XXX: Dummy */
-
-	return 0;
-}
-
-/**
  * cflash_wait_for_pci_err_recovery - Wait for any PCI error recovery to
  *					complete during probe time
  * @p_cflash:    cflash config struct
@@ -549,9 +516,6 @@ static void cflash_wait_for_pci_err_recovery(struct cflash *p_cflash)
 	}
 }
 
-
-static DEVICE_ATTR(log_level, S_IRUGO | S_IWUSR,
-		   cflash_show_log_level, cflash_store_log_level);
 static DEVICE_ATTR(port0, S_IRUGO, cflash_show_port_status, NULL);
 static DEVICE_ATTR(port1, S_IRUGO, cflash_show_port_status, NULL);
 static DEVICE_ATTR(lun_mode, S_IRUGO | S_IWUSR, cflash_show_lun_mode,
@@ -560,7 +524,6 @@ static DEVICE_ATTR(lun_mode, S_IRUGO | S_IWUSR, cflash_show_lun_mode,
 static struct device_attribute *cflash_attrs[] = {
 	&dev_attr_port0,
 	&dev_attr_port1,
-	&dev_attr_log_level,
 	&dev_attr_lun_mode,
 	NULL
 };
