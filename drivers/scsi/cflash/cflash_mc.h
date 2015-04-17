@@ -28,17 +28,19 @@ typedef unsigned int useconds_t;	/* time in microseconds */
 /*----------------------------------------------------------------------------*/
 
 #define MAX_CONTEXT  CXLFLASH_MAX_CONTEXT       /* num contexts per afu */
-
-struct cxlflash_ctx {
-	struct cxl_ioctl_start_work work;
-	int lfd;
-	pid_t pid;
-};
+#define MAX_AUN_CLONE_CNT    0xFF
+#define MAX_CXLFLASH_IOCTL_SZ	(sizeof(union cxlflash_ioctls))
 
 enum cxlflash_lr_state {
 	LINK_RESET_INVALID,
 	LINK_RESET_REQUIRED,
 	LINK_RESET_COMPLETE
+};
+
+struct cxlflash_ctx {
+	struct cxl_ioctl_start_work work;
+	int lfd;
+	pid_t pid;
 };
 
 struct cxlflash {
@@ -108,10 +110,6 @@ struct ba_lun {
 	void *ba_lun_handle;
 };
 
-void ba_terminate(struct ba_lun *ba_lun);
-
-#define MAX_AUN_CLONE_CNT    0xFF
-
 struct ba_lun_info {
 	u64 *lun_alloc_map;
 	u32 lun_bmap_size;
@@ -126,8 +124,7 @@ struct ba_lun_info {
 	unsigned char *aun_clone_map;
 };
 
-#define MAX_CXLFLASH_IOCTL_SZ	(sizeof(union cxlflash_ioctls))
-
+void ba_terminate(struct ba_lun *ba_lun);
 struct afu_cmd *cmd_checkout(struct afu *p_afu);
 void cmd_checkin(struct afu_cmd *p_cmd);
 void cxlflash_rht_format1(struct sisl_rht_entry *, u64, u32);
