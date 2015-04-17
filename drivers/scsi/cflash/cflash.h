@@ -27,7 +27,7 @@ extern u32 fullqc;
 extern u32 checkpid;
 
 #define CXLFLASH_NAME                      "cxlflash"
-#define CXLFLASH_ADAPTER_NAME              "IBM POWER CAPI Flash Adapter"
+#define CXLFLASH_ADAPTER_NAME              "IBM POWER CXL Flash Adapter"
 #define CXLFLASH_DRIVER_VERSION           "1.0.2"
 #define CXLFLASH_DRIVER_DATE              "(April 13, 2015)"
 
