@@ -1815,8 +1815,26 @@ int cxlflash_ioctl(struct scsi_device *sdev, int cmd, void __user * arg)
 	struct afu *p_afu = p_cxlflash->afu;
 	char buf[MAX_CXLFLASH_IOCTL_SZ];
 	size_t size = 0;
+	int idx;
 	int rc = 0;
 	sioctl do_ioctl = NULL;
+	#define IOCTE(_s, _i) sizeof(struct _s), (sioctl)(_i)
+	static struct {
+		size_t size;
+		sioctl ioctl;
+	} ioctl_tbl[] = { /* NOTE: order matters here */
+		{ IOCTE(dk_cxlflash_attach,      cxlflash_disk_attach) },
+		{ IOCTE(dk_cxlflash_udirect,     cxlflash_disk_direct_open) },
+		{ IOCTE(dk_cxlflash_uvirtual,    cxlflash_disk_virtual_open) },
+		{ IOCTE(dk_cxlflash_resize,      cxlflash_vlun_resize) },
+		{ IOCTE(dk_cxlflash_release,     cxlflash_disk_release) },
+		{ IOCTE(dk_cxlflash_detach,      cxlflash_disk_detach) },
+		{ IOCTE(dk_cxlflash_verify,      cxlflash_disk_verify) },
+		{ IOCTE(dk_cxlflash_log,         NULL) },
+		{ IOCTE(dk_cxlflash_recover_afu, cxlflash_afu_recover) },
+		{ IOCTE(dk_cxlflash_log,         NULL) },
+		{ IOCTE(dk_cxlflash_clone,       cxlflash_disk_clone) }
+	};
 
 	/* Restrict command set to physical support only for internal LUN */
 	if (internal_lun || p_afu->internal_lun)
@@ -1835,70 +1853,51 @@ int cxlflash_ioctl(struct scsi_device *sdev, int cmd, void __user * arg)
 
 	switch (cmd) {
 	case DK_CXLFLASH_ATTACH:
-		size = sizeof(struct dk_cxlflash_attach);
-		do_ioctl = (sioctl)cxlflash_disk_attach;
-		break;
 	case DK_CXLFLASH_USER_DIRECT:
-		size = sizeof(struct dk_cxlflash_udirect);
-		do_ioctl = (sioctl)cxlflash_disk_direct_open;
-		break;
 	case DK_CXLFLASH_USER_VIRTUAL:
-		size = sizeof(struct dk_cxlflash_uvirtual);
-		do_ioctl = (sioctl)cxlflash_disk_virtual_open;
-		break;
-	case DK_CXLFLASH_DETACH:
-		size = sizeof(struct dk_cxlflash_detach);
-		do_ioctl = (sioctl)cxlflash_disk_detach;
-		break;
 	case DK_CXLFLASH_VLUN_RESIZE:
-		size = sizeof(struct dk_cxlflash_resize);
-		do_ioctl = (sioctl)cxlflash_vlun_resize;
-		break;
 	case DK_CXLFLASH_RELEASE:
-		size = sizeof(struct dk_cxlflash_release);
-		do_ioctl = (sioctl)cxlflash_disk_release;
-		break;
-	case DK_CXLFLASH_CLONE:
-		size = sizeof(struct dk_cxlflash_clone);
-		do_ioctl = (sioctl)cxlflash_disk_clone;
-		break;
-	case DK_CXLFLASH_RECOVER_AFU:
-		size = sizeof(struct dk_cxlflash_recover_afu);
-		do_ioctl = (sioctl)cxlflash_afu_recover;
-		break;
+	case DK_CXLFLASH_DETACH:
 	case DK_CXLFLASH_VERIFY:
-		size = sizeof(struct dk_cxlflash_verify);
-		do_ioctl = (sioctl)cxlflash_disk_verify;
-		break;
+	case DK_CXLFLASH_LOG_EVENT:
+	case DK_CXLFLASH_RECOVER_AFU:
+	case DK_CXLFLASH_QUERY_EXCEPTIONS:
+	case DK_CXLFLASH_CLONE:
+		idx = _IOC_NR(cmd) - _IOC_NR(DK_CXLFLASH_ATTACH);
+		size = ioctl_tbl[idx].size;
+		do_ioctl = ioctl_tbl[idx].ioctl;
+
+		if (likely(do_ioctl))
+			break;
+
+		/* fall thru */
 	default:
 		rc = -EINVAL;
 		goto cxlflash_ioctl_exit;
 	}
 
-	BUG_ON(!do_ioctl);
-
 	if (unlikely(copy_from_user(&buf, arg, size))) {
-		cxlflash_err("copy_from_user() fail! size=%lu cmd=%d (%s) arg=%p",
-			   size, cmd, decode_ioctl(cmd), arg);
+		cxlflash_err("copy_from_user() fail! "
+			     "size=%lu cmd=%d (%s) arg=%p",
+			     size, cmd, decode_ioctl(cmd), arg);
 	    rc = -EFAULT;
 	    goto cxlflash_ioctl_exit;
 	}
 
 	rc = do_ioctl(sdev, (void *)&buf);
-
-	if (unlikely(copy_to_user(arg, &buf, size))) {
-		cxlflash_err("copy_to_user() fail! size=%lu cmd=%d (%s) arg=%p",
-			   size, cmd, decode_ioctl(cmd), arg);
-		/* Don't mask ioctl failure if copy out fails */
-		if (!rc)
-		    rc = -EFAULT;
-	}
+	if (likely(!rc))
+		if (unlikely(copy_to_user(arg, &buf, size))) {
+			cxlflash_err("copy_to_user() fail! "
+				     "size=%lu cmd=%d (%s) arg=%p",
+				     size, cmd, decode_ioctl(cmd), arg);
+			rc = -EFAULT;
+		}
 
 	/* fall thru to exit */
 
 cxlflash_ioctl_exit:
 	cxlflash_info("ioctl %s (%08X) returned rc %d",
-		    decode_ioctl(cmd), cmd, rc);
+		      decode_ioctl(cmd), cmd, rc);
 	return rc;
 }
 
