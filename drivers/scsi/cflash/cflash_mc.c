@@ -39,7 +39,6 @@
 #include "cflash.h"
 #include "cflash_mc.h"
 #include "cflash_ioctl.h"
-#include "mserv.h"
 
 
 static void marshall_virt_to_resize(struct dk_capi_uvirtual *pvirt,

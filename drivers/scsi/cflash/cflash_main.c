@@ -37,7 +37,6 @@
 #include "cflash.h"
 #include "sislite.h"
 #include "cflash_mc.h"
-#include "mserv.h"
 
 MODULE_DESCRIPTION(CXLFLASH_ADAPTER_NAME);
 MODULE_AUTHOR("Manoj N. Kumar <manoj@linux.vnet.ibm.com>");
