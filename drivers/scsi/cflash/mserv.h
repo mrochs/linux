@@ -31,11 +31,7 @@
 						   into a chunk */
 #define LXT_LUNIDX_SHIFT  8     /* LXT entry, shift for LUN index */
 
-/* Sizing parms: same context can be registered multiple times.
-   Therefore we allow MAX_CONNS > MAX_CONTEXT.
-*/
 #define MAX_RHT_PER_CONTEXT 16	/* num resource hndls per context */
-#define MAX_CONNS (MAX_CONTEXT*2)	/* num client connections per AFU */
 #define MAX_CONN_TO_POLL 64	/* num fds to poll once */
 #define NUM_RRQ_ENTRY    16	/* for master issued cmds */
 #define NUM_FC_PORTS     CXLFLASH_NUM_FC_PORTS	/* ports per AFU */
@@ -74,11 +70,7 @@
 /* AFU command room retry limit */
 #define MC_ROOM_RETRY_CNT    10
 
-/* AFU heartbeat periodic timer */
-#define MC_HB_PERIOD 5		/* 5 secs */
-
 /* FC CRC clear periodic timer */
-#define MC_FC_PERIOD  300	/* 5 mins */
 #define MC_CRC_THRESH 100	/* threshold in 5 mins */
 
 #define CL_SIZE             128	/* Processor cache line size */
