@@ -37,7 +37,7 @@
 
 #include "sislite.h"
 #include "cflash.h"
-#include "cflash_mc.h"
+#include "superpipe.h"
 #include "cflash_ioctl.h"
 
 
