@@ -39,7 +39,6 @@
 #include "cflash.h"
 #include "cflash_mc.h"
 #include "cflash_ioctl.h"
-#include "afu_fc.h"
 #include "mserv.h"
 
 

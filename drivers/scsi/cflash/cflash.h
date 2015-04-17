@@ -49,6 +49,27 @@ extern u32 checkpid;
 
 #define CXLFLASH_PCI_ERROR_RECOVERY_TIMEOUT  (120 * HZ)
 
+/* FC defines */
+#define FC_MTIP_CMDCONFIG 0x010
+#define FC_MTIP_STATUS 0x018
+
+#define FC_PNAME 0x300
+#define FC_CONFIG 0x320
+#define FC_CONFIG2 0x328
+#define FC_STATUS 0x330
+#define FC_ERROR 0x380
+#define FC_ERRCAP 0x388
+#define FC_ERRMSK 0x390
+#define FC_CNT_CRCERR 0x538
+#define FC_CRC_THRESH 0x580
+
+#define FC_MTIP_CMDCONFIG_ONLINE    0x20ull
+#define FC_MTIP_CMDCONFIG_OFFLINE   0x40ull
+
+#define FC_MTIP_STATUS_MASK         0x30ull
+#define FC_MTIP_STATUS_ONLINE       0x20ull
+#define FC_MTIP_STATUS_OFFLINE      0x10ull
+
 /* VPD defines */
 #define CXLFLASH_VPD_LEN	256
 #define WWPN_LEN	16

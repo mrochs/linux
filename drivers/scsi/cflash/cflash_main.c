@@ -35,7 +35,6 @@
 #include <scsi/scsi_transport_fc.h>
 
 #include "cflash.h"
-#include "afu_fc.h"
 #include "sislite.h"
 #include "cflash_mc.h"
 #include "mserv.h"
