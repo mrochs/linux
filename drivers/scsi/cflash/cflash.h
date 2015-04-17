@@ -70,6 +70,26 @@ extern u32 checkpid;
 #define FC_MTIP_STATUS_ONLINE       0x20ull
 #define FC_MTIP_STATUS_OFFLINE      0x10ull
 
+
+/* TIMEOUT and RETRY definitions */
+
+/* AFU command timeout values */
+#define MC_DISCOVERY_TIMEOUT 5	/* 5 secs */
+#define MC_AFU_SYNC_TIMEOUT  5	/* 5 secs */
+
+/* AFU command retry limit */
+#define MC_RETRY_CNT         5	/* sufficient for SCSI check and
+				   certain AFU errors */
+
+/* AFU command room retry limit */
+#define MC_ROOM_RETRY_CNT    10
+
+/* FC CRC clear periodic timer */
+#define MC_CRC_THRESH 100	/* threshold in 5 mins */
+
+#define FC_PORT_STATUS_RETRY_CNT 100	/* 100 100ms retries = 10 seconds */
+#define FC_PORT_STATUS_RETRY_INTERVAL_US 100000	/* microseconds */
+
 /* VPD defines */
 #define CXLFLASH_VPD_LEN	256
 #define WWPN_LEN	16
@@ -116,10 +136,11 @@ extern u32 checkpid;
 	dev_dbg(_d, CONFN(_s), __func__, ##__VA_ARGS__)
 
 /* Command management definitions */
-#define CXLFLASH_NUM_CMDS	(2 * CXLFLASH_MAX_CMDS) /* Must be a pow2 for alignment
-					       * and more efficient array index
-					       * derivation
-					       */
+#define CXLFLASH_NUM_CMDS	(2 * CXLFLASH_MAX_CMDS) /* Must be a pow2 for 
+							   alignment and more 
+							   efficient array 
+							   index derivation 
+							 */
 
 #define NOT_POW2(_x) ((_x) & ((_x) & ((_x) -1)))
 #if NOT_POW2(CXLFLASH_NUM_CMDS)
@@ -130,6 +151,8 @@ extern u32 checkpid;
 
 #define CMD_FREE   0x0
 #define CMD_IN_USE 0x1
+
+
 enum undo_level {
 	RELEASE_CONTEXT = 0,
 	FREE_IRQ,
@@ -148,6 +171,15 @@ enum open_mode_type {
 
 struct dev_dependent_vals {
 	u64 max_sectors;
+};
+
+struct asyc_intr_info {
+	u64 status;
+	char *desc;
+	u8 port;
+	u8 action;
+#define CLR_FC_ERROR   0x01
+#define LINK_RESET     0x02
 };
 
 /*

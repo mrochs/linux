@@ -49,31 +49,10 @@
 #define LXT_GROUP_SIZE          8
 #define LXT_NUM_GROUPS(lxt_cnt) (((lxt_cnt) + 7)/8)	/* alloc'ed groups */
 
-/* port online retry intervals */
-#define FC_PORT_STATUS_RETRY_CNT 100	/* 100 100ms retries = 10 seconds */
-#define FC_PORT_STATUS_RETRY_INTERVAL_US 100000	/* microseconds */
-
 /* flags in IOA status area for host use */
 #define B_DONE       0x01
 #define B_ERROR      0x02	/* set with B_DONE */
 #define B_TIMEOUT    0x04	/* set with B_DONE & B_ERROR */
-
-/* AFU command timeout values */
-#define MC_DISCOVERY_TIMEOUT 5	/* 5 secs */
-#define MC_AFU_SYNC_TIMEOUT  5	/* 5 secs */
-
-/* AFU command retry limit */
-#define MC_RETRY_CNT         5	/* sufficient for SCSI check and
-				   certain AFU errors */
-
-/* AFU command room retry limit */
-#define MC_ROOM_RETRY_CNT    10
-
-/* FC CRC clear periodic timer */
-#define MC_CRC_THRESH 100	/* threshold in 5 mins */
-
-#define CL_SIZE             128	/* Processor cache line size */
-#define CL_SIZE_MASK        0x7F	/* Cache line size mask */
 
 struct scsi_inquiry_page_83_hdr {
 	u8 peri_qual_dev_type;
@@ -115,9 +94,6 @@ struct ctx_info {
 
 	int ref_cnt;		/* num conn_infos pointing to me */
 };
-
-/* forward decls */
-struct capikv_ini_elm;
 
 /* Block Alocator */
 struct blka {
@@ -208,15 +184,6 @@ struct afu {
 	struct cxlflash *back;  /* Pointer back to parent cxlflash */
 
 } __attribute__ ((aligned(0x1000)));
-
-struct asyc_intr_info {
-	u64 status;
-	char *desc;
-	u8 port;
-	u8 action;
-#define CLR_FC_ERROR   0x01
-#define LINK_RESET     0x02
-};
 
 int find_lun(struct cxlflash *p_cxlflash, u32 port_sel);
 int read_cap16(struct afu *p_afu, struct lun_info *p_lun_info, u32 port_sel);
