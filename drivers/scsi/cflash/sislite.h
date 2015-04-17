@@ -18,24 +18,6 @@
 #include <linux/types.h>
 
 /************************************************************************/
-/* CAPI Flash SIS LITE Register offsets                                 */
-/************************************************************************/
-
-/* Byte offsets to various host interface registers */
-#define CAPI_ENDIAN_CTRL_OFFSET   0x00	/* Endian control */
-#define CAPI_INTR_STATUS_OFFSET   0x08	/* Interrupt Staus register */
-#define CAPI_INTR_CLEAR_OFFSET    0x10	/* Interrupt Clear register */
-#define CAPI_INTR_MASK_OFFSET     0x18	/* Interrupt Mask register */
-#define CAPI_IOARRIN_OFFSET       0x20	/* IOARRIN register */
-#define CAPI_RRQ0_START_EA_OFFSET 0x28	/* RRQ#0 start EA register */
-#define CAPI_RRQ0_END_EA_OFFSET   0x30	/* RRQ#0 end EA register */
-#define CAPI_CMD_ROOM_OFFSET      0x38	/* CMD_ROOM register */
-#define CAPI_CTX_CTRL_OFFSET      0x40	/* Context Control register */
-#define CAPI_MBOX_W_OFFSET        0x48	/* Mailbox write register */
-
-#define CAPI_AFU_GLOBAL_OFFSET  0x10000	/* Offset of AFU Global area */
-
-/************************************************************************/
 /* IOARCB: 64 bytes, min 16 byte alignment required                     */
 /************************************************************************/
 
