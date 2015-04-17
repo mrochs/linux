@@ -38,8 +38,6 @@
 #include "afu_fc.h"
 #include "sislite.h"
 #include "cflash_mc.h"
-#include "cflash_ba.h"
-#include "cflash_util.h"
 #include "mserv.h"
 
 MODULE_DESCRIPTION(CXLFLASH_ADAPTER_NAME);

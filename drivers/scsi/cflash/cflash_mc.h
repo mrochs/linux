@@ -99,6 +99,33 @@ union cxlflash_ioctls {
 	struct dk_capi_recover_afu	recover_afu;
 };
 
+struct ba_lun {
+	u64 lun_id;
+	u64 wwpn;
+	size_t lsize;		/* Lun size in number of LBAs             */
+	size_t lba_size;	/* LBA size in number of bytes            */
+	size_t au_size;		/* Allocation Unit size in number of LBAs */
+	void *ba_lun_handle;
+};
+
+void ba_terminate(struct ba_lun *ba_lun);
+
+#define MAX_AUN_CLONE_CNT    0xFF
+
+struct ba_lun_info {
+	u64 *lun_alloc_map;
+	u32 lun_bmap_size;
+	u32 total_aus;
+	u64 free_aun_cnt;
+
+	/* indices to be used for elevator lookup of free map */
+	u32 free_low_idx;
+	u32 free_curr_idx;
+	u32 free_high_idx;
+
+	unsigned char *aun_clone_map;
+};
+
 #define MAX_CXLFLASH_IOCTL_SZ	(sizeof(union cxlflash_ioctls))
 
 struct afu_cmd *cmd_checkout(struct afu *p_afu);
