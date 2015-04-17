@@ -32,7 +32,6 @@
 #define LXT_LUNIDX_SHIFT  8     /* LXT entry, shift for LUN index */
 
 #define MAX_RHT_PER_CONTEXT 16	/* num resource hndls per context */
-#define MAX_CONN_TO_POLL 64	/* num fds to poll once */
 #define NUM_RRQ_ENTRY    16	/* for master issued cmds */
 #define NUM_FC_PORTS     CXLFLASH_NUM_FC_PORTS	/* ports per AFU */
 
@@ -143,33 +142,6 @@ struct lun_info {
 	struct list_head list;
 };
 
-enum undo_level {
-	RELEASE_CONTEXT = 0,
-	FREE_IRQ,
-	UNMAP_ONE,
-	UNMAP_TWO,
-	UNMAP_THREE,
-	UNMAP_FOUR,
-	UNDO_START
-};
-
-#define CXLFLASH_NUM_CMDS	(2 * CXLFLASH_MAX_CMDS) /* Must be a pow2 for alignment
-					       * and more efficient array index
-					       * derivation
-					       */
-
-#define NOT_POW2(_x) ((_x) & ((_x) & ((_x) -1)))
-#if NOT_POW2(CXLFLASH_NUM_CMDS)
-#error "CXLFLASH_NUM_CMDS is not a power of 2!"
-#endif
-
-#define AFU_INIT_INDEX   0	/* first cmd is used in init/discovery,
-	                         * free for other use thereafter
-				 */
-#define AFU_SYNC_INDEX  (CXLFLASH_NUM_CMDS - 1)/* last cmd is rsvd for afu sync */
-
-#define CMD_FREE   0x0
-#define CMD_IN_USE 0x1
 #define CMD_BUFSIZE 0x1000
 
 struct afu_cmd {

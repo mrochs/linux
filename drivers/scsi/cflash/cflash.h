@@ -115,6 +115,31 @@ extern u32 checkpid;
 #define cxlflash_dev_dbg(_d, _s, ...)	\
 	dev_dbg(_d, CONFN(_s), __func__, ##__VA_ARGS__)
 
+/* Command management definitions */
+#define CXLFLASH_NUM_CMDS	(2 * CXLFLASH_MAX_CMDS) /* Must be a pow2 for alignment
+					       * and more efficient array index
+					       * derivation
+					       */
+
+#define NOT_POW2(_x) ((_x) & ((_x) & ((_x) -1)))
+#if NOT_POW2(CXLFLASH_NUM_CMDS)
+#error "CXLFLASH_NUM_CMDS is not a power of 2!"
+#endif
+
+#define AFU_SYNC_INDEX  (CXLFLASH_NUM_CMDS - 1)/* last cmd is rsvd for afu sync */
+
+#define CMD_FREE   0x0
+#define CMD_IN_USE 0x1
+enum undo_level {
+	RELEASE_CONTEXT = 0,
+	FREE_IRQ,
+	UNMAP_ONE,
+	UNMAP_TWO,
+	UNMAP_THREE,
+	UNMAP_FOUR,
+	UNDO_START
+};
+
 enum open_mode_type {
 	MODE_NONE = 0,
 	MODE_VIRTUAL,
