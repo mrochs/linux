@@ -194,7 +194,7 @@ const struct file_operations cxlflash_cxl_fops = {
  *
  */
 static int cxlflash_disk_attach(struct scsi_device *sdev,
-			      struct dk_capi_attach *patt)
+			      struct dk_cxlflash_attach *patt)
 {
 	struct cxlflash *p_cxlflash = (struct cxlflash *)sdev->host->hostdata;
 	struct afu *p_afu = p_cxlflash->afu;
@@ -598,7 +598,7 @@ static int shrink_lxt(struct afu *p_afu,
  *		in the RHT entry.
  */
 static int cxlflash_vlun_resize(struct scsi_device *sdev,
-			      struct dk_capi_resize *prsz)
+			      struct dk_cxlflash_resize *prsz)
 {
 	struct cxlflash *p_cxlflash = (struct cxlflash *)sdev->host->hostdata;
 	struct lun_info *p_lun_info = sdev->hostdata;
@@ -712,9 +712,9 @@ static int cxlflash_disk_open(struct scsi_device *sdev, void *arg,
 	struct afu *p_afu = p_cxlflash->afu;
 	struct lun_info *p_lun_info = sdev->hostdata;
 
-	struct dk_capi_uvirtual *pvirt = (struct dk_capi_uvirtual *)arg;
-	struct dk_capi_udirect *pphys = (struct dk_capi_udirect *)arg;
-	struct dk_capi_resize  resize;
+	struct dk_cxlflash_uvirtual *pvirt = (struct dk_cxlflash_uvirtual *)arg;
+	struct dk_cxlflash_udirect *pphys = (struct dk_cxlflash_udirect *)arg;
+	struct dk_cxlflash_resize  resize;
 
 	u32 perms;
 	u64 context_id;
@@ -837,13 +837,13 @@ out:
  *              When successful, the RHT entry is cleared.
  */
 static int cxlflash_disk_release(struct scsi_device *sdev,
-			       struct dk_capi_release *prele)
+			       struct dk_cxlflash_release *prele)
 {
 	struct cxlflash *p_cxlflash = (struct cxlflash *)sdev->host->hostdata;
 	struct lun_info *p_lun_info = sdev->hostdata;
 	struct afu *p_afu = p_cxlflash->afu;
 
-	struct dk_capi_resize size;
+	struct dk_cxlflash_resize size;
 	res_hndl_t res_hndl = prele->rsrc_handle;
 
 	int rc = 0;
@@ -945,12 +945,12 @@ out:
  *                  RHT_CNT=0.
  */
 static int cxlflash_disk_detach(struct scsi_device *sdev,
-			      struct dk_capi_detach *pdet)
+			      struct dk_cxlflash_detach *pdet)
 {
 	struct cxlflash *p_cxlflash = (struct cxlflash *)sdev->host->hostdata;
 	struct lun_info *p_lun_info = sdev->hostdata;
 
-	struct dk_capi_release rel;
+	struct dk_cxlflash_release rel;
 	struct ctx_info *p_ctx_info;
 
 	int i;
@@ -999,7 +999,7 @@ out:
 }
 
 static int cxlflash_afu_recover(struct scsi_device *sdev,
-			      struct dk_capi_recover_afu *prec)
+			      struct dk_cxlflash_recover_afu *prec)
 {
 	struct cxlflash *p_cxlflash = (struct cxlflash *)sdev->host->hostdata;
 	struct afu *p_afu = p_cxlflash->afu;
@@ -1135,13 +1135,13 @@ static int clone_lxt(struct afu *p_afu,
  *              errno       - Failure
  */
 static int cxlflash_disk_clone(struct scsi_device *sdev,
-			     struct dk_capi_clone *pclone)
+			     struct dk_cxlflash_clone *pclone)
 {
 	struct cxlflash *p_cxlflash = (struct cxlflash *)sdev->host->hostdata;
 	struct lun_info *p_lun_info = sdev->hostdata;
 	struct blka *p_blka = &p_lun_info->blka;
 	struct afu *p_afu = p_cxlflash->afu;
-	struct dk_capi_release release = { 0 };
+	struct dk_cxlflash_release release = { 0 };
 
 	struct ctx_info *p_ctx_info_src,
 			*p_ctx_info_dst;
@@ -1234,7 +1234,7 @@ out:
  *              When successful, the RHT entry is cleared.
  */
 static int cxlflash_disk_verify(struct scsi_device *sdev,
-			      struct dk_capi_verify *pver)
+			      struct dk_cxlflash_verify *pver)
 {
 	struct lun_info *p_lun_info = sdev->hostdata;
 
@@ -1435,14 +1435,14 @@ decode_ioctl(int cmd)
 	#define _CASE2STR(_x) case _x: return #_x
 
 	switch (cmd) {
-	_CASE2STR(DK_CAPI_ATTACH);
-	_CASE2STR(DK_CAPI_USER_DIRECT);
-	_CASE2STR(DK_CAPI_USER_VIRTUAL);
-	_CASE2STR(DK_CAPI_DETACH);
-	_CASE2STR(DK_CAPI_VLUN_RESIZE);
-	_CASE2STR(DK_CAPI_RELEASE);
-	_CASE2STR(DK_CAPI_CLONE);
-	_CASE2STR(DK_CAPI_VERIFY);
+	_CASE2STR(DK_CXLFLASH_ATTACH);
+	_CASE2STR(DK_CXLFLASH_USER_DIRECT);
+	_CASE2STR(DK_CXLFLASH_USER_VIRTUAL);
+	_CASE2STR(DK_CXLFLASH_DETACH);
+	_CASE2STR(DK_CXLFLASH_VLUN_RESIZE);
+	_CASE2STR(DK_CXLFLASH_RELEASE);
+	_CASE2STR(DK_CXLFLASH_CLONE);
+	_CASE2STR(DK_CXLFLASH_VERIFY);
 	}
 
 	return("UNKNOWN");
@@ -1482,10 +1482,10 @@ int cxlflash_ioctl(struct scsi_device *sdev, int cmd, void __user * arg)
 	if (internal_lun || p_afu->internal_lun)
 	{
 		switch (cmd) {
-		case DK_CAPI_USER_VIRTUAL:
-		case DK_CAPI_VLUN_RESIZE:
-		case DK_CAPI_RELEASE:
-		case DK_CAPI_CLONE:
+		case DK_CXLFLASH_USER_VIRTUAL:
+		case DK_CXLFLASH_VLUN_RESIZE:
+		case DK_CXLFLASH_RELEASE:
+		case DK_CXLFLASH_CLONE:
 			cxlflash_err("%s not supported for lun_mode=%d",
 				   decode_ioctl(cmd), internal_lun);
 			rc = -EINVAL;
@@ -1494,40 +1494,40 @@ int cxlflash_ioctl(struct scsi_device *sdev, int cmd, void __user * arg)
 	}
 
 	switch (cmd) {
-	case DK_CAPI_ATTACH:
-		size = sizeof(struct dk_capi_attach);
+	case DK_CXLFLASH_ATTACH:
+		size = sizeof(struct dk_cxlflash_attach);
 		do_ioctl = (sioctl)cxlflash_disk_attach;
 		break;
-	case DK_CAPI_USER_DIRECT:
-		size = sizeof(struct dk_capi_udirect);
+	case DK_CXLFLASH_USER_DIRECT:
+		size = sizeof(struct dk_cxlflash_udirect);
 		do_ioctl = (sioctl)cxlflash_disk_direct_open;
 		break;
-	case DK_CAPI_USER_VIRTUAL:
-		size = sizeof(struct dk_capi_uvirtual);
+	case DK_CXLFLASH_USER_VIRTUAL:
+		size = sizeof(struct dk_cxlflash_uvirtual);
 		do_ioctl = (sioctl)cxlflash_disk_virtual_open;
 		break;
-	case DK_CAPI_DETACH:
-		size = sizeof(struct dk_capi_detach);
+	case DK_CXLFLASH_DETACH:
+		size = sizeof(struct dk_cxlflash_detach);
 		do_ioctl = (sioctl)cxlflash_disk_detach;
 		break;
-	case DK_CAPI_VLUN_RESIZE:
-		size = sizeof(struct dk_capi_resize);
+	case DK_CXLFLASH_VLUN_RESIZE:
+		size = sizeof(struct dk_cxlflash_resize);
 		do_ioctl = (sioctl)cxlflash_vlun_resize;
 		break;
-	case DK_CAPI_RELEASE:
-		size = sizeof(struct dk_capi_release);
+	case DK_CXLFLASH_RELEASE:
+		size = sizeof(struct dk_cxlflash_release);
 		do_ioctl = (sioctl)cxlflash_disk_release;
 		break;
-	case DK_CAPI_CLONE:
-		size = sizeof(struct dk_capi_clone);
+	case DK_CXLFLASH_CLONE:
+		size = sizeof(struct dk_cxlflash_clone);
 		do_ioctl = (sioctl)cxlflash_disk_clone;
 		break;
-	case DK_CAPI_RECOVER_AFU:
-		size = sizeof(struct dk_capi_recover_afu);
+	case DK_CXLFLASH_RECOVER_AFU:
+		size = sizeof(struct dk_cxlflash_recover_afu);
 		do_ioctl = (sioctl)cxlflash_afu_recover;
 		break;
-	case DK_CAPI_VERIFY:
-		size = sizeof(struct dk_capi_verify);
+	case DK_CXLFLASH_VERIFY:
+		size = sizeof(struct dk_cxlflash_verify);
 		do_ioctl = (sioctl)cxlflash_disk_verify;
 		break;
 	default:
