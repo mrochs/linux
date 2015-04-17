@@ -401,10 +401,7 @@ static void dump_ba_clone_map(struct ba_lun *ba_lun)
 }
 #endif
 
-/* Mask off the low nibble of the length to ensure 16 byte multiple */
-#define SISLITE_LEN_MASK 0xFFFFFFF0
-
-int cxlflash_afu_attach(struct cxlflash *p_cxlflash, u64 context_id)
+static int cxlflash_afu_attach(struct cxlflash *p_cxlflash, u64 context_id)
 {
 	struct afu *p_afu = p_cxlflash->afu;
 	struct ctx_info *p_ctx_info = &p_afu->ctx_info[context_id];
@@ -478,29 +475,6 @@ static int cxlflash_init_ba(struct lun_info *p_lun_info)
 cxlflash_init_ba_exit:
 	cxlflash_info("returning rc=%d p_lun_info=%p", rc, p_lun_info);
 	return rc;
-}
-
-/**
- * cxlflash_scan_luns - Scans For all LUNs on all Ports
- * @p_cxlflash:    struct cxlflash config struct
- *
- * Description: This will be deprecated when the kernel services
- * are ready.
- *
- * Return value:
- *      none
- **/
-void cxlflash_scan_luns(struct cxlflash *p_cxlflash)
-{
-	int j, rc;
-
-	for (j = 0; j < NUM_FC_PORTS; j++) {	/* discover on each port */
-		if ((rc = find_lun(p_cxlflash, 1u << j)) == 0) {
-			cxlflash_info("Found valid lun on port=%d", j);
-		} else {
-			cxlflash_err("find_lun returned rc=%d on port=%d", rc, j);
-		}
-	}
 }
 
 int cxlflash_cxl_release(struct inode *inode, struct file *file)
@@ -740,8 +714,9 @@ static void  rhte_checkin(struct sisl_rht_entry *p_rht_entry)
 	p_rht_entry->fp = 0;
 }
 
-void cxlflash_rht_format1(struct sisl_rht_entry *p_rht_entry, u64 lun_id,
-			u32 perm)
+void cxlflash_rht_format1(struct sisl_rht_entry *p_rht_entry,
+			  u64 lun_id,
+			  u32 perm)
 {
 	/*
 	 * Populate the Format 1 RHT entry for direct access (physical
@@ -953,7 +928,7 @@ static int shrink_lxt(struct afu *p_afu,
  *		in the RHT entry.
  */
 static int cxlflash_vlun_resize(struct scsi_device *sdev,
-			      struct dk_cxlflash_resize *prsz)
+				struct dk_cxlflash_resize *prsz)
 {
 	struct cxlflash *p_cxlflash = (struct cxlflash *)sdev->host->hostdata;
 	struct lun_info *p_lun_info = sdev->hostdata;
@@ -973,7 +948,8 @@ static int cxlflash_vlun_resize(struct scsi_device *sdev,
 	/* req_size is always assumed to be in 4k blocks. So we have to convert
 	 * it from 4k to chunk size
 	 */
-	nsectors = (prsz->req_size * CXLFLASH_BLOCK_SIZE) / (p_lun_info->blk_len);
+	nsectors = (prsz->req_size * CXLFLASH_BLOCK_SIZE) / 
+		(p_lun_info->blk_len);
 	new_size = (nsectors + MC_CHUNK_SIZE - 1) / MC_CHUNK_SIZE;
 
 	cxlflash_info("context=0x%llx res_hndl=0x%llx, req_size=0x%llx,"
@@ -1060,8 +1036,9 @@ out:
  *               a. find a free RHT entry
  *
  */
-static int cxlflash_disk_open(struct scsi_device *sdev, void *arg,
-			    enum open_mode_type mode)
+static int cxlflash_disk_open(struct scsi_device *sdev,
+			      void *arg,
+			      enum open_mode_type mode)
 {
 	struct cxlflash *p_cxlflash = (struct cxlflash *)sdev->host->hostdata;
 	struct afu *p_afu = p_cxlflash->afu;
@@ -1192,7 +1169,7 @@ out:
  *              When successful, the RHT entry is cleared.
  */
 static int cxlflash_disk_release(struct scsi_device *sdev,
-			       struct dk_cxlflash_release *prele)
+				 struct dk_cxlflash_release *prele)
 {
 	struct cxlflash *p_cxlflash = (struct cxlflash *)sdev->host->hostdata;
 	struct lun_info *p_lun_info = sdev->hostdata;
@@ -1300,7 +1277,7 @@ out:
  *                  RHT_CNT=0.
  */
 static int cxlflash_disk_detach(struct scsi_device *sdev,
-			      struct dk_cxlflash_detach *pdet)
+				struct dk_cxlflash_detach *pdet)
 {
 	struct cxlflash *p_cxlflash = (struct cxlflash *)sdev->host->hostdata;
 	struct lun_info *p_lun_info = sdev->hostdata;
@@ -1354,7 +1331,7 @@ out:
 }
 
 static int cxlflash_afu_recover(struct scsi_device *sdev,
-			      struct dk_cxlflash_recover_afu *prec)
+				struct dk_cxlflash_recover_afu *prec)
 {
 	struct cxlflash *p_cxlflash = (struct cxlflash *)sdev->host->hostdata;
 	struct afu *p_afu = p_cxlflash->afu;
@@ -1589,7 +1566,7 @@ out:
  *              When successful, the RHT entry is cleared.
  */
 static int cxlflash_disk_verify(struct scsi_device *sdev,
-			      struct dk_cxlflash_verify *pver)
+				struct dk_cxlflash_verify *pver)
 {
 	struct lun_info *p_lun_info = sdev->hostdata;
 
@@ -1670,7 +1647,7 @@ out:
 /* XXX: This is temporary. 
  * The report luns command will be sent be the SCSI stack
  */
-int find_lun(struct cxlflash *p_cxlflash, u32 port_sel)
+static int find_lun(struct cxlflash *p_cxlflash, u32 port_sel)
 {
 	u32 *p_u32;
 	u32 len;
@@ -1782,6 +1759,29 @@ out:
 		kfree(lunidarray);
 	cxlflash_info("returning rc %d pcmd%p", rc, p_cmd);
 	return rc;
+}
+
+/**
+ * cxlflash_scan_luns - Scans For all LUNs on all Ports
+ * @p_cxlflash:    struct cxlflash config struct
+ *
+ * Description: This will be deprecated when the kernel services
+ * are ready.
+ *
+ * Return value:
+ *      none
+ **/
+void cxlflash_scan_luns(struct cxlflash *p_cxlflash)
+{
+	int j, rc;
+
+	for (j = 0; j < NUM_FC_PORTS; j++) {	/* discover on each port */
+		if ((rc = find_lun(p_cxlflash, 1u << j)) == 0) {
+			cxlflash_info("Found valid lun on port=%d", j);
+		} else {
+			cxlflash_err("find_lun returned rc=%d on port=%d", rc, j);
+		}
+	}
 }
 
 static char *

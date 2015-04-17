@@ -294,7 +294,6 @@ struct afu {
 
 } __attribute__ ((aligned(0x1000)));
 
-int find_lun(struct cxlflash *p_cxlflash, u32 port_sel);
 int read_cap16(struct afu *p_afu, struct lun_info *p_lun_info, u32 port_sel);
 int afu_sync(struct afu *p_afu, ctx_hndl_t ctx_hndl_u, res_hndl_t res_hndl_u,
 	     u8 mode);
