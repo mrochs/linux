@@ -34,7 +34,7 @@
 #include <scsi/scsi_cmnd.h>
 #include <scsi/scsi_transport_fc.h>
 
-#include "cflash.h"
+#include "cflash_main.h"
 #include "sislite.h"
 #include "superpipe.h"
 

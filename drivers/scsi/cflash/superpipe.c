@@ -36,7 +36,7 @@
 #include <scsi/scsi_cmnd.h>
 
 #include "sislite.h"
-#include "cflash.h"
+#include "cflash_main.h"
 #include "superpipe.h"
 #include "cflash_ioctl.h"
 
