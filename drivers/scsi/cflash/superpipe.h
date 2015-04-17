@@ -298,7 +298,6 @@ int read_cap16(struct afu *p_afu, struct lun_info *p_lun_info, u32 port_sel);
 int afu_sync(struct afu *p_afu, ctx_hndl_t ctx_hndl_u, res_hndl_t res_hndl_u,
 	     u8 mode);
 
-void ba_terminate(struct ba_lun *ba_lun);
 struct afu_cmd *cmd_checkout(struct afu *p_afu);
 void cmd_checkin(struct afu_cmd *p_cmd);
 void cxlflash_rht_format1(struct sisl_rht_entry *, u64, u32);

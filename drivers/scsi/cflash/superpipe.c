@@ -174,21 +174,6 @@ static int ba_init(struct ba_lun *ba_lun)
 	return 0;
 }
 
-void ba_terminate(struct ba_lun *ba_lun)
-{
-	struct ba_lun_info *p_lun_info =
-	    (struct ba_lun_info *)ba_lun->ba_lun_handle;
-
-	if (p_lun_info) {
-		if (p_lun_info->aun_clone_map)
-			kfree(p_lun_info->aun_clone_map);
-		if (p_lun_info->lun_alloc_map)
-			kfree(p_lun_info->lun_alloc_map);
-		kfree(p_lun_info);
-		ba_lun->ba_lun_handle = NULL;
-	}
-}
-
 static int find_free_range(u32 low,
 			   u32 high,
 			   struct ba_lun_info *lun_info, int *bit_word)

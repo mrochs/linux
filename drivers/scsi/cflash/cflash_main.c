@@ -464,6 +464,20 @@ static int cxlflash_slave_configure(struct scsi_device *sdev)
 	return rc;
 }
 
+static void ba_terminate(struct ba_lun *ba_lun)
+{
+	struct ba_lun_info *p_lun_info =
+	    (struct ba_lun_info *)ba_lun->ba_lun_handle;
+
+	if (p_lun_info) {
+		if (p_lun_info->aun_clone_map)
+			kfree(p_lun_info->aun_clone_map);
+		if (p_lun_info->lun_alloc_map)
+			kfree(p_lun_info->lun_alloc_map);
+		kfree(p_lun_info);
+		ba_lun->ba_lun_handle = NULL;
+	}
+}
 static void cxlflash_slave_destroy(struct scsi_device *sdev)
 {
 	struct lun_info *p_lun_info = sdev->hostdata;
