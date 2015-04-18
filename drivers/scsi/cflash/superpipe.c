@@ -1813,6 +1813,7 @@ int cxlflash_ioctl(struct scsi_device *sdev, int cmd, void __user * arg)
 
 	struct cxlflash *p_cxlflash = (struct cxlflash *)sdev->host->hostdata;
 	struct afu *p_afu = p_cxlflash->afu;
+	//struct dk_cxlflash_hdr *p_hdr;
 	char buf[MAX_CXLFLASH_IOCTL_SZ];
 	size_t size = 0;
 	int idx;
@@ -1883,6 +1884,16 @@ int cxlflash_ioctl(struct scsi_device *sdev, int cmd, void __user * arg)
 	    rc = -EFAULT;
 	    goto cxlflash_ioctl_exit;
 	}
+
+#if 0
+	p_hdr = (struct dk_cxlflash_hdr *)&buf;
+	if (p_hdr->version != 0) {
+		cxlflash_err("Version %u not supported for %s",
+			     p_hdr->version, decode_ioctl(cmd));
+		rc = -EINVAL;
+		goto cxlflash_ioctl_exit;
+	}
+#endif
 
 	rc = do_ioctl(sdev, (void *)&buf);
 	if (likely(!rc))
