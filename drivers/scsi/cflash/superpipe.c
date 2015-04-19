@@ -597,6 +597,7 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 	p_cxlflash->num_user_contexts++;
 	p_cxlflash->per_context[context_id].lfd = fd;
 	p_cxlflash->per_context[context_id].pid = current->pid;
+	p_cxlflash->per_context[context_id].ctx = ctx;
 
 	/* Translate read/write O_* flags from fnctl.h to AFU permission bits */
 	perms = ((patt->flags + 1) & 0x3);
@@ -1289,7 +1290,6 @@ static int cxlflash_disk_detach(struct scsi_device *sdev,
 
 	if (p_ctx_info->ref_cnt-- == 1) {
 
-		/* close the context */
 		/* for any resource still open, deallocate LBAs and close
 		 * if nobody else is using it.
 		 */
@@ -1307,6 +1307,8 @@ static int cxlflash_disk_detach(struct scsi_device *sdev,
 		writeq_be(0, &p_ctx_info->ctrl_map->rht_cnt_id);
 		/* drop all capabilities */
 		writeq_be(0, &p_ctx_info->ctrl_map->ctx_cap);
+		/* close the context */
+		p_cxlflash->num_user_contexts--;
 	}
 	spin_lock(p_lun_info->slock);
 	p_lun_info->mode = MODE_NONE;

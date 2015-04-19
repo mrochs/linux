@@ -41,6 +41,7 @@ struct cxlflash_ctx {
 	struct cxl_ioctl_start_work work;
 	int lfd;
 	pid_t pid;
+	struct cxl_context *ctx;
 };
 
 struct cxlflash {
