@@ -69,6 +69,7 @@ struct cxlflash {
 	struct pci_pool *cxlflash_cmd_pool;
 	struct pci_dev *parent_dev;
 
+	int num_user_contexts;
 	struct cxlflash_ctx per_context[MAX_CONTEXT];
 	struct file_operations cxl_fops;
 

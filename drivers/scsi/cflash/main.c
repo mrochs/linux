@@ -868,8 +868,6 @@ static int cxlflash_gb_alloc(struct cxlflash *p_cxlflash)
 		p_cxlflash->afu->cmd[i].special = 0;
 	}
 
-	p_cxlflash->cxl_fops = cxlflash_cxl_fops;
-
 	for  (i=0; i<MAX_CONTEXT; i++) {
 		p_cxlflash->per_context[i].lfd = -1;
 	}
@@ -2099,6 +2097,8 @@ static int cxlflash_probe(struct pci_dev *pdev,
 	p_cxlflash->tmf_active = 0;
 	p_cxlflash->mcctx = NULL;
 	p_cxlflash->context_reset_active = 0;
+	p_cxlflash->num_user_contexts = 0;
+
 	init_waitqueue_head(&p_cxlflash->tmf_wait_q);
 	init_waitqueue_head(&p_cxlflash->eeh_wait_q);
 

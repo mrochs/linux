@@ -523,6 +523,10 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 
 	int fd = -1;
 
+	/* On first attach set fileops */
+	if (p_cxlflash->num_user_contexts == 0)
+		p_cxlflash->cxl_fops = cxlflash_cxl_fops;
+
 	if (fullqc) {
 		if (p_lun_info->max_lba == 0) {
 			cxlflash_info("No capacity info yet for this LUN "
@@ -590,6 +594,7 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 	/* No error paths after installing the fd */
 	fd_install(fd, file);
 
+	p_cxlflash->num_user_contexts++;
 	p_cxlflash->per_context[context_id].lfd = fd;
 	p_cxlflash->per_context[context_id].pid = current->pid;
 
