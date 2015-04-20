@@ -665,8 +665,17 @@ static void cxlflash_free_mem(struct cxlflash *p_cxlflash)
 {
 	int i, nbytes;
 	char *buf = NULL;
+	struct afu *p_afu = p_cxlflash->afu;
+	struct lun_info *p_lun_info, *p_temp;
 
 	if (p_cxlflash->afu) {
+		list_for_each_entry_safe(p_lun_info, p_temp, &p_afu->luns,
+					 list) {
+			list_del(&p_lun_info->list);
+			ba_terminate(&p_lun_info->blka.ba_lun);
+			kfree(p_lun_info);
+		}
+
 		for (i=0; i<CXLFLASH_NUM_CMDS; i++) {
 			del_timer_sync(&p_cxlflash->afu->cmd[i].timer);
 			buf = p_cxlflash->afu->cmd[i].buf;
@@ -756,26 +765,14 @@ void cxlflash_term_mc(struct cxlflash *p_cxlflash, enum undo_level level)
 	}
 }
 
-static void cxlflash_term_afu(struct cxlflash *p_cxlflash, bool reset)
+static void cxlflash_term_afu(struct cxlflash *p_cxlflash)
 {
-	struct afu *p_afu = p_cxlflash->afu;
-	struct lun_info *p_lun_info, *p_temp;
-
-	if (reset)
-		cxlflash_term_mc(p_cxlflash, UNDO_START);
-	else
-		cxlflash_term_mc(p_cxlflash, UNMAP_FOUR);
+	cxlflash_term_mc(p_cxlflash, UNDO_START);
 
 	/* Need to stop timers before unmapping */
 	if (p_cxlflash->afu) {
 		cxlflash_stop_afu(p_cxlflash);
 
-		list_for_each_entry_safe(p_lun_info, p_temp, &p_afu->luns,
-					 list) {
-			list_del(&p_lun_info->list);
-			ba_terminate(&p_lun_info->blka.ba_lun);
-			kfree(p_lun_info);
-		}
 	}
 
 	cxlflash_info("returning");
@@ -807,7 +804,7 @@ static void cxlflash_remove(struct pci_dev *pdev)
 	flush_work(&p_cxlflash->work_q);
 
 
-	cxlflash_term_afu(p_cxlflash, false);
+	cxlflash_term_afu(p_cxlflash);
 	cxlflash_dev_dbg(&pdev->dev, "after struct cxlflash_term_afu!");
 
 	if (p_cxlflash->cxlflash_regs)
@@ -1699,7 +1696,7 @@ int cxlflash_start_afu(struct cxlflash *p_cxlflash)
  * Returns:
  *      NONE
  */
-int cxlflash_init_mc(struct cxlflash *p_cxlflash, bool init)
+int cxlflash_init_mc(struct cxlflash *p_cxlflash)
 {
 	struct cxl_context *ctx;
 	struct device *dev = &p_cxlflash->dev->dev;
@@ -1716,13 +1713,11 @@ int cxlflash_init_mc(struct cxlflash *p_cxlflash, bool init)
 	cxl_set_master(ctx);
 
 	/* During initialization reset the AFU to start from a clean slate */
-	if (init) {
-		rc = cxl_afu_reset(p_cxlflash->mcctx);
-		if (rc) {
-			cxlflash_dev_err(dev, "initial AFU reset failed rc=%d", rc);
-			level =  RELEASE_CONTEXT;
-			goto out;
-		}
+	rc = cxl_afu_reset(p_cxlflash->mcctx);
+	if (rc) {
+		cxlflash_dev_err(dev, "initial AFU reset failed rc=%d", rc);
+		level =  RELEASE_CONTEXT;
+		goto out;
 	}
 
 	/* Allocate AFU generated interrupt handler */
@@ -1794,14 +1789,14 @@ out:
 }
 
 
-static int cxlflash_init_afu(struct cxlflash *p_cxlflash, bool reset)
+static int cxlflash_init_afu(struct cxlflash *p_cxlflash)
 {
 	u64 reg;
 	int rc = 0;
 	struct afu *p_afu = p_cxlflash->afu;
 	struct device *dev = &p_cxlflash->dev->dev;
 
-	rc = cxlflash_init_mc(p_cxlflash, !reset);
+	rc = cxlflash_init_mc(p_cxlflash);
 	if (rc) {
 		cxlflash_dev_err(dev, "call to init_mc failed, rc=%d!", rc);
 		goto err1;
@@ -1986,23 +1981,10 @@ int afu_reset(struct cxlflash *p_cxlflash)
 	 * no longer available restart it after the reset is complete 
 	 */
 
-	cxl_stop_context(p_cxlflash->mcctx);
+	cxlflash_term_afu(p_cxlflash);
 
-	rc = cxl_afu_reset(p_cxlflash->mcctx);
-	if (rc) {
-		cxlflash_err("AFU reset failed rc=%d", rc);
-		goto out;
-	}
+	rc = cxlflash_init_afu(p_cxlflash);
 
-	/*
-	cxl_release_context(p_cxlflash->mcctx);
-	p_cxlflash->mcctx = NULL;
-	*/
-	cxlflash_term_afu(p_cxlflash, true);
-
-	rc = cxlflash_init_afu(p_cxlflash, true);
-
-out:
 	/* XXX: Need to restart/reattach all user contexts */
 	cxlflash_info("returning rc=%d", rc);
 	return rc;
@@ -2077,7 +2059,7 @@ static int cxlflash_probe(struct pci_dev *pdev,
 
 	host->max_id = CXLFLASH_MAX_NUM_TARGETS_PER_BUS;
 	host->max_lun = CXLFLASH_MAX_NUM_LUNS_PER_TARGET;
-	host->max_channel = NUM_FC_PORTS-1;
+	host->max_channel =  NUM_FC_PORTS-1;
 	host->unique_id = host->host_no;
 	host->max_cmd_len = CXLFLASH_MAX_CDB_LEN;
 
@@ -2121,7 +2103,7 @@ static int cxlflash_probe(struct pci_dev *pdev,
 	p_cxlflash->parent_dev = to_pci_dev(phys_dev);
 
 	p_cxlflash->cxl_afu = cxl_pci_to_afu(pdev, NULL);
-	rc = cxlflash_init_afu(p_cxlflash, false);
+	rc = cxlflash_init_afu(p_cxlflash);
 	if (rc) {
 		cxlflash_dev_err(&pdev->dev,
 			       "call to cxlflash_init_afu failed rc=%d!", rc);
