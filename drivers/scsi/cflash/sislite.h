@@ -17,12 +17,15 @@
 
 #include <linux/types.h>
 
+typedef u16 ctx_hndl_t;
+typedef u32 res_hndl_t;
+
+#define PAGE_SIZE_4K	4096
+#define PAGE_SIZE_64K	65536
+
 /************************************************************************/
 /* IOARCB: 64 bytes, min 16 byte alignment required                     */
 /************************************************************************/
-
-typedef u16 ctx_hndl_t;
-typedef u32 res_hndl_t;
 
 typedef struct sisl_ioarcb_s {
 	u16 ctx_id;		/* ctx_hndl_t */
@@ -198,7 +201,7 @@ typedef struct sisl_ioasa_s {
 typedef struct sisl_iocmd_s {
 	sisl_ioarcb_t rcb;
 	sisl_ioasa_t sa;
-} sisl_iocmd_t __attribute__ ((aligned(128)));
+} sisl_iocmd_t __attribute__ ((aligned(cache_line_size())));
 
 #define SISL_RESP_HANDLE_T_BIT        0x1ull	/* Toggle bit */
 
@@ -302,10 +305,10 @@ struct sisl_global_regs {
 struct sisl_global_map {
 	union {
 		struct sisl_global_regs regs;
-		char page0[0x1000];	/* page 0 */
+		char page0[PAGE_SIZE_4K];	/* page 0 */
 	};
 
-	char page1[0x1000];	/* page 1 */
+	char page1[PAGE_SIZE_4K];		/* page 1 */
 	__be64 fc_regs[CXLFLASH_NUM_FC_PORTS][CXLFLASH_NUM_VLUNS]; /* pages 2 & 3, see afu_fc.h */
 	__be64 fc_port[CXLFLASH_NUM_FC_PORTS][CXLFLASH_NUM_VLUNS]; /* pages 4 & 5 (lun tbl) */
 
@@ -329,17 +332,17 @@ struct sisl_global_map {
 struct cxlflash_afu_map {
 	union {
 		struct sisl_host_map host;
-		char harea[0x10000];	/* 64KB each */
+		char harea[PAGE_SIZE_64K];	/* 64KB each */
 	} hosts[CXLFLASH_MAX_CONTEXT];
 
 	union {
 		struct sisl_ctrl_map ctrl;
-		char carea[128];	/* 128B each */
+		char carea[cache_line_size()];	/* 128B each */
 	} ctrls[CXLFLASH_MAX_CONTEXT];
 
 	union {
 		struct sisl_global_map global;
-		char garea[0x10000];	/* 64KB single block */
+		char garea[PAGE_SIZE_64K];	/* 64KB single block */
 	};
 };
 
