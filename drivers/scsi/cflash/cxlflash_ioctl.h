@@ -15,10 +15,10 @@
 #ifndef _CXLFLASHIOCTL_H
 #define _CXLFLASHIOCTL_H
 
-/* Header file to be included in the block library.
- * Contains definitions of structures for ioctls sent from
- * from the block library to the CXLFLASH Flash Adapater Driver
+/*
+ * Structure definitions CXL Flash driver superpipe ioctls
  */
+
 struct dk_cxlflash_hdr {
 	__u16 version;			/* Version data */
 	__u16 rsvd[3];			/* Reserved for future use */
