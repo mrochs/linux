@@ -29,7 +29,7 @@ Introduction
     recovery. It communicates directly the Flash Accelerator Functional
     Unit (AFU) as described in Documentation/powerpc/cxl.txt. 
 
-    The CFlash driver supports two, mutually exclusive, modes of
+    The cxlflash driver supports two, mutually exclusive, modes of
     operation at the device (LUN) level:
 
         - Any flash device (LUN) can be configured to be accessed as a
@@ -113,37 +113,37 @@ Block library API
 
     Applications intending to get access to the CXL Flash from user
     space should use the block library, as it abstracts the details
-    of interfacing directly with the CFlash driver that are necessary
+    of interfacing directly with the cxlflash driver that are necessary
     for performing administrative actions (i.e.: setup, tear down, resize).
     The block library can be thought of as a 'user' of services, implemented
-    as IOCTLs, that are provided by the CFlash driver specifically for
+    as IOCTLs, that are provided by the cxlflash driver specifically for
     devices (LUNs) operating in user space access mode. While it is not
     a requirement that applications understand the interface between the
-    block library and the CFlash driver, a high-level overview of each
+    block library and the cxlflash driver, a high-level overview of each
     supported service (IOCTL) is provided below.
 
     The block library can be found on GitHub:
     http://www.github.com/mikehollinger/blocklib
 
 
-CFlash Driver IOCTLs
-====================
+CXL Flash Driver IOCTLs
+=======================
 
     Users, such as the block library, that wish to interface with a
     flash device (LUN) via user space access need to use the services
-    provided by the CFlash driver. As these services are implemented
+    provided by the cxlflash driver. As these services are implemented
     as ioctls, a file descriptor handle must first be obtained in order
     to establish the communication channel between a user and the kernel.
     This file descriptor is obtained by opening the device special file
     associated with the scsi disk device (/dev/sdb) that was created
-    during LUN discovery. As per the location of the CFlash driver within
-    the SCSI protocol stack, this open is actually not seen by the CFlash
+    during LUN discovery. As per the location of the cxlflash driver within
+    the SCSI protocol stack, this open is actually not seen by the cxlflash
     driver. Upon successful open, the user receives a file descriptor
     (herein referred to as fd1) that should be used for issuing the
     subsequent ioctls listed below.
 
     The structure definitions for these IOCTLs are available in:
-    drivers/scsi/cflash/cflash_ioctl.h
+    uapi/scsi/cxlflash_ioctl.h
 
 DK_CAPI_ATTACH
 --------------
@@ -229,7 +229,7 @@ DK_CAPI_VLUN_RESIZE
     success, an updated last LBA is returned to the user indicating the new
     size of the virtual LUN associated with the resource handle.
 
-    The partitioning of virtual LUNs is jointly mediated by the CFlash driver
+    The partitioning of virtual LUNs is jointly mediated by the cxlflash driver
     and the AFU. An allocation table is kept for each LUN that is operating
     in the virtual mode and used to program a LUN translation table that the
     AFU references when provided with a resource handle. 
@@ -248,10 +248,10 @@ DK_CAPI_RELEASE
 
 DK_CAPI_DETACH
 --------------
-    This ioctl is responsible for unregistering a context with the CFlash driver
-    and release outstanding resources that were not explicitly released via the
-    DK_CAPI_RELEASE ioctl. Upon success, all "tokens" which had been provided to
-    the user from the DK_CAPI_ATTACH onward are no longer valid.
+    This ioctl is responsible for unregistering a context with the cxlflash
+    driver and release outstanding resources that were not explicitly released
+    via the DK_CAPI_RELEASE ioctl. Upon success, all "tokens" which had been
+    provided to the user from the DK_CAPI_ATTACH onward are no longer valid.
 
 DK_CAPI_CLONE
 -------------
