@@ -1,7 +1,7 @@
 ###########################
 #Linux module dev env stuff
 ###########################
-export CONFIG_CFLASH=m
-export MY_KERNEL_SRC=/kernel_src/linux-3.17.0
+export CONFIG_CXLFLASH=m
+export MY_KERNEL_SRC=/home/surebot/workspace/cxl-kernel/linux
 
 alias makemod='make -C $MY_KERNEL_SRC M=$(pwd)'

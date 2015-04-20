@@ -1,4 +1,4 @@
-obj-$(CONFIG_CFLASH) += cflash.o
-cflash-y += main.o superpipe.o
+obj-$(CONFIG_CXLFLASH) += cxlflash.o
+cxlflash-y += main.o superpipe.o
 
 ccflags-y += -DCONFIG_PRINTK

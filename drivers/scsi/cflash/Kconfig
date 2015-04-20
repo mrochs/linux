@@ -2,7 +2,7 @@
 # IBM CXL-attached Flash Accelerator SCSI Driver
 #
 
-config CFLASH
+config CXLFLASH
 	tristate "Support for IBM CAPI Flash"
 	depends on CXL
 	default m
