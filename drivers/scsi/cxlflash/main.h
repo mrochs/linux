@@ -138,7 +138,7 @@ extern u32 checkpid;
 #error "CXLFLASH_NUM_CMDS is not a power of 2!"
 #endif
 
-#define AFU_SYNC_INDEX  (CXLFLASH_NUM_CMDS - 1)	/* last cmd is rsvd for afu sync */
+#define AFU_SYNC_INDEX  (CXLFLASH_NUM_CMDS - 1)	/* last cmd rsvd for afu sync */
 
 #define CMD_FREE   0x0
 #define CMD_IN_USE 0x1
