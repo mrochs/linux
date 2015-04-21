@@ -815,14 +815,14 @@ static int grow_lxt(struct afu *p_afu,
 
 	mutex_unlock(&p_blka->mutex);
 
-	asm volatile ("lwsync"::);	/* make lxt updates visible */
+	smp_wmb();	/* make lxt updates visible */
 
 	/* Now sync up AFU - this can take a while */
 	p_rht_entry->lxt_start = p_lxt;	/* even if p_lxt didn't change */
-	asm volatile ("lwsync"::);
+	smp_wmb();
 
 	p_rht_entry->lxt_cnt = *p_act_new_size;
-	asm volatile ("lwsync"::);
+	smp_wmb();
 
 	afu_sync(p_afu, ctx_hndl_u, res_hndl_u, AFU_LW_SYNC);
 
@@ -875,10 +875,10 @@ static int shrink_lxt(struct afu *p_afu,
 
 	/* Now sync up AFU - this can take a while */
 	p_rht_entry->lxt_cnt = *p_act_new_size;
-	asm volatile ("lwsync"::);	/* also makes lxt updates visible */
+	smp_wmb();	/* also makes lxt updates visible */
 
 	p_rht_entry->lxt_start = p_lxt;	/* even if p_lxt didn't change */
-	asm volatile ("lwsync"::);
+	smp_wmp();
 
 	afu_sync(p_afu, ctx_hndl_u, res_hndl_u, AFU_HW_SYNC);
 
