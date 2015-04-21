@@ -540,6 +540,8 @@ static void cxlflash_slave_destroy(struct scsi_device *sdev)
 static int cxlflash_scan_finished(struct Scsi_Host *shost, unsigned long time)
 {
 	int done = 1;
+
+	/* This is temporary, see notes on qc module parameter */
 	cxlflash_info("returning done=%d", done);
 	return done;
 }
