@@ -38,11 +38,13 @@ extern u32 checkpid;
 #define CXLFLASH_TARGET                   0x0
 #define CXLFLASH_MAX_CDB_LEN		16
 
-#define CXLFLASH_MAX_CMDS			16
-#define CXLFLASH_MAX_CMDS_PER_LUN         CXLFLASH_MAX_CMDS
-#define CXLFLASH_BLOCK_SIZE		0x1000
-/* With a 4ksector, and a 16MB transfer size limit max should be 4k sectors */
-#define CXLFLASH_MAX_SECTORS              0x1000
+#define CXLFLASH_MAX_CMDS		16
+#define CXLFLASH_MAX_CMDS_PER_LUN	CXLFLASH_MAX_CMDS
+
+#define CXLFLASH_BLOCK_SIZE	4096		/* 4K blocks */
+#define CXLFLASH_MAX_XFER_SIZE	16777216	/* 16MB transfer */
+#define CXLFLASH_MAX_SECTORS	(CXLFLASH_MAX_XFER_SIZE/CXLFLASH_BLOCK_SIZE)
+
 /* Really only one target per bus since the Texan is directly attached */
 #define CXLFLASH_MAX_NUM_TARGETS_PER_BUS                     1
 #define CXLFLASH_MAX_NUM_LUNS_PER_TARGET                     65536
