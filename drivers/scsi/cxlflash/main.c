@@ -206,7 +206,7 @@ int cxlflash_send_scsi(struct afu *p_afu, struct scsi_cmnd *scp)
 		wait_event(p_cxlflash->tmf_wait_q, !p_cxlflash->tmf_active);
 
 	p_cmd = cmd_checkout(p_afu);
-	if (!p_cmd) {
+	if (unlikely(!p_cmd)) {
 		cxlflash_err("could not get a free command");
 		rc = SCSI_MLQUEUE_HOST_BUSY;
 		goto out;
@@ -270,7 +270,7 @@ int cxlflash_send_tmf(struct afu *p_afu, struct scsi_cmnd *scp, u64 cmd)
 		wait_event(p_cxlflash->tmf_wait_q, !p_cxlflash->tmf_active);
 
 	p_cmd = cmd_checkout(p_afu);
-	if (!p_cmd) {
+	if (unlikely(!p_cmd)) {
 		cxlflash_err("could not get a free command");
 		rc = SCSI_MLQUEUE_HOST_BUSY;
 		goto out;

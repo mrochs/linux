@@ -1583,7 +1583,7 @@ int read_cap16(struct afu *p_afu, struct lun_info *p_lun_info, u32 port_sel)
 	int rc=0;
 
 	p_cmd = cmd_checkout(p_afu);
-	if (!p_cmd) {
+	if (unlikely(!p_cmd)) {
 		cxlflash_err("could not get a free command");
 		return -1;
 	}
@@ -1654,7 +1654,7 @@ static int find_lun(struct cxlflash *p_cxlflash, u32 port_sel)
 	u64 *lunidarray = NULL;
 
 	p_cmd = cmd_checkout(p_afu);
-	if (!p_cmd) {
+	if (unlikely(!p_cmd)) {
 		cxlflash_err("could not get a free command");
 		return -1;
 	}
