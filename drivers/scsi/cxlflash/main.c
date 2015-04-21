@@ -46,6 +46,19 @@ MODULE_LICENSE("GPL");
 u32 internal_lun = 0;
 u32 fullqc = 0;
 u32 checkpid = 0;
+
+/*
+ * This is a temporary module parameter
+ *
+ * The CXL Flash AFU supports a dummy LUN mode where the external
+ * links and storage are not required. Space on the FPGA is used
+ * to create 1 or 2 small LUNs which are presented to the system
+ * as if they were a normal storage device. This feature is useful
+ * during development and also provides manufacturing with a way
+ * to test the AFU without an actual device. The setting for this
+ * mode will eventually be fully migrated to a per-adapter sysfs
+ * tunable.
+ */
 module_param_named(lun_mode, internal_lun, uint, 0);
 MODULE_PARM_DESC(lun_mode, " 0 = external LUN[s](default),\n"
 			   " 1 = internal LUN (1 x 64K, 512B blocks, id 0),\n"
@@ -53,9 +66,27 @@ MODULE_PARM_DESC(lun_mode, " 0 = external LUN[s](default),\n"
 			   " 3 = internal LUN (2 x 32K, 512B blocks, ids 0,1),\n"
 			   " 4 = internal LUN (2 x 32K, 4K blocks, ids 0,1)");
 
+/*
+ * This is a temporary module parameter
+ *
+ * Due to limitations on the current AFU, discovery operations
+ * performed from the SCSI stack upon scan can cause a hang.
+ * This parameter toggles scaffolding in various parts of the
+ * driver based upon if we're using the SCSI stack to scan or
+ * are performing our own scan. This will be removed in the near
+ * future as we work past the issues with the AFU.
+ */
 module_param_named(qc, fullqc, uint, 0);
 MODULE_PARM_DESC(qc, " 1 = Regular SCSI queuecommand");
 
+/*
+ * This is a temporary module parameter
+ *
+ * Contexts are only valid under the process that created them.
+ * This tunable enables logic to enforce this behavior. It is
+ * currently defaulted to disable as there are some tests that
+ * violate this rule. This will be removed in the near future.
+ */
 module_param_named(checkpid, checkpid, uint, 0);
 MODULE_PARM_DESC(checkpid, " 1 = Enforce PID/context ownership policy");
 
@@ -266,6 +297,7 @@ static int cxlflash_queuecommand(struct Scsi_Host *host,
 	struct afu *p_afu = p_cxlflash->afu;
 	int rc = 0;
 
+	/* This is temporary, soon will be a straight call to send_scsi */
 	if (!fullqc) {
 		scp->scsi_done(scp);
 	} else {
@@ -429,7 +461,9 @@ static int cxlflash_slave_configure(struct scsi_device *sdev)
 	cxlflash_info("LUN2 = %016llX", p_lun_info->lun_id);
 
 	/*
-	 * XXX - leaving this here for now as a reminder that read_cap16
+	 * This is temporary debug code
+	 *
+	 * Leaving this here for now as a reminder that read_cap16
 	 * doesn't work in this path. We also need to figure out how and
 	 * when to setup the LUN table (on attach coupled with where we
 	 * now call read_cap16?) and also look into how we're skipping
@@ -989,6 +1023,11 @@ static int cxlflash_init_scsi(struct cxlflash *p_cxlflash)
 	cxlflash_dev_dbg(&pdev->dev, "before scsi_scan_host");
 	scsi_scan_host(p_cxlflash->host);
 
+	/*
+	 * This is temporary, eventually we will just call scsi_scan_host()
+	 * without a scan_finished populated and let the stack perform the
+	 * async scan.
+	 */
 	if (!fullqc)
 		cxlflash_scan_luns(p_cxlflash);
 
@@ -2044,6 +2083,7 @@ static int cxlflash_probe(struct pci_dev *pdev,
 
 	cxlflash_dev_dbg(&pdev->dev, "Found CXLFLASH with IRQ: %d", pdev->irq);
 
+	/* This is temporary and will eventually go away */
 	if (fullqc)
 		driver_template.scan_finished = NULL;
 
