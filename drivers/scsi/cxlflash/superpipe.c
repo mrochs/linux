@@ -335,58 +335,6 @@ static u64 ba_space(struct ba_lun * ba_lun)
 	return lun_info->free_aun_cnt;
 }
 
-#ifdef BA_DEBUG
-static void dump_ba_map(struct ba_lun *ba_lun)
-{
-	struct ba_lun_info *lun_info = NULL;
-	int i = 0, j = 0;
-
-	lun_info = (struct ba_lun_info *)ba_lun->ba_lun_handle;
-
-	pr_debug("Dumping block allocation map: map size = %u\n",
-		 lun_info->lun_bmap_size);
-
-	for (i = 0; i < lun_info->lun_bmap_size; i++) {
-		pr_debug("%4d ", (i * 64));
-
-		for (j = 0; j < 64; j++) {
-			if (j % 4 == 0)
-				pr_debug(" ");
-
-			pr_debug("%1d",
-				 test_bit((j ? 1 : 0),
-					  (ulong *)&lun_info->lun_alloc_map[i]);
-		}
-
-		pr_debug("\n");
-	}
-
-	pr_debug("\n");
-}
-
-static void dump_ba_clone_map(struct ba_lun *ba_lun)
-{
-	struct ba_lun_info *lun_info = NULL;
-	int i = 0;
-
-	lun_info = (struct ba_lun_info *)ba_lun->ba_lun_handle;
-
-	pr_debug("Dumping clone map: map size = %u\n", lun_info->total_aus);
-
-	for (i = 0; i < lun_info->total_aus; i++) {
-		if (i % 64 == 0)
-			pr_debug("\n%3d", i);
-
-		if (i % 4 == 0)
-			pr_debug("   ");
-
-		pr_debug("%2X", lun_info->aun_clone_map[i]);
-	}
-
-	pr_debug("\n");
-}
-#endif
-
 static int cxlflash_afu_attach(struct cxlflash *p_cxlflash, u64 context_id)
 {
 	struct afu *p_afu = p_cxlflash->afu;
