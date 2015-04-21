@@ -247,6 +247,12 @@ struct file *cxl_get_fd(struct cxl_context *ctx, struct file_operations *fops,
 }
 EXPORT_SYMBOL_GPL(cxl_get_fd);
 
+struct cxl_context *cxl_fops_get_context(struct file *file)
+{
+        return file->private_data;
+}
+EXPORT_SYMBOL_GPL(cxl_fops_get_context);
+
 /* */
 int cxl_start_work(struct cxl_context *ctx,
 		   struct cxl_ioctl_start_work *work)

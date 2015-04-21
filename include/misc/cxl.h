@@ -150,6 +150,8 @@ ssize_t cxl_fd_read(struct file *file, char __user *buf, size_t count,
 
 struct file *cxl_get_fd(struct cxl_context *ctx, struct file_operations *fops,
 			int *fd);
+/* Get the context associated with this file */
+struct cxl_context *cxl_fops_get_context(struct file *file);
 int cxl_start_work(struct cxl_context *ctx,
 		   struct cxl_ioctl_start_work *work);
 
