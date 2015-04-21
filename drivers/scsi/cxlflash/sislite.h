@@ -40,7 +40,7 @@ typedef struct sisl_ioarcb_s {
 #define SISL_REQ_FLAGS_TIMEOUT_USECS  0x0080u
 #define SISL_REQ_FLAGS_TIMEOUT_CYCLES 0x00C0u
 
-#define SISL_REQ_FLAGS_TMF_CMD        0x0004u   /* bit 13 */
+#define SISL_REQ_FLAGS_TMF_CMD        0x0004u	/* bit 13 */
 
 #define SISL_REQ_FLAGS_AFU_CMD        0x0002u	/* bit 14 */
 
@@ -308,9 +308,9 @@ struct sisl_global_map {
 		char page0[PAGE_SIZE_4K];	/* page 0 */
 	};
 
-	char page1[PAGE_SIZE_4K];		/* page 1 */
-	__be64 fc_regs[CXLFLASH_NUM_FC_PORTS][CXLFLASH_NUM_VLUNS]; /* pages 2 & 3, see afu_fc.h */
-	__be64 fc_port[CXLFLASH_NUM_FC_PORTS][CXLFLASH_NUM_VLUNS]; /* pages 4 & 5 (lun tbl) */
+	char page1[PAGE_SIZE_4K];	/* page 1 */
+	__be64 fc_regs[CXLFLASH_NUM_FC_PORTS][CXLFLASH_NUM_VLUNS];	/* pages 2 & 3, see afu_fc.h */
+	__be64 fc_port[CXLFLASH_NUM_FC_PORTS][CXLFLASH_NUM_VLUNS];	/* pages 4 & 5 (lun tbl) */
 
 };
 

@@ -27,7 +27,7 @@ typedef unsigned int useconds_t;	/* time in microseconds */
 /* Types                                                                      */
 /*----------------------------------------------------------------------------*/
 
-#define MAX_CONTEXT  CXLFLASH_MAX_CONTEXT       /* num contexts per afu */
+#define MAX_CONTEXT  CXLFLASH_MAX_CONTEXT	/* num contexts per afu */
 #define MAX_AUN_CLONE_CNT    0xFF
 #define MAX_CXLFLASH_IOCTL_SZ	(sizeof(union cxlflash_ioctls))
 
@@ -59,7 +59,7 @@ struct cxlflash {
 	wait_queue_head_t msi_wait_q;
 	wait_queue_head_t eeh_wait_q;
 
-	struct work_struct work_q ;
+	struct work_struct work_q;
 	enum cxlflash_lr_state lr_state;
 	int lr_port;
 
@@ -77,7 +77,7 @@ struct cxlflash {
 	int last_lun_index;
 	int task_set;
 
-        wait_queue_head_t tmf_wait_q;
+	wait_queue_head_t tmf_wait_q;
 	u8 context_reset_active:1;
 	u8 tmf_active:1;
 };
@@ -91,16 +91,16 @@ static inline u64 lun_to_lunid(u64 lun)
 }
 
 union cxlflash_ioctls {
-	struct dk_capi_attach		attach;
-	struct dk_capi_detach		detach;
-	struct dk_capi_udirect		udirect;
-	struct dk_capi_uvirtual		uvirtual;
-	struct dk_capi_release		release;
-	struct dk_capi_resize		resize;
-	struct dk_capi_clone		clone;
-	struct dk_capi_verify		verify;
-	struct dk_capi_log		log;
-	struct dk_capi_recover_afu	recover_afu;
+	struct dk_capi_attach attach;
+	struct dk_capi_detach detach;
+	struct dk_capi_udirect udirect;
+	struct dk_capi_uvirtual uvirtual;
+	struct dk_capi_release release;
+	struct dk_capi_resize resize;
+	struct dk_capi_clone clone;
+	struct dk_capi_verify verify;
+	struct dk_capi_log log;
+	struct dk_capi_recover_afu recover_afu;
 };
 
 struct ba_lun {
@@ -140,7 +140,7 @@ struct ba_lun_info {
 #define MC_CHUNK_SHIFT    MC_RHT_NMASK	/* shift to go from LBA to chunk# */
 #define MC_CHUNK_OFF_MASK (MC_CHUNK_SIZE - 1)	/* apply to LBA get offset
 						   into a chunk */
-#define LXT_LUNIDX_SHIFT  8     /* LXT entry, shift for LUN index */
+#define LXT_LUNIDX_SHIFT  8	/* LXT entry, shift for LUN index */
 
 #define MAX_RHT_PER_CONTEXT 16	/* num resource hndls per context */
 #define NUM_RRQ_ENTRY    16	/* for master issued cmds */
@@ -174,8 +174,8 @@ struct ba_lun_info {
  */
 struct rht_info {
 	struct sisl_rht_entry *rht_start;	/* initialized at startup */
-	int ref_cnt;	/* num ctx_infos pointing to me */
-	u32 perms;	/* User-defined (@attach) permissions for RHT entries */
+	int ref_cnt;		/* num ctx_infos pointing to me */
+	u32 perms;		/* User-defined (@attach) permissions for RHT entries */
 };
 
 /* Single AFU context can be pointed to by multiple client connections.
@@ -183,7 +183,7 @@ struct rht_info {
  * (context + AFU).
  */
 struct ctx_info {
-	volatile struct sisl_ctrl_map *ctrl_map;/* initialized at startup */
+	volatile struct sisl_ctrl_map *ctrl_map;	/* initialized at startup */
 	struct rht_info *rht_info;	/* initialized when context created */
 
 	int ref_cnt;		/* num conn_infos pointing to me */
@@ -198,9 +198,9 @@ struct blka {
 
 /* LUN discovery results are in lun_info */
 struct lun_info {
-	u64 lun_id;	/* from REPORT_LUNS */
-	u64 max_lba;	/* from read cap(16) */
-	u32 blk_len;	/* from read cap(16) */
+	u64 lun_id;		/* from REPORT_LUNS */
+	u64 max_lba;		/* from read cap(16) */
+	u32 blk_len;		/* from read cap(16) */
 	u32 lun_index;
 	enum open_mode_type mode;
 
@@ -216,11 +216,11 @@ struct lun_info {
 
 struct afu_cmd {
 	struct sisl_ioarcb_s rcb;	/* IOARCB (cache line aligned) */
-	struct sisl_ioasa_s sa;		/* IOASA must follow IOARCB */
+	struct sisl_ioasa_s sa;	/* IOASA must follow IOARCB */
 	spinlock_t _slock;
 	spinlock_t *slock;
 	struct timer_list timer;
-	char *buf;                      /* per command buffer */
+	char *buf;		/* per command buffer */
 	struct afu *back;
 	int slot;
 	u8 flag:1;
@@ -276,7 +276,7 @@ struct afu {
 	u64 interface_version;
 
 	struct list_head luns;	/* list of lun_info structs */
-	struct cxlflash *back;  /* Pointer back to parent cxlflash */
+	struct cxlflash *back;	/* Pointer back to parent cxlflash */
 
 } __attribute__ ((aligned(PAGE_SIZE_4K)));
 

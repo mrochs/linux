@@ -41,7 +41,7 @@ extern u32 checkpid;
 #define CXLFLASH_MAX_CMDS		16
 #define CXLFLASH_MAX_CMDS_PER_LUN	CXLFLASH_MAX_CMDS
 
-#define CXLFLASH_BLOCK_SIZE	4096		/* 4K blocks */
+#define CXLFLASH_BLOCK_SIZE	4096	/* 4K blocks */
 #define CXLFLASH_MAX_XFER_SIZE	16777216	/* 16MB transfer */
 #define CXLFLASH_MAX_SECTORS	(CXLFLASH_MAX_XFER_SIZE/CXLFLASH_BLOCK_SIZE)
 
@@ -71,7 +71,6 @@ extern u32 checkpid;
 #define FC_MTIP_STATUS_MASK         0x30ull
 #define FC_MTIP_STATUS_ONLINE       0x20ull
 #define FC_MTIP_STATUS_OFFLINE      0x10ull
-
 
 /* TIMEOUT and RETRY definitions */
 
@@ -128,7 +127,7 @@ extern u32 checkpid;
 	dev_dbg(_d, CONFN(_s), __func__, ##__VA_ARGS__)
 
 /* Command management definitions */
-#define CXLFLASH_NUM_CMDS	(2 * CXLFLASH_MAX_CMDS) /* Must be a pow2 for 
+#define CXLFLASH_NUM_CMDS	(2 * CXLFLASH_MAX_CMDS)	/* Must be a pow2 for 
 							   alignment and more 
 							   efficient array 
 							   index derivation 
@@ -139,11 +138,10 @@ extern u32 checkpid;
 #error "CXLFLASH_NUM_CMDS is not a power of 2!"
 #endif
 
-#define AFU_SYNC_INDEX  (CXLFLASH_NUM_CMDS - 1)/* last cmd is rsvd for afu sync */
+#define AFU_SYNC_INDEX  (CXLFLASH_NUM_CMDS - 1)	/* last cmd is rsvd for afu sync */
 
 #define CMD_FREE   0x0
 #define CMD_IN_USE 0x1
-
 
 enum undo_level {
 	RELEASE_CONTEXT = 0,
