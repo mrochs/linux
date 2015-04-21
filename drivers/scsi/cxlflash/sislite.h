@@ -349,7 +349,7 @@ struct cxlflash_afu_map {
 /* LBA translation control blocks */
 
 typedef struct sisl_lxt_entry {
-	u64 rlba_base;		/* bits 0:47 is base
+	__be64 rlba_base;	/* bits 0:47 is base
 				 * b48:55 is lun index
 				 * b58:59 is write & read perms
 				 * (if no perm, afu_rc=0x15)
@@ -360,8 +360,8 @@ typedef struct sisl_lxt_entry {
 
 typedef struct sisl_rht_entry {
 	sisl_lxt_entry_t *lxt_start;
-	u32 lxt_cnt;
-	u16 rsvd;
+	__be32 lxt_cnt;
+	__be16 rsvd;
 	u8 fp;			/* format & perm nibbles.
 				 * (if no perm, afu_rc=0x05)
 				 */
@@ -369,7 +369,7 @@ typedef struct sisl_rht_entry {
 } sisl_rht_entry_t __attribute__ ((aligned(16)));
 
 typedef struct sisl_rht_entry_f1 {
-	u64 lun_id;
+	__be64 lun_id;
 	union {
 		struct {
 			u8 valid;
@@ -378,7 +378,7 @@ typedef struct sisl_rht_entry_f1 {
 			u8 port_sel;
 		};
 
-		u64 dw;
+		__be64 dw;
 	};
 } sisl_rht_entry_f1_t __attribute__ ((aligned(16)));
 
