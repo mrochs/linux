@@ -114,7 +114,7 @@ static int ba_init(struct ba_lun *ba_lun)
 
 	/* Allocate lun_fino */
 	lun_info = kzalloc(sizeof(struct ba_lun_info), GFP_KERNEL);
-	if (!lun_info) {
+	if (unlikely(!lun_info)) {
 		cxlflash_err("Failed to allocate lun_info for lun_id %llX",
 			   ba_lun->lun_id);
 		return -ENOMEM;
@@ -129,7 +129,7 @@ static int ba_init(struct ba_lun *ba_lun)
 	/* Allocate bitmap space */
 	lun_info->lun_alloc_map = kzalloc((lun_info->lun_bmap_size *
 					   sizeof(u64)), GFP_KERNEL);
-	if (!lun_info->lun_alloc_map) {
+	if (unlikely(!lun_info->lun_alloc_map)) {
 		cxlflash_err("Failed to allocate lun allocation map: "
 			   "lun_id = %llX", ba_lun->lun_id);
 		kfree(lun_info);
@@ -157,7 +157,7 @@ static int ba_init(struct ba_lun *ba_lun)
 	/* Allocate clone map */
 	lun_info->aun_clone_map = kzalloc((lun_info->total_aus *
 					   sizeof(u8)), GFP_KERNEL);
-	if (!lun_info->aun_clone_map) {
+	if (unlikely(!lun_info->aun_clone_map)) {
 		cxlflash_err("Failed to allocate clone map: lun_id = %llX",
 			   ba_lun->lun_id);
 		kfree(lun_info->lun_alloc_map);
@@ -778,7 +778,7 @@ static int grow_lxt(struct afu *p_afu,
 		/* reallocate to fit new size */
 		p_lxt = kzalloc((sizeof(*p_lxt) * LXT_GROUP_SIZE * ngrps),
 				GFP_KERNEL);
-		if (!p_lxt) {
+		if (unlikely(!p_lxt)) {
 			mutex_unlock(&p_blka->mutex);
 			return -ENOMEM;
 		}
@@ -856,7 +856,7 @@ static int shrink_lxt(struct afu *p_afu,
 		if (ngrps) {
 			p_lxt = kzalloc((sizeof(*p_lxt) * LXT_GROUP_SIZE *
 					 ngrps), GFP_KERNEL);
-			if (!p_lxt)
+			if (unlikely(!p_lxt))
 				return -ENOMEM;
 
 			/* copy over old entries that will remain */
@@ -1394,7 +1394,7 @@ static int clone_lxt(struct afu *p_afu,
 		/* allocate new LXTs for clone */
 		p_lxt = kzalloc((sizeof(*p_lxt) * LXT_GROUP_SIZE * ngrps),
 				GFP_KERNEL);
-		if (!p_lxt)
+		if (unlikely(!p_lxt))
 			return -ENOMEM;
 
 		/* copy over */
@@ -1697,7 +1697,7 @@ static int find_lun(struct cxlflash *p_cxlflash, u32 port_sel)
 	p_u64 = (u64 *)&p_cmd->buf[8];	/* start of lun list */
 
 	p_currid = lunidarray = kzalloc(len, GFP_KERNEL);
-	if (!p_currid) {
+	if (unlikely(!p_currid)) {
 		rc = -ENOMEM;
 		goto out;
 	}

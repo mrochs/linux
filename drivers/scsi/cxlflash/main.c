@@ -428,7 +428,7 @@ create_lun_info(struct scsi_device *sdev)
 	struct lun_info *p_lun_info = NULL;
 
 	p_lun_info = kzalloc(sizeof(*p_lun_info), GFP_KERNEL);
-	if (!p_lun_info) {
+	if (unlikely(!p_lun_info)) {
 		cxlflash_err("could not allocate p_lun_info");
 		goto create_lun_info_exit;
 	}
@@ -465,7 +465,7 @@ static int cxlflash_slave_alloc(struct scsi_device *sdev)
 	spin_lock_irqsave(shost->host_lock, flags);
 
 	p_lun_info = create_lun_info(sdev);
-	if (!p_lun_info) {
+	if (unlikely(!p_lun_info)) {
 		cxlflash_err("failed to allocate lun_info!");
 		rc = -ENOMEM;
 		goto out;
@@ -921,7 +921,7 @@ static int cxlflash_gb_alloc(struct cxlflash *p_cxlflash)
 	nbytes = sizeof(struct afu);
 	p_cxlflash->afu = (void *)__get_free_pages(GFP_KERNEL | __GFP_ZERO,
 						 get_order(nbytes));
-	if (!p_cxlflash->afu) {
+	if (unlikely(!p_cxlflash->afu)) {
 		cxlflash_err("cannot get %d free pages", get_order(nbytes));
 		rc = -ENOMEM;
 		goto out;
@@ -933,7 +933,7 @@ static int cxlflash_gb_alloc(struct cxlflash *p_cxlflash)
 	for (i=0; i<CXLFLASH_NUM_CMDS; i++) {
 		buf = (void *)__get_free_pages (GFP_KERNEL | __GFP_ZERO,
 						get_order(CMD_BUFSIZE));
-		if (!buf) {
+		if (unlikely(!buf)) {
 			cxlflash_err("cannot allocate command buffers %d",
 				   CMD_BUFSIZE);
 			rc = -ENOMEM;
