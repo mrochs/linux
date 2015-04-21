@@ -23,6 +23,8 @@
 #include <linux/libata.h>
 #include <linux/reboot.h>
 
+#include <asm/unaligned.h>
+
 #include <misc/cxl.h>
 #include <uapi/misc/cxl.h>
 
@@ -305,10 +307,10 @@ static int cxlflash_queuecommand(struct Scsi_Host *host,
 			"cdb=(%08x-%08x-%08x-%08x)", scp,
 			host->host_no, scp->device->channel,
 			scp->device->id, scp->device->lun,
-			cpu_to_be32(((u32 *) scp->cmnd)[0]),
-			cpu_to_be32(((u32 *) scp->cmnd)[1]),
-			cpu_to_be32(((u32 *) scp->cmnd)[2]),
-			cpu_to_be32(((u32 *) scp->cmnd)[3]));
+			get_unaligned_be32(&((u32 *)scp->cmnd)[0]),
+			get_unaligned_be32(&((u32 *)scp->cmnd)[1]),
+			get_unaligned_be32(&((u32 *)scp->cmnd)[2]),
+			get_unaligned_be32(&((u32 *)scp->cmnd)[3]));
 
 		rc = cxlflash_send_scsi(p_afu, scp);
 	}
@@ -329,14 +331,14 @@ static int cxlflash_eh_device_reset_handler(struct scsi_cmnd *scp)
 	struct cxlflash *p_cxlflash = (struct cxlflash *)host->hostdata;
 	struct afu *p_afu = p_cxlflash->afu;
 
-	cxlflash_info("(scp=%p) %d/%d/%d/%llu "
-		    "cdb=(%08x-%08x-%08x-%08x)", scp,
-		    host->host_no, scp->device->channel,
-		    scp->device->id, scp->device->lun,
-		    cpu_to_be32(((u32 *) scp->cmnd)[0]),
-		    cpu_to_be32(((u32 *) scp->cmnd)[1]),
-		    cpu_to_be32(((u32 *) scp->cmnd)[2]),
-		    cpu_to_be32(((u32 *) scp->cmnd)[3]));
+	cxlflash_dbg("(scp=%p) %d/%d/%d/%llu "
+		     "cdb=(%08x-%08x-%08x-%08x)", scp,
+		     host->host_no, scp->device->channel,
+		     scp->device->id, scp->device->lun,
+		     get_unaligned_be32(&((u32 *)scp->cmnd)[0]),
+		     get_unaligned_be32(&((u32 *)scp->cmnd)[1]),
+		     get_unaligned_be32(&((u32 *)scp->cmnd)[2]),
+		     get_unaligned_be32(&((u32 *)scp->cmnd)[3]));
 
 	scp->result = (DID_OK << 16);;
 	cxlflash_send_tmf(p_afu, scp, TMF_LUN_RESET);
@@ -357,14 +359,14 @@ static int cxlflash_eh_host_reset_handler(struct scsi_cmnd *scp)
 	struct Scsi_Host *host = scp->device->host;
 	struct cxlflash *p_cxlflash = (struct cxlflash *)host->hostdata;
 
-	cxlflash_info("(scp=%p) %d/%d/%d/%llu "
-		    "cdb=(%08x-%08x-%08x-%08x)", scp,
-		    host->host_no, scp->device->channel,
-		    scp->device->id, scp->device->lun,
-		    cpu_to_be32(((u32 *) scp->cmnd)[0]),
-		    cpu_to_be32(((u32 *) scp->cmnd)[1]),
-		    cpu_to_be32(((u32 *) scp->cmnd)[2]),
-		    cpu_to_be32(((u32 *) scp->cmnd)[3]));
+	cxlflash_dbg("(scp=%p) %d/%d/%d/%llu "
+		     "cdb=(%08x-%08x-%08x-%08x)", scp,
+		     host->host_no, scp->device->channel,
+		     scp->device->id, scp->device->lun,
+		     get_unaligned_be32(&((u32 *)scp->cmnd)[0]),
+		     get_unaligned_be32(&((u32 *)scp->cmnd)[1]),
+		     get_unaligned_be32(&((u32 *)scp->cmnd)[2]),
+		     get_unaligned_be32(&((u32 *)scp->cmnd)[3]));
 
 	scp->result = (DID_OK << 16);;
 	rcr = afu_reset(p_cxlflash);
@@ -1978,8 +1980,6 @@ void cxlflash_wait_resp(struct afu *p_afu, struct afu_cmd *p_cmd)
 int afu_sync(struct afu *p_afu,
 	     ctx_hndl_t ctx_hndl_u, res_hndl_t res_hndl_u, u8 mode)
 {
-	u16 *p_u16;
-	u32 *p_u32;
 	struct afu_cmd *p_cmd = &p_afu->cmd[AFU_SYNC_INDEX];
 	int rc = 0;
 
@@ -1996,10 +1996,10 @@ int afu_sync(struct afu *p_afu,
 
 	p_cmd->rcb.cdb[0] = 0xC0;	/* AFU Sync */
 	p_cmd->rcb.cdb[1] = mode;
-	p_u16 = (u16 *) & p_cmd->rcb.cdb[2];
-	writew_be(ctx_hndl_u, p_u16);	/* context to sync up */
-	p_u32 = (u32 *) & p_cmd->rcb.cdb[4];
-	writel_be(res_hndl_u, p_u32);	/* res_hndl to sync up */
+
+	/* The cdb is aligned, no unaligned accessors required */
+	*((u16 *)&p_cmd->rcb.cdb[2]) = swab16(ctx_hndl_u);
+	*((u32 *)&p_cmd->rcb.cdb[4]) = swab32(res_hndl_u);
 
 	cxlflash_send_cmd(p_afu, p_cmd);
 	cxlflash_wait_resp(p_afu, p_cmd);

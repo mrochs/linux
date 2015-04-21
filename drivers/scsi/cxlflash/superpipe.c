@@ -26,6 +26,7 @@
 #include <misc/cxl.h>
 #include <linux/unistd.h>
 #include <linux/kernel.h>
+#include <asm/unaligned.h>
 #include <asm/unistd.h>
 
 #include <scsi/scsi.h>
@@ -1577,9 +1578,6 @@ static int cxlflash_disk_verify(struct scsi_device *sdev,
 
 int read_cap16(struct afu *p_afu, struct lun_info *p_lun_info, u32 port_sel)
 {
-
-	u32 *p_u32;
-	u64 *p_u64;
 	struct afu_cmd *p_cmd;
 	int rc=0;
 
@@ -1601,8 +1599,8 @@ int read_cap16(struct afu *p_afu, struct lun_info *p_lun_info, u32 port_sel)
 
 	p_cmd->rcb.cdb[0] = 0x9E;	/* read cap(16) */
 	p_cmd->rcb.cdb[1] = 0x10;	/* service action */
-	p_u32 = (u32 *) & p_cmd->rcb.cdb[10];
-	writel_be(CMD_BUFSIZE, p_u32);
+	put_unaligned_be32(CMD_BUFSIZE, &p_cmd->rcb.cdb[10]);
+
 	p_cmd->sa.host_use_b[1] = 0;	/* reset retry cnt */
 
 	cxlflash_info("sending cmd(0x%x) with RCB EA=%p data EA=0x%llx",
@@ -1619,13 +1617,15 @@ int read_cap16(struct afu *p_afu, struct lun_info *p_lun_info, u32 port_sel)
 		rc = -1;
 		goto out;
 	}
-	/* read cap success  */
-	spin_lock(p_lun_info->slock);
-	p_u64 = (u64 *) & p_cmd->buf[0];
-	p_lun_info->max_lba = readq_be(p_u64);
 
-	p_u32 = (u32 *) & p_cmd->buf[8];
-	p_lun_info->blk_len = readl_be(p_u32);
+	/*
+	 * Read cap was successful, grab values from the buffer;
+	 * note that we don't need to worry about unaligned access
+	 * as the buffer is allocated on an aligned boundary.
+	 */
+	spin_lock(p_lun_info->slock);
+	p_lun_info->max_lba = swab64(*((u64 *)&p_cmd->buf[0]));
+	p_lun_info->blk_len = swab32(*((u32 *)&p_cmd->buf[8]));
 	spin_unlock(p_lun_info->slock);
 
 out:
@@ -1641,7 +1641,6 @@ out:
  */
 static int find_lun(struct cxlflash *p_cxlflash, u32 port_sel)
 {
-	u32 *p_u32;
 	u32 len;
 	u64 *p_u64;
 	struct afu *p_afu = p_cxlflash->afu;
@@ -1670,8 +1669,8 @@ static int find_lun(struct cxlflash *p_cxlflash, u32 port_sel)
 	p_cmd->rcb.timeout = MC_DISCOVERY_TIMEOUT;
 
 	p_cmd->rcb.cdb[0] = 0xA0;	/* report luns */
-	p_u32 = (u32 *) & p_cmd->rcb.cdb[6];
-	writel_be(CMD_BUFSIZE, p_u32);	/* allocation length */
+	put_unaligned_be32(CMD_BUFSIZE, &p_cmd->rcb.cdb[6]);
+
 	p_cmd->sa.host_use_b[1] = 0;	/* reset retry cnt */
 
 	cxlflash_info("sending cmd(0x%x) with RCB EA=%p data EA=0x%p",
@@ -1686,15 +1685,24 @@ static int find_lun(struct cxlflash *p_cxlflash, u32 port_sel)
 		cmd_checkin(p_cmd);
 		return -1;
 	}
-	/* report luns success  */
-	len = readl_be((u32 *)&p_cmd->buf[0]);
 
-	p_u64 = (u64 *) & p_cmd->buf[8];	/* start of lun list */
+	/*
+	 * Report luns was successful, grab values from the buffer;
+	 * note that we don't need to worry about unaligned access
+	 * as the buffer is allocated on an aligned boundary.
+	 */
+	len = swab32(*((u32 *)&p_cmd->buf[0]));
+
+	p_u64 = (u64 *)&p_cmd->buf[8];	/* start of lun list */
 
 	p_currid = lunidarray = kzalloc(len, GFP_KERNEL);
+	if (!p_currid) {
+		rc = -ENOMEM;
+		goto out;
+	}
 
 	while (len) {
-		*p_currid = readq_be(p_u64);
+		*p_currid = swab64(*p_u64);
 		len -= 8;
 		p_u64++;
 		i++;
