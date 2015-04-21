@@ -408,7 +408,7 @@ create_lun_info_exit:
  * expected.
  *
  * Returns:
- *      0 on success / -ENXIO if device does not exist
+ *      0 on success / -ENOMEM when memory allocation fails
  **/
 static int cxlflash_slave_alloc(struct scsi_device *sdev)
 {
@@ -424,7 +424,7 @@ static int cxlflash_slave_alloc(struct scsi_device *sdev)
 	p_lun_info = create_lun_info(sdev);
 	if (!p_lun_info) {
 		cxlflash_err("failed to allocate lun_info!");
-		rc = -ENXIO;
+		rc = -ENOMEM;
 		goto out;
 	}
 
