@@ -165,23 +165,6 @@ struct ba_lun_info {
 #define B_ERROR      0x02	/* set with B_DONE */
 #define B_TIMEOUT    0x04	/* set with B_DONE & B_ERROR */
 
-struct scsi_inquiry_page_83_hdr {
-	u8 peri_qual_dev_type;
-	u8 page_code;
-	u16 adtl_page_length;	/* not counting 4 byte hdr */
-	/* Identification Descriptor list */
-};
-
-struct scsi_inquiry_p83_id_desc_hdr {
-	u8 prot_code;		/* Protocol Identifier & Code Set */
-#define TEXAN_PAGE_83_DESC_PROT_CODE             0x01u
-	u8 assoc_id;		/* PIV/Association/Identifier type */
-#define TEXAN_PAGE_83_ASSC_ID_LUN_WWID           0x03u
-	u8 reserved;
-	u8 adtl_id_length;
-	/* Identifier Data */
-};
-
 /*
  * Each context has its own set of resource handles that is visible
  * only from that context.
