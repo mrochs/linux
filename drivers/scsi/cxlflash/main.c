@@ -138,6 +138,49 @@ void cmd_checkin(struct afu_cmd *p_cmd)
 
 }
 
+void cmd_complete(struct afu_cmd *p_cmd)
+{
+	unsigned long lock_flags = 0UL;
+	struct scsi_cmnd *scp;
+	struct afu *p_afu = p_cmd->back;
+	struct cxlflash *p_cxlflash = p_afu->back;
+
+	spin_lock_irqsave(p_cmd->slock, lock_flags);
+	p_cmd->sa.host_use_b[0] |= B_DONE;
+	spin_unlock_irqrestore(p_cmd->slock, lock_flags);
+
+	/* already stopped if timer fired */
+	del_timer(&p_cmd->timer);
+
+	if (p_cmd->rcb.rsvd2) {
+		scp = (struct scsi_cmnd *)p_cmd->rcb.rsvd2;
+		if (p_cmd->sa.rc.afu_rc || p_cmd->sa.rc.scsi_rc ||
+		    p_cmd->sa.rc.fc_rc) {
+			/* XXX: Needs to be decoded to report errors */
+			scp->result = (DID_OK << 16);
+		} else {
+			scp->result = (DID_OK << 16);
+		}
+		cxlflash_dbg("calling scsi_set_resid, scp=0x%llx "
+			   "resid=%d afu_rc=%d scsi_rc=%d fc_rc=%d",
+			    p_cmd->rcb.rsvd2, p_cmd->sa.resid,
+			    p_cmd->sa.rc.afu_rc, p_cmd->sa.rc.scsi_rc,
+			    p_cmd->sa.rc.fc_rc);
+
+		scsi_set_resid(scp, p_cmd->sa.resid);
+		scsi_dma_unmap(scp);
+		scp->scsi_done(scp);
+		p_cmd->rcb.rsvd2 = 0ULL;
+		if (p_cmd->special) {
+			p_cxlflash->tmf_active = 0;
+			wake_up_all(&p_cxlflash->tmf_wait_q);
+		}
+	}
+
+	/* Done with command */
+	cmd_checkin(p_cmd);
+}
+
 /**
  * cxlflash_send_scsi - Send a generic SCSI CDB down
  * @p_afu:        struct afu pointer
@@ -1306,11 +1349,8 @@ cxlflash_sync_err_irq_exit:
 static irqreturn_t cxlflash_rrq_irq(int irq, void *data)
 {
 	struct afu *p_afu = (struct afu *)data;
-	struct cxlflash *p_cxlflash;
 	struct afu_cmd *p_cmd;
-	unsigned long lock_flags = 0UL;
 
-	p_cxlflash = p_afu->back;
 	/*
 	 * XXX - might want to look at using locals for loop control
 	 * as an optimization
@@ -1318,45 +1358,10 @@ static irqreturn_t cxlflash_rrq_irq(int irq, void *data)
 
 	/* Process however many RRQ entries that are ready */
 	while ((*p_afu->hrrq_curr & SISL_RESP_HANDLE_T_BIT) == p_afu->toggle) {
-		struct scsi_cmnd *scp;
-
 		p_cmd = (struct afu_cmd *)
 		    ((*p_afu->hrrq_curr) & (~SISL_RESP_HANDLE_T_BIT));
 
-		spin_lock_irqsave(p_cmd->slock, lock_flags);
-		p_cmd->sa.host_use_b[0] |= B_DONE;
-		spin_unlock_irqrestore(p_cmd->slock, lock_flags);
-
-		/* already stopped if timer fired */
-		del_timer(&p_cmd->timer);
-
-		if (p_cmd->rcb.rsvd2) {
-			scp = (struct scsi_cmnd *)p_cmd->rcb.rsvd2;
-			if (p_cmd->sa.rc.afu_rc || p_cmd->sa.rc.scsi_rc ||
-			    p_cmd->sa.rc.fc_rc) {
-				/* XXX: Needs to be decoded to report errors */
-				scp->result = (DID_OK << 16);
-			} else {
-				scp->result = (DID_OK << 16);
-			}
-			cxlflash_dbg("calling scsi_set_resid, scp=0x%llx "
-				   "resid=%d afu_rc=%d scsi_rc=%d fc_rc=%d",
-				    p_cmd->rcb.rsvd2, p_cmd->sa.resid,
-				    p_cmd->sa.rc.afu_rc, p_cmd->sa.rc.scsi_rc,
-				    p_cmd->sa.rc.fc_rc);
-
-			scsi_set_resid(scp, p_cmd->sa.resid);
-			scsi_dma_unmap(scp);
-			scp->scsi_done(scp);
-			p_cmd->rcb.rsvd2 = 0ULL;
-			if (p_cmd->special) {
-				p_cxlflash->tmf_active = 0;
-				wake_up_all(&p_cxlflash->tmf_wait_q);
-			}
-		}
-
-		/* Done with command */
-		cmd_checkin(p_cmd);
+		cmd_complete(p_cmd);
 
 		/* Advance to next entry or wrap and flip the toggle bit */
 		if (p_afu->hrrq_curr < p_afu->hrrq_end) {
@@ -1547,12 +1552,16 @@ out:
  * Returns:
  *      NONE
  */
-void cxlflash_context_reset(struct afu *p_afu)
+void cxlflash_context_reset(struct afu_cmd *p_cmd)
 {
 	int nretry = 0;
 	u64 rrin = 0x1;
+	struct afu *p_afu = p_cmd->back;
 
-	cxlflash_info("p_afu=%p", p_afu);
+	cxlflash_info("p_cmd=%p", p_cmd);
+
+	/* First process completion of the command that timed out */
+	cmd_complete(p_cmd);
 
 	if (p_afu->room == 0) {
 		do {
@@ -1712,12 +1721,13 @@ int cxlflash_start_afu(struct cxlflash *p_cxlflash)
 		struct timer_list *p_timer = &p_afu->cmd[i].timer;
 
 		init_timer(p_timer);
-		p_timer->data = (unsigned long)p_afu;
+		p_timer->data = (unsigned long)&p_afu->cmd[i];
 		p_timer->function = (void (*)(unsigned long))
 			cxlflash_context_reset;
 
 		spin_lock_init(&p_afu->cmd[i]._slock);
 		p_afu->cmd[i].slock = &p_afu->cmd[i]._slock;
+		p_afu->cmd[i].back = p_afu;
 	}
 	init_pcr(p_cxlflash);
 
@@ -2106,7 +2116,7 @@ static int cxlflash_probe(struct pci_dev *pdev,
 
 	host->max_id = CXLFLASH_MAX_NUM_TARGETS_PER_BUS;
 	host->max_lun = CXLFLASH_MAX_NUM_LUNS_PER_TARGET;
-	host->max_channel =  NUM_FC_PORTS-1;
+	host->max_channel = NUM_FC_PORTS-1;
 	host->unique_id = host->host_no;
 	host->max_cmd_len = CXLFLASH_MAX_CDB_LEN;
 

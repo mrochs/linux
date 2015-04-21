@@ -221,6 +221,7 @@ struct afu_cmd {
 	spinlock_t *slock;
 	struct timer_list timer;
 	char *buf;                      /* per command buffer */
+	struct afu *back;
 	int slot;
 	u8 flag:1;
 	u8 special:1;
