@@ -185,7 +185,6 @@ struct asyc_intr_info {
 /*
  * Externs and Prototypes
  */
-extern const struct file_operations cxlflash_cxl_fops;
 extern int cxlflash_ioctl(struct scsi_device *, int, void __user *);
 
 #endif /* _CXLFLASH_H */
