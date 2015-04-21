@@ -113,21 +113,11 @@ extern u32 checkpid;
  * desires a single string trace.
  */
 #define CONFN(_s) "%s: "_s"\n"
-#define cxlflash_emerg(_s, ...)	pr_emerg(CONFN(_s), __func__, ##__VA_ARGS__)
-#define cxlflash_alert(_s, ...)	pr_alert(CONFN(_s), __func__, ##__VA_ARGS__)
-#define cxlflash_crit(_s,  ...)	pr_crit(CONFN(_s),  __func__, ##__VA_ARGS__)
 #define cxlflash_err(_s,   ...)	pr_err(CONFN(_s),   __func__, ##__VA_ARGS__)
 #define cxlflash_warn(_s,  ...)	pr_warn(CONFN(_s),  __func__, ##__VA_ARGS__)
 #define cxlflash_info(_s,  ...)	pr_info(CONFN(_s),  __func__, ##__VA_ARGS__)
-#define cxlflash_devel(_s, ...)	pr_devel(CONFN(_s), __func__, ##__VA_ARGS__)
 #define cxlflash_dbg(_s, ...)	pr_debug(CONFN(_s), __func__, ##__VA_ARGS__)
 
-#define cxlflash_dev_emerg(_d, _s, ...)	\
-	dev_emerg(_d, CONFN(_s), __func__, ##__VA_ARGS__)
-#define cxlflash_dev_alert(_d, _s, ...)	\
-	dev_alert(_d, CONFN(_s), __func__, ##__VA_ARGS__)
-#define cxlflash_dev_crit(_d, _s, ...)	\
-	dev_crit(_d, CONFN(_s), __func__, ##__VA_ARGS__)
 #define cxlflash_dev_err(_d, _s, ...)	\
 	dev_err(_d, CONFN(_s), __func__, ##__VA_ARGS__)
 #define cxlflash_dev_warn(_d, _s, ...)	\
