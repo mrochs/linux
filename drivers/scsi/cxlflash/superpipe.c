@@ -473,12 +473,12 @@ int cxlflash_cxl_release(struct inode *inode, struct file *file)
 	if (context_id < 0) {
 		cxlflash_err("context %d closed", context_id);
 		return 0;
-	} else {
-		cxlflash_info("close(%d) for context %d",
-			p_cxlflash->per_context[context_id].lfd, context_id);
-
-		return cxl_fd_release(inode, file);
 	}
+
+	cxlflash_info("close(%d) for context %d",
+		      p_cxlflash->per_context[context_id].lfd, context_id);
+
+	return cxl_fd_release(inode, file);
 }
 
 const struct file_operations cxlflash_cxl_fops = {
@@ -669,32 +669,32 @@ static struct sisl_rht_entry *rhte_checkout(struct cxlflash *p_cxlflash,
 	int i;
 
 	p_ctx_info = get_validated_context(p_cxlflash, context_id, false);
-	if (p_ctx_info != NULL) {
-		p_rht_info = p_ctx_info->rht_info;
-
-		cxlflash_info("ctx 0x%llx ctxinfo %p rhtinfo %p",
-			    context_id, p_ctx_info, p_rht_info);
-
-		/* find a free RHT entry */
-		for (i = 0; i < MAX_RHT_PER_CONTEXT; i++) {
-			if (p_rht_info->rht_start[i].nmask == 0) {
-				p_rht_entry = &p_rht_info->rht_start[i];
-				break;
-			}
-		}
-		cxlflash_info("i %d rhti %p rhte %p",
-			    i, p_rht_info, p_rht_entry);
-
-		/* if we did not find a free entry, reached max opens allowed
-		 * per context
-		 */
-
-		if (!p_rht_entry)
-			goto out;
-
-	} else {
+	if (unlikely(!p_ctx_info)) {
+		cxlflash_err("Invalid context! (%llu)", context_id);
 		goto out;
 	}
+
+	p_rht_info = p_ctx_info->rht_info;
+
+	cxlflash_info("ctx 0x%llx ctxinfo %p rhtinfo %p",
+		      context_id, p_ctx_info, p_rht_info);
+
+	/* find a free RHT entry */
+	for (i = 0; i < MAX_RHT_PER_CONTEXT; i++)
+		if (p_rht_info->rht_start[i].nmask == 0) {
+			p_rht_entry = &p_rht_info->rht_start[i];
+			break;
+		}
+
+	cxlflash_dbg("i %d rhti %p rhte %p",i, p_rht_info, p_rht_entry);
+
+	/* No free entries means we've reached max opens allowed per context */
+	if (unlikely(!p_rht_entry)) {
+		cflash_err("No free entries found for context id %llu",
+			   context_id);
+		goto out;
+	}
+
 out:
 	cxlflash_info("returning p_rht_entry=%p", p_rht_entry);
 	return p_rht_entry;
