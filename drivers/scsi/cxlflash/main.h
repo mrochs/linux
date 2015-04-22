@@ -20,8 +20,6 @@
 #include <scsi/scsi.h>
 #include <scsi/scsi_device.h>
 
-#include "cflash_ioctl.h"
-
 extern u32 internal_lun;
 extern u32 fullqc;
 extern u32 checkpid;
@@ -175,6 +173,6 @@ struct asyc_intr_info {
 /*
  * Externs and Prototypes
  */
-extern int cxlflash_ioctl(struct scsi_device *, int, void __user *);
+int cxlflash_ioctl(struct scsi_device *, int, void __user *);
 
 #endif /* _CXLFLASH_H */

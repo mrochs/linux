@@ -31,7 +31,7 @@ struct dk_cxlflash_attach {
 	__u64 num_interrupts;		/* Requested number of interrupts */
 	__u64 context_id;		/* Returned context ID */
 	__u64 mmio_size;		/* Returned size of MMIO area */
-	__u64 XLblock_size;		/* Returned block size, in bytes */
+	__u64 block_size;		/* Returned block size, in bytes */
 	__u64 adap_fd;			/* Returned adapter file descriptor */
 	__u64 last_lba;			/* Returned last LBA on the device */
 	__u64 max_xfer;			/* Returned max transfer size, blocks */
@@ -97,6 +97,22 @@ struct dk_cxlflash_recover_afu {
 	__u64 rsrc_handle;		/* Resource handle for LUN to recover */
 	__u64 reason;			/* Reason for recovery request */
 };
+
+union cxlflash_ioctls {
+	struct dk_cxlflash_attach attach;
+	struct dk_cxlflash_detach detach;
+	struct dk_cxlflash_udirect udirect;
+	struct dk_cxlflash_uvirtual uvirtual;
+	struct dk_cxlflash_release release;
+	struct dk_cxlflash_resize resize;
+	struct dk_cxlflash_clone clone;
+	struct dk_cxlflash_verify verify;
+	struct dk_cxlflash_log log;
+	struct dk_cxlflash_recover_afu recover_afu;
+};
+
+#define MAX_CXLFLASH_IOCTL_SZ	(sizeof(union cxlflash_ioctls))
+
 
 #define CXL_MAGIC 0xCA
 

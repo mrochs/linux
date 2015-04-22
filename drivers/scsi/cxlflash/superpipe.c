@@ -35,60 +35,41 @@
 #include <scsi/scsi_tcq.h>
 #include <scsi/scsi_eh.h>
 #include <scsi/scsi_cmnd.h>
+#include <uapi/scsi/cxlflash_ioctl.h>
 
 #include "sislite.h"
 #include "main.h"
 #include "superpipe.h"
-#include "cflash_ioctl.h"
 
-static void marshall_virt_to_resize(struct dk_capi_uvirtual *pvirt,
-				    struct dk_capi_resize *psize)
+static void marshall_virt_to_resize(struct dk_cxlflash_uvirtual *pvirt,
+				    struct dk_cxlflash_resize *psize)
 {
-	psize->version = pvirt->version;
-	psize->rsvd[0] = pvirt->rsvd[0];
-	psize->rsvd[1] = pvirt->rsvd[1];
-	psize->rsvd[2] = pvirt->rsvd[2];
-	psize->flags = pvirt->flags;
-	psize->return_flags = pvirt->return_flags;
+	psize->hdr = pvirt->hdr;
 	psize->context_id = pvirt->context_id;
 	psize->rsrc_handle = pvirt->rsrc_handle;
 	psize->req_size = pvirt->lun_size;
 	psize->last_lba = pvirt->last_lba;
 }
 
-static void marshall_rele_to_resize(struct dk_capi_release *prele,
-				    struct dk_capi_resize *psize)
+static void marshall_rele_to_resize(struct dk_cxlflash_release *prele,
+				    struct dk_cxlflash_resize *psize)
 {
-	psize->version = prele->version;
-	psize->rsvd[0] = prele->rsvd[0];
-	psize->rsvd[1] = prele->rsvd[1];
-	psize->rsvd[2] = prele->rsvd[2];
-	psize->flags = prele->flags;
-	psize->return_flags = prele->return_flags;
+	psize->hdr = prele->hdr;
 	psize->context_id = prele->context_id;
 	psize->rsrc_handle = prele->rsrc_handle;
 }
 
-static void marshall_det_to_rele(struct dk_capi_detach *pdet,
-				 struct dk_capi_release *prel)
+static void marshall_det_to_rele(struct dk_cxlflash_detach *pdet,
+				 struct dk_cxlflash_release *prel)
 {
-	prel->version = pdet->version;
-	prel->rsvd[0] = pdet->rsvd[0];
-	prel->rsvd[1] = pdet->rsvd[1];
-	prel->rsvd[2] = pdet->rsvd[2];
-	prel->flags = pdet->flags;
-	prel->return_flags = pdet->return_flags;
+	prel->hdr = pdet->hdr;
 	prel->context_id = pdet->context_id;
 }
 
-static void marshall_clone_to_rele(struct dk_capi_clone *pclone,
-				   struct dk_capi_release *prel)
+static void marshall_clone_to_rele(struct dk_cxlflash_clone *pclone,
+				   struct dk_cxlflash_release *prel)
 {
-	prel->version = pclone->version;
-	prel->rsvd[0] = pclone->rsvd[0];
-	prel->rsvd[1] = pclone->rsvd[1];
-	prel->rsvd[2] = pclone->rsvd[2];
-	prel->flags = pclone->flags;
+	prel->hdr = pclone->hdr;
 	prel->context_id = pclone->context_id_dst;
 }
 
@@ -549,10 +530,10 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 	p_cxlflash->per_context[context_id].ctx = ctx;
 
 	/* Translate read/write O_* flags from fnctl.h to AFU permission bits */
-	perms = ((patt->flags + 1) & 0x3);
+	perms = ((patt->hdr.flags + 1) & 0x3);
 	p_afu->ctx_info[context_id].rht_info->perms = perms;
 
-	patt->return_flags = 0;
+	patt->hdr.return_flags = 0;
 	patt->context_id = context_id;
 	patt->block_size = p_lun_info->blk_len;
 	patt->mmio_size = sizeof(p_afu->afu_map->hosts[0].harea);
@@ -942,7 +923,7 @@ static int cxlflash_vlun_resize(struct scsi_device *sdev,
 		cxlflash_err("res_hndl %d invalid", res_hndl);
 		rc = -EINVAL;
 	}
-	prsz->return_flags = 0;
+	prsz->hdr.return_flags = 0;
 	prsz->last_lba = (p_act_new_size * MC_CHUNK_SIZE *
 			  p_lun_info->blk_len) / CXLFLASH_BLOCK_SIZE;
 
@@ -986,7 +967,6 @@ static int cxlflash_disk_open(struct scsi_device *sdev,
 	u32 perms;
 	u64 context_id;
 	u64 lun_size = 0;
-	u64 block_size = 0;
 	u64 last_lba = 0;
 	u64 rsrc_handle = -1;
 
@@ -1046,7 +1026,6 @@ static int cxlflash_disk_open(struct scsi_device *sdev,
 	perms = p_rht_info->perms;
 
 	rsrc_handle = (p_rht_entry - p_rht_info->rht_start);
-	block_size = p_lun_info->blk_len;
 
 	if (mode == MODE_VIRTUAL) {
 		p_rht_entry->nmask = MC_RHT_NMASK;
@@ -1063,8 +1042,7 @@ static int cxlflash_disk_open(struct scsi_device *sdev,
 			}
 			last_lba = resize.last_lba;
 		}
-		pvirt->return_flags = 0;
-		pvirt->block_size = block_size;
+		pvirt->hdr.return_flags = 0;
 		pvirt->last_lba = last_lba;
 		pvirt->rsrc_handle = rsrc_handle;
 	} else if (mode == MODE_PHYSICAL) {
@@ -1072,15 +1050,14 @@ static int cxlflash_disk_open(struct scsi_device *sdev,
 		afu_sync(p_afu, context_id, rsrc_handle, AFU_LW_SYNC);
 
 		last_lba = p_lun_info->max_lba;
-		pphys->return_flags = 0;
-		pphys->block_size = block_size;
+		pphys->hdr.return_flags = 0;
 		pphys->last_lba = last_lba;
 		pphys->rsrc_handle = rsrc_handle;
 	}
 
 out:
-	cxlflash_info("returning handle 0x%llx rc=%d bs %lld llba %lld",
-		      rsrc_handle, rc, block_size, last_lba);
+	cxlflash_info("returning handle 0x%llx rc=%d llba %lld",
+		      rsrc_handle, rc, last_lba);
 	return rc;
 }
 
@@ -1412,7 +1389,7 @@ static int cxlflash_disk_clone(struct scsi_device *sdev,
 	struct lun_info *p_lun_info = sdev->hostdata;
 	struct blka *p_blka = &p_lun_info->blka;
 	struct afu *p_afu = p_cxlflash->afu;
-	struct dk_cxlflash_release release = { 0 };
+	struct dk_cxlflash_release release = { { 0 }, 0 };
 
 	struct ctx_info *p_ctx_info_src, *p_ctx_info_dst;
 	struct rht_info *p_rht_info_src, *p_rht_info_dst;

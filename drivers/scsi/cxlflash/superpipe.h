@@ -29,7 +29,6 @@ typedef unsigned int useconds_t;	/* time in microseconds */
 
 #define MAX_CONTEXT  CXLFLASH_MAX_CONTEXT	/* num contexts per afu */
 #define MAX_AUN_CLONE_CNT    0xFF
-#define MAX_CXLFLASH_IOCTL_SZ	(sizeof(union cxlflash_ioctls))
 
 enum cxlflash_lr_state {
 	LINK_RESET_INVALID,
@@ -89,19 +88,6 @@ static inline u64 lun_to_lunid(u64 lun)
 	int_to_scsilun(lun, (struct scsi_lun *)&lun_id);
 	return swab64(lun_id);
 }
-
-union cxlflash_ioctls {
-	struct dk_capi_attach attach;
-	struct dk_capi_detach detach;
-	struct dk_capi_udirect udirect;
-	struct dk_capi_uvirtual uvirtual;
-	struct dk_capi_release release;
-	struct dk_capi_resize resize;
-	struct dk_capi_clone clone;
-	struct dk_capi_verify verify;
-	struct dk_capi_log log;
-	struct dk_capi_recover_afu recover_afu;
-};
 
 struct ba_lun {
 	u64 lun_id;
