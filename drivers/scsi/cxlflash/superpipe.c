@@ -1055,6 +1055,7 @@ static int cxlflash_disk_open(struct scsi_device *sdev,
 
 		if (lun_size != 0) {
 			marshall_virt_to_resize(pvirt, &resize);
+			resize.rsrc_handle = rsrc_handle;
 			rc = cxlflash_vlun_resize(sdev, &resize);
 			if (rc) {
 				cxlflash_err("resize failed rc %d", rc);
