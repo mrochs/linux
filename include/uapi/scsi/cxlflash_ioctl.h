@@ -15,6 +15,8 @@
 #ifndef _CXLFLASH_IOCTL_H
 #define _CXLFLASH_IOCTL_H
 
+#include <linux/types.h>
+
 /*
  * Structure definitions CXL Flash driver superpipe ioctls
  */
