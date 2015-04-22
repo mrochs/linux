@@ -12,8 +12,8 @@
  * 2 of the License, or (at your option) any later version.
  */
 
-#ifndef _CXLFLASH_H
-#define _CXLFLASH_H
+#ifndef _CXLFLASH_MAIN_H
+#define _CXLFLASH_MAIN_H
 
 #include <linux/list.h>
 #include <linux/types.h>
@@ -175,4 +175,4 @@ struct asyc_intr_info {
  */
 int cxlflash_ioctl(struct scsi_device *, int, void __user *);
 
-#endif /* _CXLFLASH_H */
+#endif /* _CXLFLASH_MAIN_H */

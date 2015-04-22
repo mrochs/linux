@@ -12,8 +12,8 @@
  * 2 of the License, or (at your option) any later version.
  */
 
-#ifndef _CXLFLASHMC_H
-#define _CXLFLASHMC_H
+#ifndef _CXLFLASH_SUPERPIPE_H
+#define _CXLFLASH_SUPERPIPE_H
 
 typedef unsigned int useconds_t;	/* time in microseconds */
 
@@ -278,4 +278,4 @@ void cxlflash_send_cmd(struct afu *, struct afu_cmd *);
 void cxlflash_wait_resp(struct afu *, struct afu_cmd *);
 void cxlflash_scan_luns(struct cxlflash *);
 int afu_reset(struct cxlflash *);
-#endif /* ifndef _CXLFLASHMC_H */
+#endif /* ifndef _CXLFLASH_SUPERPIPE_H */

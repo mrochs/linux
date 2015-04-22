@@ -12,8 +12,8 @@
  * 2 of the License, or (at your option) any later version.
  */
 
-#ifndef _CXLFLASHIOCTL_H
-#define _CXLFLASHIOCTL_H
+#ifndef _CXLFLASH_IOCTL_H
+#define _CXLFLASH_IOCTL_H
 
 /*
  * Structure definitions CXL Flash driver superpipe ioctls
@@ -128,4 +128,4 @@ union cxlflash_ioctls {
 #define DK_CXLFLASH_QUERY_EXCEPTIONS _IOW(CXL_MAGIC, 0x89, struct dk_cxlflash_log)
 #define DK_CXLFLASH_CLONE	     _IOW(CXL_MAGIC, 0x8A, struct dk_cxlflash_clone)
 
-#endif /* ifndef _CXLFLASHIOCTL_H */
+#endif /* ifndef _CXLFLASH_IOCTL_H */
