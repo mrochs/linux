@@ -924,8 +924,8 @@ static int cxlflash_vlun_resize(struct scsi_device *sdev,
 		rc = -EINVAL;
 	}
 	prsz->hdr.return_flags = 0;
-	prsz->last_lba = (p_act_new_size * MC_CHUNK_SIZE *
-			  p_lun_info->blk_len) / CXLFLASH_BLOCK_SIZE;
+	prsz->last_lba = (((p_act_new_size * MC_CHUNK_SIZE *
+			    p_lun_info->blk_len) / CXLFLASH_BLOCK_SIZE) - 1);
 
 out:
 	cxlflash_info("resized to %lld returning rc=%d", prsz->last_lba, rc);
