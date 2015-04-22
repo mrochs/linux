@@ -1183,13 +1183,13 @@ static int afu_set_wwpn(struct afu *p_afu,
 	return ret;
 }
 
-// this function can block up to a few seconds
+/* this function can block up to a few seconds */
 static void afu_link_reset(struct afu *p_afu,
 			   int port, volatile __u64 * p_fc_regs)
 {
 	__u64 port_sel;
-	// first switch the AFU to the other links, if any 
 
+	/* first switch the AFU to the other links, if any */
 	port_sel = readq_be(&p_afu->afu_map->global.regs.afu_port_sel);
 	port_sel &= ~(1 << port);
 	writeq_be(port_sel, &p_afu->afu_map->global.regs.afu_port_sel);
@@ -1206,7 +1206,7 @@ static void afu_link_reset(struct afu *p_afu,
 			      FC_PORT_STATUS_RETRY_CNT)) {
 		cxlflash_err("wait on port %d to go online timed out", port);
 	}
-	// switch back to include this port 
+	/* switch back to include this port */
 	port_sel |= (1 << port);
 	writeq_be(port_sel, &p_afu->afu_map->global.regs.afu_port_sel);
 	afu_sync(p_afu, 0, 0, AFU_GSYNC);
@@ -1399,9 +1399,10 @@ static irqreturn_t cxlflash_async_err_irq(int irq, void *data)
 			     readq_be(&p_global->fc_regs
 				      [p_info->port][FC_STATUS / 8]));
 
-		// do link reset first, some OTHER errors will set FC_ERROR 
-		// again if cleared before or w/o a reset
-
+		/*
+		 * do link reset first, some OTHER errors will set FC_ERROR 
+		 * again if cleared before or w/o a reset
+		 */
 		if (p_info->action & LINK_RESET) {
 			cxlflash_err("fc %d: resetting link", p_info->port);
 			p_cxlflash->lr_state = LINK_RESET_REQUIRED;
@@ -1413,8 +1414,10 @@ static irqreturn_t cxlflash_async_err_irq(int irq, void *data)
 			reg = readq_be(&p_global->fc_regs[p_info->port]
 				       [FC_ERROR / 8]);
 
-			// since all errors are unmasked, FC_ERROR and FC_ERRCAP
-			// should be the same and tracing one is sufficient. 
+			/*
+			 * since all errors are unmasked, FC_ERROR and FC_ERRCAP
+			 * should be the same and tracing one is sufficient.
+			 */
 
 			cxlflash_err("fc %d: clearing fc_error 0x%08llx",
 				     p_info->port, reg);
