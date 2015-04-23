@@ -572,23 +572,6 @@ static void cxlflash_slave_destroy(struct scsi_device *sdev)
 }
 
 /**
- * cxlflash_scan_finished - Check if the device scan is done.
- * @shost:      scsi host struct
- * @time:       current elapsed time
- *
- * Returns:
- *      0 if scan is not done / 1 if scan is done
- **/
-static int cxlflash_scan_finished(struct Scsi_Host *shost, unsigned long time)
-{
-	int done = 1;
-
-	/* This is temporary, see notes on qc module parameter */
-	cxlflash_info("returning done=%d", done);
-	return done;
-}
-
-/**
  * cxlflash_change_queue_depth - Change the device's queue depth
  * @sdev:       scsi device struct
  * @qdepth:     depth to set
@@ -712,7 +695,6 @@ static struct scsi_host_template driver_template = {
 	.slave_alloc = cxlflash_slave_alloc,
 	.slave_configure = cxlflash_slave_configure,
 	.slave_destroy = cxlflash_slave_destroy,
-	.scan_finished = cxlflash_scan_finished,
 	.change_queue_depth = cxlflash_change_queue_depth,
 	.cmd_per_lun = 16,
 	.can_queue = CXLFLASH_MAX_CMDS,
@@ -2095,10 +2077,6 @@ static int cxlflash_probe(struct pci_dev *pdev,
 	int rc = 0;
 
 	cxlflash_dev_dbg(&pdev->dev, "Found CXLFLASH with IRQ: %d", pdev->irq);
-
-	/* This is temporary and will eventually go away */
-	if (fullqc)
-		driver_template.scan_finished = NULL;
 
 	p_ddv = (struct dev_dependent_vals *)dev_id->driver_data;
 	driver_template.max_sectors = p_ddv->max_sectors;
