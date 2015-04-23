@@ -211,6 +211,7 @@ struct afu_cmd {
 	int slot;
 	u8 flag:1;
 	u8 special:1;
+	u8 internal:1;
 
 } __attribute__ ((aligned(cache_line_size())));
 

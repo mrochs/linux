@@ -133,6 +133,7 @@ void cmd_checkin(struct afu_cmd *p_cmd)
 	spin_lock_irqsave(p_cmd->slock, lock_flags);
 	p_cmd->flag = CMD_FREE;
 	p_cmd->special = 0;
+	p_cmd->internal = false;
 	spin_unlock_irqrestore(p_cmd->slock, lock_flags);
 	cxlflash_dbg("releasing cmd index=%d", p_cmd->slot);
 

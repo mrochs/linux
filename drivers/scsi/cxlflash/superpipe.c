@@ -1518,6 +1518,7 @@ int read_cap16(struct afu *p_afu, struct lun_info *p_lun_info, u32 port_sel)
 	p_cmd->rcb.data_len = CMD_BUFSIZE;
 	p_cmd->rcb.data_ea = (u64) p_cmd->buf;
 	p_cmd->rcb.timeout = MC_DISCOVERY_TIMEOUT;
+	p_cmd->internal = true;
 
 	p_cmd->rcb.cdb[0] = 0x9E;	/* read cap(16) */
 	p_cmd->rcb.cdb[1] = 0x10;	/* service action */
@@ -1588,6 +1589,7 @@ static int find_lun(struct cxlflash *p_cxlflash, u32 port_sel)
 	p_cmd->rcb.data_len = CMD_BUFSIZE;
 	p_cmd->rcb.data_ea = (u64) p_cmd->buf;
 	p_cmd->rcb.timeout = MC_DISCOVERY_TIMEOUT;
+	p_cmd->internal = true;
 
 	p_cmd->rcb.cdb[0] = 0xA0;	/* report luns */
 	put_unaligned_be32(CMD_BUFSIZE, &p_cmd->rcb.cdb[6]);
