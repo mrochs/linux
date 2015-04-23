@@ -46,7 +46,6 @@ MODULE_AUTHOR("Matthew R. Ochs <mrochs@linux.vnet.ibm.com>");
 MODULE_LICENSE("GPL");
 
 u32 internal_lun = 0;
-u32 fullqc = 0;
 u32 checkpid = 0;
 
 /*
@@ -67,19 +66,6 @@ MODULE_PARM_DESC(lun_mode, " 0 = external LUN[s](default),\n"
 		 " 2 = internal LUN (1 x 64K, 4K blocks, id 0),\n"
 		 " 3 = internal LUN (2 x 32K, 512B blocks, ids 0,1),\n"
 		 " 4 = internal LUN (2 x 32K, 4K blocks, ids 0,1)");
-
-/*
- * This is a temporary module parameter
- *
- * Due to limitations on the current AFU, discovery operations
- * performed from the SCSI stack upon scan can cause a hang.
- * This parameter toggles scaffolding in various parts of the
- * driver based upon if we're using the SCSI stack to scan or
- * are performing our own scan. This will be removed in the near
- * future as we work past the issues with the AFU.
- */
-module_param_named(qc, fullqc, uint, 0);
-MODULE_PARM_DESC(qc, " 1 = Regular SCSI queuecommand");
 
 /*
  * This is a temporary module parameter
@@ -342,21 +328,15 @@ static int cxlflash_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *scp)
 	struct afu *p_afu = p_cxlflash->afu;
 	int rc = 0;
 
-	/* This is temporary, soon will be a straight call to send_scsi */
-	if (!fullqc) {
-		scp->scsi_done(scp);
-	} else {
-		cxlflash_dbg("(scp=%p) %d/%d/%d/%llu "
-			     "cdb=(%08x-%08x-%08x-%08x)", scp,
-			     host->host_no, scp->device->channel,
-			     scp->device->id, scp->device->lun,
-			     get_unaligned_be32(&((u32 *)scp->cmnd)[0]),
-			     get_unaligned_be32(&((u32 *)scp->cmnd)[1]),
-			     get_unaligned_be32(&((u32 *)scp->cmnd)[2]),
-			     get_unaligned_be32(&((u32 *)scp->cmnd)[3]));
+	cxlflash_dbg("(scp=%p) %d/%d/%d/%llu cdb=(%08x-%08x-%08x-%08x)",
+		     scp, host->host_no, scp->device->channel,
+		     scp->device->id, scp->device->lun,
+		     get_unaligned_be32(&((u32 *)scp->cmnd)[0]),
+		     get_unaligned_be32(&((u32 *)scp->cmnd)[1]),
+		     get_unaligned_be32(&((u32 *)scp->cmnd)[2]),
+		     get_unaligned_be32(&((u32 *)scp->cmnd)[3]));
 
-		rc = cxlflash_send_scsi(p_afu, scp);
-	}
+	rc = cxlflash_send_scsi(p_afu, scp);
 	return rc;
 }
 
@@ -494,6 +474,10 @@ static int cxlflash_slave_configure(struct scsi_device *sdev)
 {
 	struct lun_info *p_lun_info = sdev->hostdata;
 	int rc = 0;
+	struct Scsi_Host *shost = sdev->host;
+	struct cxlflash *p_cxlflash = shost_priv(shost);
+	struct afu *p_afu = p_cxlflash->afu;
+
 
 	cxlflash_info("ID = %08X", sdev->id);
 	cxlflash_info("CHANNEL = %08X", sdev->channel);
@@ -504,38 +488,11 @@ static int cxlflash_slave_configure(struct scsi_device *sdev)
 	p_lun_info->lun_id = lun_to_lunid(sdev->lun);
 	cxlflash_info("LUN2 = %016llX", p_lun_info->lun_id);
 
-	/*
-	 * This is temporary debug code
-	 *
-	 * Leaving this here for now as a reminder that read_cap16
-	 * doesn't work in this path. We also need to figure out how and
-	 * when to setup the LUN table (on attach coupled with where we
-	 * now call read_cap16?) and also look into how we're skipping
-	 * entries. The spec has a blurb about this but I'm not convinced
-	 * we're doing it right.
-	 */
-	if (fullqc) {
-		struct Scsi_Host *shost = sdev->host;
-		struct cxlflash *p_cxlflash = shost_priv(shost);
-		struct afu *p_afu = p_cxlflash->afu;
-
-		writeq_be(p_lun_info->lun_id,
-			  &p_afu->afu_map->global.fc_port[sdev->channel]
-			  [p_cxlflash->last_lun_index++]);
-		//read_cap16(p_afu, p_lun_info, sdev->channel + 1);
-		cxlflash_info("LBA = %016llX", p_lun_info->max_lba);
-		cxlflash_info("BLK_LEN = %08X", p_lun_info->blk_len);
-
-#if 0
-		rc = cxlflash_init_ba(p_lun_info);
-		if (rc) {
-			cxlflash_err("call to cxlflash_init_ba failed rc=%d!",
-				     rc);
-			rc = -ENOMEM;
-			goto out;
-		}
-#endif
-	}
+	writeq_be(p_lun_info->lun_id,
+		  &p_afu->afu_map->global.fc_port[sdev->channel]
+		  [p_cxlflash->last_lun_index++]);
+	cxlflash_info("LBA = %016llX", p_lun_info->max_lba);
+	cxlflash_info("BLK_LEN = %08X", p_lun_info->blk_len);
 
 	cxlflash_info("returning rc=%d", rc);
 	return rc;
@@ -1048,14 +1005,6 @@ static int cxlflash_init_scsi(struct cxlflash *p_cxlflash)
 
 	cxlflash_dev_dbg(&pdev->dev, "before scsi_scan_host");
 	scsi_scan_host(p_cxlflash->host);
-
-	/*
-	 * This is temporary, eventually we will just call scsi_scan_host()
-	 * without a scan_finished populated and let the stack perform the
-	 * async scan.
-	 */
-	if (!fullqc)
-		cxlflash_scan_luns(p_cxlflash);
 
 out:
 	cxlflash_info("returning rc=%d", rc);

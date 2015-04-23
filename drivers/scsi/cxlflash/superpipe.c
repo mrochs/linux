@@ -458,20 +458,18 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 	if (p_cxlflash->num_user_contexts == 0)
 		p_cxlflash->cxl_fops = cxlflash_cxl_fops;
 
-	if (fullqc) {
-		if (p_lun_info->max_lba == 0) {
-			cxlflash_info("No capacity info yet for this LUN "
-				      "(%016llX)", p_lun_info->lun_id);
-			read_cap16(p_afu, p_lun_info, sdev->channel + 1);
-			cxlflash_info("LBA = %016llX", p_lun_info->max_lba);
-			cxlflash_info("BLK_LEN = %08X", p_lun_info->blk_len);
-			rc = cxlflash_init_ba(p_lun_info);
-			if (rc) {
-				cxlflash_err("call to cxlflash_init_ba failed "
-					     "rc=%d!", rc);
-				rc = -ENOMEM;
-				goto out;
-			}
+	if (p_lun_info->max_lba == 0) {
+		cxlflash_info("No capacity info yet for this LUN "
+			      "(%016llX)", p_lun_info->lun_id);
+		read_cap16(p_afu, p_lun_info, sdev->channel + 1);
+		cxlflash_info("LBA = %016llX", p_lun_info->max_lba);
+		cxlflash_info("BLK_LEN = %08X", p_lun_info->blk_len);
+		rc = cxlflash_init_ba(p_lun_info);
+		if (rc) {
+			cxlflash_err("call to cxlflash_init_ba failed "
+				     "rc=%d!", rc);
+			rc = -ENOMEM;
+			goto out;
 		}
 	}
 
