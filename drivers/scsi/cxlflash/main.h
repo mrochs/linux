@@ -20,10 +20,6 @@
 #include <scsi/scsi.h>
 #include <scsi/scsi_device.h>
 
-extern u32 internal_lun;
-extern u32 fullqc;
-extern u32 checkpid;
-
 #define CXLFLASH_NAME                      "cxlflash"
 #define CXLFLASH_ADAPTER_NAME              "IBM POWER CXL Flash Adapter"
 #define CXLFLASH_DRIVER_VERSION           "1.0.2"
@@ -35,13 +31,6 @@ extern u32 checkpid;
 /* Since there is only one target, make it 0 */
 #define CXLFLASH_TARGET                   0x0
 #define CXLFLASH_MAX_CDB_LEN		16
-
-#define CXLFLASH_MAX_CMDS		16
-#define CXLFLASH_MAX_CMDS_PER_LUN	CXLFLASH_MAX_CMDS
-
-#define CXLFLASH_BLOCK_SIZE	4096	/* 4K blocks */
-#define CXLFLASH_MAX_XFER_SIZE	16777216	/* 16MB transfer */
-#define CXLFLASH_MAX_SECTORS	(CXLFLASH_MAX_XFER_SIZE/CXLFLASH_BLOCK_SIZE)
 
 /* Really only one target per bus since the Texan is directly attached */
 #define CXLFLASH_MAX_NUM_TARGETS_PER_BUS                     1
@@ -73,7 +62,6 @@ extern u32 checkpid;
 /* TIMEOUT and RETRY definitions */
 
 /* AFU command timeout values */
-#define MC_DISCOVERY_TIMEOUT 5	/* 5 secs */
 #define MC_AFU_SYNC_TIMEOUT  5	/* 5 secs */
 
 /* AFU command retry limit */
@@ -94,52 +82,6 @@ extern u32 checkpid;
 #define WWPN_LEN	16
 #define WWPN_BUF_LEN	(WWPN_LEN + 1)
 
-/*
- * Error logging macros
- *
- * These wrappers around pr|dev_* add the function name and newline character
- * automatically, avoiding the need to include them inline with each trace
- * statement and saving line width.
- *
- * The parameters must be split into the format string and variable list of
- * parameters in order to support concatenation of the function format
- * specifier and newline character. The CONFN macro is a helper to simplify
- * the contactenation and make it easier to change the desired format. Lastly,
- * the variable list is passed with a dummy concatenation. This trick is used
- * to support the case where no parameters are passed and the user simply
- * desires a single string trace.
- */
-#define CONFN(_s) "%s: "_s"\n"
-#define cxlflash_err(_s,   ...)	pr_err(CONFN(_s),   __func__, ##__VA_ARGS__)
-#define cxlflash_warn(_s,  ...)	pr_warn(CONFN(_s),  __func__, ##__VA_ARGS__)
-#define cxlflash_info(_s,  ...)	pr_info(CONFN(_s),  __func__, ##__VA_ARGS__)
-#define cxlflash_dbg(_s, ...)	pr_debug(CONFN(_s), __func__, ##__VA_ARGS__)
-
-#define cxlflash_dev_err(_d, _s, ...)	\
-	dev_err(_d, CONFN(_s), __func__, ##__VA_ARGS__)
-#define cxlflash_dev_warn(_d, _s, ...)	\
-	dev_warn(_d, CONFN(_s), __func__, ##__VA_ARGS__)
-#define cxlflash_dev_info(_d, _s, ...)	\
-	dev_info(_d, CONFN(_s), __func__, ##__VA_ARGS__)
-#define cxlflash_dev_dbg(_d, _s, ...)	\
-	dev_dbg(_d, CONFN(_s), __func__, ##__VA_ARGS__)
-
-/* Command management definitions */
-#define CXLFLASH_NUM_CMDS	(2 * CXLFLASH_MAX_CMDS)	/* Must be a pow2 for 
-							   alignment and more 
-							   efficient array 
-							   index derivation 
-							 */
-
-#define NOT_POW2(_x) ((_x) & ((_x) & ((_x) -1)))
-#if NOT_POW2(CXLFLASH_NUM_CMDS)
-#error "CXLFLASH_NUM_CMDS is not a power of 2!"
-#endif
-
-#define AFU_SYNC_INDEX  (CXLFLASH_NUM_CMDS - 1)	/* last cmd rsvd for afu sync */
-
-#define CMD_FREE   0x0
-#define CMD_IN_USE 0x1
 
 enum undo_level {
 	RELEASE_CONTEXT = 0,
@@ -149,12 +91,6 @@ enum undo_level {
 	UNMAP_THREE,
 	UNMAP_FOUR,
 	UNDO_START
-};
-
-enum open_mode_type {
-	MODE_NONE = 0,
-	MODE_VIRTUAL,
-	MODE_PHYSICAL
 };
 
 struct dev_dependent_vals {

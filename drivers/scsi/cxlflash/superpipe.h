@@ -16,6 +16,8 @@
 #define _CXLFLASH_SUPERPIPE_H
 
 typedef unsigned int useconds_t;	/* time in microseconds */
+extern u32 checkpid;
+extern u32 internal_lun;
 
 /*----------------------------------------------------------------------------*/
 /* Constants                                                                  */
@@ -27,58 +29,12 @@ typedef unsigned int useconds_t;	/* time in microseconds */
 /* Types                                                                      */
 /*----------------------------------------------------------------------------*/
 
-#define MAX_CONTEXT  CXLFLASH_MAX_CONTEXT	/* num contexts per afu */
 #define MAX_AUN_CLONE_CNT    0xFF
 
-enum cxlflash_lr_state {
-	LINK_RESET_INVALID,
-	LINK_RESET_REQUIRED,
-	LINK_RESET_COMPLETE
-};
-
-struct cxlflash_ctx {
-	struct cxl_ioctl_start_work work;
-	int lfd;
-	pid_t pid;
-	struct cxl_context *ctx;
-};
-
-struct cxlflash {
-	struct afu *afu;
-	struct cxl_context *mcctx;
-
-	struct pci_dev *dev;
-	struct pci_device_id *dev_id;
-	struct Scsi_Host *host;
-
-	unsigned long cxlflash_regs_pci;
-	void __iomem *cxlflash_regs;
-
-	wait_queue_head_t reset_wait_q;
-	wait_queue_head_t msi_wait_q;
-	wait_queue_head_t eeh_wait_q;
-
-	struct work_struct work_q;
-	enum cxlflash_lr_state lr_state;
-	int lr_port;
-
-	struct cxl_afu *cxl_afu;
-	timer_t timer_hb;
-	timer_t timer_fc;
-
-	struct pci_pool *cxlflash_cmd_pool;
-	struct pci_dev *parent_dev;
-
-	int num_user_contexts;
-	struct cxlflash_ctx per_context[MAX_CONTEXT];
-	struct file_operations cxl_fops;
-
-	int last_lun_index;
-	int task_set;
-
-	wait_queue_head_t tmf_wait_q;
-	u8 context_reset_active:1;
-	u8 tmf_active:1;
+enum open_mode_type {
+	MODE_NONE = 0,
+	MODE_VIRTUAL,
+	MODE_PHYSICAL
 };
 
 static inline u64 lun_to_lunid(u64 lun)
@@ -128,8 +84,6 @@ struct ba_lun_info {
 						   into a chunk */
 #define LXT_LUNIDX_SHIFT  8	/* LXT entry, shift for LUN index */
 
-#define MAX_RHT_PER_CONTEXT 16	/* num resource hndls per context */
-#define NUM_RRQ_ENTRY    16	/* for master issued cmds */
 #define NUM_FC_PORTS     CXLFLASH_NUM_FC_PORTS	/* ports per AFU */
 
 /* LXT tables are allocated dynamically in groups. This is done to
@@ -150,30 +104,6 @@ struct ba_lun_info {
 #define B_DONE       0x01
 #define B_ERROR      0x02	/* set with B_DONE */
 #define B_TIMEOUT    0x04	/* set with B_DONE & B_ERROR */
-
-/*
- * Each context has its own set of resource handles that is visible
- * only from that context.
- *
- * The rht_info refers to all resource handles of a context and not to
- * a particular RHT entry or a single resource handle.
- */
-struct rht_info {
-	struct sisl_rht_entry *rht_start;	/* initialized at startup */
-	int ref_cnt;		/* num ctx_infos pointing to me */
-	u32 perms;		/* User-defined (@attach) permissions for RHT entries */
-};
-
-/* Single AFU context can be pointed to by multiple client connections.
- * The client can create multiple endpoints (mc_hndl_t) to the same
- * (context + AFU).
- */
-struct ctx_info {
-	volatile struct sisl_ctrl_map *ctrl_map;	/* initialized at startup */
-	struct rht_info *rht_info;	/* initialized when context created */
-
-	int ref_cnt;		/* num conn_infos pointing to me */
-};
 
 /* Block Alocator */
 struct blka {
@@ -200,72 +130,6 @@ struct lun_info {
 
 #define CMD_BUFSIZE	PAGE_SIZE_4K
 
-struct afu_cmd {
-	struct sisl_ioarcb_s rcb;	/* IOARCB (cache line aligned) */
-	struct sisl_ioasa_s sa;	/* IOASA must follow IOARCB */
-	spinlock_t _slock;
-	spinlock_t *slock;
-	struct timer_list timer;
-	char *buf;		/* per command buffer */
-	struct afu *back;
-	int slot;
-	u8 flag:1;
-	u8 special:1;
-	u8 internal:1;
-
-} __attribute__ ((aligned(cache_line_size())));
-
-struct afu {
-	/* Stuff requiring alignment go first. */
-
-	u64 rrq_entry[NUM_RRQ_ENTRY];	/* 128B RRQ (page aligned) */
-	/*
-	 * Command & data for AFU commands.
-	 */
-	struct afu_cmd cmd[CXLFLASH_NUM_CMDS];
-
-	/* Housekeeping data */
-	struct ctx_info ctx_info[MAX_CONTEXT];
-	struct rht_info rht_info[MAX_CONTEXT];
-	struct mutex afu_mutex;	/* for anything that needs serialization
-				   e. g. to access afu */
-	struct mutex err_mutex;	/* for signalling error thread */
-	wait_queue_head_t err_cv;
-	int err_flag;
-#define E_SYNC_INTR   0x1	/* synchronous error interrupt */
-#define E_ASYNC_INTR  0x2	/* asynchronous error interrupt */
-
-	/* AFU Shared Data */
-	struct sisl_rht_entry rht[MAX_CONTEXT][MAX_RHT_PER_CONTEXT];
-	/* LXTs are allocated dynamically in groups */
-	/* Beware of alignment till here. Preferably introduce new
-	 * fields after this point 
-	 */
-
-	/* AFU HW */
-	int afu_fd;
-	struct cxl_ioctl_start_work work;
-	volatile struct cxlflash_afu_map *afu_map;	/* entire MMIO map */
-	volatile struct sisl_host_map *host_map;	/* master's sislite host map */
-	volatile struct sisl_ctrl_map *ctrl_map;	/* master's control map */
-
-	ctx_hndl_t ctx_hndl;	/* master's context handle */
-	u64 *hrrq_start;
-	u64 *hrrq_end;
-	volatile u64 *hrrq_curr;
-	unsigned int toggle;
-	u64 room;
-	u64 hb;
-	u32 cmd_couts;		/* Number of command checkouts */
-	u32 internal_lun;	/* User-desired LUN mode for this AFU */
-
-	char version[8];
-	u64 interface_version;
-
-	struct list_head luns;	/* list of lun_info structs */
-	struct cxlflash *back;	/* Pointer back to parent cxlflash */
-
-} __attribute__ ((aligned(PAGE_SIZE_4K)));
 
 int read_cap16(struct afu *p_afu, struct lun_info *p_lun_info, u32 port_sel);
 int afu_sync(struct afu *p_afu, ctx_hndl_t ctx_hndl_u, res_hndl_t res_hndl_u,

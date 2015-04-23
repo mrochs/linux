@@ -38,7 +38,7 @@
 #include <uapi/scsi/cxlflash_ioctl.h>
 
 #include "sislite.h"
-#include "main.h"
+#include "common.h"
 #include "superpipe.h"
 
 static void marshall_virt_to_resize(struct dk_cxlflash_uvirtual *pvirt,
