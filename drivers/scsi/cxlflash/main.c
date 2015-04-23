@@ -1675,6 +1675,10 @@ int init_global(struct cxlflash *p_cxlflash)
 			rc = -EIO;
 			goto out;
 		}
+		/* Programming WWPN back to back causes additional
+		 * offline/online transitions and a PLOGI
+		 */
+		msleep(100);
 
 	}
 
