@@ -1870,13 +1870,12 @@ void cxlflash_send_cmd(struct afu *p_afu, struct afu_cmd *p_cmd)
 	/* make memory updates visible to AFU before MMIO */
 	smp_wmb();
 
-	/*
-	 * XXX - look at only running the timer for traffic that originates
-	 * from us (ie: AFU sync) as the SCSI layer already runs its own
-	 * timers.
-	 */
-	p_cmd->timer.expires = (jiffies + (p_cmd->rcb.timeout * 2 * HZ));
-	add_timer(&p_cmd->timer);
+	/* Only kick off the timer for internal commands */
+	if (p_cmd->internal) {
+		p_cmd->timer.expires = (jiffies +
+					(p_cmd->rcb.timeout * 2 * HZ));
+		add_timer(&p_cmd->timer);
+	}
 
 	/* Write IOARRIN */
 	if (p_afu->room)
