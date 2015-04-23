@@ -326,7 +326,6 @@ static int cxlflash_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *scp)
 {
 	struct cxlflash *p_cxlflash = (struct cxlflash *)host->hostdata;
 	struct afu *p_afu = p_cxlflash->afu;
-	int rc = 0;
 
 	cxlflash_dbg("(scp=%p) %d/%d/%d/%llu cdb=(%08x-%08x-%08x-%08x)",
 		     scp, host->host_no, scp->device->channel,
@@ -336,8 +335,7 @@ static int cxlflash_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *scp)
 		     get_unaligned_be32(&((u32 *)scp->cmnd)[2]),
 		     get_unaligned_be32(&((u32 *)scp->cmnd)[3]));
 
-	rc = cxlflash_send_scsi(p_afu, scp);
-	return rc;
+	return cxlflash_send_scsi(p_afu, scp);
 }
 
 /**
