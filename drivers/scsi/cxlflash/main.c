@@ -194,7 +194,7 @@ int cxlflash_send_scsi(struct afu *p_afu, struct scsi_cmnd *scp)
 {
 	struct afu_cmd *p_cmd;
 
-	u64 port_sel = scp->device->channel + 1;
+	u32 port_sel = scp->device->channel + 1;
 	int nseg, i, ncount;
 	struct scatterlist *sg;
 	short lflag = 0;
@@ -261,7 +261,7 @@ int cxlflash_send_tmf(struct afu *p_afu, struct scsi_cmnd *scp, u64 cmd)
 {
 	struct afu_cmd *p_cmd;
 
-	u64 port_sel = scp->device->channel + 1;
+	u32 port_sel = scp->device->channel + 1;
 	short lflag = 0;
 	struct Scsi_Host *host = scp->device->host;
 	struct cxlflash *p_cxlflash = (struct cxlflash *)host->hostdata;
@@ -1212,6 +1212,7 @@ static void afu_link_reset(struct afu *p_afu,
 	writeq_be(port_sel, &p_afu->afu_map->global.regs.afu_port_sel);
 	afu_sync(p_afu, 0, 0, AFU_GSYNC);
 
+	cxlflash_info("returning port_sel=%lld", port_sel);
 }
 
 struct asyc_intr_info ainfo[] = {
