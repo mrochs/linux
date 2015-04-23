@@ -395,7 +395,7 @@ cxlflash_init_ba_exit:
 
 int cxlflash_cxl_release(struct inode *inode, struct file *file)
 {
-	struct cxl_context *ctx = file->private_data;
+	struct cxl_context *ctx = cxl_fops_get_context(file);
 	struct cxlflash *p_cxlflash = container_of(file->f_op, struct cxlflash,
 						   cxl_fops);
 	int context_id = cxl_process_element(ctx);
