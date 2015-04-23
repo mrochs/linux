@@ -20,6 +20,8 @@
 #include <scsi/scsi.h>
 #include <scsi/scsi_device.h>
 
+typedef unsigned int useconds_t;        /* time in microseconds */
+
 #define CXLFLASH_NAME                      "cxlflash"
 #define CXLFLASH_ADAPTER_NAME              "IBM POWER CXL Flash Adapter"
 #define CXLFLASH_DRIVER_VERSION           "1.0.2"
@@ -37,6 +39,8 @@
 #define CXLFLASH_MAX_NUM_LUNS_PER_TARGET                     65536
 
 #define CXLFLASH_PCI_ERROR_RECOVERY_TIMEOUT  (120 * HZ)
+
+#define NUM_FC_PORTS     CXLFLASH_NUM_FC_PORTS  /* ports per AFU */
 
 /* FC defines */
 #define FC_MTIP_CMDCONFIG 0x010
@@ -106,6 +110,13 @@ struct asyc_intr_info {
 #define LINK_RESET     0x02
 };
 
+static inline u64 lun_to_lunid(u64 lun)
+{
+	u64 lun_id;
+
+	int_to_scsilun(lun, (struct scsi_lun *)&lun_id);
+	return swab64(lun_id);
+}
 /*
  * Externs and Prototypes
  */

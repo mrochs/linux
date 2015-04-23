@@ -50,7 +50,14 @@
 #define CMD_FREE   0x0
 #define CMD_IN_USE 0x1
 
+#define CMD_BUFSIZE     PAGE_SIZE_4K
+
 #define MC_DISCOVERY_TIMEOUT 5  /* 5 secs */
+
+/* flags in IOA status area for host use */
+#define B_DONE       0x01
+#define B_ERROR      0x02	/* set with B_DONE */
+#define B_TIMEOUT    0x04	/* set with B_DONE & B_ERROR */
 
 /*
  * Error logging macros
@@ -81,6 +88,12 @@
 	dev_info(_d, CONFN(_s), __func__, ##__VA_ARGS__)
 #define cxlflash_dev_dbg(_d, _s, ...)	\
 	dev_dbg(_d, CONFN(_s), __func__, ##__VA_ARGS__)
+
+enum open_mode_type {
+	MODE_NONE = 0,
+	MODE_VIRTUAL,
+	MODE_PHYSICAL
+};
 
 enum cxlflash_lr_state {
 	LINK_RESET_INVALID,
@@ -223,5 +236,60 @@ struct afu {
 	struct cxlflash *back;	/* Pointer back to parent cxlflash */
 
 } __attribute__ ((aligned(PAGE_SIZE_4K)));
+
+struct ba_lun {
+	u64 lun_id;
+	u64 wwpn;
+	size_t lsize;		/* Lun size in number of LBAs             */
+	size_t lba_size;	/* LBA size in number of bytes            */
+	size_t au_size;		/* Allocation Unit size in number of LBAs */
+	void *ba_lun_handle;
+};
+
+/* Block Alocator */
+struct blka {
+	struct ba_lun ba_lun;
+	u64 nchunk;		/* number of chunks */
+	struct mutex mutex;
+};
+
+/* LUN discovery results are in lun_info */
+struct lun_info {
+	u64 lun_id;		/* from REPORT_LUNS */
+	u64 max_lba;		/* from read cap(16) */
+	u32 blk_len;		/* from read cap(16) */
+	u32 lun_index;
+	enum open_mode_type mode;
+
+	spinlock_t _slock;
+	spinlock_t *slock;
+
+	struct blka blka;
+	struct scsi_device *sdev;
+	struct list_head list;
+};
+
+struct ba_lun_info {
+	u64 *lun_alloc_map;
+	u32 lun_bmap_size;
+	u32 total_aus;
+	u64 free_aun_cnt;
+
+	/* indices to be used for elevator lookup of free map */
+	u32 free_low_idx;
+	u32 free_curr_idx;
+	u32 free_high_idx;
+
+	unsigned char *aun_clone_map;
+};
+
+void cxlflash_send_cmd(struct afu *, struct afu_cmd *);
+void cxlflash_wait_resp(struct afu *, struct afu_cmd *);
+int check_status(struct sisl_ioasa_s *);
+int afu_reset(struct cxlflash *);
+struct afu_cmd *cmd_checkout(struct afu *p_afu);
+void cmd_checkin(struct afu_cmd *p_cmd);
+int afu_sync(struct afu *p_afu, ctx_hndl_t ctx_hndl_u, res_hndl_t res_hndl_u,
+	     u8 mode);
 #endif /* ifndef _CXLFLASH_COMMON_H */
 

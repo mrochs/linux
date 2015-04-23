@@ -39,7 +39,6 @@
 #include "main.h"
 #include "sislite.h"
 #include "common.h"
-#include "superpipe.h"
 
 MODULE_DESCRIPTION(CXLFLASH_ADAPTER_NAME);
 MODULE_AUTHOR("Manoj N. Kumar <manoj@linux.vnet.ibm.com>");
