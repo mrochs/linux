@@ -12,29 +12,17 @@
  * 2 of the License, or (at your option) any later version.
  */
 
-#include <linux/pci.h>
-#include <linux/module.h>
-#include <linux/mutex.h>
-#include <linux/semaphore.h>
-#include <linux/io.h>
-#include <linux/fs.h>
-#include <linux/cdev.h>
+#include <linux/delay.h>
 #include <linux/list.h>
-#include <linux/libata.h>
-#include <linux/reboot.h>
+#include <linux/module.h>
+#include <linux/pci.h>
 
 #include <asm/unaligned.h>
 
 #include <misc/cxl.h>
-#include <uapi/misc/cxl.h>
 
-#include <scsi/scsi.h>
-#include <scsi/scsi_host.h>
-#include <scsi/scsi_device.h>
-#include <scsi/scsi_tcq.h>
-#include <scsi/scsi_eh.h>
 #include <scsi/scsi_cmnd.h>
-#include <scsi/scsi_transport_fc.h>
+#include <scsi/scsi_host.h>
 
 #include "main.h"
 #include "sislite.h"
