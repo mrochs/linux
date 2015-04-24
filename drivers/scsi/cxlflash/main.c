@@ -324,6 +324,12 @@ static int cxlflash_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *scp)
 {
 	struct cxlflash *p_cxlflash = (struct cxlflash *)host->hostdata;
 	struct afu *p_afu = p_cxlflash->afu;
+	struct afu_cmd *p_cmd;
+	u32 port_sel = scp->device->channel + 1;
+	int nseg, i, ncount;
+	struct scatterlist *sg;
+	short lflag = 0;
+	int rc = 0;
 
 	cxlflash_dbg("(scp=%p) %d/%d/%d/%llu cdb=(%08x-%08x-%08x-%08x)",
 		     scp, host->host_no, scp->device->channel,
@@ -333,7 +339,48 @@ static int cxlflash_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *scp)
 		     get_unaligned_be32(&((u32 *)scp->cmnd)[2]),
 		     get_unaligned_be32(&((u32 *)scp->cmnd)[3]));
 
-	return cxlflash_send_scsi(p_afu, scp);
+	while (p_cxlflash->tmf_active)
+		wait_event(p_cxlflash->tmf_wait_q, !p_cxlflash->tmf_active);
+
+	p_cmd = cmd_checkout(p_afu);
+	if (unlikely(!p_cmd)) {
+		cxlflash_err("could not get a free command");
+		rc = SCSI_MLQUEUE_HOST_BUSY;
+		goto out;
+	}
+
+	p_cmd->rcb.ctx_id = p_afu->ctx_hndl;
+	p_cmd->rcb.port_sel = port_sel;
+	p_cmd->rcb.lun_id = lun_to_lunid(scp->device->lun);
+
+	if (scp->sc_data_direction == DMA_TO_DEVICE)
+		lflag = SISL_REQ_FLAGS_HOST_WRITE;
+	else
+		lflag = SISL_REQ_FLAGS_HOST_READ;
+
+	p_cmd->rcb.req_flags = (SISL_REQ_FLAGS_PORT_LUN_ID |
+				SISL_REQ_FLAGS_SUP_UNDERRUN | lflag);
+
+	/* Stash the scp in the reserved field, for reuse during interrupt */
+	p_cmd->rcb.rsvd2 = (u64) scp;
+
+	p_cmd->sa.host_use_b[1] = 0;	/* reset retry cnt */
+
+	nseg = scsi_dma_map(scp);
+	ncount = scsi_sg_count(scp);
+	scsi_for_each_sg(scp, sg, ncount, i) {
+		p_cmd->rcb.data_len = (sg_dma_len(sg));
+		p_cmd->rcb.data_ea = (sg_dma_address(sg));
+	}
+
+	/* Copy the CDB from the scsi_cmnd passed in */
+	memcpy(p_cmd->rcb.cdb, scp->cmnd, sizeof(p_cmd->rcb.cdb));
+
+	/* Send the command */
+	cxlflash_send_cmd(p_afu, p_cmd);
+
+out:
+	return rc;
 }
 
 /**
