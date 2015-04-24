@@ -247,6 +247,7 @@ static int cxlflash_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *scp)
 {
 	struct cxlflash *cxlflash = (struct cxlflash *)host->hostdata;
 	struct afu *afu = cxlflash->afu;
+	struct pci_dev *pdev = cxlflash->dev;
 	struct afu_cmd *cmd;
 	u32 port_sel = scp->device->channel + 1;
 	int nseg, i, ncount;
@@ -290,6 +291,12 @@ static int cxlflash_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *scp)
 	cmd->sa.host_use_b[1] = 0;	/* reset retry cnt */
 
 	nseg = scsi_dma_map(scp);
+	if (unlikely(nseg < 0)) {
+		cxlflash_dev_err(&pdev->dev, "Fail DMA map! nseg=%d", nseg);
+		rc = SCSI_MLQUEUE_DEVICE_BUSY;
+		goto out;
+	}
+
 	ncount = scsi_sg_count(scp);
 	scsi_for_each_sg(scp, sg, ncount, i) {
 		cmd->rcb.data_len = (sg_dma_len(sg));
