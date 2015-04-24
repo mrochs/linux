@@ -709,9 +709,8 @@ static void cxlflash_stop_afu(struct cxlflash *p_cxlflash)
 	}
 
 	/* Need to stop timers before unmapping */
-	for (i = 0; i < CXLFLASH_NUM_CMDS; i++) {
+	for (i = 0; i < CXLFLASH_NUM_CMDS; i++)
 		del_timer_sync(&p_cxlflash->afu->cmd[i].timer);
-	}
 
 	if (p_afu->afu_map) {
 		cxl_psa_unmap((void *)p_afu->afu_map);
@@ -766,10 +765,8 @@ static void cxlflash_term_afu(struct cxlflash *p_cxlflash)
 	cxlflash_term_mc(p_cxlflash, UNDO_START);
 
 	/* Need to stop timers before unmapping */
-	if (p_cxlflash->afu) {
+	if (p_cxlflash->afu)
 		cxlflash_stop_afu(p_cxlflash);
-
-	}
 
 	cxlflash_info("returning");
 }
@@ -860,9 +857,8 @@ static int cxlflash_gb_alloc(struct cxlflash *p_cxlflash)
 		p_cxlflash->afu->cmd[i].special = 0;
 	}
 
-	for (i = 0; i < MAX_CONTEXT; i++) {
+	for (i = 0; i < MAX_CONTEXT; i++)
 		p_cxlflash->per_context[i].lfd = -1;
-	}
 
 out:
 	return rc;
@@ -1069,9 +1065,8 @@ static int afu_set_wwpn(struct afu *p_afu,
 		ret = -1;	/* but continue on to leave the port back online */
 	}
 
-	if (ret == 0) {
+	if (ret == 0)
 		writeq_be(wwpn, &p_fc_regs[FC_PNAME / 8]);
-	}
 
 	set_port_online(p_fc_regs);
 
@@ -1153,11 +1148,9 @@ static struct asyc_intr_info *find_ainfo(__u64 status)
 {
 	struct asyc_intr_info *p_info;
 
-	for (p_info = &ainfo[0]; p_info->status; p_info++) {
-		if (p_info->status == status) {
+	for (p_info = &ainfo[0]; p_info->status; p_info++)
+		if (p_info->status == status)
 			return p_info;
-		}
-	}
 
 	return NULL;
 }
@@ -1622,9 +1615,8 @@ int cxlflash_start_afu(struct cxlflash *p_cxlflash)
 	int i = 0;
 	int rc = 0;
 
-	for (i = 0; i < MAX_CONTEXT; i++) {
+	for (i = 0; i < MAX_CONTEXT; i++)
 		p_afu->rht_info[i].rht_start = &p_afu->rht[i][0];
-	}
 
 	for (i = 0; i < CXLFLASH_NUM_CMDS; i++) {
 		struct timer_list *p_timer = &p_afu->cmd[i].timer;
