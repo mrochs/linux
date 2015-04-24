@@ -407,8 +407,6 @@ static int cxlflash_slave_alloc(struct scsi_device *sdev)
 	unsigned long flags = 0;
 	int rc = 0;
 
-	spin_lock_irqsave(shost->host_lock, flags);
-
 	lun_info = create_lun_info(sdev);
 	if (unlikely(!lun_info)) {
 		cxlflash_err("failed to allocate lun_info!");
@@ -416,11 +414,12 @@ static int cxlflash_slave_alloc(struct scsi_device *sdev)
 		goto out;
 	}
 
+	spin_lock_irqsave(shost->host_lock, flags);
+
 	sdev->hostdata = lun_info;
 	list_add(&lun_info->list, &afu->luns);
-out:
 	spin_unlock_irqrestore(shost->host_lock, flags);
-
+out:
 	cxlflash_info("returning task_set %d luninfo %p sdev %p",
 		      cxlflash->task_set, lun_info, sdev);
 	return rc;
