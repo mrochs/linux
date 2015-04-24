@@ -221,14 +221,7 @@ out:
  **/
 static const char *cxlflash_driver_info(struct Scsi_Host *host)
 {
-	static char buffer[512];
-	unsigned long lock_flags = 0;
-
-	spin_lock_irqsave(host->host_lock, lock_flags);
-	sprintf(buffer, CXLFLASH_ADAPTER_NAME);
-	spin_unlock_irqrestore(host->host_lock, lock_flags);
-
-	return buffer;
+	return CXLFLASH_ADAPTER_NAME;
 }
 
 /**
