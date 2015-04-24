@@ -648,7 +648,7 @@ MODULE_DEVICE_TABLE(pci, cxlflash_pci_table);
  **/
 static void cxlflash_free_mem(struct cxlflash *cxlflash)
 {
-	int i, nbytes;
+	int i;
 	char *buf = NULL;
 	struct afu *afu = cxlflash->afu;
 	struct lun_info *lun_info, *temp;
@@ -668,8 +668,7 @@ static void cxlflash_free_mem(struct cxlflash *cxlflash)
 					   get_order(CMD_BUFSIZE));
 		}
 
-		nbytes = sizeof(struct afu);
-		free_pages((unsigned long)cxlflash->afu, get_order(nbytes));
+		free_pages((unsigned long)cxlflash->afu, sizeof(struct afu));
 		cxlflash->afu = NULL;
 	}
 
@@ -811,16 +810,15 @@ static void cxlflash_remove(struct pci_dev *pdev)
  **/
 static int cxlflash_gb_alloc(struct cxlflash *cxlflash)
 {
-	int nbytes;
 	int rc = 0;
 	int i;
 	char *buf = NULL;
 
-	nbytes = sizeof(struct afu);
 	cxlflash->afu = (void *)__get_free_pages(GFP_KERNEL | __GFP_ZERO,
-						   get_order(nbytes));
+						 get_order(sizeof(struct afu)));
 	if (unlikely(!cxlflash->afu)) {
-		cxlflash_err("cannot get %d free pages", get_order(nbytes));
+		cxlflash_err("cannot get %d free pages",
+			     get_order(sizeof(struct afu)));
 		rc = -ENOMEM;
 		goto out;
 	}
