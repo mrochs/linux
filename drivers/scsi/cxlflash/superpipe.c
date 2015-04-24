@@ -1125,10 +1125,10 @@ static int cxlflash_disk_release(struct scsi_device *sdev,
 			rht_entry_f1->valid = 0;
 			smp_wmb();
 
-			rht_entry_f1->lun_id = 0ULL;
+			rht_entry_f1->lun_id = 0;
 			smp_wmb();
 
-			rht_entry_f1->dw = 0ULL;
+			rht_entry_f1->dw = 0;
 			smp_wmb();
 			afu_sync(afu, release->context_id, res_hndl,
 				 AFU_HW_SYNC);

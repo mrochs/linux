@@ -145,7 +145,7 @@ void cmd_complete(struct afu_cmd *cmd)
 		scsi_set_resid(scp, cmd->sa.resid);
 		scsi_dma_unmap(scp);
 		scp->scsi_done(scp);
-		cmd->rcb.rsvd2 = 0ULL;
+		cmd->rcb.rsvd2 = 0;
 		if (cmd->special) {
 			cxlflash->tmf_active = 0;
 			wake_up_all(&cxlflash->tmf_wait_q);
@@ -978,7 +978,7 @@ out:
 /* online means the FC link layer has sync and has completed the link
  * layer handshake. It is ready for login to start.
  */
-static void set_port_online(volatile u64 * fc_regs)
+static void set_port_online(volatile u64 *fc_regs)
 {
 	u64 cmdcfg;
 
@@ -988,7 +988,7 @@ static void set_port_online(volatile u64 * fc_regs)
 	writeq_be(cmdcfg, &fc_regs[FC_MTIP_CMDCONFIG / 8]);
 }
 
-static void set_port_offline(volatile u64 * fc_regs)
+static void set_port_offline(volatile u64 *fc_regs)
 {
 	u64 cmdcfg;
 
@@ -1000,7 +1000,7 @@ static void set_port_offline(volatile u64 * fc_regs)
 
 /* returns 1 - went online */
 /* wait_port_xxx will timeout when cable is not pluggd in */
-static int wait_port_online(volatile u64 * fc_regs,
+static int wait_port_online(volatile u64 *fc_regs,
 			    useconds_t delay_us, unsigned int nretry)
 {
 	u64 status;
@@ -1020,7 +1020,7 @@ static int wait_port_online(volatile u64 * fc_regs,
 }
 
 /* returns 1 - went offline */
-static int wait_port_offline(volatile u64 * fc_regs,
+static int wait_port_offline(volatile u64 *fc_regs,
 			     useconds_t delay_us, unsigned int nretry)
 {
 	u64 status;
@@ -1041,7 +1041,7 @@ static int wait_port_offline(volatile u64 * fc_regs,
 
 /* this function can block up to a few seconds */
 static int afu_set_wwpn(struct afu *afu,
-			int port, volatile u64 * fc_regs, u64 wwpn)
+			int port, volatile u64 *fc_regs, u64 wwpn)
 {
 	int ret = 0;
 
