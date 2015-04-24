@@ -210,7 +210,6 @@ int cxlflash_send_scsi(struct afu *p_afu, struct scsi_cmnd *scp)
 
 	p_cmd->rcb.req_flags = (SISL_REQ_FLAGS_PORT_LUN_ID |
 				SISL_REQ_FLAGS_SUP_UNDERRUN | lflag);
-	p_cmd->rcb.timeout = MC_DISCOVERY_TIMEOUT;
 
 	/* Stash the scp in the reserved field, for reuse during interrupt */
 	p_cmd->rcb.rsvd2 = (u64) scp;
@@ -271,7 +270,6 @@ int cxlflash_send_tmf(struct afu *p_afu, struct scsi_cmnd *scp, u64 cmd)
 
 	p_cmd->rcb.req_flags = (SISL_REQ_FLAGS_PORT_LUN_ID |
 				SISL_REQ_FLAGS_SUP_UNDERRUN | lflag);
-	p_cmd->rcb.timeout = MC_DISCOVERY_TIMEOUT;
 
 	/* Stash the scp in the reserved field, for reuse during interrupt */
 	p_cmd->rcb.rsvd2 = (u64) scp;
@@ -1875,7 +1873,8 @@ void cxlflash_send_cmd(struct afu *p_afu, struct afu_cmd *p_cmd)
 		p_cmd->timer.expires = (jiffies +
 					(p_cmd->rcb.timeout * 2 * HZ));
 		add_timer(&p_cmd->timer);
-	}
+	} else if (p_cmd->rcb.timeout)
+		cxlflash_err("timer not started %d", p_cmd->rcb.timeout);
 
 	/* Write IOARRIN */
 	if (p_afu->room)

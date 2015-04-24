@@ -60,6 +60,7 @@ extern u32 internal_lun;
 #define LXT_GROUP_SIZE          8
 #define LXT_NUM_GROUPS(lxt_cnt) (((lxt_cnt) + 7)/8)	/* alloc'ed groups */
 
+#define MC_DISCOVERY_TIMEOUT 5  /* 5 secs */
 
 int read_cap16(struct afu *p_afu, struct lun_info *p_lun_info, u32 port_sel);
 

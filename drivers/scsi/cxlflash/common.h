@@ -52,8 +52,6 @@
 
 #define CMD_BUFSIZE     PAGE_SIZE_4K
 
-#define MC_DISCOVERY_TIMEOUT 5  /* 5 secs */
-
 /* flags in IOA status area for host use */
 #define B_DONE       0x01
 #define B_ERROR      0x02	/* set with B_DONE */
