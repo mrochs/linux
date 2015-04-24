@@ -23,36 +23,36 @@
 #include "common.h"
 #include "superpipe.h"
 
-static void marshall_virt_to_resize(struct dk_cxlflash_uvirtual *pvirt,
-				    struct dk_cxlflash_resize *psize)
+static void marshall_virt_to_resize(struct dk_cxlflash_uvirtual *virt,
+				    struct dk_cxlflash_resize *resize)
 {
-	psize->hdr = pvirt->hdr;
-	psize->context_id = pvirt->context_id;
-	psize->rsrc_handle = pvirt->rsrc_handle;
-	psize->req_size = pvirt->lun_size;
-	psize->last_lba = pvirt->last_lba;
+	resize->hdr = virt->hdr;
+	resize->context_id = virt->context_id;
+	resize->rsrc_handle = virt->rsrc_handle;
+	resize->req_size = virt->lun_size;
+	resize->last_lba = virt->last_lba;
 }
 
-static void marshall_rele_to_resize(struct dk_cxlflash_release *prele,
-				    struct dk_cxlflash_resize *psize)
+static void marshall_rele_to_resize(struct dk_cxlflash_release *release,
+				    struct dk_cxlflash_resize *resize)
 {
-	psize->hdr = prele->hdr;
-	psize->context_id = prele->context_id;
-	psize->rsrc_handle = prele->rsrc_handle;
+	resize->hdr = release->hdr;
+	resize->context_id = release->context_id;
+	resize->rsrc_handle = release->rsrc_handle;
 }
 
-static void marshall_det_to_rele(struct dk_cxlflash_detach *pdet,
-				 struct dk_cxlflash_release *prel)
+static void marshall_det_to_rele(struct dk_cxlflash_detach *detach,
+				 struct dk_cxlflash_release *release)
 {
-	prel->hdr = pdet->hdr;
-	prel->context_id = pdet->context_id;
+	release->hdr = detach->hdr;
+	release->context_id = detach->context_id;
 }
 
-static void marshall_clone_to_rele(struct dk_cxlflash_clone *pclone,
-				   struct dk_cxlflash_release *prel)
+static void marshall_clone_to_rele(struct dk_cxlflash_clone *clone,
+				   struct dk_cxlflash_release *release)
 {
-	prel->hdr = pclone->hdr;
-	prel->context_id = pclone->context_id_dst;
+	release->hdr = clone->hdr;
+	release->context_id = clone->context_id_dst;
 }
 
 static int ba_init(struct ba_lun *ba_lun)
@@ -60,7 +60,7 @@ static int ba_init(struct ba_lun *ba_lun)
 	struct ba_lun_info *lun_info = NULL;
 	int lun_size_au = 0, i = 0;
 	int last_word_underflow = 0;
-	u64 *p_lam;
+	u64 *lam;
 
 	cxlflash_info("Initializing LUN: lun_id = %llX, "
 		      "ba_lun->lsize = %lX, ba_lun->au_size = %lX",
@@ -107,9 +107,9 @@ static int ba_init(struct ba_lun *ba_lun)
 	last_word_underflow = (lun_info->lun_bmap_size * 64) -
 	    lun_info->free_aun_cnt;
 	if (last_word_underflow > 0) {
-		p_lam = &lun_info->lun_alloc_map[lun_info->lun_bmap_size - 1];
+		lam = &lun_info->lun_alloc_map[lun_info->lun_bmap_size - 1];
 		for (i = (63 - last_word_underflow + 1); i < 64; i++)
-			clear_bit(i, (ulong *)p_lam);
+			clear_bit(i, (ulong *)lam);
 	}
 
 	/* Initialize high elevator index, low/curr already at 0 from kzalloc */
@@ -142,12 +142,12 @@ static int find_free_range(u32 low,
 {
 	int i;
 	u64 bit_pos = -1;
-	ulong *p_lam;
+	ulong *lam;
 
 	for (i = low; i < high; i++)
 		if (lun_info->lun_alloc_map[i] != 0) {
-			p_lam = (ulong *)&lun_info->lun_alloc_map[i];
-			bit_pos = find_first_bit(p_lam, sizeof(u64));
+			lam = (ulong *)&lun_info->lun_alloc_map[i];
+			bit_pos = find_first_bit(lam, sizeof(u64));
 
 			cxlflash_dbg("Found free bit %llX in lun "
 				     "map entry %llX at bitmap index = %X",
@@ -155,7 +155,7 @@ static int find_free_range(u32 low,
 
 			*bit_word = i;
 			lun_info->free_aun_cnt--;
-			clear_bit(bit_pos, p_lam);
+			clear_bit(bit_pos, lam);
 			break;
 		}
 
@@ -299,10 +299,10 @@ static u64 ba_space(struct ba_lun *ba_lun)
 	return lun_info->free_aun_cnt;
 }
 
-static int cxlflash_afu_attach(struct cxlflash *p_cxlflash, u64 context_id)
+static int cxlflash_afu_attach(struct cxlflash *cxlflash, u64 context_id)
 {
-	struct afu *p_afu = p_cxlflash->afu;
-	struct ctx_info *p_ctx_info = &p_afu->ctx_info[context_id];
+	struct afu *afu = cxlflash->afu;
+	struct ctx_info *ctx_info = &afu->ctx_info[context_id];
 	int rc = 0;
 	u64 reg;
 
@@ -310,11 +310,11 @@ static int cxlflash_afu_attach(struct cxlflash *p_cxlflash, u64 context_id)
 	 * mode. User has option to choose read and/or write
 	 * permissions again in mc_open.
 	 */
-	(void)readq_be(&p_ctx_info->ctrl_map->mbox_r);	/* unlock ctx_cap */
+	(void)readq_be(&ctx_info->ctrl_map->mbox_r);	/* unlock ctx_cap */
 	writeq_be((SISL_CTX_CAP_READ_CMD | SISL_CTX_CAP_WRITE_CMD),
-		  &p_ctx_info->ctrl_map->ctx_cap);
+		  &ctx_info->ctrl_map->ctx_cap);
 
-	reg = readq_be(&p_ctx_info->ctrl_map->ctx_cap);
+	reg = readq_be(&ctx_info->ctrl_map->ctx_cap);
 
 	/* if the write failed, the ctx must have been
 	 * closed since the mbox read and the ctx_cap
@@ -327,9 +327,9 @@ static int cxlflash_afu_attach(struct cxlflash *p_cxlflash, u64 context_id)
 	}
 
 	/* the context gets a dedicated RHT tbl */
-	p_ctx_info->rht_info = &p_afu->rht_info[context_id];
-	p_ctx_info->rht_info->ref_cnt = 1;
-	memset(p_ctx_info->rht_info->rht_start, 0,
+	ctx_info->rht_info = &afu->rht_info[context_id];
+	ctx_info->rht_info->ref_cnt = 1;
+	memset(ctx_info->rht_info->rht_start, 0,
 	       sizeof(struct sisl_rht_entry) * MAX_RHT_PER_CONTEXT);
 	/* make clearing of the RHT visible to AFU before
 	 * MMIO
@@ -337,48 +337,48 @@ static int cxlflash_afu_attach(struct cxlflash *p_cxlflash, u64 context_id)
 	smp_wmb();
 
 	/* set up MMIO registers pointing to the RHT */
-	writeq_be((u64) p_ctx_info->rht_info->rht_start,
-		  &p_ctx_info->ctrl_map->rht_start);
+	writeq_be((u64) ctx_info->rht_info->rht_start,
+		  &ctx_info->ctrl_map->rht_start);
 	writeq_be(SISL_RHT_CNT_ID((u64) MAX_RHT_PER_CONTEXT,
-				  (u64) (p_afu->ctx_hndl)),
-		  &p_ctx_info->ctrl_map->rht_cnt_id);
-	p_ctx_info->ref_cnt = 1;
+				  (u64) (afu->ctx_hndl)),
+		  &ctx_info->ctrl_map->rht_cnt_id);
+	ctx_info->ref_cnt = 1;
 out:
 	cxlflash_info("returning rc=%d", rc);
 	return rc;
 
 }
 
-static int cxlflash_init_ba(struct lun_info *p_lun_info)
+static int cxlflash_init_ba(struct lun_info *lun_info)
 {
 	int rc = 0;
-	struct blka *p_blka = &p_lun_info->blka;
+	struct blka *blka = &lun_info->blka;
 
-	memset(p_blka, 0, sizeof(*p_blka));
-	mutex_init(&p_blka->mutex);
+	memset(blka, 0, sizeof(*blka));
+	mutex_init(&blka->mutex);
 
-	p_blka->ba_lun.lun_id = p_lun_info->lun_id;
-	p_blka->ba_lun.lsize = p_lun_info->max_lba + 1;
-	p_blka->ba_lun.lba_size = p_lun_info->blk_len;
+	blka->ba_lun.lun_id = lun_info->lun_id;
+	blka->ba_lun.lsize = lun_info->max_lba + 1;
+	blka->ba_lun.lba_size = lun_info->blk_len;
 
-	p_blka->ba_lun.au_size = MC_CHUNK_SIZE;
-	p_blka->nchunk = p_blka->ba_lun.lsize / MC_CHUNK_SIZE;
+	blka->ba_lun.au_size = MC_CHUNK_SIZE;
+	blka->nchunk = blka->ba_lun.lsize / MC_CHUNK_SIZE;
 
-	rc = ba_init(&p_blka->ba_lun);
+	rc = ba_init(&blka->ba_lun);
 	if (rc) {
 		cxlflash_err("cannot init block_alloc, rc=%d", rc);
 		goto cxlflash_init_ba_exit;
 	}
 
 cxlflash_init_ba_exit:
-	cxlflash_info("returning rc=%d p_lun_info=%p", rc, p_lun_info);
+	cxlflash_info("returning rc=%d lun_info=%p", rc, lun_info);
 	return rc;
 }
 
 int cxlflash_cxl_release(struct inode *inode, struct file *file)
 {
 	struct cxl_context *ctx = cxl_fops_get_context(file);
-	struct cxlflash *p_cxlflash = container_of(file->f_op, struct cxlflash,
+	struct cxlflash *cxlflash = container_of(file->f_op, struct cxlflash,
 						   cxl_fops);
 	int context_id = cxl_process_element(ctx);
 
@@ -388,7 +388,7 @@ int cxlflash_cxl_release(struct inode *inode, struct file *file)
 	}
 
 	cxlflash_info("close(%d) for context %d",
-		      p_cxlflash->per_context[context_id].lfd, context_id);
+		      cxlflash->per_context[context_id].lfd, context_id);
 
 	return cxl_fd_release(inode, file);
 }
@@ -421,12 +421,12 @@ const struct file_operations cxlflash_cxl_fops = {
  *
  */
 static int cxlflash_disk_attach(struct scsi_device *sdev,
-				struct dk_cxlflash_attach *patt)
+				struct dk_cxlflash_attach *attach)
 {
-	struct cxlflash *p_cxlflash = (struct cxlflash *)sdev->host->hostdata;
-	struct afu *p_afu = p_cxlflash->afu;
-	struct lun_info *p_lun_info = sdev->hostdata;
-	struct cxl_ioctl_start_work *p_work;
+	struct cxlflash *cxlflash = (struct cxlflash *)sdev->host->hostdata;
+	struct afu *afu = cxlflash->afu;
+	struct lun_info *lun_info = sdev->hostdata;
+	struct cxl_ioctl_start_work *work;
 	int rc = 0;
 	u32 perms;
 	int context_id;
@@ -437,16 +437,16 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 	int fd = -1;
 
 	/* On first attach set fileops */
-	if (p_cxlflash->num_user_contexts == 0)
-		p_cxlflash->cxl_fops = cxlflash_cxl_fops;
+	if (cxlflash->num_user_contexts == 0)
+		cxlflash->cxl_fops = cxlflash_cxl_fops;
 
-	if (p_lun_info->max_lba == 0) {
+	if (lun_info->max_lba == 0) {
 		cxlflash_info("No capacity info yet for this LUN "
-			      "(%016llX)", p_lun_info->lun_id);
-		read_cap16(p_afu, p_lun_info, sdev->channel + 1);
-		cxlflash_info("LBA = %016llX", p_lun_info->max_lba);
-		cxlflash_info("BLK_LEN = %08X", p_lun_info->blk_len);
-		rc = cxlflash_init_ba(p_lun_info);
+			      "(%016llX)", lun_info->lun_id);
+		read_cap16(afu, lun_info, sdev->channel + 1);
+		cxlflash_info("LBA = %016llX", lun_info->max_lba);
+		cxlflash_info("BLK_LEN = %08X", lun_info->blk_len);
+		rc = cxlflash_init_ba(lun_info);
 		if (rc) {
 			cxlflash_err("call to cxlflash_init_ba failed "
 				     "rc=%d!", rc);
@@ -455,7 +455,7 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 		}
 	}
 
-	ctx = cxl_dev_context_init(p_cxlflash->dev);
+	ctx = cxl_dev_context_init(cxlflash->dev);
 	if (!ctx) {
 		cxlflash_err("Could not initialize context");
 		rc = -ENODEV;
@@ -468,8 +468,8 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 		rc = -EPERM;
 		goto out;
 	}
-	//BUG_ON(p_cxlflash->per_context[context_id].lfd != -1);
-	//BUG_ON(p_cxlflash->per_context[context_id].pid != 0);
+	//BUG_ON(cxlflash->per_context[context_id].lfd != -1);
+	//BUG_ON(cxlflash->per_context[context_id].pid != 0);
 
 	/*
 	 * Create and attach a new file descriptor. This must be the last
@@ -477,25 +477,25 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 	 * userspace and can't be undone. No error paths after this as we
 	 * can't free the fd safely.
 	 */
-	p_work = &p_cxlflash->per_context[context_id].work;
-	memset(p_work, 0, sizeof(*p_work));
-	p_work->num_interrupts = patt->num_interrupts;
-	p_work->flags = CXL_START_WORK_NUM_IRQS;
+	work = &cxlflash->per_context[context_id].work;
+	memset(work, 0, sizeof(*work));
+	work->num_interrupts = attach->num_interrupts;
+	work->flags = CXL_START_WORK_NUM_IRQS;
 
-	file = cxl_get_fd(ctx, &p_cxlflash->cxl_fops, &fd);
+	file = cxl_get_fd(ctx, &cxlflash->cxl_fops, &fd);
 	if (fd < 0) {
 		rc = -ENODEV;
 		cxlflash_err("Could not get file descriptor");
 		goto err1;
 	}
 
-	rc = cxl_start_work(ctx, p_work);
+	rc = cxl_start_work(ctx, work);
 	if (rc) {
 		cxlflash_err("Could not start context rc=%d", rc);
 		goto err2;
 	}
 
-	rc = cxlflash_afu_attach(p_cxlflash, context_id);
+	rc = cxlflash_afu_attach(cxlflash, context_id);
 	if (rc) {
 		cxlflash_err("Could not attach AFU rc %d", rc);
 		goto err3;
@@ -504,27 +504,27 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 	/* No error paths after installing the fd */
 	fd_install(fd, file);
 
-	p_cxlflash->num_user_contexts++;
-	p_cxlflash->per_context[context_id].lfd = fd;
-	p_cxlflash->per_context[context_id].pid = current->pid;
-	p_cxlflash->per_context[context_id].ctx = ctx;
+	cxlflash->num_user_contexts++;
+	cxlflash->per_context[context_id].lfd = fd;
+	cxlflash->per_context[context_id].pid = current->pid;
+	cxlflash->per_context[context_id].ctx = ctx;
 
 	/* Translate read/write O_* flags from fnctl.h to AFU permission bits */
-	perms = ((patt->hdr.flags + 1) & 0x3);
-	p_afu->ctx_info[context_id].rht_info->perms = perms;
+	perms = ((attach->hdr.flags + 1) & 0x3);
+	afu->ctx_info[context_id].rht_info->perms = perms;
 
-	patt->hdr.return_flags = 0;
-	patt->context_id = context_id;
-	patt->block_size = p_lun_info->blk_len;
-	patt->mmio_size = sizeof(p_afu->afu_map->hosts[0].harea);
-	patt->last_lba = p_lun_info->max_lba;
-	patt->max_xfer = sdev->host->max_sectors;
+	attach->hdr.return_flags = 0;
+	attach->context_id = context_id;
+	attach->block_size = lun_info->blk_len;
+	attach->mmio_size = sizeof(afu->afu_map->hosts[0].harea);
+	attach->last_lba = lun_info->max_lba;
+	attach->max_xfer = sdev->host->max_sectors;
 
 out:
-	patt->adap_fd = fd;
+	attach->adap_fd = fd;
 
 	cxlflash_info("returning fd=%d bs=%lld rc=%d llba=%lld",
-		      fd, patt->block_size, rc, patt->last_lba);
+		      fd, attach->block_size, rc, attach->last_lba);
 	return rc;
 
 err3:
@@ -538,82 +538,82 @@ err1:
 	goto out;
 }
 
-static struct ctx_info *get_validated_context(struct cxlflash *p_cxlflash,
+static struct ctx_info *get_validated_context(struct cxlflash *cxlflash,
 					      u64 ctxid, bool clone_path)
 {
-	struct afu *p_afu = p_cxlflash->afu;
-	struct ctx_info *p_ctx_info = NULL;
-	bool mc_override = ctxid == p_afu->ctx_hndl;
+	struct afu *afu = cxlflash->afu;
+	struct ctx_info *ctx_info = NULL;
+	bool mc_override = ctxid == afu->ctx_hndl;
 	pid_t pid = current->pid, ctxpid = 0;
 
 	if (unlikely(clone_path))
 		pid = current->parent->pid;
 
 	if (likely(ctxid < MAX_CONTEXT)) {
-		p_ctx_info = &p_afu->ctx_info[ctxid];
+		ctx_info = &afu->ctx_info[ctxid];
 
 		if (checkpid) {
-			ctxpid = p_cxlflash->per_context[ctxid].pid;
+			ctxpid = cxlflash->per_context[ctxid].pid;
 
 			if ((pid != ctxpid) && (!mc_override))
-				p_ctx_info = NULL;
+				ctx_info = NULL;
 		}
 	}
 
-	cxlflash_dbg("ctxid=%llu p_ctx_info=%p ctxpid=%u pid=%u clone_path=%d",
-		     ctxid, p_ctx_info, ctxpid, pid, clone_path);
+	cxlflash_dbg("ctxid=%llu ctx_info=%p ctxpid=%u pid=%u clone_path=%d",
+		     ctxid, ctx_info, ctxpid, pid, clone_path);
 
-	return p_ctx_info;
+	return ctx_info;
 }
 
 /* Checkout a free/empty RHT entry */
-static struct sisl_rht_entry *rhte_checkout(struct cxlflash *p_cxlflash,
+static struct sisl_rht_entry *rhte_checkout(struct cxlflash *cxlflash,
 					    u64 context_id)
 {
-	struct ctx_info *p_ctx_info;
-	struct rht_info *p_rht_info = NULL;
-	struct sisl_rht_entry *p_rht_entry = NULL;
+	struct ctx_info *ctx_info;
+	struct rht_info *rht_info = NULL;
+	struct sisl_rht_entry *rht_entry = NULL;
 	int i;
 
-	p_ctx_info = get_validated_context(p_cxlflash, context_id, false);
-	if (unlikely(!p_ctx_info)) {
+	ctx_info = get_validated_context(cxlflash, context_id, false);
+	if (unlikely(!ctx_info)) {
 		cxlflash_err("Invalid context! (%llu)", context_id);
 		goto out;
 	}
 
-	p_rht_info = p_ctx_info->rht_info;
+	rht_info = ctx_info->rht_info;
 
 	cxlflash_info("ctx 0x%llx ctxinfo %p rhtinfo %p",
-		      context_id, p_ctx_info, p_rht_info);
+		      context_id, ctx_info, rht_info);
 
 	/* find a free RHT entry */
 	for (i = 0; i < MAX_RHT_PER_CONTEXT; i++)
-		if (p_rht_info->rht_start[i].nmask == 0) {
-			p_rht_entry = &p_rht_info->rht_start[i];
+		if (rht_info->rht_start[i].nmask == 0) {
+			rht_entry = &rht_info->rht_start[i];
 			break;
 		}
 
-	cxlflash_dbg("i %d rhti %p rhte %p", i, p_rht_info, p_rht_entry);
+	cxlflash_dbg("i %d rhti %p rhte %p", i, rht_info, rht_entry);
 
 	/* No free entries means we've reached max opens allowed per context */
-	if (unlikely(!p_rht_entry)) {
+	if (unlikely(!rht_entry)) {
 		cxlflash_err("No free entries found for context id %llu",
 			     context_id);
 		goto out;
 	}
 
 out:
-	cxlflash_info("returning p_rht_entry=%p", p_rht_entry);
-	return p_rht_entry;
+	cxlflash_info("returning rht_entry=%p", rht_entry);
+	return rht_entry;
 }
 
-static void rhte_checkin(struct sisl_rht_entry *p_rht_entry)
+static void rhte_checkin(struct sisl_rht_entry *rht_entry)
 {
-	p_rht_entry->nmask = 0;
-	p_rht_entry->fp = 0;
+	rht_entry->nmask = 0;
+	rht_entry->fp = 0;
 }
 
-void cxlflash_rht_format1(struct sisl_rht_entry *p_rht_entry,
+void cxlflash_rht_format1(struct sisl_rht_entry *rht_entry,
 			  u64 lun_id, u32 perm)
 {
 	/*
@@ -622,13 +622,13 @@ void cxlflash_rht_format1(struct sisl_rht_entry *p_rht_entry,
 	 * SISLite specification.
 	 */
 	struct sisl_rht_entry_f1 dummy = { 0 };
-	struct sisl_rht_entry_f1 *p_rht_entry_f1 =
-	    (struct sisl_rht_entry_f1 *)p_rht_entry;
-	memset(p_rht_entry_f1, 0, sizeof(struct sisl_rht_entry_f1));
-	p_rht_entry_f1->fp = SISL_RHT_FP(1U, 0);
+	struct sisl_rht_entry_f1 *rht_entry_f1 =
+	    (struct sisl_rht_entry_f1 *)rht_entry;
+	memset(rht_entry_f1, 0, sizeof(struct sisl_rht_entry_f1));
+	rht_entry_f1->fp = SISL_RHT_FP(1U, 0);
 	smp_wmb();
 
-	p_rht_entry_f1->lun_id = lun_id;
+	rht_entry_f1->lun_id = lun_id;
 	smp_wmb();
 
 	/*
@@ -644,160 +644,160 @@ void cxlflash_rht_format1(struct sisl_rht_entry *p_rht_entry,
 	else
 #endif
 		dummy.port_sel = 0x3;
-	p_rht_entry_f1->dw = dummy.dw;
+	rht_entry_f1->dw = dummy.dw;
 
 	smp_wmb();
 
 	return;
 }
 
-static int grow_lxt(struct afu *p_afu,
-		    struct lun_info *p_lun_info,
+static int grow_lxt(struct afu *afu,
+		    struct lun_info *lun_info,
 		    ctx_hndl_t ctx_hndl_u,
 		    res_hndl_t res_hndl_u,
-		    struct sisl_rht_entry *p_rht_entry,
-		    u64 delta, u64 * p_act_new_size)
+		    struct sisl_rht_entry *rht_entry,
+		    u64 delta, u64 * act_new_size)
 {
-	struct sisl_lxt_entry *p_lxt = NULL, *p_lxt_old = NULL;
+	struct sisl_lxt_entry *lxt = NULL, *lxt_old = NULL;
 	unsigned int av_size;
 	unsigned int ngrps, ngrps_old;
 	u64 aun;		/* chunk# allocated by block allocator */
 	int i;
-	struct blka *p_blka = &p_lun_info->blka;
+	struct blka *blka = &lun_info->blka;
 
 	/*
 	 * Check what is available in the block allocator before re-allocating
 	 * LXT array. This is done up front under the mutex which must not be
 	 * released until after allocation is complete.
 	 */
-	mutex_lock(&p_blka->mutex);
-	av_size = ba_space(&p_blka->ba_lun);
+	mutex_lock(&blka->mutex);
+	av_size = ba_space(&blka->ba_lun);
 	if (av_size < delta)
 		delta = av_size;
 
-	p_lxt_old = p_rht_entry->lxt_start;
-	ngrps_old = LXT_NUM_GROUPS(p_rht_entry->lxt_cnt);
-	ngrps = LXT_NUM_GROUPS(p_rht_entry->lxt_cnt + delta);
+	lxt_old = rht_entry->lxt_start;
+	ngrps_old = LXT_NUM_GROUPS(rht_entry->lxt_cnt);
+	ngrps = LXT_NUM_GROUPS(rht_entry->lxt_cnt + delta);
 
 	if (ngrps != ngrps_old) {
 		/* reallocate to fit new size */
-		p_lxt = kzalloc((sizeof(*p_lxt) * LXT_GROUP_SIZE * ngrps),
+		lxt = kzalloc((sizeof(*lxt) * LXT_GROUP_SIZE * ngrps),
 				GFP_KERNEL);
-		if (unlikely(!p_lxt)) {
-			mutex_unlock(&p_blka->mutex);
+		if (unlikely(!lxt)) {
+			mutex_unlock(&blka->mutex);
 			return -ENOMEM;
 		}
 
 		/* copy over all old entries */
-		memcpy(p_lxt, p_lxt_old, (sizeof(*p_lxt) *
-					  p_rht_entry->lxt_cnt));
+		memcpy(lxt, lxt_old, (sizeof(*lxt) *
+					  rht_entry->lxt_cnt));
 	} else {
-		p_lxt = p_lxt_old;
+		lxt = lxt_old;
 	}
 
 	/* nothing can fail from now on */
-	*p_act_new_size = p_rht_entry->lxt_cnt + delta;
+	*act_new_size = rht_entry->lxt_cnt + delta;
 
 	/* add new entries to the end */
-	for (i = p_rht_entry->lxt_cnt; i < *p_act_new_size; i++) {
+	for (i = rht_entry->lxt_cnt; i < *act_new_size; i++) {
 		/*
 		 * Due to the earlier check of available space, ba_alloc
 		 * cannot fail here. If it did due to internal error,
 		 * leave a rlba_base of -1u which will likely be a
 		 * invalid LUN (too large).
 		 */
-		aun = ba_alloc(&p_blka->ba_lun);
-		if ((aun == -1ULL) || (aun >= p_blka->nchunk)) {
+		aun = ba_alloc(&blka->ba_lun);
+		if ((aun == -1ULL) || (aun >= blka->nchunk)) {
 			cxlflash_err("ba_alloc error: allocated chunk# %llX, "
-				     "max %llX", aun, p_blka->nchunk - 1);
+				     "max %llX", aun, blka->nchunk - 1);
 		}
 
 		/* select both ports, use r/w perms from RHT */
-		p_lxt[i].rlba_base = ((aun << MC_CHUNK_SHIFT) |
-				      (p_lun_info->lun_index <<
+		lxt[i].rlba_base = ((aun << MC_CHUNK_SHIFT) |
+				      (lun_info->lun_index <<
 				       LXT_LUNIDX_SHIFT) | 0x33);
 	}
 
-	mutex_unlock(&p_blka->mutex);
+	mutex_unlock(&blka->mutex);
 
 	smp_wmb();		/* make lxt updates visible */
 
 	/* Now sync up AFU - this can take a while */
-	p_rht_entry->lxt_start = p_lxt;	/* even if p_lxt didn't change */
+	rht_entry->lxt_start = lxt;	/* even if lxt didn't change */
 	smp_wmb();
 
-	p_rht_entry->lxt_cnt = *p_act_new_size;
+	rht_entry->lxt_cnt = *act_new_size;
 	smp_wmb();
 
-	afu_sync(p_afu, ctx_hndl_u, res_hndl_u, AFU_LW_SYNC);
+	afu_sync(afu, ctx_hndl_u, res_hndl_u, AFU_LW_SYNC);
 
 	/* free old lxt if reallocated */
-	if (p_lxt != p_lxt_old)
-		kfree(p_lxt_old);
+	if (lxt != lxt_old)
+		kfree(lxt_old);
 	cxlflash_info("returning");
 	return 0;
 }
 
-static int shrink_lxt(struct afu *p_afu,
-		      struct lun_info *p_lun_info,
+static int shrink_lxt(struct afu *afu,
+		      struct lun_info *lun_info,
 		      ctx_hndl_t ctx_hndl_u,
 		      res_hndl_t res_hndl_u,
-		      struct sisl_rht_entry *p_rht_entry,
-		      u64 delta, u64 * p_act_new_size)
+		      struct sisl_rht_entry *rht_entry,
+		      u64 delta, u64 * act_new_size)
 {
-	struct sisl_lxt_entry *p_lxt, *p_lxt_old;
+	struct sisl_lxt_entry *lxt, *lxt_old;
 	unsigned int ngrps, ngrps_old;
 	u64 aun;		/* chunk# allocated by block allocator */
 	int i;
-	struct blka *p_blka = &p_lun_info->blka;
+	struct blka *blka = &lun_info->blka;
 
-	p_lxt_old = p_rht_entry->lxt_start;
-	ngrps_old = LXT_NUM_GROUPS(p_rht_entry->lxt_cnt);
-	ngrps = LXT_NUM_GROUPS(p_rht_entry->lxt_cnt - delta);
+	lxt_old = rht_entry->lxt_start;
+	ngrps_old = LXT_NUM_GROUPS(rht_entry->lxt_cnt);
+	ngrps = LXT_NUM_GROUPS(rht_entry->lxt_cnt - delta);
 
 	if (ngrps != ngrps_old) {
 		/* reallocate to fit new size unless new size is 0 */
 		if (ngrps) {
-			p_lxt = kzalloc((sizeof(*p_lxt) * LXT_GROUP_SIZE *
+			lxt = kzalloc((sizeof(*lxt) * LXT_GROUP_SIZE *
 					 ngrps), GFP_KERNEL);
-			if (unlikely(!p_lxt))
+			if (unlikely(!lxt))
 				return -ENOMEM;
 
 			/* copy over old entries that will remain */
-			memcpy(p_lxt, p_lxt_old, (sizeof(*p_lxt) *
-						  (p_rht_entry->lxt_cnt -
+			memcpy(lxt, lxt_old, (sizeof(*lxt) *
+						  (rht_entry->lxt_cnt -
 						   delta)));
 		} else {
-			p_lxt = NULL;
+			lxt = NULL;
 		}
 	} else {
-		p_lxt = p_lxt_old;
+		lxt = lxt_old;
 	}
 
 	/* nothing can fail from now on */
-	*p_act_new_size = p_rht_entry->lxt_cnt - delta;
+	*act_new_size = rht_entry->lxt_cnt - delta;
 
 	/* Now sync up AFU - this can take a while */
-	p_rht_entry->lxt_cnt = *p_act_new_size;
+	rht_entry->lxt_cnt = *act_new_size;
 	smp_wmb();		/* also makes lxt updates visible */
 
-	p_rht_entry->lxt_start = p_lxt;	/* even if p_lxt didn't change */
+	rht_entry->lxt_start = lxt;	/* even if lxt didn't change */
 	smp_wmb();
 
-	afu_sync(p_afu, ctx_hndl_u, res_hndl_u, AFU_HW_SYNC);
+	afu_sync(afu, ctx_hndl_u, res_hndl_u, AFU_HW_SYNC);
 
 	/* free LBAs allocated to freed chunks */
-	mutex_lock(&p_blka->mutex);
+	mutex_lock(&blka->mutex);
 	for (i = delta - 1; i >= 0; i--) {
-		aun = (p_lxt_old[*p_act_new_size + i].rlba_base >>
+		aun = (lxt_old[*act_new_size + i].rlba_base >>
 		       MC_CHUNK_SHIFT);
-		ba_free(&p_blka->ba_lun, aun);
+		ba_free(&blka->ba_lun, aun);
 	}
-	mutex_unlock(&p_blka->mutex);
+	mutex_unlock(&blka->mutex);
 
 	/* free old lxt if reallocated */
-	if (p_lxt != p_lxt_old)
-		kfree(p_lxt_old);
+	if (lxt != lxt_old)
+		kfree(lxt_old);
 	cxlflash_info("returning");
 	return 0;
 }
@@ -814,7 +814,7 @@ static int shrink_lxt(struct afu *p_afu,
  *              arg        - Pointer to ioctl specific structure
  *
  * OUTPUTS:
- *		p_act_new_size	- pointer to actual new size in chunks
+ *		act_new_size	- pointer to actual new size in chunks
  *
  * RETURNS:
  *		0	- Success
@@ -825,90 +825,90 @@ static int shrink_lxt(struct afu *p_afu,
  *		in the RHT entry.
  */
 static int cxlflash_vlun_resize(struct scsi_device *sdev,
-				struct dk_cxlflash_resize *prsz)
+				struct dk_cxlflash_resize *resize)
 {
-	struct cxlflash *p_cxlflash = (struct cxlflash *)sdev->host->hostdata;
-	struct lun_info *p_lun_info = sdev->hostdata;
-	struct afu *p_afu = p_cxlflash->afu;
+	struct cxlflash *cxlflash = (struct cxlflash *)sdev->host->hostdata;
+	struct lun_info *lun_info = sdev->hostdata;
+	struct afu *afu = cxlflash->afu;
 
-	u64 p_act_new_size = 0;
-	res_hndl_t res_hndl = prsz->rsrc_handle;
+	u64 act_new_size = 0;
+	res_hndl_t res_hndl = resize->rsrc_handle;
 	u64 new_size;
 	u64 nsectors;
 
-	struct ctx_info *p_ctx_info;
-	struct rht_info *p_rht_info;
-	struct sisl_rht_entry *p_rht_entry;
+	struct ctx_info *ctx_info;
+	struct rht_info *rht_info;
+	struct sisl_rht_entry *rht_entry;
 
 	int rc = 0;
 
 	/* req_size is always assumed to be in 4k blocks. So we have to convert
 	 * it from 4k to chunk size
 	 */
-	nsectors = (prsz->req_size * CXLFLASH_BLOCK_SIZE) /
-	    (p_lun_info->blk_len);
+	nsectors = (resize->req_size * CXLFLASH_BLOCK_SIZE) /
+	    (lun_info->blk_len);
 	new_size = (nsectors + MC_CHUNK_SIZE - 1) / MC_CHUNK_SIZE;
 
 	cxlflash_info("context=0x%llx res_hndl=0x%llx, req_size=0x%llx,"
-		      "new_size=%llx", prsz->context_id,
-		      prsz->rsrc_handle, prsz->req_size, new_size);
+		      "new_size=%llx", resize->context_id,
+		      resize->rsrc_handle, resize->req_size, new_size);
 
-	if (p_lun_info->mode != MODE_VIRTUAL) {
+	if (lun_info->mode != MODE_VIRTUAL) {
 		cxlflash_err("cannot resize lun that is not virtual %d",
-			     p_lun_info->mode);
+			     lun_info->mode);
 		rc = -EINVAL;
 		goto out;
 
 	}
 
-	p_ctx_info = get_validated_context(p_cxlflash, prsz->context_id, false);
-	if (unlikely(!p_ctx_info)) {
-		cxlflash_err("Invalid context! (%llu)", prsz->context_id);
+	ctx_info = get_validated_context(cxlflash, resize->context_id, false);
+	if (unlikely(!ctx_info)) {
+		cxlflash_err("Invalid context! (%llu)", resize->context_id);
 		rc = -EINVAL;
 		goto out;
 	}
 
-	p_rht_info = p_ctx_info->rht_info;
+	rht_info = ctx_info->rht_info;
 
 	if (res_hndl < MAX_RHT_PER_CONTEXT) {
-		p_rht_entry = &p_rht_info->rht_start[res_hndl];
+		rht_entry = &rht_info->rht_start[res_hndl];
 
-		if (p_rht_entry->nmask == 0) {	/* not open */
+		if (rht_entry->nmask == 0) {	/* not open */
 			cxlflash_err("not open rhti %p rhte %p",
-				     p_rht_info, p_rht_entry);
+				     rht_info, rht_entry);
 			rc = -EINVAL;
 			goto out;
 		}
 
-		if (new_size > p_rht_entry->lxt_cnt) {
-			grow_lxt(p_afu,
-				 p_lun_info,
-				 prsz->context_id,
+		if (new_size > rht_entry->lxt_cnt) {
+			grow_lxt(afu,
+				 lun_info,
+				 resize->context_id,
 				 res_hndl,
-				 p_rht_entry,
-				 new_size - p_rht_entry->lxt_cnt,
-				 &p_act_new_size);
-		} else if (new_size < p_rht_entry->lxt_cnt) {
-			shrink_lxt(p_afu,
-				   p_lun_info,
-				   prsz->context_id,
+				 rht_entry,
+				 new_size - rht_entry->lxt_cnt,
+				 &act_new_size);
+		} else if (new_size < rht_entry->lxt_cnt) {
+			shrink_lxt(afu,
+				   lun_info,
+				   resize->context_id,
 				   res_hndl,
-				   p_rht_entry,
-				   p_rht_entry->lxt_cnt - new_size,
-				   &p_act_new_size);
+				   rht_entry,
+				   rht_entry->lxt_cnt - new_size,
+				   &act_new_size);
 		} else {
-			p_act_new_size = new_size;
+			act_new_size = new_size;
 		}
 	} else {
 		cxlflash_err("res_hndl %d invalid", res_hndl);
 		rc = -EINVAL;
 	}
-	prsz->hdr.return_flags = 0;
-	prsz->last_lba = (((p_act_new_size * MC_CHUNK_SIZE *
-			    p_lun_info->blk_len) / CXLFLASH_BLOCK_SIZE) - 1);
+	resize->hdr.return_flags = 0;
+	resize->last_lba = (((act_new_size * MC_CHUNK_SIZE *
+			    lun_info->blk_len) / CXLFLASH_BLOCK_SIZE) - 1);
 
 out:
-	cxlflash_info("resized to %lld returning rc=%d", prsz->last_lba, rc);
+	cxlflash_info("resized to %lld returning rc=%d", resize->last_lba, rc);
 	return rc;
 }
 
@@ -936,11 +936,11 @@ out:
 static int cxlflash_disk_open(struct scsi_device *sdev,
 			      void *arg, enum open_mode_type mode)
 {
-	struct cxlflash *p_cxlflash = (struct cxlflash *)sdev->host->hostdata;
-	struct afu *p_afu = p_cxlflash->afu;
-	struct lun_info *p_lun_info = sdev->hostdata;
+	struct cxlflash *cxlflash = (struct cxlflash *)sdev->host->hostdata;
+	struct afu *afu = cxlflash->afu;
+	struct lun_info *lun_info = sdev->hostdata;
 
-	struct dk_cxlflash_uvirtual *pvirt = (struct dk_cxlflash_uvirtual *)arg;
+	struct dk_cxlflash_uvirtual *virt = (struct dk_cxlflash_uvirtual *)arg;
 	struct dk_cxlflash_udirect *pphys = (struct dk_cxlflash_udirect *)arg;
 	struct dk_cxlflash_resize resize;
 
@@ -952,15 +952,15 @@ static int cxlflash_disk_open(struct scsi_device *sdev,
 
 	int rc = 0;
 
-	struct ctx_info *p_ctx_info;
-	struct rht_info *p_rht_info = NULL;
-	struct sisl_rht_entry *p_rht_entry = NULL;
+	struct ctx_info *ctx_info;
+	struct rht_info *rht_info = NULL;
+	struct sisl_rht_entry *rht_entry = NULL;
 
 	if (mode == MODE_VIRTUAL) {
-		context_id = pvirt->context_id;
-		lun_size = pvirt->lun_size;
+		context_id = virt->context_id;
+		lun_size = virt->lun_size;
 		/* Initialize to invalid value */
-		pvirt->rsrc_handle = -1;
+		virt->rsrc_handle = -1;
 	} else if (mode == MODE_PHYSICAL) {
 		context_id = pphys->context_id;
 		/* Initialize to invalid value */
@@ -971,49 +971,49 @@ static int cxlflash_disk_open(struct scsi_device *sdev,
 		goto out;
 	}
 
-	spin_lock(p_lun_info->slock);
-	if (p_lun_info->mode == MODE_NONE) {
-		p_lun_info->mode = mode;
-	} else if (p_lun_info->mode != mode) {
+	spin_lock(lun_info->slock);
+	if (lun_info->mode == MODE_NONE) {
+		lun_info->mode = mode;
+	} else if (lun_info->mode != mode) {
 		cxlflash_err
 		    ("disk already opened in mode %d, mode requested %d",
-		     p_lun_info->mode, mode);
+		     lun_info->mode, mode);
 		rc = -EINVAL;
-		spin_unlock(p_lun_info->slock);
+		spin_unlock(lun_info->slock);
 		goto out;
 	}
-	spin_unlock(p_lun_info->slock);
+	spin_unlock(lun_info->slock);
 
 	cxlflash_info("context=0x%llx ls=0x%llx", context_id, lun_size);
 
-	p_rht_entry = rhte_checkout(p_cxlflash, context_id);
-	if (!p_rht_entry) {
+	rht_entry = rhte_checkout(cxlflash, context_id);
+	if (!rht_entry) {
 		cxlflash_err("too many opens for this context");
 		rc = -EMFILE;	/* too many opens  */
 		goto out;
 	}
 
-	p_ctx_info = get_validated_context(p_cxlflash, context_id, false);
-	if (unlikely(!p_ctx_info)) {
+	ctx_info = get_validated_context(cxlflash, context_id, false);
+	if (unlikely(!ctx_info)) {
 		cxlflash_err("Invalid context! (%llu)", context_id);
 		rc = -EINVAL;
 		goto out;
 	}
 
-	p_rht_info = p_ctx_info->rht_info;
+	rht_info = ctx_info->rht_info;
 
 	/* User specified permission on attach */
-	perms = p_rht_info->perms;
+	perms = rht_info->perms;
 
-	rsrc_handle = (p_rht_entry - p_rht_info->rht_start);
+	rsrc_handle = (rht_entry - rht_info->rht_start);
 
 	if (mode == MODE_VIRTUAL) {
-		p_rht_entry->nmask = MC_RHT_NMASK;
-		p_rht_entry->fp = SISL_RHT_FP(0U, perms);
+		rht_entry->nmask = MC_RHT_NMASK;
+		rht_entry->fp = SISL_RHT_FP(0U, perms);
 		/* format 0 & perms */
 
 		if (lun_size != 0) {
-			marshall_virt_to_resize(pvirt, &resize);
+			marshall_virt_to_resize(virt, &resize);
 			resize.rsrc_handle = rsrc_handle;
 			rc = cxlflash_vlun_resize(sdev, &resize);
 			if (rc) {
@@ -1022,14 +1022,14 @@ static int cxlflash_disk_open(struct scsi_device *sdev,
 			}
 			last_lba = resize.last_lba;
 		}
-		pvirt->hdr.return_flags = 0;
-		pvirt->last_lba = last_lba;
-		pvirt->rsrc_handle = rsrc_handle;
+		virt->hdr.return_flags = 0;
+		virt->last_lba = last_lba;
+		virt->rsrc_handle = rsrc_handle;
 	} else if (mode == MODE_PHYSICAL) {
-		cxlflash_rht_format1(p_rht_entry, p_lun_info->lun_id, perms);
-		afu_sync(p_afu, context_id, rsrc_handle, AFU_LW_SYNC);
+		cxlflash_rht_format1(rht_entry, lun_info->lun_id, perms);
+		afu_sync(afu, context_id, rsrc_handle, AFU_LW_SYNC);
 
-		last_lba = p_lun_info->max_lba;
+		last_lba = lun_info->max_lba;
 		pphys->hdr.return_flags = 0;
 		pphys->last_lba = last_lba;
 		pphys->rsrc_handle = rsrc_handle;
@@ -1062,37 +1062,37 @@ out:
  *              When successful, the RHT entry is cleared.
  */
 static int cxlflash_disk_release(struct scsi_device *sdev,
-				 struct dk_cxlflash_release *prele)
+				 struct dk_cxlflash_release *release)
 {
-	struct cxlflash *p_cxlflash = (struct cxlflash *)sdev->host->hostdata;
-	struct lun_info *p_lun_info = sdev->hostdata;
-	struct afu *p_afu = p_cxlflash->afu;
+	struct cxlflash *cxlflash = (struct cxlflash *)sdev->host->hostdata;
+	struct lun_info *lun_info = sdev->hostdata;
+	struct afu *afu = cxlflash->afu;
 
 	struct dk_cxlflash_resize size;
-	res_hndl_t res_hndl = prele->rsrc_handle;
+	res_hndl_t res_hndl = release->rsrc_handle;
 
 	int rc = 0;
 
-	struct ctx_info *p_ctx_info;
-	struct rht_info *p_rht_info;
-	struct sisl_rht_entry *p_rht_entry;
+	struct ctx_info *ctx_info;
+	struct rht_info *rht_info;
+	struct sisl_rht_entry *rht_entry;
 
 	cxlflash_info("context=0x%llx res_hndl=0x%llx",
-		      prele->context_id, prele->rsrc_handle);
+		      release->context_id, release->rsrc_handle);
 
-	p_ctx_info =
-	    get_validated_context(p_cxlflash, prele->context_id, false);
-	if (unlikely(!p_ctx_info)) {
-		cxlflash_err("Invalid context! (%llu)", prele->context_id);
+	ctx_info =
+	    get_validated_context(cxlflash, release->context_id, false);
+	if (unlikely(!ctx_info)) {
+		cxlflash_err("Invalid context! (%llu)", release->context_id);
 		rc = -EINVAL;
 		goto out;
 	}
 
-	p_rht_info = p_ctx_info->rht_info;
+	rht_info = ctx_info->rht_info;
 
 	if (res_hndl < MAX_RHT_PER_CONTEXT) {
-		p_rht_entry = &p_rht_info->rht_start[res_hndl];
-		if (p_rht_entry->nmask == 0) {	/* not open */
+		rht_entry = &rht_info->rht_start[res_hndl];
+		if (rht_entry->nmask == 0) {	/* not open */
 			rc = -EINVAL;
 			cxlflash_err("not open");
 			goto out;
@@ -1104,39 +1104,39 @@ static int cxlflash_disk_release(struct scsi_device *sdev,
 		 * in the RHT entry and properly sync with the AFU.
 		 * Afterwards we clear the remaining fields.
 		 */
-		if (p_lun_info->mode == MODE_VIRTUAL) {
-			marshall_rele_to_resize(prele, &size);
+		if (lun_info->mode == MODE_VIRTUAL) {
+			marshall_rele_to_resize(release, &size);
 			size.req_size = 0;
 			rc = cxlflash_vlun_resize(sdev, &size);
 			if (rc) {
 				cxlflash_err("resize failed rc %d", rc);
 				goto out;
 			}
-			rhte_checkin(p_rht_entry);
-		} else if (p_lun_info->mode == MODE_PHYSICAL) {
+			rhte_checkin(rht_entry);
+		} else if (lun_info->mode == MODE_PHYSICAL) {
 			/*
 			 * Clear the Format 1 RHT entry for direct access 
 			 * (physical LUN) using the synchronization sequence 
 			 * defined in the SISLite specification.
 			 */
-			struct sisl_rht_entry_f1 *p_rht_entry_f1 =
-			    (struct sisl_rht_entry_f1 *)p_rht_entry;
+			struct sisl_rht_entry_f1 *rht_entry_f1 =
+			    (struct sisl_rht_entry_f1 *)rht_entry;
 
-			p_rht_entry_f1->valid = 0;
+			rht_entry_f1->valid = 0;
 			smp_wmb();
 
-			p_rht_entry_f1->lun_id = 0ULL;
+			rht_entry_f1->lun_id = 0ULL;
 			smp_wmb();
 
-			p_rht_entry_f1->dw = 0ULL;
+			rht_entry_f1->dw = 0ULL;
 			smp_wmb();
-			afu_sync(p_afu, prele->context_id, res_hndl,
+			afu_sync(afu, release->context_id, res_hndl,
 				 AFU_HW_SYNC);
 		}
 
 		/* now the RHT entry is all cleared */
 		rc = 0;
-		p_rht_info->ref_cnt--;
+		rht_info->ref_cnt--;
 	} else {
 		rc = -EINVAL;
 		cxlflash_info("resource handle invalid %d", res_hndl);
@@ -1171,34 +1171,34 @@ out:
  *                  RHT_CNT=0.
  */
 static int cxlflash_disk_detach(struct scsi_device *sdev,
-				struct dk_cxlflash_detach *pdet)
+				struct dk_cxlflash_detach *detach)
 {
-	struct cxlflash *p_cxlflash = (struct cxlflash *)sdev->host->hostdata;
-	struct lun_info *p_lun_info = sdev->hostdata;
+	struct cxlflash *cxlflash = (struct cxlflash *)sdev->host->hostdata;
+	struct lun_info *lun_info = sdev->hostdata;
 
 	struct dk_cxlflash_release rel;
-	struct ctx_info *p_ctx_info;
+	struct ctx_info *ctx_info;
 
 	int i;
 	int rc = 0;
 
-	cxlflash_info("context=0x%llx", pdet->context_id);
+	cxlflash_info("context=0x%llx", detach->context_id);
 
-	p_ctx_info = get_validated_context(p_cxlflash, pdet->context_id, false);
-	if (unlikely(!p_ctx_info)) {
-		cxlflash_err("Invalid context! (%llu)", pdet->context_id);
+	ctx_info = get_validated_context(cxlflash, detach->context_id, false);
+	if (unlikely(!ctx_info)) {
+		cxlflash_err("Invalid context! (%llu)", detach->context_id);
 		rc = -EINVAL;
 		goto out;
 	}
 
-	if (p_ctx_info->ref_cnt-- == 1) {
+	if (ctx_info->ref_cnt-- == 1) {
 
 		/* for any resource still open, deallocate LBAs and close
 		 * if nobody else is using it.
 		 */
 
-		if (p_ctx_info->rht_info->ref_cnt-- == 1) {
-			marshall_det_to_rele(pdet, &rel);
+		if (ctx_info->rht_info->ref_cnt-- == 1) {
+			marshall_det_to_rele(detach, &rel);
 			for (i = 0; i < MAX_RHT_PER_CONTEXT; i++) {
 				rel.rsrc_handle = i;
 				cxlflash_disk_release(sdev, &rel);
@@ -1206,19 +1206,19 @@ static int cxlflash_disk_detach(struct scsi_device *sdev,
 		}
 
 		/* clear RHT registers for this context */
-		writeq_be(0, &p_ctx_info->ctrl_map->rht_start);
-		writeq_be(0, &p_ctx_info->ctrl_map->rht_cnt_id);
+		writeq_be(0, &ctx_info->ctrl_map->rht_start);
+		writeq_be(0, &ctx_info->ctrl_map->rht_cnt_id);
 		/* drop all capabilities */
-		writeq_be(0, &p_ctx_info->ctrl_map->ctx_cap);
+		writeq_be(0, &ctx_info->ctrl_map->ctx_cap);
 		/* close the context */
-		p_cxlflash->num_user_contexts--;
+		cxlflash->num_user_contexts--;
 	}
-	spin_lock(p_lun_info->slock);
-	p_lun_info->mode = MODE_NONE;
-	spin_unlock(p_lun_info->slock);
+	spin_lock(lun_info->slock);
+	lun_info->mode = MODE_NONE;
+	spin_unlock(lun_info->slock);
 
-	p_cxlflash->per_context[pdet->context_id].lfd = -1;
-	p_cxlflash->per_context[pdet->context_id].pid = 0;
+	cxlflash->per_context[detach->context_id].lfd = -1;
+	cxlflash->per_context[detach->context_id].pid = 0;
 
 out:
 	cxlflash_info("returning rc=%d", rc);
@@ -1226,32 +1226,32 @@ out:
 }
 
 static int cxlflash_afu_recover(struct scsi_device *sdev,
-				struct dk_cxlflash_recover_afu *prec)
+				struct dk_cxlflash_recover_afu *recover)
 {
-	struct cxlflash *p_cxlflash = (struct cxlflash *)sdev->host->hostdata;
-	struct afu *p_afu = p_cxlflash->afu;
-	struct ctx_info *p_ctx_info;
+	struct cxlflash *cxlflash = (struct cxlflash *)sdev->host->hostdata;
+	struct afu *afu = cxlflash->afu;
+	struct ctx_info *ctx_info;
 	long reg;
 	int rc = 0;
 
 	/* Ensure that this process is attached to the context */
-	p_ctx_info = get_validated_context(p_cxlflash, prec->context_id, false);
-	if (unlikely(!p_ctx_info)) {
-		cxlflash_err("Invalid context! (%llu)", prec->context_id);
+	ctx_info = get_validated_context(cxlflash, recover->context_id, false);
+	if (unlikely(!ctx_info)) {
+		cxlflash_err("Invalid context! (%llu)", recover->context_id);
 		rc = -EINVAL;
 		goto out;
 	}
 
-	reg = readq_be(&p_afu->ctrl_map->mbox_r);	/* Try MMIO */
+	reg = readq_be(&afu->ctrl_map->mbox_r);	/* Try MMIO */
 	/* MMIO returning 0xff, need to reset */
 	if (reg == -1) {
-		cxlflash_info("p_afu=%p reason 0x%llx", p_afu, prec->reason);
-		afu_reset(p_cxlflash);
+		cxlflash_info("afu=%p reason 0x%llx", afu, recover->reason);
+		afu_reset(cxlflash);
 
 	} else {
 		cxlflash_info
 		    ("reason 0x%llx MMIO is working, no reset performed",
-		     prec->reason);
+		     recover->reason);
 		rc = -EINVAL;
 	}
 
@@ -1265,11 +1265,11 @@ out:
  * FUNCTION:	clone a LXT table
  *
  * INPUTS:
- *		p_afu		- Pointer to afu struct
+ *		afu		- Pointer to afu struct
  *		ctx_hndl_u	- context that owns the destination LXT
  *		res_hndl_u	- res_hndl of the destination LXT
- *		p_rht_entry	- destination RHT to clone into
- *		p_rht_entry_src	- source RHT to clone from
+ *		rht_entry	- destination RHT to clone into
+ *		rht_entry_src	- source RHT to clone from
  *
  * OUTPUTS:
  *
@@ -1279,63 +1279,63 @@ out:
  *
  * NOTES:
  */
-static int clone_lxt(struct afu *p_afu,
-		     struct blka *p_blka,
+static int clone_lxt(struct afu *afu,
+		     struct blka *blka,
 		     ctx_hndl_t ctx_hndl_u,
 		     res_hndl_t res_hndl_u,
-		     struct sisl_rht_entry *p_rht_entry,
-		     struct sisl_rht_entry *p_rht_entry_src)
+		     struct sisl_rht_entry *rht_entry,
+		     struct sisl_rht_entry *rht_entry_src)
 {
-	struct sisl_lxt_entry *p_lxt;
+	struct sisl_lxt_entry *lxt;
 	unsigned int ngrps;
 	u64 aun;		/* chunk# allocated by block allocator */
 	int i, j;
 
-	ngrps = LXT_NUM_GROUPS(p_rht_entry_src->lxt_cnt);
+	ngrps = LXT_NUM_GROUPS(rht_entry_src->lxt_cnt);
 
 	if (ngrps) {
 		/* allocate new LXTs for clone */
-		p_lxt = kzalloc((sizeof(*p_lxt) * LXT_GROUP_SIZE * ngrps),
+		lxt = kzalloc((sizeof(*lxt) * LXT_GROUP_SIZE * ngrps),
 				GFP_KERNEL);
-		if (unlikely(!p_lxt))
+		if (unlikely(!lxt))
 			return -ENOMEM;
 
 		/* copy over */
-		memcpy(p_lxt, p_rht_entry_src->lxt_start,
-		       (sizeof(*p_lxt) * p_rht_entry_src->lxt_cnt));
+		memcpy(lxt, rht_entry_src->lxt_start,
+		       (sizeof(*lxt) * rht_entry_src->lxt_cnt));
 
 		/* clone the LBAs in block allocator via ref_cnt */
-		mutex_lock(&p_blka->mutex);
-		for (i = 0; i < p_rht_entry_src->lxt_cnt; i++) {
-			aun = (p_lxt[i].rlba_base >> MC_CHUNK_SHIFT);
-			if (ba_clone(&p_blka->ba_lun, aun) == -1ULL) {
+		mutex_lock(&blka->mutex);
+		for (i = 0; i < rht_entry_src->lxt_cnt; i++) {
+			aun = (lxt[i].rlba_base >> MC_CHUNK_SHIFT);
+			if (ba_clone(&blka->ba_lun, aun) == -1ULL) {
 				/* free the clones already made */
 				for (j = 0; j < i; j++) {
-					aun = (p_lxt[j].rlba_base >>
+					aun = (lxt[j].rlba_base >>
 					       MC_CHUNK_SHIFT);
-					ba_free(&p_blka->ba_lun, aun);
+					ba_free(&blka->ba_lun, aun);
 				}
 
-				mutex_unlock(&p_blka->mutex);
-				kfree(p_lxt);
+				mutex_unlock(&blka->mutex);
+				kfree(lxt);
 				return -EIO;
 			}
 		}
-		mutex_unlock(&p_blka->mutex);
+		mutex_unlock(&blka->mutex);
 	} else {
-		p_lxt = NULL;
+		lxt = NULL;
 	}
 
 	smp_wmb();		/* make lxt updates visible */
 
 	/* Now sync up AFU - this can take a while */
-	p_rht_entry->lxt_start = p_lxt;	/* even if p_lxt is NULL */
+	rht_entry->lxt_start = lxt;	/* even if lxt is NULL */
 	smp_wmb();
 
-	p_rht_entry->lxt_cnt = p_rht_entry_src->lxt_cnt;
+	rht_entry->lxt_cnt = rht_entry_src->lxt_cnt;
 	smp_wmb();
 
-	afu_sync(p_afu, ctx_hndl_u, res_hndl_u, AFU_LW_SYNC);
+	afu_sync(afu, ctx_hndl_u, res_hndl_u, AFU_LW_SYNC);
 
 	cxlflash_info("returning");
 	return 0;
@@ -1363,52 +1363,52 @@ static int clone_lxt(struct afu *p_afu,
  *              errno       - Failure
  */
 static int cxlflash_disk_clone(struct scsi_device *sdev,
-			       struct dk_cxlflash_clone *pclone)
+			       struct dk_cxlflash_clone *clone)
 {
-	struct cxlflash *p_cxlflash = (struct cxlflash *)sdev->host->hostdata;
-	struct lun_info *p_lun_info = sdev->hostdata;
-	struct blka *p_blka = &p_lun_info->blka;
-	struct afu *p_afu = p_cxlflash->afu;
+	struct cxlflash *cxlflash = (struct cxlflash *)sdev->host->hostdata;
+	struct lun_info *lun_info = sdev->hostdata;
+	struct blka *blka = &lun_info->blka;
+	struct afu *afu = cxlflash->afu;
 	struct dk_cxlflash_release release = { { 0 }, 0 };
 
-	struct ctx_info *p_ctx_info_src, *p_ctx_info_dst;
-	struct rht_info *p_rht_info_src, *p_rht_info_dst;
+	struct ctx_info *ctx_info_src, *ctx_info_dst;
+	struct rht_info *rht_info_src, *rht_info_dst;
 	u32 perms;
 	int i, j;
 	int rc = 0;
 
 	cxlflash_info("ctx_hdl_src=%llu ctx_hdl_dst=%llu",
-		      pclone->context_id_src, pclone->context_id_dst);
+		      clone->context_id_src, clone->context_id_dst);
 
 	/* Do not clone yourself */
-	if (pclone->context_id_src == pclone->context_id_dst) {
+	if (clone->context_id_src == clone->context_id_dst) {
 		rc = -EINVAL;
 		goto out;
 	}
 
-	p_ctx_info_src = get_validated_context(p_cxlflash,
-					       pclone->context_id_src, true);
-	p_ctx_info_dst = get_validated_context(p_cxlflash,
-					       pclone->context_id_dst, false);
-	if (unlikely(!p_ctx_info_src || !p_ctx_info_dst)) {
+	ctx_info_src = get_validated_context(cxlflash,
+					       clone->context_id_src, true);
+	ctx_info_dst = get_validated_context(cxlflash,
+					       clone->context_id_dst, false);
+	if (unlikely(!ctx_info_src || !ctx_info_dst)) {
 		cxlflash_err("Invalid context! (%llu,%llu)",
-			     pclone->context_id_src, pclone->context_id_dst);
+			     clone->context_id_src, clone->context_id_dst);
 		rc = -EINVAL;
 		goto out;
 	}
 
-	p_rht_info_src = p_ctx_info_src->rht_info;
-	p_rht_info_dst = p_ctx_info_dst->rht_info;
+	rht_info_src = ctx_info_src->rht_info;
+	rht_info_dst = ctx_info_dst->rht_info;
 
 	/* Verify there is no open resource handle in the destination context */
 	for (i = 0; i < MAX_RHT_PER_CONTEXT; i++)
-		if (p_rht_info_dst->rht_start[i].nmask != 0) {
+		if (rht_info_dst->rht_start[i].nmask != 0) {
 			rc = -EINVAL;
 			goto out;
 		}
 
 	/* User specified permission on attach */
-	perms = p_rht_info_dst->perms;
+	perms = rht_info_dst->perms;
 
 	/*
 	 * This loop is equivalent to cxlflash_disk_open & cxlflash_vlun_resize.
@@ -1416,22 +1416,22 @@ static int cxlflash_disk_clone(struct scsi_device *sdev,
 	 * it is even registered. Cleanup when the clone fails.
 	 */
 	for (i = 0; i < MAX_RHT_PER_CONTEXT; i++) {
-		p_rht_info_dst->rht_start[i].nmask =
-		    p_rht_info_src->rht_start[i].nmask;
-		p_rht_info_dst->rht_start[i].fp =
-		    SISL_RHT_FP_CLONE(p_rht_info_src->rht_start[i].fp, perms);
+		rht_info_dst->rht_start[i].nmask =
+		    rht_info_src->rht_start[i].nmask;
+		rht_info_dst->rht_start[i].fp =
+		    SISL_RHT_FP_CLONE(rht_info_src->rht_start[i].fp, perms);
 
-		rc = clone_lxt(p_afu, p_blka, pclone->context_id_dst, i,
-			       &p_rht_info_dst->rht_start[i],
-			       &p_rht_info_src->rht_start[i]);
+		rc = clone_lxt(afu, blka, clone->context_id_dst, i,
+			       &rht_info_dst->rht_start[i],
+			       &rht_info_src->rht_start[i]);
 		if (rc) {
-			marshall_clone_to_rele(pclone, &release);
+			marshall_clone_to_rele(clone, &release);
 			for (j = 0; j < i; j++) {
 				release.rsrc_handle = j;
 				cxlflash_disk_release(sdev, &release);
 			}
 
-			rhte_checkin(&p_rht_info_dst->rht_start[i]);
+			rhte_checkin(&rht_info_dst->rht_start[i]);
 			goto out;
 		}
 	}
@@ -1461,9 +1461,9 @@ out:
  *              When successful, the RHT entry is cleared.
  */
 static int cxlflash_disk_verify(struct scsi_device *sdev,
-				struct dk_cxlflash_verify *pver)
+				struct dk_cxlflash_verify *verify)
 {
-	struct lun_info *p_lun_info = sdev->hostdata;
+	struct lun_info *lun_info = sdev->hostdata;
 
 	int rc = 0;
 
@@ -1472,49 +1472,49 @@ static int cxlflash_disk_verify(struct scsi_device *sdev,
 	 * due to the WWN changing), or read capacity again (in case
 	 * the Unit attention was due to a resize)
 	 */
-	pver->last_lba = p_lun_info->max_lba;
+	verify->last_lba = lun_info->max_lba;
 
 	cxlflash_info("returning rc=%d", rc);
 	return rc;
 }
 
-int read_cap16(struct afu *p_afu, struct lun_info *p_lun_info, u32 port_sel)
+int read_cap16(struct afu *afu, struct lun_info *lun_info, u32 port_sel)
 {
-	struct afu_cmd *p_cmd;
+	struct afu_cmd *cmd;
 	int rc = 0;
 
-	p_cmd = cmd_checkout(p_afu);
-	if (unlikely(!p_cmd)) {
+	cmd = cmd_checkout(afu);
+	if (unlikely(!cmd)) {
 		cxlflash_err("could not get a free command");
 		return -1;
 	}
 
-	p_cmd->rcb.req_flags = (SISL_REQ_FLAGS_PORT_LUN_ID |
+	cmd->rcb.req_flags = (SISL_REQ_FLAGS_PORT_LUN_ID |
 				SISL_REQ_FLAGS_SUP_UNDERRUN |
 				SISL_REQ_FLAGS_HOST_READ);
 
-	p_cmd->rcb.port_sel = port_sel;
-	p_cmd->rcb.lun_id = p_lun_info->lun_id;
-	p_cmd->rcb.data_len = CMD_BUFSIZE;
-	p_cmd->rcb.data_ea = (u64) p_cmd->buf;
-	p_cmd->rcb.timeout = MC_DISCOVERY_TIMEOUT;
-	p_cmd->internal = true;
+	cmd->rcb.port_sel = port_sel;
+	cmd->rcb.lun_id = lun_info->lun_id;
+	cmd->rcb.data_len = CMD_BUFSIZE;
+	cmd->rcb.data_ea = (u64) cmd->buf;
+	cmd->rcb.timeout = MC_DISCOVERY_TIMEOUT;
+	cmd->internal = true;
 
-	p_cmd->rcb.cdb[0] = 0x9E;	/* read cap(16) */
-	p_cmd->rcb.cdb[1] = 0x10;	/* service action */
-	put_unaligned_be32(CMD_BUFSIZE, &p_cmd->rcb.cdb[10]);
+	cmd->rcb.cdb[0] = 0x9E;	/* read cap(16) */
+	cmd->rcb.cdb[1] = 0x10;	/* service action */
+	put_unaligned_be32(CMD_BUFSIZE, &cmd->rcb.cdb[10]);
 
-	p_cmd->sa.host_use_b[1] = 0;	/* reset retry cnt */
+	cmd->sa.host_use_b[1] = 0;	/* reset retry cnt */
 
 	cxlflash_info("sending cmd(0x%x) with RCB EA=%p data EA=0x%llx",
-		      p_cmd->rcb.cdb[0], &p_cmd->rcb, p_cmd->rcb.data_ea);
+		      cmd->rcb.cdb[0], &cmd->rcb, cmd->rcb.data_ea);
 
 	do {
-		cxlflash_send_cmd(p_afu, p_cmd);
-		cxlflash_wait_resp(p_afu, p_cmd);
-	} while (check_status(&p_cmd->sa));
+		cxlflash_send_cmd(afu, cmd);
+		cxlflash_wait_resp(afu, cmd);
+	} while (check_status(&cmd->sa));
 
-	if (p_cmd->sa.host_use_b[0] & B_ERROR) {
+	if (cmd->sa.host_use_b[0] & B_ERROR) {
 		cxlflash_err("command failed");
 		rc = -1;
 		goto out;
@@ -1525,16 +1525,16 @@ int read_cap16(struct afu *p_afu, struct lun_info *p_lun_info, u32 port_sel)
 	 * note that we don't need to worry about unaligned access
 	 * as the buffer is allocated on an aligned boundary.
 	 */
-	spin_lock(p_lun_info->slock);
-	p_lun_info->max_lba = swab64(*((u64 *)&p_cmd->buf[0]));
-	p_lun_info->blk_len = swab32(*((u32 *)&p_cmd->buf[8]));
-	spin_unlock(p_lun_info->slock);
+	spin_lock(lun_info->slock);
+	lun_info->max_lba = swab64(*((u64 *)&cmd->buf[0]));
+	lun_info->blk_len = swab32(*((u32 *)&cmd->buf[8]));
+	spin_unlock(lun_info->slock);
 
 out:
-	cmd_checkin(p_cmd);
+	cmd_checkin(cmd);
 
 	cxlflash_info("maxlba=%lld blklen=%d pcmd %p",
-		      p_lun_info->max_lba, p_lun_info->blk_len, p_cmd);
+		      lun_info->max_lba, lun_info->blk_len, cmd);
 	return rc;
 }
 
@@ -1579,9 +1579,9 @@ int cxlflash_ioctl(struct scsi_device *sdev, int cmd, void __user * arg)
 {
 	typedef int (*sioctl) (struct scsi_device *, void *);
 
-	struct cxlflash *p_cxlflash = (struct cxlflash *)sdev->host->hostdata;
-	struct afu *p_afu = p_cxlflash->afu;
-	struct dk_cxlflash_hdr *p_hdr;
+	struct cxlflash *cxlflash = (struct cxlflash *)sdev->host->hostdata;
+	struct afu *afu = cxlflash->afu;
+	struct dk_cxlflash_hdr *hdr;
 	char buf[MAX_CXLFLASH_IOCTL_SZ];
 	size_t size = 0;
 	int idx;
@@ -1607,7 +1607,7 @@ int cxlflash_ioctl(struct scsi_device *sdev, int cmd, void __user * arg)
 	};
 
 	/* Restrict command set to physical support only for internal LUN */
-	if (internal_lun || p_afu->internal_lun) {
+	if (internal_lun || afu->internal_lun) {
 		switch (cmd) {
 		case DK_CXLFLASH_USER_VIRTUAL:
 		case DK_CXLFLASH_VLUN_RESIZE:
@@ -1653,10 +1653,10 @@ int cxlflash_ioctl(struct scsi_device *sdev, int cmd, void __user * arg)
 		goto cxlflash_ioctl_exit;
 	}
 
-	p_hdr = (struct dk_cxlflash_hdr *)&buf;
-	if (p_hdr->version != 0) {
+	hdr = (struct dk_cxlflash_hdr *)&buf;
+	if (hdr->version != 0) {
 		cxlflash_err("Version %u not supported for %s",
-			     p_hdr->version, decode_ioctl(cmd));
+			     hdr->version, decode_ioctl(cmd));
 		rc = -EINVAL;
 		goto cxlflash_ioctl_exit;
 	}

@@ -62,7 +62,6 @@ extern u32 internal_lun;
 
 #define MC_DISCOVERY_TIMEOUT 5  /* 5 secs */
 
-int read_cap16(struct afu *p_afu, struct lun_info *p_lun_info, u32 port_sel);
-
+int read_cap16(struct afu *, struct lun_info *, u32);
 void cxlflash_rht_format1(struct sisl_rht_entry *, u64, u32);
 #endif /* ifndef _CXLFLASH_SUPERPIPE_H */
