@@ -1575,7 +1575,7 @@ static int cxlflash_disk_direct_open(struct scsi_device *sdev, void *arg)
  * Return value:
  *      0 on success / other on failure
  **/
-int cxlflash_ioctl(struct scsi_device *sdev, int cmd, void __user * arg)
+int cxlflash_ioctl(struct scsi_device *sdev, int cmd, void __user *arg)
 {
 	typedef int (*sioctl) (struct scsi_device *, void *);
 
