@@ -358,7 +358,7 @@ static int cxlflash_eh_host_reset_handler(struct scsi_cmnd *scp)
 		     get_unaligned_be32(&((u32 *)scp->cmnd)[3]));
 
 	scp->result = (DID_OK << 16);;
-	rcr = afu_reset(cxlflash);
+	rcr = cxlflash_afu_reset(cxlflash);
 	if (rcr == 0)
 		rc = SUCCESS;
 	else
@@ -1073,7 +1073,7 @@ static void afu_link_reset(struct afu *afu, int port, volatile u64 *fc_regs)
 	port_sel = readq_be(&afu->afu_map->global.regs.afu_port_sel);
 	port_sel &= ~(1 << port);
 	writeq_be(port_sel, &afu->afu_map->global.regs.afu_port_sel);
-	afu_sync(afu, 0, 0, AFU_GSYNC);
+	cxlflash_afu_sync(afu, 0, 0, AFU_GSYNC);
 
 	set_port_offline(fc_regs);
 	if (!wait_port_offline(fc_regs, FC_PORT_STATUS_RETRY_INTERVAL_US,
@@ -1089,7 +1089,7 @@ static void afu_link_reset(struct afu *afu, int port, volatile u64 *fc_regs)
 	/* switch back to include this port */
 	port_sel |= (1 << port);
 	writeq_be(port_sel, &afu->afu_map->global.regs.afu_port_sel);
-	afu_sync(afu, 0, 0, AFU_GSYNC);
+	cxlflash_afu_sync(afu, 0, 0, AFU_GSYNC);
 
 	cxlflash_info("returning port_sel=%lld", port_sel);
 }
@@ -1772,7 +1772,7 @@ err1:
 /* not retrying afu timeouts (B_TIMEOUT) */
 /* returns 1 if the cmd should be retried, 0 otherwise */
 /* sets B_ERROR flag based on IOASA */
-int check_status(struct sisl_ioasa *ioasa)
+int cxlflash_check_status(struct sisl_ioasa *ioasa)
 {
 	if (ioasa->ioasc == 0)
 		return 0;
@@ -1866,8 +1866,8 @@ void cxlflash_wait_resp(struct afu *afu, struct afu_cmd *cmd)
  *
  * AFU takes only 1 sync cmd at a time.
  */
-int afu_sync(struct afu *afu,
-	     ctx_hndl_t ctx_hndl_u, res_hndl_t res_hndl_u, u8 mode)
+int cxlflash_afu_sync(struct afu *afu, ctx_hndl_t ctx_hndl_u,
+		      res_hndl_t res_hndl_u, u8 mode)
 {
 	struct afu_cmd *cmd = &afu->cmd[AFU_SYNC_INDEX];
 	int rc = 0;
@@ -1902,7 +1902,7 @@ int afu_sync(struct afu *afu,
 	return rc;
 }
 
-int afu_reset(struct cxlflash *cxlflash)
+int cxlflash_afu_reset(struct cxlflash *cxlflash)
 {
 	int rc = 0;
 	/* Stop the context before the reset. Since the context is
