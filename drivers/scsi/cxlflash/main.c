@@ -578,11 +578,10 @@ static void cxlflash_wait_for_pci_err_recovery(struct cxlflash *cxlflash)
 {
 	struct pci_dev *pdev = cxlflash->dev;
 
-	if (pci_channel_offline(pdev)) {
+	if (pci_channel_offline(pdev))
 		wait_event_timeout(cxlflash->eeh_wait_q,
 				   !pci_channel_offline(pdev),
 				   CXLFLASH_PCI_ERROR_RECOVERY_TIMEOUT);
-	}
 }
 
 static DEVICE_ATTR(port0, S_IRUGO, cxlflash_show_port_status, NULL);
@@ -1071,15 +1070,14 @@ static void afu_link_reset(struct afu *afu, int port, volatile u64 *fc_regs)
 
 	set_port_offline(fc_regs);
 	if (!wait_port_offline(fc_regs, FC_PORT_STATUS_RETRY_INTERVAL_US,
-			       FC_PORT_STATUS_RETRY_CNT)) {
+			       FC_PORT_STATUS_RETRY_CNT))
 		cxlflash_err("wait on port %d to go offline timed out", port);
-	}
 
 	set_port_online(fc_regs);
 	if (!wait_port_online(fc_regs, FC_PORT_STATUS_RETRY_INTERVAL_US,
-			      FC_PORT_STATUS_RETRY_CNT)) {
+			      FC_PORT_STATUS_RETRY_CNT))
 		cxlflash_err("wait on port %d to go online timed out", port);
-	}
+
 	/* switch back to include this port */
 	port_sel |= (1 << port);
 	writeq_be(port_sel, &afu->afu_map->global.regs.afu_port_sel);
@@ -1090,7 +1088,7 @@ static void afu_link_reset(struct afu *afu, int port, volatile u64 *fc_regs)
 
 static const struct asyc_intr_info ainfo[] = {
 	{SISL_ASTATUS_FC0_OTHER, "fc 0: other error", 0,
-	 CLR_FC_ERROR | LINK_RESET},
+		CLR_FC_ERROR | LINK_RESET},
 	{SISL_ASTATUS_FC0_LOGO, "fc 0: target initiated LOGO", 0, 0},
 	{SISL_ASTATUS_FC0_CRC_T, "fc 0: CRC threshold exceeded", 0, LINK_RESET},
 	{SISL_ASTATUS_FC0_LOGI_R, "fc 0: login timed out, retrying", 0, 0},
@@ -1227,9 +1225,9 @@ static irqreturn_t cxlflash_rrq_irq(int irq, void *data)
 		cmd_complete(cmd);
 
 		/* Advance to next entry or wrap and flip the toggle bit */
-		if (afu->hrrq_curr < afu->hrrq_end) {
+		if (afu->hrrq_curr < afu->hrrq_end)
 			afu->hrrq_curr++;
-		} else {
+		else {
 			afu->hrrq_curr = afu->hrrq_start;
 			afu->toggle ^= SISL_RESP_HANDLE_T_BIT;
 		}
@@ -1795,12 +1793,11 @@ void cxlflash_send_cmd(struct afu *afu, struct afu_cmd *cmd)
 {
 	int nretry = 0;
 
-	if (afu->room == 0) {
+	if (afu->room == 0)
 		do {
 			afu->room = readq_be(&afu->host_map->cmd_room);
 			udelay(nretry);
 		} while ((afu->room == 0) && (nretry++ < MC_ROOM_RETRY_CNT));
-	}
 
 	cmd->sa.host_use_b[0] = 0;	/* 0 means active */
 	cmd->sa.ioasc = 0;

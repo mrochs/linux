@@ -691,9 +691,8 @@ static int grow_lxt(struct afu *afu,
 		/* copy over all old entries */
 		memcpy(lxt, lxt_old, (sizeof(*lxt) *
 					  rht_entry->lxt_cnt));
-	} else {
+	} else
 		lxt = lxt_old;
-	}
 
 	/* nothing can fail from now on */
 	*act_new_size = rht_entry->lxt_cnt + delta;
@@ -707,10 +706,9 @@ static int grow_lxt(struct afu *afu,
 		 * invalid LUN (too large).
 		 */
 		aun = ba_alloc(&blka->ba_lun);
-		if ((aun == -1ULL) || (aun >= blka->nchunk)) {
+		if ((aun == -1ULL) || (aun >= blka->nchunk))
 			cxlflash_err("ba_alloc error: allocated chunk# %llX, "
 				     "max %llX", aun, blka->nchunk - 1);
-		}
 
 		/* select both ports, use r/w perms from RHT */
 		lxt[i].rlba_base = ((aun << MC_CHUNK_SHIFT) |
@@ -767,12 +765,10 @@ static int shrink_lxt(struct afu *afu,
 			memcpy(lxt, lxt_old, (sizeof(*lxt) *
 						  (rht_entry->lxt_cnt -
 						   delta)));
-		} else {
+		} else
 			lxt = NULL;
-		}
-	} else {
+	} else
 		lxt = lxt_old;
-	}
 
 	/* nothing can fail from now on */
 	*act_new_size = rht_entry->lxt_cnt - delta;
@@ -880,7 +876,7 @@ static int cxlflash_vlun_resize(struct scsi_device *sdev,
 			goto out;
 		}
 
-		if (new_size > rht_entry->lxt_cnt) {
+		if (new_size > rht_entry->lxt_cnt)
 			grow_lxt(afu,
 				 lun_info,
 				 resize->context_id,
@@ -888,7 +884,7 @@ static int cxlflash_vlun_resize(struct scsi_device *sdev,
 				 rht_entry,
 				 new_size - rht_entry->lxt_cnt,
 				 &act_new_size);
-		} else if (new_size < rht_entry->lxt_cnt) {
+		else if (new_size < rht_entry->lxt_cnt)
 			shrink_lxt(afu,
 				   lun_info,
 				   resize->context_id,
@@ -896,9 +892,8 @@ static int cxlflash_vlun_resize(struct scsi_device *sdev,
 				   rht_entry,
 				   rht_entry->lxt_cnt - new_size,
 				   &act_new_size);
-		} else {
+		else
 			act_new_size = new_size;
-		}
 	} else {
 		cxlflash_err("res_hndl %d invalid", res_hndl);
 		rc = -EINVAL;
@@ -972,9 +967,9 @@ static int cxlflash_disk_open(struct scsi_device *sdev,
 	}
 
 	spin_lock(&lun_info->slock);
-	if (lun_info->mode == MODE_NONE) {
+	if (lun_info->mode == MODE_NONE)
 		lun_info->mode = mode;
-	} else if (lun_info->mode != mode) {
+	else if (lun_info->mode != mode) {
 		cxlflash_err
 		    ("disk already opened in mode %d, mode requested %d",
 		     lun_info->mode, mode);
@@ -1607,7 +1602,7 @@ int cxlflash_ioctl(struct scsi_device *sdev, int cmd, void __user *arg)
 	};
 
 	/* Restrict command set to physical support only for internal LUN */
-	if (internal_lun || afu->internal_lun) {
+	if (internal_lun || afu->internal_lun)
 		switch (cmd) {
 		case DK_CXLFLASH_USER_VIRTUAL:
 		case DK_CXLFLASH_VLUN_RESIZE:
@@ -1618,7 +1613,6 @@ int cxlflash_ioctl(struct scsi_device *sdev, int cmd, void __user *arg)
 			rc = -EINVAL;
 			goto cxlflash_ioctl_exit;
 		}
-	}
 
 	switch (cmd) {
 	case DK_CXLFLASH_ATTACH:
