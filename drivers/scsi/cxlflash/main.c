@@ -1088,7 +1088,7 @@ static void afu_link_reset(struct afu *afu, int port, volatile u64 *fc_regs)
 	cxlflash_info("returning port_sel=%lld", port_sel);
 }
 
-struct asyc_intr_info ainfo[] = {
+static const struct asyc_intr_info ainfo[] = {
 	{SISL_ASTATUS_FC0_OTHER, "fc 0: other error", 0,
 	 CLR_FC_ERROR | LINK_RESET},
 	{SISL_ASTATUS_FC0_LOGO, "fc 0: target initiated LOGO", 0, 0},
@@ -1111,9 +1111,9 @@ struct asyc_intr_info ainfo[] = {
 	{0x0, "", 0, 0}		/* terminator */
 };
 
-static struct asyc_intr_info *find_ainfo(u64 status)
+static const struct asyc_intr_info *find_ainfo(u64 status)
 {
-	struct asyc_intr_info *info;
+	const struct asyc_intr_info *info;
 
 	for (info = &ainfo[0]; info->status; info++)
 		if (info->status == status)
@@ -1243,7 +1243,7 @@ static irqreturn_t cxlflash_async_err_irq(int irq, void *data)
 	struct afu *afu = (struct afu *)data;
 	struct cxlflash *cxlflash;
 	u64 reg_unmasked;
-	struct asyc_intr_info *info;
+	const struct asyc_intr_info *info;
 	volatile struct sisl_global_map *global = &afu->afu_map->global;
 	u64 reg;
 	int i;
