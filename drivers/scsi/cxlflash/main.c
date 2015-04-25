@@ -71,7 +71,6 @@ struct afu_cmd *cxflash_cmd_checkout(struct afu *afu)
 {
 	int k, dec = CXLFLASH_NUM_CMDS;
 	struct afu_cmd *cmd;
-	unsigned long lock_flags = 0;
 
 	while (dec--) {
 		k = (afu->cmd_couts++ & (CXLFLASH_NUM_CMDS - 1));
@@ -82,18 +81,12 @@ struct afu_cmd *cxflash_cmd_checkout(struct afu *afu)
 
 		cmd = &afu->cmd[k];
 
-		spin_lock_irqsave(cmd->slock, lock_flags);
-
-		if (cmd->flag == CMD_FREE) {
-			cmd->flag = CMD_IN_USE;
-			spin_unlock_irqrestore(cmd->slock, lock_flags);
+		if (!atomic_dec_if_positive(&cmd->free)) {
 			cxlflash_dbg("returning found index=%d", cmd->slot);
 			memset(cmd->buf, 0, CMD_BUFSIZE);
 			memset(cmd->rcb.cdb, 0, sizeof(cmd->rcb.cdb));
 			return cmd;
 		}
-
-		spin_unlock_irqrestore(cmd->slock, lock_flags);
 	}
 
 	return NULL;
@@ -102,13 +95,14 @@ struct afu_cmd *cxflash_cmd_checkout(struct afu *afu)
 /* Check in the command */
 void cxflash_cmd_checkin(struct afu_cmd *cmd)
 {
-	unsigned long lock_flags = 0;
-
-	spin_lock_irqsave(cmd->slock, lock_flags);
-	cmd->flag = CMD_FREE;
-	cmd->special = 0;
-	cmd->internal = false;
-	spin_unlock_irqrestore(cmd->slock, lock_flags);
+	if (atomic_inc_return(&cmd->free) != 1) {
+		cxlflash_info("freeing command that is not in use");
+		return;
+	}
+	else {
+		cmd->special = 0;
+		cmd->internal = false;
+	}
 	cxlflash_dbg("releasing cmd index=%d", cmd->slot);
 
 }
@@ -836,7 +830,7 @@ static int cxlflash_gb_alloc(struct cxlflash *cxlflash)
 			goto out;
 		}
 		cxlflash->afu->cmd[i].buf = buf;
-		cxlflash->afu->cmd[i].flag = CMD_FREE;
+		atomic_set(&cxlflash->afu->cmd[i].free, 1);
 		cxlflash->afu->cmd[i].slot = i;
 		cxlflash->afu->cmd[i].special = 0;
 	}

@@ -47,9 +47,6 @@
 
 #define AFU_SYNC_INDEX  (CXLFLASH_NUM_CMDS - 1)	/* last cmd rsvd for afu sync */
 
-#define CMD_FREE   0x0
-#define CMD_IN_USE 0x1
-
 #define CMD_BUFSIZE     PAGE_SIZE_4K
 
 /* flags in IOA status area for host use */
@@ -177,7 +174,7 @@ struct afu_cmd {
 	char *buf;		/* per command buffer */
 	struct afu *back;
 	int slot;
-	u8 flag:1;
+	atomic_t free;
 	u8 special:1;
 	u8 internal:1;
 
