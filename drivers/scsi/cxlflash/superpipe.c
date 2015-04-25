@@ -1588,7 +1588,7 @@ int cxlflash_ioctl(struct scsi_device *sdev, int cmd, void __user *arg)
 	int rc = 0;
 	sioctl do_ioctl = NULL;
 #define IOCTE(_s, _i) sizeof(struct _s), (sioctl)(_i)
-	static struct {
+	static const struct {
 		size_t size;
 		sioctl ioctl;
 	} ioctl_tbl[] = {	/* NOTE: order matters here */
