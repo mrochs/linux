@@ -285,8 +285,8 @@ void cxlflash_send_cmd(struct afu *, struct afu_cmd *);
 void cxlflash_wait_resp(struct afu *, struct afu_cmd *);
 int check_status(struct sisl_ioasa *);
 int afu_reset(struct cxlflash *);
-struct afu_cmd *cmd_checkout(struct afu *);
-void cmd_checkin(struct afu_cmd *);
+struct afu_cmd *cxflash_cmd_checkout(struct afu *);
+void cxflash_cmd_checkin(struct afu_cmd *);
 int afu_sync(struct afu *, ctx_hndl_t, res_hndl_t, u8);
 #endif /* ifndef _CXLFLASH_COMMON_H */
 

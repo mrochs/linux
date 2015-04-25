@@ -1483,7 +1483,7 @@ int read_cap16(struct afu *afu, struct lun_info *lun_info, u32 port_sel)
 	struct afu_cmd *cmd;
 	int rc = 0;
 
-	cmd = cmd_checkout(afu);
+	cmd = cxflash_cmd_checkout(afu);
 	if (unlikely(!cmd)) {
 		cxlflash_err("could not get a free command");
 		return -1;
@@ -1531,7 +1531,7 @@ int read_cap16(struct afu *afu, struct lun_info *lun_info, u32 port_sel)
 	spin_unlock(lun_info->slock);
 
 out:
-	cmd_checkin(cmd);
+	cxflash_cmd_checkin(cmd);
 
 	cxlflash_info("maxlba=%lld blklen=%d pcmd %p",
 		      lun_info->max_lba, lun_info->blk_len, cmd);
