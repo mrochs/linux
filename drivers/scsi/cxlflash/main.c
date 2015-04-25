@@ -1783,7 +1783,7 @@ err1:
 /* not retrying afu timeouts (B_TIMEOUT) */
 /* returns 1 if the cmd should be retried, 0 otherwise */
 /* sets B_ERROR flag based on IOASA */
-int check_status(struct sisl_ioasa_s *ioasa)
+int check_status(struct sisl_ioasa *ioasa)
 {
 	if (ioasa->ioasc == 0)
 		return 0;

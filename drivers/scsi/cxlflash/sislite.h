@@ -27,7 +27,7 @@ typedef u32 res_hndl_t;
 /* IOARCB: 64 bytes, min 16 byte alignment required                     */
 /************************************************************************/
 
-typedef struct sisl_ioarcb_s {
+struct sisl_ioarcb {
 	u16 ctx_id;		/* ctx_hndl_t */
 	u16 req_flags;
 #define SISL_REQ_FLAGS_RES_HNDL       0x8000u	/* bit 0 (MSB) */
@@ -76,7 +76,7 @@ typedef struct sisl_ioarcb_s {
 	u32 rsvd1;
 	u8 cdb[16];		/* must be in big endian */
 	u64 rsvd2;
-} sisl_ioarcb_t;
+};
 
 struct sisl_rc {
 	u8 flags;
@@ -158,7 +158,7 @@ struct sisl_rc {
 #define SISL_SENSE_DATA_LEN     20	/* Sense data length         */
 
 /* IOASA: 64 bytes & must follow IOARCB, min 16 byte alignment required */
-typedef struct sisl_ioasa_s {
+struct sisl_ioasa {
 	union {
 		struct sisl_rc rc;
 		u32 ioasc;
@@ -193,15 +193,7 @@ typedef struct sisl_ioasa_s {
 		u64 host_use[4];
 		u8 host_use_b[32];
 	};
-} sisl_ioasa_t;
-
-/* single request+response block: 128 bytes.
-   cache line aligned for better performance.
-*/
-typedef struct sisl_iocmd_s {
-	sisl_ioarcb_t rcb;
-	sisl_ioasa_t sa;
-} sisl_iocmd_t __attribute__ ((aligned(cache_line_size())));
+};
 
 #define SISL_RESP_HANDLE_T_BIT        0x1ull	/* Toggle bit */
 
@@ -348,7 +340,7 @@ struct cxlflash_afu_map {
 
 /* LBA translation control blocks */
 
-typedef struct sisl_lxt_entry {
+struct sisl_lxt_entry {
 	__be64 rlba_base;	/* bits 0:47 is base
 				 * b48:55 is lun index
 				 * b58:59 is write & read perms
@@ -356,19 +348,19 @@ typedef struct sisl_lxt_entry {
 				 * b60:63 is port_sel mask
 				 */
 
-} sisl_lxt_entry_t;
+};
 
-typedef struct sisl_rht_entry {
-	sisl_lxt_entry_t *lxt_start;
+struct sisl_rht_entry {
+	struct sisl_lxt_entry *lxt_start;
 	__be32 lxt_cnt;
 	__be16 rsvd;
 	u8 fp;			/* format & perm nibbles.
 				 * (if no perm, afu_rc=0x05)
 				 */
 	u8 nmask;
-} sisl_rht_entry_t __attribute__ ((aligned(16)));
+} __attribute__ ((aligned(16)));
 
-typedef struct sisl_rht_entry_f1 {
+struct sisl_rht_entry_f1 {
 	__be64 lun_id;
 	union {
 		struct {
@@ -380,7 +372,7 @@ typedef struct sisl_rht_entry_f1 {
 
 		__be64 dw;
 	};
-} sisl_rht_entry_f1_t __attribute__ ((aligned(16)));
+} __attribute__ ((aligned(16)));
 
 /* make the fp byte */
 #define SISL_RHT_FP(fmt, perm) (((fmt) << 4) | (perm))

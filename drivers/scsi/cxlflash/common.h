@@ -169,8 +169,8 @@ struct cxlflash {
 };
 
 struct afu_cmd {
-	struct sisl_ioarcb_s rcb;	/* IOARCB (cache line aligned) */
-	struct sisl_ioasa_s sa;	/* IOASA must follow IOARCB */
+	struct sisl_ioarcb rcb;	/* IOARCB (cache line aligned) */
+	struct sisl_ioasa sa;	/* IOASA must follow IOARCB */
 	spinlock_t _slock;
 	spinlock_t *slock;
 	struct timer_list timer;
@@ -283,7 +283,7 @@ struct ba_lun_info {
 
 void cxlflash_send_cmd(struct afu *, struct afu_cmd *);
 void cxlflash_wait_resp(struct afu *, struct afu_cmd *);
-int check_status(struct sisl_ioasa_s *);
+int check_status(struct sisl_ioasa *);
 int afu_reset(struct cxlflash *);
 struct afu_cmd *cmd_checkout(struct afu *);
 void cmd_checkin(struct afu_cmd *);
