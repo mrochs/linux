@@ -2075,7 +2075,7 @@ static int __init init_cxlflash(void)
 	return pci_register_driver(&cxlflash_driver);
 }
 
-static void exit_cxlflash(void)
+static void __exit exit_cxlflash(void)
 {
 	pci_unregister_driver(&cxlflash_driver);
 }
