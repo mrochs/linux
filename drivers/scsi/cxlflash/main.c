@@ -1076,10 +1076,9 @@ static int afu_set_wwpn(struct afu *afu,
 }
 
 /* this function can block up to a few seconds */
-static void afu_link_reset(struct afu *afu,
-			   int port, volatile __u64 * fc_regs)
+static void afu_link_reset(struct afu *afu, int port, volatile u64 *fc_regs)
 {
-	__u64 port_sel;
+	u64 port_sel;
 
 	/* first switch the AFU to the other links, if any */
 	port_sel = readq_be(&afu->afu_map->global.regs.afu_port_sel);
@@ -1129,7 +1128,7 @@ struct asyc_intr_info ainfo[] = {
 	{0x0, "", 0, 0}		/* terminator */
 };
 
-static struct asyc_intr_info *find_ainfo(__u64 status)
+static struct asyc_intr_info *find_ainfo(u64 status)
 {
 	struct asyc_intr_info *info;
 
@@ -1260,10 +1259,10 @@ static irqreturn_t cxlflash_async_err_irq(int irq, void *data)
 {
 	struct afu *afu = (struct afu *)data;
 	struct cxlflash *cxlflash;
-	__u64 reg_unmasked;
+	u64 reg_unmasked;
 	struct asyc_intr_info *info;
 	volatile struct sisl_global_map *global = &afu->afu_map->global;
-	__u64 reg;
+	u64 reg;
 	int i;
 
 	cxlflash = afu->back;
