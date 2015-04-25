@@ -1152,9 +1152,9 @@ static void afu_err_intr_init(struct afu *afu)
 	/* Clear/Set internal lun bits */
 	reg = readq_be(&afu->afu_map->global.fc_regs[0][FC_CONFIG2 / 8]);
 	cxlflash_info("ilun p0 = %016llX", reg);
-	reg &= ~(0x3ULL << 32);
+	reg &= SISL_FC_INTERNAL_MASK;
 	if (internal_lun)
-		reg |= ((u64) (internal_lun - 1) << 32);
+		reg |= ((u64) (internal_lun - 1) << SISL_FC_INTERNAL_SHIFT);
 	cxlflash_info("ilun p0 = %016llX", reg);
 	writeq_be(reg, &afu->afu_map->global.fc_regs[0][FC_CONFIG2 / 8]);
 

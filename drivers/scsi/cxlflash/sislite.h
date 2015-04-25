@@ -278,6 +278,10 @@ struct sisl_global_regs {
 #define SISL_ASTATUS_FC1_LINK_DN  0x0002ull	/* b62 */
 #define SISL_ASTATUS_FC1_LINK_UP  0x0001ull	/* b63 */
 
+#define SISL_FC_INTERNAL_UNMASK     0x0000000300000000ull	/* 1 means unmasked */
+#define SISL_FC_INTERNAL_MASK     ~(SISL_FC_INTERNAL_UNMASK)
+#define SISL_FC_INTERNAL_SHIFT     32
+
 #define SISL_ASTATUS_UNMASK       0xFFFFull	/* 1 means unmasked */
 #define SISL_ASTATUS_MASK         ~(SISL_ASTATUS_UNMASK)	/* 1 means masked */
 
