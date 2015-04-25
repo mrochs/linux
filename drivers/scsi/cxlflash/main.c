@@ -656,9 +656,8 @@ static void cxlflash_free_mem(struct cxlflash *cxlflash)
 		for (i = 0; i < CXLFLASH_NUM_CMDS; i++) {
 			del_timer_sync(&cxlflash->afu->cmd[i].timer);
 			buf = cxlflash->afu->cmd[i].buf;
-			if (buf)
-				free_pages((unsigned long)buf,
-					   get_order(CMD_BUFSIZE));
+			if (!((u64)buf & (PAGE_SIZE - 1)))
+				free_page((unsigned long)buf);
 		}
 
 		free_pages((unsigned long)cxlflash->afu,
@@ -820,16 +819,17 @@ static int cxlflash_gb_alloc(struct cxlflash *cxlflash)
 	cxlflash->afu->afu_map = NULL;
 
 	/* Allocate one extra, just in case the SYNC command needs a buffer */
-	for (i = 0; i < CXLFLASH_NUM_CMDS; i++) {
-		buf = (void *)__get_free_pages(GFP_KERNEL | __GFP_ZERO,
-					       get_order(CMD_BUFSIZE));
-		if (unlikely(!buf)) {
-			cxlflash_err("cannot allocate command buffers %d",
-				     CMD_BUFSIZE);
-			rc = -ENOMEM;
-			cxlflash_free_mem(cxlflash);
-			goto out;
+	for (i = 0; i < CXLFLASH_NUM_CMDS; buf+=CMD_BUFSIZE, i++) {
+		if (!((u64)buf & (PAGE_SIZE - 1))) {
+			buf = (void *)__get_free_page(GFP_KERNEL | __GFP_ZERO);
+			if (unlikely(!buf)) {
+				cxlflash_err("Allocate command buffers fail!");
+				rc = -ENOMEM;
+				cxlflash_free_mem(cxlflash);
+				goto out;
+			}
 		}
+
 		cxlflash->afu->cmd[i].buf = buf;
 		atomic_set(&cxlflash->afu->cmd[i].free, 1);
 		cxlflash->afu->cmd[i].slot = i;
