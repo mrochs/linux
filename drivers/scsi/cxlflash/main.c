@@ -1162,7 +1162,7 @@ static void afu_err_intr_init(struct afu *afu)
 
 	/* now clear FC errors */
 	for (i = 0; i < NUM_FC_PORTS; i++) {
-		writeq_be(((u32) - 1),
+		writeq_be(0xFFFFFFFFU,
 			  &afu->afu_map->global.fc_regs[i][FC_ERROR / 8]);
 		writeq_be(0, &afu->afu_map->global.fc_regs[i][FC_ERRCAP / 8]);
 	}
