@@ -102,6 +102,7 @@ void cxlflash_cmd_checkin(struct afu_cmd *cmd)
 	else {
 		cmd->special = 0;
 		cmd->internal = false;
+		cmd->rcb.timeout = 0;
 	}
 	cxlflash_dbg("releasing cmd index=%d", cmd->slot);
 
@@ -1871,6 +1872,7 @@ int cxlflash_afu_sync(struct afu *afu, ctx_hndl_t ctx_hndl_u,
 	cmd->rcb.lun_id = 0x0;	/* NA */
 	cmd->rcb.data_len = 0x0;
 	cmd->rcb.data_ea = 0x0;
+	cmd->internal = true;
 	cmd->rcb.timeout = MC_AFU_SYNC_TIMEOUT;
 
 	cmd->rcb.cdb[0] = 0xC0;	/* AFU Sync */
