@@ -589,7 +589,6 @@ static void cxlflash_wait_for_pci_err_recovery(struct cxlflash *cxlflash)
 		wait_event_timeout(cxlflash->eeh_wait_q,
 				   !pci_channel_offline(pdev),
 				   CXLFLASH_PCI_ERROR_RECOVERY_TIMEOUT);
-		pci_restore_state(pdev);
 	}
 }
 
