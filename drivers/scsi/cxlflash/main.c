@@ -67,11 +67,10 @@ module_param_named(checkpid, checkpid, uint, 0);
 MODULE_PARM_DESC(checkpid, " 1 = Enforce PID/context ownership policy");
 
 /* Check out a command */
-struct afu_cmd *cmd_checkout(struct afu *afu)
+struct afu_cmd *cxlflash_cmd_checkout(struct afu *afu)
 {
 	int k, dec = CXLFLASH_NUM_CMDS;
 	struct afu_cmd *cmd;
-	unsigned long lock_flags = 0;
 
 	while (dec--) {
 		k = (afu->cmd_couts++ & (CXLFLASH_NUM_CMDS - 1));
@@ -82,33 +81,28 @@ struct afu_cmd *cmd_checkout(struct afu *afu)
 
 		cmd = &afu->cmd[k];
 
-		spin_lock_irqsave(cmd->slock, lock_flags);
-
-		if (cmd->flag == CMD_FREE) {
-			cmd->flag = CMD_IN_USE;
-			spin_unlock_irqrestore(cmd->slock, lock_flags);
+		if (!atomic_dec_if_positive(&cmd->free)) {
 			cxlflash_dbg("returning found index=%d", cmd->slot);
 			memset(cmd->buf, 0, CMD_BUFSIZE);
 			memset(cmd->rcb.cdb, 0, sizeof(cmd->rcb.cdb));
 			return cmd;
 		}
-
-		spin_unlock_irqrestore(cmd->slock, lock_flags);
 	}
 
 	return NULL;
 }
 
 /* Check in the command */
-void cmd_checkin(struct afu_cmd *cmd)
+void cxlflash_cmd_checkin(struct afu_cmd *cmd)
 {
-	unsigned long lock_flags = 0;
-
-	spin_lock_irqsave(cmd->slock, lock_flags);
-	cmd->flag = CMD_FREE;
-	cmd->special = 0;
-	cmd->internal = false;
-	spin_unlock_irqrestore(cmd->slock, lock_flags);
+	if (atomic_inc_return(&cmd->free) != 1) {
+		cxlflash_info("freeing command that is not in use");
+		return;
+	}
+	else {
+		cmd->special = 0;
+		cmd->internal = false;
+	}
 	cxlflash_dbg("releasing cmd index=%d", cmd->slot);
 
 }
@@ -153,7 +147,7 @@ void cmd_complete(struct afu_cmd *cmd)
 	}
 
 	/* Done with command */
-	cmd_checkin(cmd);
+	cxlflash_cmd_checkin(cmd);
 }
 
 /**
@@ -178,7 +172,7 @@ int cxlflash_send_tmf(struct afu *afu, struct scsi_cmnd *scp, u64 tmfcmd)
 	while (cxlflash->tmf_active)
 		wait_event(cxlflash->tmf_wait_q, !cxlflash->tmf_active);
 
-	cmd = cmd_checkout(afu);
+	cmd = cxlflash_cmd_checkout(afu);
 	if (unlikely(!cmd)) {
 		cxlflash_err("could not get a free command");
 		rc = SCSI_MLQUEUE_HOST_BUSY;
@@ -259,7 +253,7 @@ static int cxlflash_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *scp)
 	while (cxlflash->tmf_active)
 		wait_event(cxlflash->tmf_wait_q, !cxlflash->tmf_active);
 
-	cmd = cmd_checkout(afu);
+	cmd = cxlflash_cmd_checkout(afu);
 	if (unlikely(!cmd)) {
 		cxlflash_err("could not get a free command");
 		rc = SCSI_MLQUEUE_HOST_BUSY;
@@ -358,7 +352,7 @@ static int cxlflash_eh_host_reset_handler(struct scsi_cmnd *scp)
 		     get_unaligned_be32(&((u32 *)scp->cmnd)[3]));
 
 	scp->result = (DID_OK << 16);;
-	rcr = afu_reset(cxlflash);
+	rcr = cxlflash_afu_reset(cxlflash);
 	if (rcr == 0)
 		rc = SUCCESS;
 	else
@@ -589,7 +583,6 @@ static void cxlflash_wait_for_pci_err_recovery(struct cxlflash *cxlflash)
 		wait_event_timeout(cxlflash->eeh_wait_q,
 				   !pci_channel_offline(pdev),
 				   CXLFLASH_PCI_ERROR_RECOVERY_TIMEOUT);
-		pci_restore_state(pdev);
 	}
 }
 
@@ -837,7 +830,7 @@ static int cxlflash_gb_alloc(struct cxlflash *cxlflash)
 			goto out;
 		}
 		cxlflash->afu->cmd[i].buf = buf;
-		cxlflash->afu->cmd[i].flag = CMD_FREE;
+		atomic_set(&cxlflash->afu->cmd[i].free, 1);
 		cxlflash->afu->cmd[i].slot = i;
 		cxlflash->afu->cmd[i].special = 0;
 	}
@@ -904,16 +897,6 @@ static int cxlflash_init_pci(struct cxlflash *cxlflash)
 
 	if (rc < 0) {
 		cxlflash_dev_err(&pdev->dev, "Failed to set PCI DMA mask");
-		goto out_disable;
-	}
-
-	rc = pci_write_config_byte(pdev, PCI_CACHE_LINE_SIZE, 0x20);
-
-	if (rc != PCIBIOS_SUCCESSFUL) {
-		cxlflash_dev_err(&pdev->dev, "Write of cache line size failed");
-		cxlflash_wait_for_pci_err_recovery(cxlflash);
-
-		rc = -EIO;
 		goto out_disable;
 	}
 
@@ -1084,7 +1067,7 @@ static void afu_link_reset(struct afu *afu, int port, volatile u64 *fc_regs)
 	port_sel = readq_be(&afu->afu_map->global.regs.afu_port_sel);
 	port_sel &= ~(1 << port);
 	writeq_be(port_sel, &afu->afu_map->global.regs.afu_port_sel);
-	afu_sync(afu, 0, 0, AFU_GSYNC);
+	cxlflash_afu_sync(afu, 0, 0, AFU_GSYNC);
 
 	set_port_offline(fc_regs);
 	if (!wait_port_offline(fc_regs, FC_PORT_STATUS_RETRY_INTERVAL_US,
@@ -1100,7 +1083,7 @@ static void afu_link_reset(struct afu *afu, int port, volatile u64 *fc_regs)
 	/* switch back to include this port */
 	port_sel |= (1 << port);
 	writeq_be(port_sel, &afu->afu_map->global.regs.afu_port_sel);
-	afu_sync(afu, 0, 0, AFU_GSYNC);
+	cxlflash_afu_sync(afu, 0, 0, AFU_GSYNC);
 
 	cxlflash_info("returning port_sel=%lld", port_sel);
 }
@@ -1783,7 +1766,7 @@ err1:
 /* not retrying afu timeouts (B_TIMEOUT) */
 /* returns 1 if the cmd should be retried, 0 otherwise */
 /* sets B_ERROR flag based on IOASA */
-int check_status(struct sisl_ioasa *ioasa)
+int cxlflash_check_status(struct sisl_ioasa *ioasa)
 {
 	if (ioasa->ioasc == 0)
 		return 0;
@@ -1877,8 +1860,8 @@ void cxlflash_wait_resp(struct afu *afu, struct afu_cmd *cmd)
  *
  * AFU takes only 1 sync cmd at a time.
  */
-int afu_sync(struct afu *afu,
-	     ctx_hndl_t ctx_hndl_u, res_hndl_t res_hndl_u, u8 mode)
+int cxlflash_afu_sync(struct afu *afu, ctx_hndl_t ctx_hndl_u,
+		      res_hndl_t res_hndl_u, u8 mode)
 {
 	struct afu_cmd *cmd = &afu->cmd[AFU_SYNC_INDEX];
 	int rc = 0;
@@ -1913,7 +1896,7 @@ int afu_sync(struct afu *afu,
 	return rc;
 }
 
-int afu_reset(struct cxlflash *cxlflash)
+int cxlflash_afu_reset(struct cxlflash *cxlflash)
 {
 	int rc = 0;
 	/* Stop the context before the reset. Since the context is

@@ -729,7 +729,7 @@ static int grow_lxt(struct afu *afu,
 	rht_entry->lxt_cnt = *act_new_size;
 	smp_wmb();
 
-	afu_sync(afu, ctx_hndl_u, res_hndl_u, AFU_LW_SYNC);
+	cxlflash_afu_sync(afu, ctx_hndl_u, res_hndl_u, AFU_LW_SYNC);
 
 	/* free old lxt if reallocated */
 	if (lxt != lxt_old)
@@ -784,7 +784,7 @@ static int shrink_lxt(struct afu *afu,
 	rht_entry->lxt_start = lxt;	/* even if lxt didn't change */
 	smp_wmb();
 
-	afu_sync(afu, ctx_hndl_u, res_hndl_u, AFU_HW_SYNC);
+	cxlflash_afu_sync(afu, ctx_hndl_u, res_hndl_u, AFU_HW_SYNC);
 
 	/* free LBAs allocated to freed chunks */
 	mutex_lock(&blka->mutex);
@@ -1027,7 +1027,7 @@ static int cxlflash_disk_open(struct scsi_device *sdev,
 		virt->rsrc_handle = rsrc_handle;
 	} else if (mode == MODE_PHYSICAL) {
 		cxlflash_rht_format1(rht_entry, lun_info->lun_id, perms);
-		afu_sync(afu, context_id, rsrc_handle, AFU_LW_SYNC);
+		cxlflash_afu_sync(afu, context_id, rsrc_handle, AFU_LW_SYNC);
 
 		last_lba = lun_info->max_lba;
 		pphys->hdr.return_flags = 0;
@@ -1130,8 +1130,8 @@ static int cxlflash_disk_release(struct scsi_device *sdev,
 
 			rht_entry_f1->dw = 0;
 			smp_wmb();
-			afu_sync(afu, release->context_id, res_hndl,
-				 AFU_HW_SYNC);
+			cxlflash_afu_sync(afu, release->context_id, res_hndl,
+					  AFU_HW_SYNC);
 		}
 
 		/* now the RHT entry is all cleared */
@@ -1246,7 +1246,7 @@ static int cxlflash_afu_recover(struct scsi_device *sdev,
 	/* MMIO returning 0xff, need to reset */
 	if (reg == -1) {
 		cxlflash_info("afu=%p reason 0x%llx", afu, recover->reason);
-		afu_reset(cxlflash);
+		cxlflash_afu_reset(cxlflash);
 
 	} else {
 		cxlflash_info
@@ -1335,7 +1335,7 @@ static int clone_lxt(struct afu *afu,
 	rht_entry->lxt_cnt = rht_entry_src->lxt_cnt;
 	smp_wmb();
 
-	afu_sync(afu, ctx_hndl_u, res_hndl_u, AFU_LW_SYNC);
+	cxlflash_afu_sync(afu, ctx_hndl_u, res_hndl_u, AFU_LW_SYNC);
 
 	cxlflash_info("returning");
 	return 0;
@@ -1483,7 +1483,7 @@ int read_cap16(struct afu *afu, struct lun_info *lun_info, u32 port_sel)
 	struct afu_cmd *cmd;
 	int rc = 0;
 
-	cmd = cmd_checkout(afu);
+	cmd = cxlflash_cmd_checkout(afu);
 	if (unlikely(!cmd)) {
 		cxlflash_err("could not get a free command");
 		return -1;
@@ -1512,7 +1512,7 @@ int read_cap16(struct afu *afu, struct lun_info *lun_info, u32 port_sel)
 	do {
 		cxlflash_send_cmd(afu, cmd);
 		cxlflash_wait_resp(afu, cmd);
-	} while (check_status(&cmd->sa));
+	} while (cxlflash_check_status(&cmd->sa));
 
 	if (cmd->sa.host_use_b[0] & B_ERROR) {
 		cxlflash_err("command failed");
@@ -1531,7 +1531,7 @@ int read_cap16(struct afu *afu, struct lun_info *lun_info, u32 port_sel)
 	spin_unlock(lun_info->slock);
 
 out:
-	cmd_checkin(cmd);
+	cxlflash_cmd_checkin(cmd);
 
 	cxlflash_info("maxlba=%lld blklen=%d pcmd %p",
 		      lun_info->max_lba, lun_info->blk_len, cmd);

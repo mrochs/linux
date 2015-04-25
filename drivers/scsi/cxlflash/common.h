@@ -47,9 +47,6 @@
 
 #define AFU_SYNC_INDEX  (CXLFLASH_NUM_CMDS - 1)	/* last cmd rsvd for afu sync */
 
-#define CMD_FREE   0x0
-#define CMD_IN_USE 0x1
-
 #define CMD_BUFSIZE     PAGE_SIZE_4K
 
 /* flags in IOA status area for host use */
@@ -177,7 +174,7 @@ struct afu_cmd {
 	char *buf;		/* per command buffer */
 	struct afu *back;
 	int slot;
-	u8 flag:1;
+	atomic_t free;
 	u8 special:1;
 	u8 internal:1;
 
@@ -283,10 +280,10 @@ struct ba_lun_info {
 
 void cxlflash_send_cmd(struct afu *, struct afu_cmd *);
 void cxlflash_wait_resp(struct afu *, struct afu_cmd *);
-int check_status(struct sisl_ioasa *);
-int afu_reset(struct cxlflash *);
-struct afu_cmd *cmd_checkout(struct afu *);
-void cmd_checkin(struct afu_cmd *);
-int afu_sync(struct afu *, ctx_hndl_t, res_hndl_t, u8);
+int cxlflash_check_status(struct sisl_ioasa *);
+int cxlflash_afu_reset(struct cxlflash *);
+struct afu_cmd *cxlflash_cmd_checkout(struct afu *);
+void cxlflash_cmd_checkin(struct afu_cmd *);
+int cxlflash_afu_sync(struct afu *, ctx_hndl_t, res_hndl_t, u8);
 #endif /* ifndef _CXLFLASH_COMMON_H */
 
