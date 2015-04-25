@@ -67,7 +67,7 @@ module_param_named(checkpid, checkpid, uint, 0);
 MODULE_PARM_DESC(checkpid, " 1 = Enforce PID/context ownership policy");
 
 /* Check out a command */
-struct afu_cmd *cxflash_cmd_checkout(struct afu *afu)
+struct afu_cmd *cxlflash_cmd_checkout(struct afu *afu)
 {
 	int k, dec = CXLFLASH_NUM_CMDS;
 	struct afu_cmd *cmd;
@@ -93,7 +93,7 @@ struct afu_cmd *cxflash_cmd_checkout(struct afu *afu)
 }
 
 /* Check in the command */
-void cxflash_cmd_checkin(struct afu_cmd *cmd)
+void cxlflash_cmd_checkin(struct afu_cmd *cmd)
 {
 	if (atomic_inc_return(&cmd->free) != 1) {
 		cxlflash_info("freeing command that is not in use");
@@ -147,7 +147,7 @@ void cmd_complete(struct afu_cmd *cmd)
 	}
 
 	/* Done with command */
-	cxflash_cmd_checkin(cmd);
+	cxlflash_cmd_checkin(cmd);
 }
 
 /**
@@ -172,7 +172,7 @@ int cxlflash_send_tmf(struct afu *afu, struct scsi_cmnd *scp, u64 tmfcmd)
 	while (cxlflash->tmf_active)
 		wait_event(cxlflash->tmf_wait_q, !cxlflash->tmf_active);
 
-	cmd = cxflash_cmd_checkout(afu);
+	cmd = cxlflash_cmd_checkout(afu);
 	if (unlikely(!cmd)) {
 		cxlflash_err("could not get a free command");
 		rc = SCSI_MLQUEUE_HOST_BUSY;
@@ -253,7 +253,7 @@ static int cxlflash_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *scp)
 	while (cxlflash->tmf_active)
 		wait_event(cxlflash->tmf_wait_q, !cxlflash->tmf_active);
 
-	cmd = cxflash_cmd_checkout(afu);
+	cmd = cxlflash_cmd_checkout(afu);
 	if (unlikely(!cmd)) {
 		cxlflash_err("could not get a free command");
 		rc = SCSI_MLQUEUE_HOST_BUSY;
