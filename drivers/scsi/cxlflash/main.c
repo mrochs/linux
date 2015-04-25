@@ -906,16 +906,6 @@ static int cxlflash_init_pci(struct cxlflash *cxlflash)
 		goto out_disable;
 	}
 
-	rc = pci_write_config_byte(pdev, PCI_CACHE_LINE_SIZE, 0x20);
-
-	if (rc != PCIBIOS_SUCCESSFUL) {
-		cxlflash_dev_err(&pdev->dev, "Write of cache line size failed");
-		cxlflash_wait_for_pci_err_recovery(cxlflash);
-
-		rc = -EIO;
-		goto out_disable;
-	}
-
 	pci_set_master(pdev);
 
 	if (pci_channel_offline(pdev)) {
