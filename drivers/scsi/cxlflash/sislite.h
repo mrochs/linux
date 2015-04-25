@@ -23,10 +23,10 @@ typedef u32 res_hndl_t;
 #define PAGE_SIZE_4K	4096
 #define PAGE_SIZE_64K	65536
 
-/************************************************************************/
-/* IOARCB: 64 bytes, min 16 byte alignment required                     */
-/************************************************************************/
-
+/*
+ * IOARCB: 64 bytes, min 16 byte alignment required, host native endianness
+ * except for SCSI CDB which remains big endian per SCSI standards.
+ */
 struct sisl_ioarcb {
 	u16 ctx_id;		/* ctx_hndl_t */
 	u16 req_flags;
@@ -157,7 +157,10 @@ struct sisl_rc {
 
 #define SISL_SENSE_DATA_LEN     20	/* Sense data length         */
 
-/* IOASA: 64 bytes & must follow IOARCB, min 16 byte alignment required */
+/*
+ * IOASA: 64 bytes & must follow IOARCB, min 16 byte alignment required,
+ * host native endianness
+ */
 struct sisl_ioasa {
 	union {
 		struct sisl_rc rc;
