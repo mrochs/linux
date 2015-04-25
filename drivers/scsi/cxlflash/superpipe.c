@@ -971,7 +971,7 @@ static int cxlflash_disk_open(struct scsi_device *sdev,
 		goto out;
 	}
 
-	spin_lock(lun_info->slock);
+	spin_lock(&lun_info->slock);
 	if (lun_info->mode == MODE_NONE) {
 		lun_info->mode = mode;
 	} else if (lun_info->mode != mode) {
@@ -979,10 +979,10 @@ static int cxlflash_disk_open(struct scsi_device *sdev,
 		    ("disk already opened in mode %d, mode requested %d",
 		     lun_info->mode, mode);
 		rc = -EINVAL;
-		spin_unlock(lun_info->slock);
+		spin_unlock(&lun_info->slock);
 		goto out;
 	}
-	spin_unlock(lun_info->slock);
+	spin_unlock(&lun_info->slock);
 
 	cxlflash_info("context=0x%llx ls=0x%llx", context_id, lun_size);
 
@@ -1213,9 +1213,9 @@ static int cxlflash_disk_detach(struct scsi_device *sdev,
 		/* close the context */
 		cxlflash->num_user_contexts--;
 	}
-	spin_lock(lun_info->slock);
+	spin_lock(&lun_info->slock);
 	lun_info->mode = MODE_NONE;
-	spin_unlock(lun_info->slock);
+	spin_unlock(&lun_info->slock);
 
 	cxlflash->per_context[detach->context_id].lfd = -1;
 	cxlflash->per_context[detach->context_id].pid = 0;
@@ -1525,10 +1525,10 @@ int read_cap16(struct afu *afu, struct lun_info *lun_info, u32 port_sel)
 	 * note that we don't need to worry about unaligned access
 	 * as the buffer is allocated on an aligned boundary.
 	 */
-	spin_lock(lun_info->slock);
+	spin_lock(&lun_info->slock);
 	lun_info->max_lba = swab64(*((u64 *)&cmd->buf[0]));
 	lun_info->blk_len = swab32(*((u32 *)&cmd->buf[8]));
-	spin_unlock(lun_info->slock);
+	spin_unlock(&lun_info->slock);
 
 out:
 	cxlflash_cmd_checkin(cmd);

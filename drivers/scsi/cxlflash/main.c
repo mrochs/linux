@@ -114,9 +114,9 @@ void cmd_complete(struct afu_cmd *cmd)
 	struct afu *afu = cmd->back;
 	struct cxlflash *cxlflash = afu->back;
 
-	spin_lock_irqsave(cmd->slock, lock_flags);
+	spin_lock_irqsave(&cmd->slock, lock_flags);
 	cmd->sa.host_use_b[0] |= B_DONE;
-	spin_unlock_irqrestore(cmd->slock, lock_flags);
+	spin_unlock_irqrestore(&cmd->slock, lock_flags);
 
 	/* already stopped if timer fired */
 	del_timer(&cmd->timer);
@@ -374,8 +374,7 @@ static struct lun_info *create_lun_info(struct scsi_device *sdev)
 
 	lun_info->sdev = sdev;
 
-	spin_lock_init(&lun_info->_slock);
-	lun_info->slock = &lun_info->_slock;
+	spin_lock_init(&lun_info->slock);
 
 create_lun_info_exit:
 	cxlflash_info("returning %p", lun_info);
@@ -1594,8 +1593,7 @@ int cxlflash_start_afu(struct cxlflash *cxlflash)
 		timer->function = (void (*)(unsigned long))
 		    cxlflash_context_reset;
 
-		spin_lock_init(&afu->cmd[i]._slock);
-		afu->cmd[i].slock = &afu->cmd[i]._slock;
+		spin_lock_init(&afu->cmd[i].slock);
 		afu->cmd[i].back = afu;
 	}
 	init_pcr(cxlflash);
@@ -1834,13 +1832,13 @@ void cxlflash_wait_resp(struct afu *afu, struct afu_cmd *cmd)
 {
 	unsigned long lock_flags = 0;
 
-	spin_lock_irqsave(cmd->slock, lock_flags);
+	spin_lock_irqsave(&cmd->slock, lock_flags);
 	while (!(cmd->sa.host_use_b[0] & B_DONE)) {
-		spin_unlock_irqrestore(cmd->slock, lock_flags);
+		spin_unlock_irqrestore(&cmd->slock, lock_flags);
 		udelay(10);
-		spin_lock_irqsave(cmd->slock, lock_flags);
+		spin_lock_irqsave(&cmd->slock, lock_flags);
 	}
-	spin_unlock_irqrestore(cmd->slock, lock_flags);
+	spin_unlock_irqrestore(&cmd->slock, lock_flags);
 
 	del_timer(&cmd->timer);	/* already stopped if timer fired */
 
