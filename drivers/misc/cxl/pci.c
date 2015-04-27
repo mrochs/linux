@@ -869,13 +869,40 @@ static void cxl_unmap_adapter_regs(struct cxl *adapter)
 		iounmap(adapter->p2_mmio);
 }
 
+static void cxl_set_default_perst_mode(struct cxl *adapter, struct pci_dev *dev, int vsec)
+{
+	u8 image_state;
+
+	CXL_READ_VSEC_IMAGE_STATE(dev, vsec, &image_state);
+
+	adapter->user_image_loaded = !!(image_state & CXL_VSEC_USER_IMAGE_LOADED);
+	adapter->perst_loads_image = true;
+	adapter->perst_select_user = !!(image_state & CXL_VSEC_USER_IMAGE_LOADED);
+
+	switch (cxl_def_perst_image) {
+	case -1:
+		break;
+	case 0:
+		adapter->perst_loads_image = false;
+		break;
+	case 1:
+		adapter->perst_select_user = true;
+		break;
+	case 2:
+		adapter->perst_select_user = false;
+		break;
+	default:
+		dev_warn(&adapter->dev, "Unknown load_image_on_perst %i requested by module parameter\n", cxl_def_perst_image);
+		break;
+	}
+}
+
 static int cxl_read_vsec(struct cxl *adapter, struct pci_dev *dev)
 {
 	int vsec;
 	u32 afu_desc_off, afu_desc_size;
 	u32 ps_off, ps_size;
 	u16 vseclen;
-	u8 image_state;
 
 	if (!(vsec = find_cxl_vsec(dev))) {
 		dev_err(&dev->dev, "ABORTING: CXL VSEC not found!\n");
@@ -893,10 +920,8 @@ static int cxl_read_vsec(struct cxl *adapter, struct pci_dev *dev)
 	CXL_READ_VSEC_CAIA_MAJOR(dev, vsec, &adapter->caia_major);
 	CXL_READ_VSEC_CAIA_MINOR(dev, vsec, &adapter->caia_minor);
 	CXL_READ_VSEC_BASE_IMAGE(dev, vsec, &adapter->base_image);
-	CXL_READ_VSEC_IMAGE_STATE(dev, vsec, &image_state);
-	adapter->user_image_loaded = !!(image_state & CXL_VSEC_USER_IMAGE_LOADED);
-	adapter->perst_loads_image = true;
-	adapter->perst_select_user = !!(image_state & CXL_VSEC_USER_IMAGE_LOADED);
+
+	cxl_set_default_perst_mode(adapter, dev, vsec);
 
 	CXL_READ_VSEC_NAFUS(dev, vsec, &adapter->slices);
 	CXL_READ_VSEC_AFU_DESC_OFF(dev, vsec, &afu_desc_off);
