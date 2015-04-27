@@ -133,44 +133,26 @@ enum cmd_err process_sense(struct afu_cmd *cmd,
 
 	switch (sense_data->sense_key) {
 	case NO_SENSE:
-		/* 
-		 * Ignore error and treat as good completion 
-		 */
+		/* Ignore error and treat as good completion */
 		rc = CMD_IGNORE_ERR;
 		break;
 	case RECOVERED_ERROR:
-		/*
-		 * Ignore error and treat as good completion
-		 * TODO: Should we try to log something here 
-		 * for something like PFA??
-		 */
+		/* Ignore error and treat as good completion */
 		rc = CMD_IGNORE_ERR;
 		break;
 	case NOT_READY:
-		/*
-		 * Retry command
-		 */
+		/* Retry command */
 		cmd->status = EIO;
 		rc = CMD_RETRY_ERR;
 		break;
 	case MEDIUM_ERROR:
 	case HARDWARE_ERROR:
-		/*
-		 * Fatal error do not retry.
-		 * TODO:?? Maybe log.
-		 */
+		/* Fatal error do not retry. */
 		cmd->status = EIO;
 		rc = CMD_FATAL_ERR;
-
-		// TODO: ?? Notify perm err
 		break;
 	case ILLEGAL_REQUEST:
-		/*
-		 * Fatal error do not retry.
-		 * TODO: ?? Since this is most likely 
-		 * a software bug we need some
-		 * way to log this.
-		 */
+		/* Fatal error do not retry. */
 		cmd->status = EIO;
 		rc = CMD_FATAL_ERR;
 		break;
@@ -194,21 +176,16 @@ enum cmd_err process_sense(struct afu_cmd *cmd,
 			break;
 		case 0x3f:
 			if (sense_data->add_sense_qualifier == 0x0e) {
-				/*
-				 * Retry command for now.
-				 */
+				/* Retry command for now. */
 				cmd->status = EIO;
 				rc = CMD_RETRY_ERR;
 				break;
 			}
 			/* Fall thru */
 		default:
-			/*
-			 * Fatal error
-			 */
+			/* Fatal error */
 			cmd->status = EIO;
 			rc = CMD_FATAL_ERR;
-			// TODO: ?? Notify perm err
 		}
 		break;
 	case DATA_PROTECT:
@@ -220,13 +197,10 @@ enum cmd_err process_sense(struct afu_cmd *cmd,
 	case VOLUME_OVERFLOW:
 	case MISCOMPARE:
 	default:
-		/*
-		 * Fatal error do not retry.
-		 */
-		// TODO: ?? Notify perm err
+		/* Fatal error do not retry. */
 		rc = CMD_FATAL_ERR;
 		cmd->status = EIO;
-		cxlflash_dbg("Fatal generic error sense data: sense_key = 0x%x,"
+		cxlflash_err("Fatal generic error sense data: sense_key = 0x%x,"
 			     " asc = 0x%x, ascq = 0x%x",
 			     sense_data->sense_key,
 			     sense_data->add_sense_key,
@@ -373,7 +347,7 @@ enum cmd_err process_cmd_err(struct afu_cmd *cmd, struct scsi_cmnd *scp)
 			}
 			break;
 		case SISL_FC_RC_RESIDERR:
-			// Resid mismatch between adapter and device
+			/* Resid mismatch between adapter and device */
 		case SISL_FC_RC_TGTABORT:
 		case SISL_FC_RC_ABORTOK:
 		case SISL_FC_RC_ABORTFAIL:
