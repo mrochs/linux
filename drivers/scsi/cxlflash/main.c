@@ -102,17 +102,16 @@ struct afu_cmd *cxlflash_cmd_checkout(struct afu *afu)
 /* Check in the command */
 void cxlflash_cmd_checkin(struct afu_cmd *cmd)
 {
-	if (atomic_inc_return(&cmd->free) != 1) {
-		cxlflash_info("freeing command that is not in use");
+	if (unlikely(atomic_inc_return(&cmd->free) != 1)) {
+		cxlflash_err("Freeing cmd (%d) that is not in use!", cmd->slot);
 		return;
 	}
-	else {
-		cmd->special = 0;
-		cmd->internal = false;
-		cmd->rcb.timeout = 0;
-	}
-	cxlflash_dbg("releasing cmd index=%d", cmd->slot);
 
+	cmd->special = 0;
+	cmd->internal = false;
+	cmd->rcb.timeout = 0;
+
+	cxlflash_dbg("releasing cmd index=%d", cmd->slot);
 }
 
 enum cmd_err process_sense(struct afu_cmd *cmd,
