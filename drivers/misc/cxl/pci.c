@@ -610,7 +610,7 @@ static int cxl_read_afu_descriptor(struct cxl_afu *afu)
 	}
 
 	/* We have a valid configuration record, lets make a virtual PHB */
-	cxl_pci_phb_probe(afu);
+	cxl_pci_vphb_add(afu);
 
 	return 0;
 }
