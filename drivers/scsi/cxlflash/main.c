@@ -120,7 +120,7 @@ enum cmd_err process_sense(struct afu_cmd *cmd,
 {
 	enum cmd_err rc = CMD_IGNORE_ERR;
 
-	if (sense_data == NULL) {
+	if (unlikely(!sense_data)) {
 		cmd->status = EIO;
 		return CMD_FATAL_ERR;
 	}
@@ -245,7 +245,7 @@ enum cmd_err process_cmd_err(struct afu_cmd *cmd, struct scsi_cmnd *scp)
 	struct sisl_ioarcb *ioarcb;
 	struct sisl_ioasa *ioasa;
 
-	if (cmd == NULL)
+	if (unlikely(!cmd))
 		return CMD_FATAL_ERR;
 
 	ioarcb = &(cmd->rcb);
