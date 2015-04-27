@@ -196,6 +196,18 @@ int cxl_pci_vphb_add(struct cxl_afu *afu)
 	return 0;
 }
 
+
+void cxl_pci_vphb_remove(struct cxl_afu *afu)
+{
+	struct pci_controller *hose = afu->hose;
+
+	/* If there is no configuration record we won't have one of these */
+	if (!hose)
+		return;
+
+	pci_remove_root_bus(hose->bus);
+}
+
 struct cxl_afu *cxl_pci_to_afu(struct pci_dev *dev, unsigned int *cfg_record)
 {
 	struct pci_controller *hose;
