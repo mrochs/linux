@@ -120,5 +120,6 @@ static inline u64 lun_to_lunid(u64 lun)
 /*
  * Externs and Prototypes
  */
+int cxlflash_ioctl(struct scsi_device *, int, void __user *);
 
 #endif /* _CXLFLASH_MAIN_H */

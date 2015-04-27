@@ -601,6 +601,7 @@ static struct scsi_host_template driver_template = {
 	.module = THIS_MODULE,
 	.name = CXLFLASH_ADAPTER_NAME,
 	.info = cxlflash_driver_info,
+	.ioctl = cxlflash_ioctl,
 	.proc_name = CXLFLASH_NAME,
 	.queuecommand = cxlflash_queuecommand,
 	.eh_device_reset_handler = cxlflash_eh_device_reset_handler,
