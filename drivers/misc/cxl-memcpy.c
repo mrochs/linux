@@ -112,6 +112,7 @@ static int cxl_memcpy_probe(struct pci_dev *dev, const struct pci_device_id *id)
 
 static void cxl_memcpy_remove(struct pci_dev *dev)
 {
+	atomic_dec(&minor_number);
 	printk("%s\n", __func__);
 }
 
