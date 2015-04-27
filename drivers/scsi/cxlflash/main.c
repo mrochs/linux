@@ -229,6 +229,220 @@ enum cmd_err process_sense(struct afu_cmd *cmd,
 	}
 	return rc;
 }
+
+
+enum cmd_err process_cmd_err(struct afu_cmd *cmd, struct scsi_cmnd *scp)
+{
+	enum cmd_err rc = CMD_IGNORE_ERR;
+	enum cmd_err rc2;
+	struct sisl_ioarcb *ioarcb;
+	struct sisl_ioasa *ioasa;
+
+	if (cmd == NULL)
+		return CMD_FATAL_ERR;
+
+	ioarcb = &(cmd->rcb);
+	ioasa = &(cmd->sa);
+
+	cxlflash_dbg("cmd error ctx_id = 0x%x, ioasc = 0x%x, resid = 0x%x, "
+		     "flags = 0x%x, port = 0x%x",
+		     cmd->rcb.ctx_id, ioasa->ioasc, ioasa->resid,
+		     ioasa->rc.flags, ioasa->port);
+
+	if (ioasa->rc.flags & SISL_RC_FLAGS_UNDERRUN) {
+		cxlflash_dbg("cmd underrun ctx_id = 0x%x, ioasc = 0x%x, "
+			     "resid = 0x%x, flags = 0x%x, port = 0x%x",
+			     cmd->rcb.ctx_id, ioasa->ioasc,
+			     ioasa->resid, ioasa->rc.flags, ioasa->port);
+		if (ioarcb->data_len >= ioasa->resid)
+			scsi_set_resid(scp, ioasa->resid);
+	}
+
+	if (ioasa->rc.flags & SISL_RC_FLAGS_OVERRUN)
+		cxlflash_dbg("cmd overrun ctx_id = 0x%x, ioasc = 0x%x,"
+			    " resid = 0x%x, flags = 0x%x, port = 0x%x",
+			    cmd->rcb.ctx_id, ioasa->ioasc,
+			    ioasa->resid, ioasa->rc.flags,
+			    ioasa->port);
+	/*
+	 * TODO: ?? We need to look at the order these errors are prioritized
+	 * to see if this code order needs to change.
+	 */
+	cxlflash_dbg("cmd failed ctx_id = 0x%x, ioasc = 0x%x, resid = 0x%x, "
+		     "flags = 0x%x, scsi_status = 0x%x",
+		     cmd->rcb.ctx_id, ioasa->ioasc,
+		     ioasa->resid, ioasa->rc.flags, ioasa->rc.scsi_rc);
+
+	cxlflash_info("cmd failed port = 0x%x, afu_extra = 0x%x,"
+		     " scsi_entra = 0x%x, fc_extra = 0x%x",
+		     ioasa->port, ioasa->afu_extra, ioasa->scsi_extra,
+		     ioasa->fc_extra);
+
+	if (ioasa->rc.scsi_rc) {
+		/* We have a SCSI status */
+		if (ioasa->rc.flags & SISL_RC_FLAGS_SENSE_VALID) {
+			cxlflash_dbg("sense data: error code = 0x%x, "
+				     "sense_key = 0x%x, asc = 0x%x, "
+				     "ascq = 0x%x",
+				     ioasa->sense_data[0],
+				     ioasa->sense_data[2],
+				     ioasa->sense_data[12],
+				     ioasa->sense_data[13]);
+			rc2 = process_sense(cmd,
+					    (struct request_sense_data *)
+					    ioasa->sense_data);
+			if (rc == CMD_IGNORE_ERR)
+			/* If we have not indicated an error, then use the 
+			 * return code from the sense data processing.
+			 */
+				rc = rc2;
+		} else if (ioasa->rc.scsi_rc) {
+			/* We have a SCSI status, but no sense data */
+			cxlflash_dbg("cmd failed ctx_id = 0x%x, ioasc = 0x%x, "
+				     "resid = 0x%x, flags = 0x%x,"
+				     "scsi_status = 0x%x",
+				     cmd->rcb.ctx_id, ioasa->ioasc,
+				     ioasa->resid, ioasa->rc.flags,
+				     ioasa->rc.scsi_rc);
+
+			switch (ioasa->rc.scsi_rc) {
+			case CHECK_CONDITION:
+				/*
+				 * This mostly likely indicates a misbehaving 
+				 * device, that is reporting a check 
+				 * condition, but is returning no sense data
+				 */
+				rc = CMD_RETRY_ERR;
+				cmd->status = EIO;
+				break;
+			case BUSY:
+			case QUEUE_FULL:
+				/* Retry with delay */
+				cmd->status = EBUSY;
+				rc = CMD_DLY_RETRY_ERR;
+				break;
+			case RESERVATION_CONFLICT:
+				rc = CMD_FATAL_ERR;
+				break;
+			default:
+				rc = CMD_FATAL_ERR;
+				cmd->status = EIO;
+			}
+		}
+	}
+	/*
+	 * We encountered an error. For now return
+	 * EIO for all errors.
+	 */
+	if (ioasa->rc.fc_rc) {
+		/* We have an FC status */
+		cxlflash_dbg("cmd failed ctx_id = 0x%x, ioasc = 0x%x, "
+			     "resid = 0x%x, flags = 0x%x, fc_extra = 0x%x",
+			     cmd->rcb.ctx_id, ioasa->ioasc,
+			     ioasa->resid, ioasa->rc.flags, ioasa->fc_extra);
+		switch (ioasa->rc.fc_rc) {
+		case SISL_FC_RC_LINKDOWN:
+			rc = CMD_RETRY_ERR;
+			cmd->status = ENETDOWN;
+			break;
+		case SISL_FC_RC_NOLOGI:
+			rc = CMD_RETRY_ERR;
+			cmd->status = ENETDOWN;
+			break;
+		case SISL_FC_RC_ABORTPEND:
+			rc = CMD_RETRY_ERR;
+			cmd->status = ETIMEDOUT;
+			break;
+		case SISL_FC_RC_RESID:
+			/* This indicates an FCP resid underrun */
+			if (!(ioasa->rc.flags & SISL_RC_FLAGS_OVERRUN)) {
+				/* If the SISL_RC_FLAGS_OVERRUN flag was set,
+				 * then we will handle this error else where.
+				 * If not then we must handle it here.
+				 * This is probably an AFU bug. We will 
+				 * attempt a retry to see if that resolves it.
+				 */
+				rc = CMD_RETRY_ERR;
+				cmd->status = EIO;
+			}
+			break;
+		case SISL_FC_RC_RESIDERR:
+			// Resid mismatch between adapter and device
+		case SISL_FC_RC_TGTABORT:
+		case SISL_FC_RC_ABORTOK:
+		case SISL_FC_RC_ABORTFAIL:
+			rc = CMD_RETRY_ERR;
+			cmd->status = EIO;
+			break;
+		case SISL_FC_RC_WRABORTPEND:
+		case SISL_FC_RC_NOEXP:
+		case SISL_FC_RC_INUSE:
+			rc = CMD_FATAL_ERR;
+			cmd->status = EIO;
+			break;
+		}
+	}
+
+	if (ioasa->rc.afu_rc) {
+		/* We have a AFU error */
+		cxlflash_dbg("afu error ctx_id = 0x%x, ioasc = 0x%x, "
+			     "resid = 0x%x, flags = 0x%x, afu error = 0x%x",
+			     cmd->rcb.ctx_id, ioasa->ioasc,
+			     ioasa->resid, ioasa->rc.flags, ioasa->rc.afu_rc);
+		cxlflash_dbg("cmd = %p cmd->buf = %p",
+			     cmd, cmd->buf);
+
+		switch (ioasa->rc.afu_rc) {
+		case SISL_AFU_RC_RHT_INVALID:
+		case SISL_AFU_RC_RHT_OUT_OF_BOUNDS:
+		case SISL_AFU_RC_LXT_OUT_OF_BOUNDS:
+			/* This most likely indicates a code bug
+			 * in this code.
+			 */
+			rc = CMD_FATAL_ERR;
+			cmd->status = EIO;
+			break;
+		case SISL_AFU_RC_RHT_UNALIGNED:
+		case SISL_AFU_RC_LXT_UNALIGNED:
+			/* These should never happen */
+			rc = CMD_FATAL_ERR;
+			cmd->status = EIO;
+			break;
+		case SISL_AFU_RC_NO_CHANNELS:
+			/* Retry with delay */
+			cmd->status = EIO;
+			rc = CMD_DLY_RETRY_ERR;
+			break;
+		case SISL_AFU_RC_RHT_DMA_ERR:
+		case SISL_AFU_RC_LXT_DMA_ERR:
+		case SISL_AFU_RC_DATA_DMA_ERR:
+			switch (ioasa->afu_extra) {
+			case SISL_AFU_DMA_ERR_PAGE_IN:
+				/* Retry */
+				cmd->status = EIO;
+				rc = CMD_RETRY_ERR;
+				break;
+			case SISL_AFU_DMA_ERR_INVALID_EA:
+			default:
+				rc = CMD_FATAL_ERR;
+				cmd->status = EIO;
+			}
+			break;
+		case SISL_AFU_RC_OUT_OF_DATA_BUFS:
+			/* Retry */
+			cmd->status = EIO;
+			rc = CMD_RETRY_ERR;
+			break;
+		default:
+			rc = CMD_FATAL_ERR;
+			cmd->status = EIO;
+		}
+	}
+
+	scp->result = (DID_OK << 16);
+	return rc;
+}
+
 void cmd_complete(struct afu_cmd *cmd)
 {
 	unsigned long lock_flags = 0UL;
@@ -246,12 +460,11 @@ void cmd_complete(struct afu_cmd *cmd)
 	if (cmd->rcb.rsvd2) {
 		scp = (struct scsi_cmnd *)cmd->rcb.rsvd2;
 		if (cmd->sa.rc.afu_rc || cmd->sa.rc.scsi_rc ||
-		    cmd->sa.rc.fc_rc) {
-			/* XXX: Needs to be decoded to report errors */
+		    cmd->sa.rc.fc_rc)
+			process_cmd_err(cmd, scp);
+		else
 			scp->result = (DID_OK << 16);
-		} else {
-			scp->result = (DID_OK << 16);
-		}
+
 		cxlflash_dbg("calling scsi_set_resid, scp=0x%llx "
 			     "resid=%d afu_rc=%d scsi_rc=%d fc_rc=%d",
 			     cmd->rcb.rsvd2, cmd->sa.resid,
