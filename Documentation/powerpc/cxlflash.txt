@@ -123,7 +123,7 @@ Block library API
     supported service (IOCTL) is provided below.
 
     The block library can be found on GitHub:
-    http://www.github.com/mikehollinger/blocklib
+    http://www.github.com/mikehollinger/ibmcapikv
 
 
 CXL Flash Driver IOCTLs
@@ -145,8 +145,8 @@ CXL Flash Driver IOCTLs
     The structure definitions for these IOCTLs are available in:
     uapi/scsi/cxlflash_ioctl.h
 
-DK_CAPI_ATTACH
---------------
+DK_CXLFLASH_ATTACH
+------------------
 
     This ioctl obtains, initializes, and starts a context using the CXL
     kernel services. These services specify a context id (u16) by which
@@ -158,7 +158,7 @@ DK_CAPI_ATTACH
     this driver and not the CXL kernel services to allow for intermediary
     notification and access in the event of a non-user-initiated close(),
     such as a killed process. This design point is described in further
-    detail in the description for the DK_CAPI_DETACH ioctl.
+    detail in the description for the DK_CXLFLASH_DETACH ioctl.
 
     There are a few important aspects regarding the "tokens" (context id
     and fd2) that are provided back to the user:
@@ -166,7 +166,7 @@ DK_CAPI_ATTACH
         - These tokens are only valid for the process under which they
           were created. The child of a forked process cannot continue
           to use the context id or file descriptor created by its parent
-          (see DK_CAPI_CLONE for further details).
+          (see DK_CXLFLASH_CLONE for further details).
 
         - These tokens are only valid for the lifetime of the context and
           the process under which they were created. Once either is destroyed,
@@ -174,13 +174,13 @@ DK_CAPI_ATTACH
           result in errors.
 
         - When a context is no longer needed, the user shall detach from
-          the context via the DK_CAPI_DETACH ioctl.
+          the context via the DK_CXLFLASH_DETACH ioctl.
 
         - A close on fd2 will invalidate the tokens. This operation is not
           required by the user.
 
-DK_CAPI_USER_DIRECT
--------------------
+DK_CXLFLASH_USER_DIRECT
+-----------------------
     This ioctl is responsible for transitioning the LUN to direct (physical)
     mode access and configuring the AFU for direct access from user space on
     a per-context basis. Additionally, the block size and last logical block
@@ -196,8 +196,8 @@ DK_CAPI_USER_DIRECT
     resource handle that is returned to the user. The user is then able to use
     the handle to reference the LUN during I/O.
     
-DK_CAPI_USER_VIRTUAL
---------------------
+DK_CXLFLASH_USER_VIRTUAL
+------------------------
     This ioctl is responsible for transitioning the LUN to virtual mode of
     access and configuring the AFU for virtual access from user space on a
     per-context basis. Additionally, the block size and last logical block
@@ -214,16 +214,16 @@ DK_CAPI_USER_VIRTUAL
     the handle to reference the LUN during I/O.
 
     By default, the virtual LUN is created with a size of 0. The user would
-    need to use the DK_CAPI_VLUN_RESIZE ioctl to adjust the grow the virtual
+    need to use the DK_CXLFLASH_VLUN_RESIZE ioctl to adjust the grow the virtual
     LUN to a desired size. To avoid having to perform this resize for the
     initial creation of the virtual LUN, the user has the option of specifying
-    a size as part of the DK_CAPI_USER_VIRTUAL ioctl, such that when success is
-    returned to the user, the resource handle that is provided is already
+    a size as part of the DK_CXLFLASH_USER_VIRTUAL ioctl, such that when success
+    is returned to the user, the resource handle that is provided is already
     referencing provisioned storage. This is reflected by the last LBA being
     a non-zero value.
 
-DK_CAPI_VLUN_RESIZE
--------------------
+DK_CXLFLASH_VLUN_RESIZE
+-----------------------
     This ioctl is responsible for resizing a previously created virtual LUN
     and will fail if invoked upon a LUN that is not in virtual mode. Upon
     success, an updated last LBA is returned to the user indicating the new
@@ -234,27 +234,27 @@ DK_CAPI_VLUN_RESIZE
     in the virtual mode and used to program a LUN translation table that the
     AFU references when provided with a resource handle. 
 
-DK_CAPI_RELEASE
----------------
+DK_CXLFLASH_RELEASE
+-------------------
     This ioctl is responsible for releasing a previously obtained reference
     to either a physical or virtual LUN. This can be thought of as the inverse
-    of the DK_CAPI_USER_DIRECT or DK_CAPI_USER_VIRTUAL ioctls. Upon success,
-    the resource handle is no longer valid and the entry in the resource
-    handle table is made available to be used again.
+    of the DK_CXLFLASH_USER_DIRECT or DK_CXLFLASH_USER_VIRTUAL ioctls. Upon
+    success, the resource handle is no longer valid and the entry in the
+    resource handle table is made available to be used again.
 
     As part of the release process for virtual LUNs, the virtual LUN is first
     resized to 0 to clear out and free the translation tables associated with
     the virtual LUN reference.
 
-DK_CAPI_DETACH
---------------
+DK_CXLFLASH_DETACH
+------------------
     This ioctl is responsible for unregistering a context with the cxlflash
     driver and release outstanding resources that were not explicitly released
-    via the DK_CAPI_RELEASE ioctl. Upon success, all "tokens" which had been
-    provided to the user from the DK_CAPI_ATTACH onward are no longer valid.
+    via the DK_CXLFLASH_RELEASE ioctl. Upon success, all "tokens" which had been
+    provided to the user from the DK_CXLFLASH_ATTACH onward are no longer valid.
 
-DK_CAPI_CLONE
--------------
+DK_CXLFLASH_CLONE
+-----------------
     This ioctl is responsible for cloning a previously created context to a more
     recently created context. It exists solely to support maintaining user space
     access to storage after a process forks. Upon success, the child process
@@ -266,7 +266,7 @@ DK_CAPI_CLONE
     child process. This ioctl simplifies the state management and playback
     required by a user in such a scenario. When a process forks, child
     process can clone the parents context by first creating a context
-    (via DK_CAPI_ATTACH) and then using this ioctl to perform the clone
+    (via DK_CXLFLASH_ATTACH) and then using this ioctl to perform the clone
     from the parent to the child.
 
     The clone itself is fairly simple. The resource handle and lun
