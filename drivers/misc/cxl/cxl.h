@@ -376,6 +376,9 @@ struct cxl_afu {
 	int spa_max_procs;
 	unsigned int psl_virq;
 
+	/* pointer to the vphb */
+	struct pci_controller *hose;
+
 	int pp_irqs;
 	int irqs_max;
 	int num_procs;
