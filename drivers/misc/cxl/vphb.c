@@ -191,6 +191,8 @@ int cxl_pci_vphb_add(struct cxl_afu *afu)
 	/* Add probed PCI devices to the device model */
 	pci_bus_add_devices(hose->bus);
 
+	afu->hose = hose;
+
 	return 0;
 }
 
