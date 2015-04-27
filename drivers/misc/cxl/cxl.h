@@ -27,6 +27,7 @@
 #include <uapi/misc/cxl.h>
 
 extern uint cxl_verbose;
+extern int cxl_def_perst_image;
 
 #define CXL_TIMEOUT 5
 
