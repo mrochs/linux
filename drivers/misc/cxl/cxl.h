@@ -664,7 +664,7 @@ int afu_check_and_enable(struct cxl_afu *afu);
 int cxl_psl_purge(struct cxl_afu *afu);
 
 void cxl_stop_trace(struct cxl *cxl);
-int cxl_pci_phb_probe(struct cxl_afu *afu);
+int cxl_pci_vphb_add(struct cxl_afu *afu);
 
 extern struct pci_driver cxl_pci_driver;
 int afu_allocate_irqs(struct cxl_context *ctx, u32 count);

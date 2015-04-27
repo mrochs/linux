@@ -154,7 +154,7 @@ static struct pci_ops cxl_pcie_pci_ops =
 	.write = cxl_pcie_write_config,
 };
 
-int cxl_pci_phb_probe(struct cxl_afu *afu)
+int cxl_pci_vphb_add(struct cxl_afu *afu)
 {
 	struct pci_controller *hose;
 
