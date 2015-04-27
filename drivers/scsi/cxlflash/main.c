@@ -108,6 +108,127 @@ void cxlflash_cmd_checkin(struct afu_cmd *cmd)
 
 }
 
+enum cmd_err process_sense(struct afu_cmd *cmd,
+			   struct request_sense_data *sense_data)
+{
+	enum cmd_err rc = CMD_IGNORE_ERR;
+
+	if (sense_data == NULL) {
+		cmd->status = EIO;
+		return CMD_FATAL_ERR;
+	}
+
+	cxlflash_dbg("sense data: error code = 0x%x, sense_key = 0x%x, "
+		     "asc = 0x%x, ascq = 0x%x",
+		     sense_data->err_code,
+		     sense_data->sense_key,
+		     sense_data->add_sense_key,
+		     sense_data->add_sense_qualifier);
+
+	switch (sense_data->sense_key) {
+	case NO_SENSE:
+		/* 
+		 * Ignore error and treat as good completion 
+		 */
+		rc = CMD_IGNORE_ERR;
+		break;
+	case RECOVERED_ERROR:
+		/*
+		 * Ignore error and treat as good completion
+		 * TODO: Should we try to log something here 
+		 * for something like PFA??
+		 */
+		rc = CMD_IGNORE_ERR;
+		break;
+	case NOT_READY:
+		/*
+		 * Retry command
+		 */
+		cmd->status = EIO;
+		rc = CMD_RETRY_ERR;
+		break;
+	case MEDIUM_ERROR:
+	case HARDWARE_ERROR:
+		/*
+		 * Fatal error do not retry.
+		 * TODO:?? Maybe log.
+		 */
+		cmd->status = EIO;
+		rc = CMD_FATAL_ERR;
+
+		// TODO: ?? Notify perm err
+		break;
+	case ILLEGAL_REQUEST:
+		/*
+		 * Fatal error do not retry.
+		 * TODO: ?? Since this is most likely 
+		 * a software bug we need some
+		 * way to log this.
+		 */
+		cmd->status = EIO;
+		rc = CMD_FATAL_ERR;
+		break;
+	case UNIT_ATTENTION:
+		switch (sense_data->add_sense_key) {
+		case 0x29:
+			/*
+			 * Power on Reset or Device Reset. 
+			 * Retry command for now.
+			 */
+			cmd->status = EIO;
+			rc = CMD_RETRY_ERR;
+			break;
+		case 0x2A:
+			/*
+			 * Device settings/capacity has changed
+			 * Retry command for now.
+			 */
+			cmd->status = EIO;
+			rc = CMD_RETRY_ERR;
+			break;
+		case 0x3f:
+			if (sense_data->add_sense_qualifier == 0x0e) {
+				/*
+				 * Retry command for now.
+				 */
+				cmd->status = EIO;
+				rc = CMD_RETRY_ERR;
+				break;
+			}
+			/* Fall thru */
+		default:
+			/*
+			 * Fatal error
+			 */
+			cmd->status = EIO;
+			rc = CMD_FATAL_ERR;
+			// TODO: ?? Notify perm err
+		}
+		break;
+	case DATA_PROTECT:
+	case BLANK_CHECK:
+	case CXLFLASH_VENDOR_UNIQUE:
+	case COPY_ABORTED:
+	case ABORTED_COMMAND:
+	case CXLFLASH_EQUAL_CMD:
+	case VOLUME_OVERFLOW:
+	case MISCOMPARE:
+	default:
+		/*
+		 * Fatal error do not retry.
+		 */
+		// TODO: ?? Notify perm err
+		rc = CMD_FATAL_ERR;
+		cmd->status = EIO;
+		cxlflash_dbg("Fatal generic error sense data: sense_key = 0x%x,"
+			     " asc = 0x%x, ascq = 0x%x",
+			     sense_data->sense_key,
+			     sense_data->add_sense_key,
+			     sense_data->add_sense_qualifier);
+		break;
+	}
+	return rc;
+}
 void cmd_complete(struct afu_cmd *cmd)
 {
 	unsigned long lock_flags = 0UL;

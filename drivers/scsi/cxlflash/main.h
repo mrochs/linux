@@ -86,6 +86,38 @@ typedef unsigned int useconds_t;        /* time in microseconds */
 #define WWPN_LEN	16
 #define WWPN_BUF_LEN	(WWPN_LEN + 1)
 
+/* SCSI Defines                                                          */
+
+struct request_sense_data  {
+	uint8_t     err_code;        /* error class and code   */
+	uint8_t     rsvd0;
+	uint8_t     sense_key;
+#define CXLFLASH_VENDOR_UNIQUE         0x09
+#define CXLFLASH_EQUAL_CMD             0x0C
+	uint8_t     sense_byte0;
+	uint8_t     sense_byte1;
+	uint8_t     sense_byte2;
+	uint8_t     sense_byte3;
+	uint8_t     add_sense_length;
+	uint8_t     add_sense_byte0;
+	uint8_t     add_sense_byte1;
+	uint8_t     add_sense_byte2;
+	uint8_t     add_sense_byte3;
+	uint8_t     add_sense_key;
+	uint8_t     add_sense_qualifier;
+	uint8_t     fru;
+	uint8_t     flag_byte;
+	uint8_t     field_ptrM;
+	uint8_t     field_ptrL;
+};
+
+enum cmd_err {
+	CMD_FATAL_ERR      = -1,  /* Fatal command error. No recovery */
+	CMD_IGNORE_ERR     = 0,   /* Ignore command error */
+	CMD_RETRY_ERR      = 1,   /* Retry command error recovery */
+	CMD_DLY_RETRY_ERR  = 2,   /* Retry command with delay error */
+	/* recovery */
+};
 
 enum undo_level {
 	RELEASE_CONTEXT = 0,
