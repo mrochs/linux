@@ -610,7 +610,7 @@ static int cxl_read_afu_descriptor(struct cxl_afu *afu)
 	}
 
 	/* We have a valid configuration record, lets make a virtual PHB */
-	cxl_pci_phb_probe(afu);
+	cxl_pci_vphb_add(afu);
 
 	return 0;
 }
@@ -1117,7 +1117,8 @@ static int cxl_probe(struct pci_dev *dev, const struct pci_device_id *id)
 static void cxl_remove(struct pci_dev *dev)
 {
 	struct cxl *adapter = pci_get_drvdata(dev);
-	int afu;
+	struct cxl_afu *afu;
+	int i;
 
 	dev_warn(&dev->dev, "pci remove\n");
 
@@ -1125,8 +1126,11 @@ static void cxl_remove(struct pci_dev *dev)
 	 * Lock to prevent someone grabbing a ref through the adapter list as
 	 * we are removing it
 	 */
-	for (afu = 0; afu < adapter->slices; afu++)
-		cxl_remove_afu(adapter->afu[afu]);
+	for (i = 0; i < adapter->slices; i++) {
+		afu = adapter->afu[i];
+		cxl_pci_vphb_remove(afu);
+		cxl_remove_afu(afu);
+	}
 	cxl_remove_adapter(adapter);
 }
 
@@ -1135,4 +1139,5 @@ struct pci_driver cxl_pci_driver = {
 	.id_table = cxl_pci_tbl,
 	.probe = cxl_probe,
 	.remove = cxl_remove,
+	.shutdown = cxl_remove, /* FIXME: call back into vphb */
 };

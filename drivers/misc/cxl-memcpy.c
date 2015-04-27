@@ -68,9 +68,9 @@ static void cxl_memcpy_vpd_info(struct pci_dev *dev)
 	}
 	phys_pdev = to_pci_dev(phys_dev);
 
-	for (i = 0; i < 0x300; i += sizeof(buf)) {
+	for (i = 0; i < 0x10; i += sizeof(buf)) {
 		pci_read_vpd(phys_pdev, i, sizeof(buf), &buf);
-		printk("%x: %016lx\n", i, buf);
+		printk("VPD\t%x:\t%016lx\n", i, buf);
 	}
 }
 
@@ -112,6 +112,7 @@ static int cxl_memcpy_probe(struct pci_dev *dev, const struct pci_device_id *id)
 
 static void cxl_memcpy_remove(struct pci_dev *dev)
 {
+	atomic_dec(&minor_number);
 	printk("%s\n", __func__);
 }
 
