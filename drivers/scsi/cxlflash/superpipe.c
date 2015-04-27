@@ -651,6 +651,55 @@ void cxlflash_rht_format1(struct sisl_rht_entry *rht_entry,
 	return;
 }
 
+int write_same16(struct afu *afu, struct lun_info *lun_info, u64 lba, u32 nblks)
+{
+	struct afu_cmd *cmd;
+	int rc = 0;
+
+	cmd = cxlflash_cmd_checkout(afu);
+	if (unlikely(!cmd)) {
+		cxlflash_err("could not get a free command");
+		rc = -1;
+		goto out;
+	}
+
+	cmd->rcb.req_flags = (SISL_REQ_FLAGS_PORT_LUN_ID |
+				SISL_REQ_FLAGS_SUP_UNDERRUN |
+				SISL_REQ_FLAGS_HOST_READ);
+
+	cmd->rcb.port_sel = 3;
+	cmd->rcb.lun_id = lun_info->lun_id;
+	cmd->rcb.data_len = CMD_BUFSIZE;
+	cmd->rcb.data_ea = (u64) cmd->buf; /* Filled w/ zeros on checkout */
+	cmd->rcb.timeout = MC_DISCOVERY_TIMEOUT;
+	cmd->internal = true;
+
+	cmd->rcb.cdb[0] = WRITE_SAME_16;
+	put_unaligned_be64(lba, &cmd->rcb.cdb[2]);
+	put_unaligned_be32(nblks, &cmd->rcb.cdb[10]);
+
+	cmd->sa.host_use_b[1] = 0;	/* reset retry cnt */
+
+	cxlflash_info("sending cmd(0x%x) with RCB EA=%p data EA=0x%llx",
+		      cmd->rcb.cdb[0], &cmd->rcb, cmd->rcb.data_ea);
+
+	do {
+		cxlflash_send_cmd(afu, cmd);
+		cxlflash_wait_resp(afu, cmd);
+	} while (cxlflash_check_status(&cmd->sa));
+
+	if (cmd->sa.host_use_b[0] & B_ERROR) {
+		cxlflash_err("command failed");
+		rc = -1;
+		goto out;
+	}
+
+out:
+	cxlflash_cmd_checkin(cmd);
+	cxlflash_info("returning rc=%d", rc);
+	return rc;
+}
+
 static int grow_lxt(struct afu *afu,
 		    struct lun_info *lun_info,
 		    ctx_hndl_t ctx_hndl_u,
@@ -787,6 +836,8 @@ static int shrink_lxt(struct afu *afu,
 	for (i = delta - 1; i >= 0; i--) {
 		aun = (lxt_old[*act_new_size + i].rlba_base >>
 		       MC_CHUNK_SHIFT);
+		if (ws)
+			write_same16(afu, lun_info, aun, MC_CHUNK_SIZE);
 		ba_free(&blka->ba_lun, aun);
 	}
 	mutex_unlock(&blka->mutex);

@@ -17,6 +17,7 @@
 
 extern u32 checkpid;
 extern u32 internal_lun;
+extern u32 ws;
 
 /*----------------------------------------------------------------------------*/
 /* Constants                                                                  */
