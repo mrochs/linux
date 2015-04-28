@@ -234,41 +234,33 @@ enum cmd_err process_cmd_err(struct afu_cmd *cmd, struct scsi_cmnd *scp)
 	}
 
 	if (ioasa->rc.afu_rc) {
-		/* We have a AFU error */
+		/* We have an AFU error */
 		cxlflash_dbg("afu error ioasc = 0x%x, "
 			     "resid = 0x%x, flags = 0x%x, afu error = 0x%x",
 			     ioasa->ioasc, ioasa->resid,
 			     ioasa->rc.flags, ioasa->rc.afu_rc);
-		cxlflash_dbg("cmd = %p cmd->buf = %p",
-			     cmd, cmd->buf);
 
 		switch (ioasa->rc.afu_rc) {
 		case SISL_AFU_RC_NO_CHANNELS:
-			/* Retry with delay */
-			cmd->status = EIO;
-			rc = CMD_DLY_RETRY_ERR;
+			scp->result = (DID_MEDIUM_ERROR << 16);
 			break;
 		case SISL_AFU_RC_DATA_DMA_ERR:
 			switch (ioasa->afu_extra) {
 			case SISL_AFU_DMA_ERR_PAGE_IN:
 				/* Retry */
-				cmd->status = EIO;
-				rc = CMD_RETRY_ERR;
+				scp->result = (DID_IMM_RETRY << 16);
 				break;
 			case SISL_AFU_DMA_ERR_INVALID_EA:
 			default:
-				rc = CMD_FATAL_ERR;
-				cmd->status = EIO;
+				scp->result = (DID_ERROR << 16);
 			}
 			break;
 		case SISL_AFU_RC_OUT_OF_DATA_BUFS:
 			/* Retry */
-			cmd->status = EIO;
-			rc = CMD_RETRY_ERR;
+			scp->result = (DID_ALLOC_FAILURE << 16);
 			break;
 		default:
-			rc = CMD_FATAL_ERR;
-			cmd->status = EIO;
+			scp->result = (DID_ERROR << 16);
 		}
 	}
 
