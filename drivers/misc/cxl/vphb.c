@@ -199,11 +199,13 @@ int cxl_pci_vphb_add(struct cxl_afu *afu)
 
 void cxl_pci_vphb_remove(struct cxl_afu *afu)
 {
-	struct pci_controller *hose = afu->hose;
+	struct pci_controller *hose;
 
 	/* If there is no configuration record we won't have one of these */
-	if (!hose)
+	if (!afu || !afu->hose)
 		return;
+
+	hose = afu->hose;
 
 	pci_remove_root_bus(hose->bus);
 }
