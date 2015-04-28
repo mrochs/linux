@@ -132,13 +132,16 @@ static void process_cmd_err(struct afu_cmd *cmd, struct scsi_cmnd *scp)
 			     ioasa->port);
 		if (ioarcb->data_len >= ioasa->resid)
 			scsi_set_resid(scp, ioasa->resid);
+		scp->result = (DID_ERROR << 16);
 	}
 
-	if (ioasa->rc.flags & SISL_RC_FLAGS_OVERRUN)
+	if (ioasa->rc.flags & SISL_RC_FLAGS_OVERRUN) {
 		cxlflash_dbg("cmd overrun ioasc = 0x%x,"
 			    " resid = 0x%x, flags = 0x%x, port = 0x%x",
 			    ioasa->ioasc, ioasa->resid, ioasa->rc.flags,
 			    ioasa->port);
+		scp->result = (DID_ERROR << 16);
+	}
 	/*
 	 * TODO: ?? We need to look at the order these errors are prioritized
 	 * to see if this code order needs to change.
