@@ -114,14 +114,13 @@ void cxlflash_cmd_checkin(struct afu_cmd *cmd)
 	cxlflash_dbg("releasing cmd index=%d", cmd->slot);
 }
 
-enum cmd_err process_cmd_err(struct afu_cmd *cmd, struct scsi_cmnd *scp)
+static void process_cmd_err(struct afu_cmd *cmd, struct scsi_cmnd *scp)
 {
-	enum cmd_err rc = CMD_IGNORE_ERR;
 	struct sisl_ioarcb *ioarcb;
 	struct sisl_ioasa *ioasa;
 
 	if (unlikely(!cmd))
-		return CMD_FATAL_ERR;
+		return;
 
 	ioarcb = &(cmd->rcb);
 	ioasa = &(cmd->sa);
@@ -144,12 +143,8 @@ enum cmd_err process_cmd_err(struct afu_cmd *cmd, struct scsi_cmnd *scp)
 	 * TODO: ?? We need to look at the order these errors are prioritized
 	 * to see if this code order needs to change.
 	 */
-	cxlflash_dbg("cmd failed ioasc = 0x%x, resid = 0x%x, "
-		     "flags = 0x%x, scsi_status = 0x%x",
-		     ioasa->ioasc, ioasa->resid, ioasa->rc.flags,
-		     ioasa->rc.scsi_rc);
 
-	cxlflash_info("cmd failed port = 0x%x, afu_extra = 0x%x,"
+	cxlflash_dbg("cmd failed port = 0x%x, afu_extra = 0x%x,"
 		     " scsi_entra = 0x%x, fc_extra = 0x%x",
 		     ioasa->port, ioasa->afu_extra, ioasa->scsi_extra,
 		     ioasa->fc_extra);
@@ -247,10 +242,10 @@ enum cmd_err process_cmd_err(struct afu_cmd *cmd, struct scsi_cmnd *scp)
 		}
 	}
 
-	return rc;
+	return;
 }
 
-void cmd_complete(struct afu_cmd *cmd)
+static void cmd_complete(struct afu_cmd *cmd)
 {
 	unsigned long lock_flags = 0UL;
 	struct scsi_cmnd *scp;
