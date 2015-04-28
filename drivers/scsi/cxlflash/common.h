@@ -173,7 +173,6 @@ struct afu_cmd {
 	char *buf;		/* per command buffer */
 	struct afu *back;
 	int slot;
-	u64 status;
 	atomic_t free;
 	u8 special:1;
 	u8 internal:1;
