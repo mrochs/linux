@@ -130,8 +130,6 @@ static void process_cmd_err(struct afu_cmd *cmd, struct scsi_cmnd *scp)
 			     "resid = 0x%x, flags = 0x%x, port = 0x%x",
 			     ioasa->ioasc, ioasa->resid, ioasa->rc.flags,
 			     ioasa->port);
-		if (ioarcb->data_len >= ioasa->resid)
-			scsi_set_resid(scp, ioasa->resid);
 		scp->result = (DID_ERROR << 16);
 	}
 
