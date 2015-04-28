@@ -158,7 +158,6 @@ struct cxlflash {
 	struct file_operations cxl_fops;
 
 	int last_lun_index;
-	int task_set;
 
 	wait_queue_head_t tmf_wait_q;
 	u8 context_reset_active:1;

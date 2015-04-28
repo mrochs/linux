@@ -531,8 +531,7 @@ static int cxlflash_slave_alloc(struct scsi_device *sdev)
 	list_add(&lun_info->list, &afu->luns);
 	spin_unlock_irqrestore(shost->host_lock, flags);
 out:
-	cxlflash_info("returning task_set %d luninfo %p sdev %p",
-		      cxlflash->task_set, lun_info, sdev);
+	cxlflash_info("returning luninfo %p sdev %p", lun_info, sdev);
 	return rc;
 }
 
@@ -2108,7 +2107,6 @@ static int cxlflash_probe(struct pci_dev *pdev,
 
 	cxlflash->dev = pdev;
 	cxlflash->last_lun_index = 0;
-	cxlflash->task_set = 0;
 	cxlflash->dev_id = (struct pci_device_id *)dev_id;
 	cxlflash->tmf_active = 0;
 	cxlflash->mcctx = NULL;
