@@ -172,7 +172,7 @@ enum cmd_err process_cmd_err(struct afu_cmd *cmd, struct scsi_cmnd *scp)
 				     ioasa->sense_data[13]);
 			memcpy(scp->sense_buffer, ioasa->sense_data,
 			       SISL_SENSE_DATA_LEN);
-		} else if (ioasa->rc.scsi_rc) {
+		} else
 			/* We have a SCSI status, but no sense data */
 			cxlflash_dbg("cmd failed ctx_id = 0x%x, ioasc = 0x%x, "
 				     "resid = 0x%x, flags = 0x%x,"
@@ -180,31 +180,7 @@ enum cmd_err process_cmd_err(struct afu_cmd *cmd, struct scsi_cmnd *scp)
 				     cmd->rcb.ctx_id, ioasa->ioasc,
 				     ioasa->resid, ioasa->rc.flags,
 				     ioasa->rc.scsi_rc);
-
-			switch (ioasa->rc.scsi_rc) {
-			case CHECK_CONDITION:
-				/*
-				 * This mostly likely indicates a misbehaving 
-				 * device, that is reporting a check 
-				 * condition, but is returning no sense data
-				 */
-				rc = CMD_RETRY_ERR;
-				cmd->status = EIO;
-				break;
-			case BUSY:
-			case QUEUE_FULL:
-				/* Retry with delay */
-				cmd->status = EBUSY;
-				rc = CMD_DLY_RETRY_ERR;
-				break;
-			case RESERVATION_CONFLICT:
-				rc = CMD_FATAL_ERR;
-				break;
-			default:
-				rc = CMD_FATAL_ERR;
-				cmd->status = EIO;
-			}
-		}
+		scp->result = ioasa->rc.scsi_rc | (DID_ERROR << 16);
 	}
 	/*
 	 * We encountered an error. For now return
