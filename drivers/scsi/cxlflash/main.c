@@ -126,11 +126,6 @@ enum cmd_err process_cmd_err(struct afu_cmd *cmd, struct scsi_cmnd *scp)
 	ioarcb = &(cmd->rcb);
 	ioasa = &(cmd->sa);
 
-	cxlflash_dbg("cmd error ioasc = 0x%x, resid = 0x%x, "
-		     "flags = 0x%x, port = 0x%x",
-		     ioasa->ioasc, ioasa->resid,
-		     ioasa->rc.flags, ioasa->port);
-
 	if (ioasa->rc.flags & SISL_RC_FLAGS_UNDERRUN) {
 		cxlflash_dbg("cmd underrun ioasc = 0x%x, "
 			     "resid = 0x%x, flags = 0x%x, port = 0x%x",
@@ -191,17 +186,15 @@ enum cmd_err process_cmd_err(struct afu_cmd *cmd, struct scsi_cmnd *scp)
 			     ioasa->ioasc, ioasa->resid,
 			     ioasa->rc.flags, ioasa->fc_extra);
 		switch (ioasa->rc.fc_rc) {
+		case SISL_FC_RC_RESIDERR:
+			/* Resid mismatch between adapter and device */
+		case SISL_FC_RC_TGTABORT:
+		case SISL_FC_RC_ABORTOK:
+		case SISL_FC_RC_ABORTFAIL:
 		case SISL_FC_RC_LINKDOWN:
-			rc = CMD_RETRY_ERR;
-			cmd->status = ENETDOWN;
-			break;
 		case SISL_FC_RC_NOLOGI:
-			rc = CMD_RETRY_ERR;
-			cmd->status = ENETDOWN;
-			break;
 		case SISL_FC_RC_ABORTPEND:
-			rc = CMD_RETRY_ERR;
-			cmd->status = ETIMEDOUT;
+			scp->result = (DID_IMM_RETRY << 16);
 			break;
 		case SISL_FC_RC_RESID:
 			/* This indicates an FCP resid underrun */
@@ -212,23 +205,13 @@ enum cmd_err process_cmd_err(struct afu_cmd *cmd, struct scsi_cmnd *scp)
 				 * This is probably an AFU bug. We will 
 				 * attempt a retry to see if that resolves it.
 				 */
-				rc = CMD_RETRY_ERR;
-				cmd->status = EIO;
+				scp->result = (DID_IMM_RETRY << 16);
 			}
-			break;
-		case SISL_FC_RC_RESIDERR:
-			/* Resid mismatch between adapter and device */
-		case SISL_FC_RC_TGTABORT:
-		case SISL_FC_RC_ABORTOK:
-		case SISL_FC_RC_ABORTFAIL:
-			rc = CMD_RETRY_ERR;
-			cmd->status = EIO;
 			break;
 		case SISL_FC_RC_WRABORTPEND:
 		case SISL_FC_RC_NOEXP:
 		case SISL_FC_RC_INUSE:
-			rc = CMD_FATAL_ERR;
-			cmd->status = EIO;
+			scp->result = (DID_ERROR << 16);
 			break;
 		}
 	}
@@ -264,7 +247,6 @@ enum cmd_err process_cmd_err(struct afu_cmd *cmd, struct scsi_cmnd *scp)
 		}
 	}
 
-	scp->result = (DID_OK << 16);
 	return rc;
 }
 
