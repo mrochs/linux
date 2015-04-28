@@ -246,8 +246,19 @@ int __dma_set_mask(struct device *dev, u64 dma_mask)
 
 int dma_set_mask(struct device *dev, u64 dma_mask)
 {
+	struct pci_dev *pdev;
+	struct pci_controller *phb;
+	
 	if (ppc_md.dma_set_mask)
 		return ppc_md.dma_set_mask(dev, dma_mask);
+
+	if (dev_is_pci(dev)) {
+		pdev = to_pci_dev(dev);
+		phb = pci_bus_to_host(pdev->bus);
+		if (phb->controller_ops.dma_set_mask)
+			return phb->controller_ops.dma_set_mask(pdev, dma_mask);
+	}
+
 	return __dma_set_mask(dev, dma_mask);
 }
 EXPORT_SYMBOL(dma_set_mask);
