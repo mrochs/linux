@@ -126,34 +126,33 @@ enum cmd_err process_cmd_err(struct afu_cmd *cmd, struct scsi_cmnd *scp)
 	ioarcb = &(cmd->rcb);
 	ioasa = &(cmd->sa);
 
-	cxlflash_dbg("cmd error ctx_id = 0x%x, ioasc = 0x%x, resid = 0x%x, "
+	cxlflash_dbg("cmd error ioasc = 0x%x, resid = 0x%x, "
 		     "flags = 0x%x, port = 0x%x",
-		     cmd->rcb.ctx_id, ioasa->ioasc, ioasa->resid,
+		     ioasa->ioasc, ioasa->resid,
 		     ioasa->rc.flags, ioasa->port);
 
 	if (ioasa->rc.flags & SISL_RC_FLAGS_UNDERRUN) {
-		cxlflash_dbg("cmd underrun ctx_id = 0x%x, ioasc = 0x%x, "
+		cxlflash_dbg("cmd underrun ioasc = 0x%x, "
 			     "resid = 0x%x, flags = 0x%x, port = 0x%x",
-			     cmd->rcb.ctx_id, ioasa->ioasc,
-			     ioasa->resid, ioasa->rc.flags, ioasa->port);
+			     ioasa->ioasc, ioasa->resid, ioasa->rc.flags,
+			     ioasa->port);
 		if (ioarcb->data_len >= ioasa->resid)
 			scsi_set_resid(scp, ioasa->resid);
 	}
 
 	if (ioasa->rc.flags & SISL_RC_FLAGS_OVERRUN)
-		cxlflash_dbg("cmd overrun ctx_id = 0x%x, ioasc = 0x%x,"
+		cxlflash_dbg("cmd overrun ioasc = 0x%x,"
 			    " resid = 0x%x, flags = 0x%x, port = 0x%x",
-			    cmd->rcb.ctx_id, ioasa->ioasc,
-			    ioasa->resid, ioasa->rc.flags,
+			    ioasa->ioasc, ioasa->resid, ioasa->rc.flags,
 			    ioasa->port);
 	/*
 	 * TODO: ?? We need to look at the order these errors are prioritized
 	 * to see if this code order needs to change.
 	 */
-	cxlflash_dbg("cmd failed ctx_id = 0x%x, ioasc = 0x%x, resid = 0x%x, "
+	cxlflash_dbg("cmd failed ioasc = 0x%x, resid = 0x%x, "
 		     "flags = 0x%x, scsi_status = 0x%x",
-		     cmd->rcb.ctx_id, ioasa->ioasc,
-		     ioasa->resid, ioasa->rc.flags, ioasa->rc.scsi_rc);
+		     ioasa->ioasc, ioasa->resid, ioasa->rc.flags,
+		     ioasa->rc.scsi_rc);
 
 	cxlflash_info("cmd failed port = 0x%x, afu_extra = 0x%x,"
 		     " scsi_entra = 0x%x, fc_extra = 0x%x",
@@ -174,12 +173,11 @@ enum cmd_err process_cmd_err(struct afu_cmd *cmd, struct scsi_cmnd *scp)
 			       SISL_SENSE_DATA_LEN);
 		} else
 			/* We have a SCSI status, but no sense data */
-			cxlflash_dbg("cmd failed ctx_id = 0x%x, ioasc = 0x%x, "
+			cxlflash_dbg("cmd failed ioasc = 0x%x, "
 				     "resid = 0x%x, flags = 0x%x,"
 				     "scsi_status = 0x%x",
-				     cmd->rcb.ctx_id, ioasa->ioasc,
-				     ioasa->resid, ioasa->rc.flags,
-				     ioasa->rc.scsi_rc);
+				     ioasa->ioasc, ioasa->resid,
+				     ioasa->rc.flags, ioasa->rc.scsi_rc);
 		scp->result = ioasa->rc.scsi_rc | (DID_ERROR << 16);
 	}
 	/*
@@ -188,10 +186,10 @@ enum cmd_err process_cmd_err(struct afu_cmd *cmd, struct scsi_cmnd *scp)
 	 */
 	if (ioasa->rc.fc_rc) {
 		/* We have an FC status */
-		cxlflash_dbg("cmd failed ctx_id = 0x%x, ioasc = 0x%x, "
+		cxlflash_dbg("cmd failed ioasc = 0x%x, "
 			     "resid = 0x%x, flags = 0x%x, fc_extra = 0x%x",
-			     cmd->rcb.ctx_id, ioasa->ioasc,
-			     ioasa->resid, ioasa->rc.flags, ioasa->fc_extra);
+			     ioasa->ioasc, ioasa->resid,
+			     ioasa->rc.flags, ioasa->fc_extra);
 		switch (ioasa->rc.fc_rc) {
 		case SISL_FC_RC_LINKDOWN:
 			rc = CMD_RETRY_ERR;
@@ -237,10 +235,10 @@ enum cmd_err process_cmd_err(struct afu_cmd *cmd, struct scsi_cmnd *scp)
 
 	if (ioasa->rc.afu_rc) {
 		/* We have a AFU error */
-		cxlflash_dbg("afu error ctx_id = 0x%x, ioasc = 0x%x, "
+		cxlflash_dbg("afu error ioasc = 0x%x, "
 			     "resid = 0x%x, flags = 0x%x, afu error = 0x%x",
-			     cmd->rcb.ctx_id, ioasa->ioasc,
-			     ioasa->resid, ioasa->rc.flags, ioasa->rc.afu_rc);
+			     ioasa->ioasc, ioasa->resid,
+			     ioasa->rc.flags, ioasa->rc.afu_rc);
 		cxlflash_dbg("cmd = %p cmd->buf = %p",
 			     cmd, cmd->buf);
 
