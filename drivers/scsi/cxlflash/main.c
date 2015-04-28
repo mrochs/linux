@@ -152,22 +152,9 @@ static void process_cmd_err(struct afu_cmd *cmd, struct scsi_cmnd *scp)
 	if (ioasa->rc.scsi_rc) {
 		/* We have a SCSI status */
 		if (ioasa->rc.flags & SISL_RC_FLAGS_SENSE_VALID) {
-			cxlflash_dbg("sense data: error code = 0x%x, "
-				     "sense_key = 0x%x, asc = 0x%x, "
-				     "ascq = 0x%x",
-				     ioasa->sense_data[0],
-				     ioasa->sense_data[2],
-				     ioasa->sense_data[12],
-				     ioasa->sense_data[13]);
 			memcpy(scp->sense_buffer, ioasa->sense_data,
 			       SISL_SENSE_DATA_LEN);
-		} else
-			/* We have a SCSI status, but no sense data */
-			cxlflash_dbg("cmd failed ioasc = 0x%x, "
-				     "resid = 0x%x, flags = 0x%x,"
-				     "scsi_status = 0x%x",
-				     ioasa->ioasc, ioasa->resid,
-				     ioasa->rc.flags, ioasa->rc.scsi_rc);
+		}
 		scp->result = ioasa->rc.scsi_rc | (DID_ERROR << 16);
 	}
 	/*
@@ -176,10 +163,6 @@ static void process_cmd_err(struct afu_cmd *cmd, struct scsi_cmnd *scp)
 	 */
 	if (ioasa->rc.fc_rc) {
 		/* We have an FC status */
-		cxlflash_dbg("cmd failed ioasc = 0x%x, "
-			     "resid = 0x%x, flags = 0x%x, fc_extra = 0x%x",
-			     ioasa->ioasc, ioasa->resid,
-			     ioasa->rc.flags, ioasa->fc_extra);
 		switch (ioasa->rc.fc_rc) {
 		case SISL_FC_RC_RESIDERR:
 			/* Resid mismatch between adapter and device */
@@ -213,11 +196,6 @@ static void process_cmd_err(struct afu_cmd *cmd, struct scsi_cmnd *scp)
 
 	if (ioasa->rc.afu_rc) {
 		/* We have an AFU error */
-		cxlflash_dbg("afu error ioasc = 0x%x, "
-			     "resid = 0x%x, flags = 0x%x, afu error = 0x%x",
-			     ioasa->ioasc, ioasa->resid,
-			     ioasa->rc.flags, ioasa->rc.afu_rc);
-
 		switch (ioasa->rc.afu_rc) {
 		case SISL_AFU_RC_NO_CHANNELS:
 			scp->result = (DID_MEDIUM_ERROR << 16);
@@ -268,8 +246,8 @@ static void cmd_complete(struct afu_cmd *cmd)
 			scp->result = (DID_OK << 16);
 
 		cxlflash_dbg("calling scsi_set_resid, scp=0x%llx "
-			     "resid=%d afu_rc=%d scsi_rc=%d fc_rc=%d",
-			     cmd->rcb.rsvd2, cmd->sa.resid,
+			     "result=%d afu_rc=%d scsi_rc=%d fc_rc=%d",
+			     cmd->rcb.rsvd2, scp->result,
 			     cmd->sa.rc.afu_rc, cmd->sa.rc.scsi_rc,
 			     cmd->sa.rc.fc_rc);
 
