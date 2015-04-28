@@ -145,10 +145,10 @@ static void process_cmd_err(struct afu_cmd *cmd, struct scsi_cmnd *scp)
 	 * to see if this code order needs to change.
 	 */
 
-	cxlflash_dbg("cmd failed port = 0x%x, afu_extra = 0x%x,"
-		     " scsi_entra = 0x%x, fc_extra = 0x%x",
-		     ioasa->port, ioasa->afu_extra, ioasa->scsi_extra,
-		     ioasa->fc_extra);
+	cxlflash_dbg("cmd failed afu_rc=%d scsi_rc=%d fc_rc=%d "
+		     "afu_extra=0x%x, scsi_entra=0x%x, fc_extra=0x%x",
+		     ioasa->rc.afu_rc, ioasa->rc.scsi_rc, ioasa->rc.fc_rc,
+		     ioasa->afu_extra, ioasa->scsi_extra, ioasa->fc_extra);
 
 	if (ioasa->rc.scsi_rc) {
 		/* We have a SCSI status */
@@ -247,10 +247,8 @@ static void cmd_complete(struct afu_cmd *cmd)
 			scp->result = (DID_OK << 16);
 
 		cxlflash_dbg("calling scsi_set_resid, scp=0x%llx "
-			     "result=%x afu_rc=%d scsi_rc=%d fc_rc=%d",
-			     cmd->rcb.rsvd2, scp->result,
-			     cmd->sa.rc.afu_rc, cmd->sa.rc.scsi_rc,
-			     cmd->sa.rc.fc_rc);
+			     "result=%x resid=%d",
+			     cmd->rcb.rsvd2, scp->result, cmd->sa.resid);
 
 		scsi_set_resid(scp, cmd->sa.resid);
 		scsi_dma_unmap(scp);
