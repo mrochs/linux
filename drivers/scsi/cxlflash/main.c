@@ -243,28 +243,11 @@ enum cmd_err process_cmd_err(struct afu_cmd *cmd, struct scsi_cmnd *scp)
 			     cmd, cmd->buf);
 
 		switch (ioasa->rc.afu_rc) {
-		case SISL_AFU_RC_RHT_INVALID:
-		case SISL_AFU_RC_RHT_OUT_OF_BOUNDS:
-		case SISL_AFU_RC_LXT_OUT_OF_BOUNDS:
-			/* This most likely indicates a code bug
-			 * in this code.
-			 */
-			rc = CMD_FATAL_ERR;
-			cmd->status = EIO;
-			break;
-		case SISL_AFU_RC_RHT_UNALIGNED:
-		case SISL_AFU_RC_LXT_UNALIGNED:
-			/* These should never happen */
-			rc = CMD_FATAL_ERR;
-			cmd->status = EIO;
-			break;
 		case SISL_AFU_RC_NO_CHANNELS:
 			/* Retry with delay */
 			cmd->status = EIO;
 			rc = CMD_DLY_RETRY_ERR;
 			break;
-		case SISL_AFU_RC_RHT_DMA_ERR:
-		case SISL_AFU_RC_LXT_DMA_ERR:
 		case SISL_AFU_RC_DATA_DMA_ERR:
 			switch (ioasa->afu_extra) {
 			case SISL_AFU_DMA_ERR_PAGE_IN:
