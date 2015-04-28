@@ -114,107 +114,9 @@ void cxlflash_cmd_checkin(struct afu_cmd *cmd)
 	cxlflash_dbg("releasing cmd index=%d", cmd->slot);
 }
 
-enum cmd_err process_sense(struct afu_cmd *cmd,
-			   struct request_sense_data *sense_data)
-{
-	enum cmd_err rc = CMD_IGNORE_ERR;
-
-	if (unlikely(!sense_data)) {
-		cmd->status = EIO;
-		return CMD_FATAL_ERR;
-	}
-
-	cxlflash_dbg("sense data: error code = 0x%x, sense_key = 0x%x, "
-		     "asc = 0x%x, ascq = 0x%x",
-		     sense_data->err_code,
-		     sense_data->sense_key,
-		     sense_data->add_sense_key,
-		     sense_data->add_sense_qualifier);
-
-	switch (sense_data->sense_key) {
-	case NO_SENSE:
-		/* Ignore error and treat as good completion */
-		rc = CMD_IGNORE_ERR;
-		break;
-	case RECOVERED_ERROR:
-		/* Ignore error and treat as good completion */
-		rc = CMD_IGNORE_ERR;
-		break;
-	case NOT_READY:
-		/* Retry command */
-		cmd->status = EIO;
-		rc = CMD_RETRY_ERR;
-		break;
-	case MEDIUM_ERROR:
-	case HARDWARE_ERROR:
-		/* Fatal error do not retry. */
-		cmd->status = EIO;
-		rc = CMD_FATAL_ERR;
-		break;
-	case ILLEGAL_REQUEST:
-		/* Fatal error do not retry. */
-		cmd->status = EIO;
-		rc = CMD_FATAL_ERR;
-		break;
-	case UNIT_ATTENTION:
-		switch (sense_data->add_sense_key) {
-		case 0x29:
-			/*
-			 * Power on Reset or Device Reset. 
-			 * Retry command for now.
-			 */
-			cmd->status = EIO;
-			rc = CMD_RETRY_ERR;
-			break;
-		case 0x2A:
-			/*
-			 * Device settings/capacity has changed
-			 * Retry command for now.
-			 */
-			cmd->status = EIO;
-			rc = CMD_RETRY_ERR;
-			break;
-		case 0x3f:
-			if (sense_data->add_sense_qualifier == 0x0e) {
-				/* Retry command for now. */
-				cmd->status = EIO;
-				rc = CMD_RETRY_ERR;
-				break;
-			}
-			/* Fall thru */
-		default:
-			/* Fatal error */
-			cmd->status = EIO;
-			rc = CMD_FATAL_ERR;
-		}
-		break;
-	case DATA_PROTECT:
-	case BLANK_CHECK:
-	case CXLFLASH_VENDOR_UNIQUE:
-	case COPY_ABORTED:
-	case ABORTED_COMMAND:
-	case CXLFLASH_EQUAL_CMD:
-	case VOLUME_OVERFLOW:
-	case MISCOMPARE:
-	default:
-		/* Fatal error do not retry. */
-		rc = CMD_FATAL_ERR;
-		cmd->status = EIO;
-		cxlflash_err("Fatal generic error sense data: sense_key = 0x%x,"
-			     " asc = 0x%x, ascq = 0x%x",
-			     sense_data->sense_key,
-			     sense_data->add_sense_key,
-			     sense_data->add_sense_qualifier);
-		break;
-	}
-	return rc;
-}
-
-
 enum cmd_err process_cmd_err(struct afu_cmd *cmd, struct scsi_cmnd *scp)
 {
 	enum cmd_err rc = CMD_IGNORE_ERR;
-	enum cmd_err rc2;
 	struct sisl_ioarcb *ioarcb;
 	struct sisl_ioasa *ioasa;
 
@@ -268,14 +170,8 @@ enum cmd_err process_cmd_err(struct afu_cmd *cmd, struct scsi_cmnd *scp)
 				     ioasa->sense_data[2],
 				     ioasa->sense_data[12],
 				     ioasa->sense_data[13]);
-			rc2 = process_sense(cmd,
-					    (struct request_sense_data *)
-					    ioasa->sense_data);
-			if (rc == CMD_IGNORE_ERR)
-			/* If we have not indicated an error, then use the 
-			 * return code from the sense data processing.
-			 */
-				rc = rc2;
+			memcpy(scp->sense_buffer, ioasa->sense_data,
+			       SISL_SENSE_DATA_LEN);
 		} else if (ioasa->rc.scsi_rc) {
 			/* We have a SCSI status, but no sense data */
 			cxlflash_dbg("cmd failed ctx_id = 0x%x, ioasc = 0x%x, "
