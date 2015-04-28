@@ -249,7 +249,7 @@ static void cmd_complete(struct afu_cmd *cmd)
 			scp->result = (DID_OK << 16);
 
 		cxlflash_dbg("calling scsi_set_resid, scp=0x%llx "
-			     "result=%d afu_rc=%d scsi_rc=%d fc_rc=%d",
+			     "result=%x afu_rc=%d scsi_rc=%d fc_rc=%d",
 			     cmd->rcb.rsvd2, scp->result,
 			     cmd->sa.rc.afu_rc, cmd->sa.rc.scsi_rc,
 			     cmd->sa.rc.fc_rc);
@@ -548,29 +548,21 @@ out:
 static int cxlflash_slave_configure(struct scsi_device *sdev)
 {
 	struct lun_info *lun_info = sdev->hostdata;
-	int rc = 0;
 	struct Scsi_Host *shost = sdev->host;
 	struct cxlflash *cxlflash = shost_priv(shost);
 	struct afu *afu = cxlflash->afu;
 
-
-	cxlflash_info("ID = %08X", sdev->id);
-	cxlflash_info("CHANNEL = %08X", sdev->channel);
-	cxlflash_info("LUN = %016llX", sdev->lun);
-	cxlflash_info("sector_size = %u", sdev->sector_size);
+	cxlflash_info("id = %d/%d/%d/%llu", shost->host_no, sdev->channel,
+		      sdev->id, sdev->lun);
 
 	/* Store off lun in unpacked, AFU-friendly format */
 	lun_info->lun_id = lun_to_lunid(sdev->lun);
-	cxlflash_info("LUN2 = %016llX", lun_info->lun_id);
 
 	writeq_be(lun_info->lun_id,
 		  &afu->afu_map->global.fc_port[sdev->channel]
 		  [cxlflash->last_lun_index++]);
-	cxlflash_info("LBA = %016llX", lun_info->max_lba);
-	cxlflash_info("BLK_LEN = %08X", lun_info->blk_len);
 
-	cxlflash_info("returning rc=%d", rc);
-	return rc;
+	return 0;
 }
 
 static void ba_terminate(struct ba_lun *ba_lun)
