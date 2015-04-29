@@ -79,7 +79,7 @@ struct dk_cxlflash_clone {
 	__u64 context_id_dst;		/* Context ID to clone to */
 };
 
-#define DK_HINT_SENSE    0x0000000000000001LL
+#define DK_CXLFLASH_VERIFY_HINT_SENSE    0x0000000000000001LL
 
 struct dk_cxlflash_verify {
 	struct dk_cxlflash_hdr hdr;	/* Common fields */
@@ -87,6 +87,7 @@ struct dk_cxlflash_verify {
 	__u64 hint;			/* Reasons for verify */
 	__u64 last_lba;			/* Returned last LBA of device */
 	__u8 sense_data[18];		/* Sense data to decode */
+	__u8 pad[6];		        /* Pad do the next word */
 };
 
 struct dk_cxlflash_log {
