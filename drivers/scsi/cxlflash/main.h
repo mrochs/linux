@@ -111,14 +111,6 @@ struct request_sense_data  {
 	uint8_t     field_ptrL;
 };
 
-enum cmd_err {
-	CMD_FATAL_ERR      = -1,  /* Fatal command error. No recovery */
-	CMD_IGNORE_ERR     = 0,   /* Ignore command error */
-	CMD_RETRY_ERR      = 1,   /* Retry command error recovery */
-	CMD_DLY_RETRY_ERR  = 2,   /* Retry command with delay error */
-	/* recovery */
-};
-
 enum undo_level {
 	RELEASE_CONTEXT = 0,
 	FREE_IRQ,
