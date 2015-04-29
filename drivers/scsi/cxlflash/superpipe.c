@@ -1494,6 +1494,49 @@ out:
 	return rc;
 }
 
+static int process_sense(struct scsi_device *sdev,
+			 struct dk_cxlflash_verify *verify)
+{
+	struct request_sense_data *sense_data = (struct request_sense_data *)
+		&verify->sense_data;
+	struct lun_info *lun_info = sdev->hostdata;
+	struct cxlflash *cxlflash = (struct cxlflash *)sdev->host->hostdata;
+	struct afu *afu = cxlflash->afu;
+	u64 prev_lba = lun_info->max_lba;
+	int rc = 0;
+
+	switch (sense_data->sense_key) {
+	case NO_SENSE:
+	case RECOVERED_ERROR:
+		/* Fall through */
+	case NOT_READY:
+		break;
+	case UNIT_ATTENTION:
+		switch (sense_data->add_sense_key) {
+		case 0x29: /* Power on Reset or Device Reset */
+			/* Fall through */
+		case 0x2A: /* Device settings/capacity changed */
+			read_cap16(afu, lun_info, sdev->channel + 1);
+			verify->last_lba = lun_info->max_lba;
+			if (prev_lba != lun_info->max_lba)
+				cxlflash_dbg("Capacity changed old=%lld"
+					     "new=%lld", prev_lba,
+					     lun_info->max_lba);
+			break;
+		case 0x3F: /* Report LUNs changed */
+			break;
+		default:
+			rc = -EIO;
+			break;
+		}
+		break;
+	default:
+		rc = -EIO;
+		break;
+	}
+	return rc;
+}
+
 /*
  * NAME:        cxlflash_disk_verify
  *
@@ -1516,8 +1559,6 @@ out:
 static int cxlflash_disk_verify(struct scsi_device *sdev,
 				struct dk_cxlflash_verify *verify)
 {
-	struct lun_info *lun_info = sdev->hostdata;
-
 	int rc = 0;
 
 	/* XXX: We would have to look at the hint/sense to see if it 
@@ -1525,7 +1566,8 @@ static int cxlflash_disk_verify(struct scsi_device *sdev,
 	 * due to the WWN changing), or read capacity again (in case
 	 * the Unit attention was due to a resize)
 	 */
-	verify->last_lba = lun_info->max_lba;
+	if (verify->hint &  DK_HINT_SENSE)
+		rc = process_sense(sdev, verify);
 
 	cxlflash_info("returning rc=%d", rc);
 	return rc;
