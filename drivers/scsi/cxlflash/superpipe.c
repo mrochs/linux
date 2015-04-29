@@ -1625,7 +1625,7 @@ static int cxlflash_disk_verify(struct scsi_device *sdev,
 	 * due to the WWN changing), or read capacity again (in case
 	 * the Unit attention was due to a resize)
 	 */
-	if (verify->hint &  DK_CXLFLASH_VERIFY_HINT_SENSE)
+	if (verify->hint & DK_CXLFLASH_VERIFY_HINT_SENSE)
 		rc = process_sense(sdev, verify);
 
 	cxlflash_info("returning rc=%d", rc);
