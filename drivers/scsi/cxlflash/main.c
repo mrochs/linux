@@ -126,20 +126,15 @@ static void process_cmd_err(struct afu_cmd *cmd, struct scsi_cmnd *scp)
 	ioasa = &(cmd->sa);
 
 	if (ioasa->rc.flags & SISL_RC_FLAGS_UNDERRUN) {
-		cxlflash_dbg("cmd underrun ioasc = 0x%x, "
-			     "resid = 0x%x, flags = 0x%x, port = 0x%x",
-			     ioasa->ioasc, ioasa->resid, ioasa->rc.flags,
-			     ioasa->port);
+		cxlflash_dbg("cmd underrun cmd = %p scp = %p", cmd, scp);
 		scp->result = (DID_ERROR << 16);
 	}
 
 	if (ioasa->rc.flags & SISL_RC_FLAGS_OVERRUN) {
-		cxlflash_dbg("cmd overrun ioasc = 0x%x,"
-			    " resid = 0x%x, flags = 0x%x, port = 0x%x",
-			    ioasa->ioasc, ioasa->resid, ioasa->rc.flags,
-			    ioasa->port);
+		cxlflash_dbg("cmd underrun cmd = %p scp = %p", cmd, scp);
 		scp->result = (DID_ERROR << 16);
 	}
+
 	/*
 	 * TODO: ?? We need to look at the order these errors are prioritized
 	 * to see if this code order needs to change.
@@ -152,12 +147,12 @@ static void process_cmd_err(struct afu_cmd *cmd, struct scsi_cmnd *scp)
 
 	if (ioasa->rc.scsi_rc) {
 		/* We have a SCSI status */
-		if (ioasa->rc.flags & SISL_RC_FLAGS_SENSE_VALID) {
+		if (ioasa->rc.flags & SISL_RC_FLAGS_SENSE_VALID)
 			memcpy(scp->sense_buffer, ioasa->sense_data,
 			       SISL_SENSE_DATA_LEN);
-		}
 		scp->result = ioasa->rc.scsi_rc | (DID_ERROR << 16);
 	}
+
 	/*
 	 * We encountered an error. For now return
 	 * EIO for all errors.
