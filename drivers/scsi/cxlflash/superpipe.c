@@ -680,8 +680,7 @@ static void rhte_checkin(struct sisl_rht_entry *rht_entry)
 	rht_entry->fp = 0;
 }
 
-void cxlflash_rht_format1(struct sisl_rht_entry *rht_entry,
-			  u64 lun_id, u32 perm)
+static void rht_format1(struct sisl_rht_entry *rht_entry, u64 lun_id, u32 perm)
 {
 	/*
 	 * Populate the Format 1 RHT entry for direct access (physical
@@ -1139,7 +1138,7 @@ static int cxlflash_disk_open(struct scsi_device *sdev,
 		virt->last_lba = last_lba;
 		virt->rsrc_handle = rsrc_handle;
 	} else if (mode == MODE_PHYSICAL) {
-		cxlflash_rht_format1(rht_entry, lun_info->lun_id, perms);
+		rht_format1(rht_entry, lun_info->lun_id, perms);
 		cxlflash_afu_sync(afu, context_id, rsrc_handle, AFU_LW_SYNC);
 
 		last_lba = lun_info->max_lba;

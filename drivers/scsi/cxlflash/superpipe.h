@@ -88,5 +88,4 @@ struct request_sense_data  {
 	uint8_t     field_ptrL;
 };
 
-void cxlflash_rht_format1(struct sisl_rht_entry *, u64, u32);
 #endif /* ifndef _CXLFLASH_SUPERPIPE_H */
