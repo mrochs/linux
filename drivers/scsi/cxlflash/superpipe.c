@@ -440,6 +440,13 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 	if (cxlflash->num_user_contexts == 0)
 		cxlflash->cxl_fops = cxlflash_cxl_fops;
 
+	if (attach->num_interrupts > 4) {
+		cxlflash_err("Cannot support this many interrupts %llu",
+			     attach->num_interrupts);
+		rc = -EINVAL;
+		goto out;
+	}
+
 	if (lun_info->max_lba == 0) {
 		cxlflash_info("No capacity info yet for this LUN "
 			      "(%016llX)", lun_info->lun_id);
