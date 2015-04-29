@@ -18,7 +18,7 @@
 #include <linux/types.h>
 
 /*
- * Structure definitions CXL Flash driver superpipe ioctls
+ * Structure and flag definitions CXL Flash superpipe ioctls
  */
 
 struct dk_cxlflash_hdr {
@@ -27,6 +27,13 @@ struct dk_cxlflash_hdr {
 	__u64 flags;			/* Input flags */
 	__u64 return_flags;		/* Returned flags */
 };
+
+/*
+ * Note: For DK_CXLFLASH_ATTACH ioctl, user specifies read/write access
+ * permissions via the O_RDONLY, O_WRONLY, and O_RDWR flags defined in
+ * the fcntl.h header file.
+ */
+#define DK_CXLFLASH_ATTACH_REUSE_CONTEXT	0x8000000000000000ULL
 
 struct dk_cxlflash_attach {
 	struct dk_cxlflash_hdr hdr;	/* Common fields */
@@ -79,15 +86,15 @@ struct dk_cxlflash_clone {
 	__u64 context_id_dst;		/* Context ID to clone to */
 };
 
-#define DK_CXLFLASH_VERIFY_HINT_SENSE    0x0000000000000001LL
+#define DK_CXLFLASH_VERIFY_HINT_SENSE	0x8000000000000000ULL
 
 struct dk_cxlflash_verify {
 	struct dk_cxlflash_hdr hdr;	/* Common fields */
 	__u64 rsrc_handle;		/* Resource handle of LUN */
 	__u64 hint;			/* Reasons for verify */
 	__u64 last_lba;			/* Returned last LBA of device */
-	__u8 sense_data[18];		/* Sense data to decode */
-	__u8 pad[6];		        /* Pad do the next word */
+	__u8 sense_data[18];		/* SCSI fixed sense data to decode */
+	__u8 pad[6];			/* Pad to next 8-byte boundary */
 };
 
 struct dk_cxlflash_log {
@@ -121,17 +128,18 @@ union cxlflash_ioctls {
 
 
 #define CXL_MAGIC 0xCA
+#define CXL_IOW(_n, _s)	_IOW(CXL_MAGIC, _n, struct _s)
 
-#define DK_CXLFLASH_ATTACH           _IOW(CXL_MAGIC, 0x80, struct dk_cxlflash_attach)
-#define DK_CXLFLASH_USER_DIRECT      _IOW(CXL_MAGIC, 0x81, struct dk_cxlflash_udirect)
-#define DK_CXLFLASH_USER_VIRTUAL     _IOW(CXL_MAGIC, 0x82, struct dk_cxlflash_uvirtual)
-#define DK_CXLFLASH_VLUN_RESIZE      _IOW(CXL_MAGIC, 0x83, struct dk_cxlflash_resize)
-#define DK_CXLFLASH_RELEASE          _IOW(CXL_MAGIC, 0x84, struct dk_cxlflash_release)
-#define DK_CXLFLASH_DETACH           _IOW(CXL_MAGIC, 0x85, struct dk_cxlflash_detach)
-#define DK_CXLFLASH_VERIFY           _IOW(CXL_MAGIC, 0x86, struct dk_cxlflash_verify)
-#define DK_CXLFLASH_LOG_EVENT        _IOW(CXL_MAGIC, 0x87, struct dk_cxlflash_log)
-#define DK_CXLFLASH_RECOVER_AFU      _IOW(CXL_MAGIC, 0x88, struct dk_cxlflash_recover_afu)
-#define DK_CXLFLASH_QUERY_EXCEPTIONS _IOW(CXL_MAGIC, 0x89, struct dk_cxlflash_log)
-#define DK_CXLFLASH_CLONE	     _IOW(CXL_MAGIC, 0x8A, struct dk_cxlflash_clone)
+#define DK_CXLFLASH_ATTACH		CXL_IOW(0x80, dk_cxlflash_attach)
+#define DK_CXLFLASH_USER_DIRECT		CXL_IOW(0x81, dk_cxlflash_udirect)
+#define DK_CXLFLASH_USER_VIRTUAL	CXL_IOW(0x82, dk_cxlflash_uvirtual)
+#define DK_CXLFLASH_VLUN_RESIZE		CXL_IOW(0x83, dk_cxlflash_resize)
+#define DK_CXLFLASH_RELEASE		CXL_IOW(0x84, dk_cxlflash_release)
+#define DK_CXLFLASH_DETACH		CXL_IOW(0x85, dk_cxlflash_detach)
+#define DK_CXLFLASH_VERIFY		CXL_IOW(0x86, dk_cxlflash_verify)
+#define DK_CXLFLASH_LOG_EVENT		CXL_IOW(0x87, dk_cxlflash_log)
+#define DK_CXLFLASH_RECOVER_AFU		CXL_IOW(0x88, dk_cxlflash_recover_afu)
+#define DK_CXLFLASH_QUERY_EXCEPTIONS	CXL_IOW(0x89, dk_cxlflash_log)
+#define DK_CXLFLASH_CLONE		CXL_IOW(0x8A, dk_cxlflash_clone)
 
 #endif /* ifndef _CXLFLASH_IOCTL_H */
