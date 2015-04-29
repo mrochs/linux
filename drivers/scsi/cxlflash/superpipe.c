@@ -375,6 +375,66 @@ cxlflash_init_ba_exit:
 	return rc;
 }
 
+static int read_cap16(struct afu *afu, struct lun_info *lun_info, u32 port_sel)
+{
+	struct afu_cmd *cmd;
+	int rc = 0;
+
+	cmd = cxlflash_cmd_checkout(afu);
+	if (unlikely(!cmd)) {
+		cxlflash_err("could not get a free command");
+		return -1;
+	}
+
+	cmd->rcb.req_flags = (SISL_REQ_FLAGS_PORT_LUN_ID |
+				SISL_REQ_FLAGS_SUP_UNDERRUN |
+				SISL_REQ_FLAGS_HOST_READ);
+
+	cmd->rcb.port_sel = port_sel;
+	cmd->rcb.lun_id = lun_info->lun_id;
+	cmd->rcb.data_len = CMD_BUFSIZE;
+	cmd->rcb.data_ea = (u64) cmd->buf;
+	cmd->rcb.timeout = MC_DISCOVERY_TIMEOUT;
+	cmd->internal = true;
+
+	cmd->rcb.cdb[0] = 0x9E;	/* read cap(16) */
+	cmd->rcb.cdb[1] = 0x10;	/* service action */
+	put_unaligned_be32(CMD_BUFSIZE, &cmd->rcb.cdb[10]);
+
+	cmd->sa.host_use_b[1] = 0;	/* reset retry cnt */
+
+	cxlflash_info("sending cmd(0x%x) with RCB EA=%p data EA=0x%llx",
+		      cmd->rcb.cdb[0], &cmd->rcb, cmd->rcb.data_ea);
+
+	do {
+		cxlflash_send_cmd(afu, cmd);
+		cxlflash_wait_resp(afu, cmd);
+	} while (cxlflash_check_status(&cmd->sa));
+
+	if (cmd->sa.host_use_b[0] & B_ERROR) {
+		cxlflash_err("command failed");
+		rc = -1;
+		goto out;
+	}
+
+	/*
+	 * Read cap was successful, grab values from the buffer;
+	 * note that we don't need to worry about unaligned access
+	 * as the buffer is allocated on an aligned boundary.
+	 */
+	spin_lock(&lun_info->slock);
+	lun_info->max_lba = swab64(*((u64 *)&cmd->buf[0]));
+	lun_info->blk_len = swab32(*((u32 *)&cmd->buf[8]));
+	spin_unlock(&lun_info->slock);
+
+out:
+	cxlflash_cmd_checkin(cmd);
+
+	cxlflash_info("maxlba=%lld blklen=%d pcmd %p",
+		      lun_info->max_lba, lun_info->blk_len, cmd);
+	return rc;
+}
+
 int cxlflash_cxl_release(struct inode *inode, struct file *file)
 {
 	struct cxl_context *ctx = cxl_fops_get_context(file);
@@ -1570,66 +1630,6 @@ static int cxlflash_disk_verify(struct scsi_device *sdev,
 		rc = process_sense(sdev, verify);
 
 	cxlflash_info("returning rc=%d", rc);
-	return rc;
-}
-
-int read_cap16(struct afu *afu, struct lun_info *lun_info, u32 port_sel)
-{
-	struct afu_cmd *cmd;
-	int rc = 0;
-
-	cmd = cxlflash_cmd_checkout(afu);
-	if (unlikely(!cmd)) {
-		cxlflash_err("could not get a free command");
-		return -1;
-	}
-
-	cmd->rcb.req_flags = (SISL_REQ_FLAGS_PORT_LUN_ID |
-				SISL_REQ_FLAGS_SUP_UNDERRUN |
-				SISL_REQ_FLAGS_HOST_READ);
-
-	cmd->rcb.port_sel = port_sel;
-	cmd->rcb.lun_id = lun_info->lun_id;
-	cmd->rcb.data_len = CMD_BUFSIZE;
-	cmd->rcb.data_ea = (u64) cmd->buf;
-	cmd->rcb.timeout = MC_DISCOVERY_TIMEOUT;
-	cmd->internal = true;
-
-	cmd->rcb.cdb[0] = 0x9E;	/* read cap(16) */
-	cmd->rcb.cdb[1] = 0x10;	/* service action */
-	put_unaligned_be32(CMD_BUFSIZE, &cmd->rcb.cdb[10]);
-
-	cmd->sa.host_use_b[1] = 0;	/* reset retry cnt */
-
-	cxlflash_info("sending cmd(0x%x) with RCB EA=%p data EA=0x%llx",
-		      cmd->rcb.cdb[0], &cmd->rcb, cmd->rcb.data_ea);
-
-	do {
-		cxlflash_send_cmd(afu, cmd);
-		cxlflash_wait_resp(afu, cmd);
-	} while (cxlflash_check_status(&cmd->sa));
-
-	if (cmd->sa.host_use_b[0] & B_ERROR) {
-		cxlflash_err("command failed");
-		rc = -1;
-		goto out;
-	}
-
-	/*
-	 * Read cap was successful, grab values from the buffer;
-	 * note that we don't need to worry about unaligned access
-	 * as the buffer is allocated on an aligned boundary.
-	 */
-	spin_lock(&lun_info->slock);
-	lun_info->max_lba = swab64(*((u64 *)&cmd->buf[0]));
-	lun_info->blk_len = swab32(*((u32 *)&cmd->buf[8]));
-	spin_unlock(&lun_info->slock);
-
-out:
-	cxlflash_cmd_checkin(cmd);
-
-	cxlflash_info("maxlba=%lld blklen=%d pcmd %p",
-		      lun_info->max_lba, lun_info->blk_len, cmd);
 	return rc;
 }
 
