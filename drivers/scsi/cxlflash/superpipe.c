@@ -1616,16 +1616,29 @@ static int cxlflash_disk_verify(struct scsi_device *sdev,
 				struct dk_cxlflash_verify *verify)
 {
 	int rc = 0;
+	struct ctx_info *ctx_info;
+	struct cxlflash *cxlflash = (struct cxlflash *)sdev->host->hostdata;
+
+	cxlflash_info("context=0x%llx res_hndl=0x%llx, hint=0x%llx",
+		      verify->context_id, verify->rsrc_handle,
+		      verify->hint);
+
+	ctx_info = get_validated_context(cxlflash, verify->context_id, false);
+	if (unlikely(!ctx_info)) {
+		cxlflash_err("Invalid context! (%llu)", verify->context_id);
+		rc = -EINVAL;
+		goto out;
+	}
 
 	/* XXX: We would have to look at the hint/sense to see if it 
 	 * requires us to redrive inquiry (i.e. the Unit attention is
-	 * due to the WWN changing), or read capacity again (in case
-	 * the Unit attention was due to a resize)
+	 * due to the WWN changing).
 	 */
 	if (verify->hint & DK_CXLFLASH_VERIFY_HINT_SENSE)
 		rc = process_sense(sdev, verify);
 
-	cxlflash_info("returning rc=%d", rc);
+out:
+	cxlflash_info("returning rc=%d llba=%lld", rc, verify->last_lba);
 	return rc;
 }
 
