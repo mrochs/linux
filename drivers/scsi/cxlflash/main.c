@@ -1963,6 +1963,7 @@ int cxlflash_afu_sync(struct afu *afu, ctx_hndl_t ctx_hndl_u,
 	int rc = 0;
 
 	cxlflash_info("afu=%p cmd=%p %d", afu, cmd, ctx_hndl_u);
+	atomic_dec_if_positive(&cmd->free);
 
 	memset(cmd->rcb.cdb, 0, sizeof(cmd->rcb.cdb));
 

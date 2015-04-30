@@ -428,8 +428,6 @@ static int read_cap16(struct afu *afu, struct lun_info *lun_info, u32 port_sel)
 	spin_unlock(&lun_info->slock);
 
 out:
-	cxlflash_cmd_checkin(cmd);
-
 	cxlflash_info("maxlba=%lld blklen=%d pcmd %p",
 		      lun_info->max_lba, lun_info->blk_len, cmd);
 	return rc;
@@ -761,7 +759,6 @@ int write_same16(struct afu *afu, struct lun_info *lun_info, u64 lba, u32 nblks)
 	}
 
 out:
-	cxlflash_cmd_checkin(cmd);
 	cxlflash_info("returning rc=%d", rc);
 	return rc;
 }
