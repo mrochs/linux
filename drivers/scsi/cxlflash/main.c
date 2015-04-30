@@ -233,22 +233,22 @@ static void cmd_complete(struct afu_cmd *cmd)
 	/* already stopped if timer fired */
 	del_timer(&cmd->timer);
 
-	if (cmd->rcb.rsvd2) {
-		scp = (struct scsi_cmnd *)cmd->rcb.rsvd2;
+	if (cmd->rcb.scp) {
+		scp = cmd->rcb.scp;
 		if (cmd->sa.rc.afu_rc || cmd->sa.rc.scsi_rc ||
 		    cmd->sa.rc.fc_rc)
 			process_cmd_err(cmd, scp);
 		else
 			scp->result = (DID_OK << 16);
 
-		cxlflash_dbg("calling scsi_set_resid, scp=0x%llx "
+		cxlflash_dbg("calling scsi_set_resid, scp=%p "
 			     "result=%x resid=%d",
-			     cmd->rcb.rsvd2, scp->result, cmd->sa.resid);
+			     cmd->rcb.scp, scp->result, cmd->sa.resid);
 
 		scsi_set_resid(scp, cmd->sa.resid);
 		scsi_dma_unmap(scp);
 		scp->scsi_done(scp);
-		cmd->rcb.rsvd2 = 0;
+		cmd->rcb.scp = NULL;
 		if (cmd->special) {
 			cxlflash->tmf_active = 0;
 			wake_up_all(&cxlflash->tmf_wait_q);
@@ -298,7 +298,7 @@ int cxlflash_send_tmf(struct afu *afu, struct scsi_cmnd *scp, u64 tmfcmd)
 				SISL_REQ_FLAGS_SUP_UNDERRUN | lflag);
 
 	/* Stash the scp in the reserved field, for reuse during interrupt */
-	cmd->rcb.rsvd2 = (u64) scp;
+	cmd->rcb.scp = scp;
 	cmd->special = 0x1;
 	cxlflash->tmf_active = 0x1;
 
@@ -382,7 +382,7 @@ static int cxlflash_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *scp)
 				SISL_REQ_FLAGS_SUP_UNDERRUN | lflag);
 
 	/* Stash the scp in the reserved field, for reuse during interrupt */
-	cmd->rcb.rsvd2 = (u64) scp;
+	cmd->rcb.scp = scp;
 
 	cmd->sa.host_use_b[1] = 0;	/* reset retry cnt */
 
