@@ -160,8 +160,10 @@ struct cxlflash {
 	int last_lun_index;
 
 	wait_queue_head_t tmf_wait_q;
+	wait_queue_head_t sync_wait_q;
 	u8 context_reset_active:1;
 	u8 tmf_active:1;
+	u8 sync_active:1;
 };
 
 struct afu_cmd {
@@ -175,6 +177,7 @@ struct afu_cmd {
 	atomic_t free;
 	u8 special:1;
 	u8 internal:1;
+	u8 sync:1;
 
 } __attribute__ ((aligned(cache_line_size())));
 

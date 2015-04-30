@@ -250,9 +250,13 @@ static void cmd_complete(struct afu_cmd *cmd)
 		scp->scsi_done(scp);
 		cmd->rcb.scp = NULL;
 		if (cmd->special) {
-			cxlflash->tmf_active = 0;
+			cxlflash->tmf_active = false;
 			wake_up_all(&cxlflash->tmf_wait_q);
 		}
+	}
+	if (cmd->sync) {
+		cxlflash->sync_active = false;
+		wake_up_all(&cxlflash->sync_wait_q);
 	}
 
 	/* Done with command */
@@ -300,7 +304,7 @@ int cxlflash_send_tmf(struct afu *afu, struct scsi_cmnd *scp, u64 tmfcmd)
 	/* Stash the scp in the reserved field, for reuse during interrupt */
 	cmd->rcb.scp = scp;
 	cmd->special = 0x1;
-	cxlflash->tmf_active = 0x1;
+	cxlflash->tmf_active = true;
 
 	cmd->sa.host_use_b[1] = 0;	/* reset retry cnt */
 
@@ -1960,9 +1964,16 @@ int cxlflash_afu_sync(struct afu *afu, ctx_hndl_t ctx_hndl_u,
 		      res_hndl_t res_hndl_u, u8 mode)
 {
 	struct afu_cmd *cmd = &afu->cmd[AFU_SYNC_INDEX];
+	struct cxlflash *cxlflash = afu->back;
 	int rc = 0;
 
 	cxlflash_info("afu=%p cmd=%p %d", afu, cmd, ctx_hndl_u);
+
+	while (cxlflash->sync_active) {
+		cxlflash_dbg("sync issued while one is active");
+		wait_event(cxlflash->sync_wait_q, !cxlflash->sync_active);
+	}
+
 	atomic_dec_if_positive(&cmd->free);
 
 	memset(cmd->rcb.cdb, 0, sizeof(cmd->rcb.cdb));
@@ -1973,10 +1984,13 @@ int cxlflash_afu_sync(struct afu *afu, ctx_hndl_t ctx_hndl_u,
 	cmd->rcb.data_len = 0x0;
 	cmd->rcb.data_ea = 0x0;
 	cmd->internal = true;
+	cmd->sync = true;
 	cmd->rcb.timeout = MC_AFU_SYNC_TIMEOUT;
 
 	cmd->rcb.cdb[0] = 0xC0;	/* AFU Sync */
 	cmd->rcb.cdb[1] = mode;
+
+	cxlflash->sync_active = true;
 
 	/* The cdb is aligned, no unaligned accessors required */
 	*((u16 *)&cmd->rcb.cdb[2]) = swab16(ctx_hndl_u);
@@ -2099,6 +2113,7 @@ static int cxlflash_probe(struct pci_dev *pdev,
 
 	init_waitqueue_head(&cxlflash->tmf_wait_q);
 	init_waitqueue_head(&cxlflash->eeh_wait_q);
+	init_waitqueue_head(&cxlflash->sync_wait_q);
 
 	INIT_WORK(&cxlflash->work_q, cxlflash_worker_thread);
 	cxlflash->lr_state = LINK_RESET_INVALID;
