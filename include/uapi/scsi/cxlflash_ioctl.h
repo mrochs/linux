@@ -87,13 +87,17 @@ struct dk_cxlflash_clone {
 };
 
 #define DK_CXLFLASH_VERIFY_HINT_SENSE	0x8000000000000000ULL
+#define DK_CXLFLASH_VERIFY_SENSE_LEN	18
+#define DK_CXLFLASH_LOG_SENSE_LEN	256
 
 struct dk_cxlflash_verify {
 	struct dk_cxlflash_hdr hdr;	/* Common fields */
+	__u64 context_id;		/* Context ID of LUN to verify */
 	__u64 rsrc_handle;		/* Resource handle of LUN */
 	__u64 hint;			/* Reasons for verify */
 	__u64 last_lba;			/* Returned last LBA of device */
-	__u8 sense_data[18];		/* SCSI fixed sense data to decode */
+	__u8 sense_data[DK_CXLFLASH_VERIFY_SENSE_LEN];
+	                                /* SCSI fixed sense data to decode */
 	__u8 pad[6];			/* Pad to next 8-byte boundary */
 };
 
@@ -101,7 +105,8 @@ struct dk_cxlflash_log {
 	struct dk_cxlflash_hdr hdr;	/* Common fields */
 	__u64 rsrc_handle;		/* Resource handle to log err against */
 	__u64 reason;			/* Reason code for error */
-	__u8 sense_data[256];		/* Sense data to include in error */
+	__u8 sense_data[DK_CXLFLASH_LOG_SENSE_LEN];
+	                                /* Sense data to include in error */
 };
 
 struct dk_cxlflash_recover_afu {
