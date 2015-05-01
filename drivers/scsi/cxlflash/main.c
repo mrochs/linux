@@ -1963,14 +1963,21 @@ int cxlflash_afu_sync(struct afu *afu, ctx_hndl_t ctx_hndl_u,
 	struct cxlflash *cxlflash = afu->back;
 	struct afu_cmd *cmd;
 	int rc = 0;
+	int retry_cnt = 0;
 
 	while (cxlflash->sync_active) {
 		cxlflash_dbg("sync issued while one is active");
 		wait_event(cxlflash->sync_wait_q, !cxlflash->sync_active);
 	}
 
+retry:
 	cmd = cxlflash_cmd_checkout(afu);
 	if (unlikely(!cmd)) {
+		retry_cnt++;
+		cxlflash_dbg("could not get command on attempt %d", retry_cnt);
+		udelay(1000*retry_cnt);
+		if (retry_cnt < MC_RETRY_CNT)
+			goto retry;
 		cxlflash_err("could not get a free command");
 		rc = -1;
 		goto out;

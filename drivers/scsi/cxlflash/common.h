@@ -45,8 +45,6 @@
 #error "CXLFLASH_NUM_CMDS is not a power of 2!"
 #endif
 
-#define AFU_SYNC_INDEX  (CXLFLASH_NUM_CMDS - 1)	/* last cmd rsvd for afu sync */
-
 #define CMD_BUFSIZE     PAGE_SIZE_4K
 
 /* flags in IOA status area for host use */
