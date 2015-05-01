@@ -82,10 +82,6 @@ struct afu_cmd *cxlflash_cmd_checkout(struct afu *afu)
 	while (dec--) {
 		k = (afu->cmd_couts++ & (CXLFLASH_NUM_CMDS - 1));
 
-		/* The last command structure is reserved for SYNC */
-		if (k == AFU_SYNC_INDEX)
-			continue;
-
 		cmd = &afu->cmd[k];
 
 		if (!atomic_dec_if_positive(&cmd->free)) {
@@ -109,6 +105,7 @@ void cxlflash_cmd_checkin(struct afu_cmd *cmd)
 
 	cmd->special = 0;
 	cmd->internal = false;
+	cmd->sync = false;
 	cmd->rcb.timeout = 0;
 
 	cxlflash_dbg("releasing cmd index=%d", cmd->slot);
@@ -1963,18 +1960,23 @@ void cxlflash_wait_resp(struct afu *afu, struct afu_cmd *cmd)
 int cxlflash_afu_sync(struct afu *afu, ctx_hndl_t ctx_hndl_u,
 		      res_hndl_t res_hndl_u, u8 mode)
 {
-	struct afu_cmd *cmd = &afu->cmd[AFU_SYNC_INDEX];
 	struct cxlflash *cxlflash = afu->back;
+	struct afu_cmd *cmd;
 	int rc = 0;
-
-	cxlflash_info("afu=%p cmd=%p %d", afu, cmd, ctx_hndl_u);
 
 	while (cxlflash->sync_active) {
 		cxlflash_dbg("sync issued while one is active");
 		wait_event(cxlflash->sync_wait_q, !cxlflash->sync_active);
 	}
 
-	atomic_dec_if_positive(&cmd->free);
+	cmd = cxlflash_cmd_checkout(afu);
+	if (unlikely(!cmd)) {
+		cxlflash_err("could not get a free command");
+		rc = -1;
+		goto out;
+	}
+
+	cxlflash_info("afu=%p cmd=%p %d", afu, cmd, ctx_hndl_u);
 
 	memset(cmd->rcb.cdb, 0, sizeof(cmd->rcb.cdb));
 
@@ -2004,6 +2006,7 @@ int cxlflash_afu_sync(struct afu *afu, ctx_hndl_t ctx_hndl_u,
 		/* B_ERROR is set on timeout */
 	}
 
+out:
 	cxlflash_info("returning rc=%d", rc);
 	return rc;
 }
