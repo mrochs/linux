@@ -648,7 +648,7 @@ static struct sisl_rht_entry *rhte_checkout(struct cxlflash *cxlflash,
 
 	rht_info = ctx_info->rht_info;
 
-	cxlflash_info("ctx 0x%llx ctxinfo %p rhtinfo %p",
+	cxlflash_dbg("ctx 0x%llx ctxinfo %p rhtinfo %p",
 		      context_id, ctx_info, rht_info);
 
 	/* find a free RHT entry */
@@ -668,7 +668,7 @@ static struct sisl_rht_entry *rhte_checkout(struct cxlflash *cxlflash,
 	}
 
 out:
-	cxlflash_info("returning rht_entry=%p", rht_entry);
+	cxlflash_dbg("returning rht_entry=%p", rht_entry);
 	return rht_entry;
 }
 
@@ -844,7 +844,7 @@ static int grow_lxt(struct afu *afu,
 	/* free old lxt if reallocated */
 	if (lxt != lxt_old)
 		kfree(lxt_old);
-	cxlflash_info("returning");
+	cxlflash_dbg("returning");
 	return 0;
 }
 
@@ -908,7 +908,7 @@ static int shrink_lxt(struct afu *afu,
 	/* free old lxt if reallocated */
 	if (lxt != lxt_old)
 		kfree(lxt_old);
-	cxlflash_info("returning");
+	cxlflash_dbg("returning");
 	return 0;
 }
 
@@ -1446,7 +1446,7 @@ static int clone_lxt(struct afu *afu,
 
 	cxlflash_afu_sync(afu, ctx_hndl_u, res_hndl_u, AFU_LW_SYNC);
 
-	cxlflash_info("returning");
+	cxlflash_dbg("returning");
 	return 0;
 }
 

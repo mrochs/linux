@@ -1983,7 +1983,7 @@ retry:
 		goto out;
 	}
 
-	cxlflash_info("afu=%p cmd=%p %d", afu, cmd, ctx_hndl_u);
+	cxlflash_dbg("afu=%p cmd=%p %d", afu, cmd, ctx_hndl_u);
 
 	memset(cmd->rcb.cdb, 0, sizeof(cmd->rcb.cdb));
 
@@ -2014,7 +2014,7 @@ retry:
 	}
 
 out:
-	cxlflash_info("returning rc=%d", rc);
+	cxlflash_dbg("returning rc=%d", rc);
 	return rc;
 }
 
