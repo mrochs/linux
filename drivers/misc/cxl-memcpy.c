@@ -248,7 +248,7 @@ static int memcpy_afu(struct pci_dev *dev)
 	 */
 	rc = 0;
 	while(!info->afu_irq_done) {
-		cpu_relax();
+		schedule();
 		rc++;
 	}
 
