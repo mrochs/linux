@@ -84,11 +84,11 @@ struct dk_cxlflash_clone {
 	struct dk_cxlflash_hdr hdr;	/* Common fields */
 	__u64 context_id_src;		/* Context ID to clone from */
 	__u64 context_id_dst;		/* Context ID to clone to */
+	__u64 adap_fd_src;		/* Source context adapter fd */
 };
 
-#define DK_CXLFLASH_VERIFY_HINT_SENSE	0x8000000000000000ULL
 #define DK_CXLFLASH_VERIFY_SENSE_LEN	18
-#define DK_CXLFLASH_LOG_SENSE_LEN	256
+#define DK_CXLFLASH_VERIFY_HINT_SENSE	0x8000000000000000ULL
 
 struct dk_cxlflash_verify {
 	struct dk_cxlflash_hdr hdr;	/* Common fields */
@@ -96,17 +96,8 @@ struct dk_cxlflash_verify {
 	__u64 rsrc_handle;		/* Resource handle of LUN */
 	__u64 hint;			/* Reasons for verify */
 	__u64 last_lba;			/* Returned last LBA of device */
-	__u8 sense_data[DK_CXLFLASH_VERIFY_SENSE_LEN];
-	                                /* SCSI fixed sense data to decode */
+	__u8 sense_data[DK_CXLFLASH_VERIFY_SENSE_LEN]; /* SCSI sense data */
 	__u8 pad[6];			/* Pad to next 8-byte boundary */
-};
-
-struct dk_cxlflash_log {
-	struct dk_cxlflash_hdr hdr;	/* Common fields */
-	__u64 rsrc_handle;		/* Resource handle to log err against */
-	__u64 reason;			/* Reason code for error */
-	__u8 sense_data[DK_CXLFLASH_LOG_SENSE_LEN];
-	                                /* Sense data to include in error */
 };
 
 struct dk_cxlflash_recover_afu {
@@ -125,7 +116,6 @@ union cxlflash_ioctls {
 	struct dk_cxlflash_resize resize;
 	struct dk_cxlflash_clone clone;
 	struct dk_cxlflash_verify verify;
-	struct dk_cxlflash_log log;
 	struct dk_cxlflash_recover_afu recover_afu;
 };
 
@@ -142,9 +132,7 @@ union cxlflash_ioctls {
 #define DK_CXLFLASH_RELEASE		CXL_IOW(0x84, dk_cxlflash_release)
 #define DK_CXLFLASH_DETACH		CXL_IOW(0x85, dk_cxlflash_detach)
 #define DK_CXLFLASH_VERIFY		CXL_IOW(0x86, dk_cxlflash_verify)
-#define DK_CXLFLASH_LOG_EVENT		CXL_IOW(0x87, dk_cxlflash_log)
+#define DK_CXLFLASH_CLONE		CXL_IOW(0x87, dk_cxlflash_clone)
 #define DK_CXLFLASH_RECOVER_AFU		CXL_IOW(0x88, dk_cxlflash_recover_afu)
-#define DK_CXLFLASH_QUERY_EXCEPTIONS	CXL_IOW(0x89, dk_cxlflash_log)
-#define DK_CXLFLASH_CLONE		CXL_IOW(0x8A, dk_cxlflash_clone)
 
 #endif /* ifndef _CXLFLASH_IOCTL_H */

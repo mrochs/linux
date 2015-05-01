@@ -1704,10 +1704,8 @@ int cxlflash_ioctl(struct scsi_device *sdev, int cmd, void __user *arg)
 		IOCTE(dk_cxlflash_release, cxlflash_disk_release)}, {
 		IOCTE(dk_cxlflash_detach, cxlflash_disk_detach)}, {
 		IOCTE(dk_cxlflash_verify, cxlflash_disk_verify)}, {
-		IOCTE(dk_cxlflash_log, NULL)}, {
-		IOCTE(dk_cxlflash_recover_afu, cxlflash_afu_recover)}, {
-		IOCTE(dk_cxlflash_log, NULL)}, {
-		IOCTE(dk_cxlflash_clone, cxlflash_disk_clone)}
+		IOCTE(dk_cxlflash_clone, cxlflash_disk_clone)}, {
+		IOCTE(dk_cxlflash_recover_afu, cxlflash_afu_recover)}
 	};
 
 	/* Restrict command set to physical support only for internal LUN */
