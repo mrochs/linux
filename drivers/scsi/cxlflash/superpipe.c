@@ -1729,10 +1729,8 @@ int cxlflash_ioctl(struct scsi_device *sdev, int cmd, void __user *arg)
 	case DK_CXLFLASH_RELEASE:
 	case DK_CXLFLASH_DETACH:
 	case DK_CXLFLASH_VERIFY:
-	case DK_CXLFLASH_LOG_EVENT:
-	case DK_CXLFLASH_RECOVER_AFU:
-	case DK_CXLFLASH_QUERY_EXCEPTIONS:
 	case DK_CXLFLASH_CLONE:
+	case DK_CXLFLASH_RECOVER_AFU:
 		idx = _IOC_NR(cmd) - _IOC_NR(DK_CXLFLASH_ATTACH);
 		size = ioctl_tbl[idx].size;
 		do_ioctl = ioctl_tbl[idx].ioctl;
