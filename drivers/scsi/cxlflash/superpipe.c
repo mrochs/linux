@@ -1529,14 +1529,13 @@ static int cxlflash_disk_clone(struct scsi_device *sdev,
 
 	/*
 	 * Copy over checked-out RHT (and their associated LXT) entries by
-	 * hand, stopping after we've copied all outstanding entries. This
-	 * loop is equivalent to cxlflash_disk_open & cxlflash_vlun_resize.
-	 * Cleanup when the clone fails.
+	 * hand, stopping after we've copied all outstanding entries and
+	 * cleaning up if the clone fails.
 	 *
 	 * Note: This loop is equivalent to performing cxlflash_disk_open and
 	 * cxlflash_vlun_resize. As such, LUN accounting needs to be taken into
 	 * account by attaching after each successful RHT entry clone. In the
-	 * even that a clone failure is experienced, the LUN detach is handled
+	 * event that a clone failure is experienced, the LUN detach is handled
 	 * via the cleanup performed by cxlflash_disk_release.
 	 */
 	for (i = 0; i < MAX_RHT_PER_CONTEXT; i++) {
