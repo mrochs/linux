@@ -303,6 +303,7 @@ static int cxlflash_afu_attach(struct cxlflash *cxlflash, u64 context_id)
 {
 	struct afu *afu = cxlflash->afu;
 	struct ctx_info *ctx_info = &afu->ctx_info[context_id];
+	struct sisl_rht_entry *rht;
 	int rc = 0;
 	u64 reg;
 
@@ -327,18 +328,18 @@ static int cxlflash_afu_attach(struct cxlflash *cxlflash, u64 context_id)
 	}
 
 	/* the context gets a dedicated RHT tbl */
-	ctx_info->rht_info = &afu->rht_info[context_id];
-	ctx_info->rht_info->ref_cnt = 1;
-	memset(ctx_info->rht_info->rht_start, 0,
-	       sizeof(struct sisl_rht_entry) * MAX_RHT_PER_CONTEXT);
-	/* make clearing of the RHT visible to AFU before
-	 * MMIO
-	 */
-	smp_wmb();
+	rht = (struct sisl_rht_entry *)get_zeroed_page(GFP_KERNEL);
+	if (unlikely(!rht)) {
+		cxlflash_err("Unable to allocate RHT memory!");
+		rc = -ENOMEM;
+		goto out;
+	}
+
+	ctx_info->rht_start = rht;
+	ctx_info->rht_out = 0;
 
 	/* set up MMIO registers pointing to the RHT */
-	writeq_be((u64) ctx_info->rht_info->rht_start,
-		  &ctx_info->ctrl_map->rht_start);
+	writeq_be((u64)rht, &ctx_info->ctrl_map->rht_start);
 	writeq_be(SISL_RHT_CNT_ID((u64) MAX_RHT_PER_CONTEXT,
 				  (u64) (afu->ctx_hndl)),
 		  &ctx_info->ctrl_map->rht_cnt_id);
@@ -576,7 +577,7 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 
 	/* Translate read/write O_* flags from fnctl.h to AFU permission bits */
 	perms = ((attach->hdr.flags + 1) & 0x3);
-	afu->ctx_info[context_id].rht_info->perms = perms;
+	afu->ctx_info[context_id].rht_perms = perms;
 
 	attach->hdr.return_flags = 0;
 	attach->context_id = context_id;
@@ -632,50 +633,29 @@ static struct ctx_info *get_validated_context(struct cxlflash *cxlflash,
 }
 
 /* Checkout a free/empty RHT entry */
-static struct sisl_rht_entry *rhte_checkout(struct cxlflash *cxlflash,
-					    u64 context_id)
+static struct sisl_rht_entry *rhte_checkout(struct ctx_info *ctx_info)
 {
-	struct ctx_info *ctx_info;
-	struct rht_info *rht_info = NULL;
 	struct sisl_rht_entry *rht_entry = NULL;
 	int i;
 
-	ctx_info = get_validated_context(cxlflash, context_id, false);
-	if (unlikely(!ctx_info)) {
-		cxlflash_err("Invalid context! (%llu)", context_id);
-		goto out;
-	}
-
-	rht_info = ctx_info->rht_info;
-
-	cxlflash_dbg("ctx 0x%llx ctxinfo %p rhtinfo %p",
-		      context_id, ctx_info, rht_info);
-
-	/* find a free RHT entry */
+	/* Find a free RHT entry */
 	for (i = 0; i < MAX_RHT_PER_CONTEXT; i++)
-		if (rht_info->rht_start[i].nmask == 0) {
-			rht_entry = &rht_info->rht_start[i];
+		if (ctx_info->rht_start[i].nmask == 0) {
+			rht_entry = &ctx_info->rht_start[i];
+			ctx_info->rht_out++;
 			break;
 		}
 
-	cxlflash_dbg("i %d rhti %p rhte %p", i, rht_info, rht_entry);
-
-	/* No free entries means we've reached max opens allowed per context */
-	if (unlikely(!rht_entry)) {
-		cxlflash_err("No free entries found for context id %llu",
-			     context_id);
-		goto out;
-	}
-
-out:
-	cxlflash_dbg("returning rht_entry=%p", rht_entry);
+	cxlflash_dbg("returning rht_entry=%p (%d)", rht_entry, i);
 	return rht_entry;
 }
 
-static void rhte_checkin(struct sisl_rht_entry *rht_entry)
+static void rhte_checkin(struct ctx_info *ctx_info,
+			 struct sisl_rht_entry *rht_entry)
 {
 	rht_entry->nmask = 0;
 	rht_entry->fp = 0;
+	ctx_info->rht_out--;
 }
 
 static void rht_format1(struct sisl_rht_entry *rht_entry, u64 lun_id, u32 perm)
@@ -947,7 +927,6 @@ static int cxlflash_vlun_resize(struct scsi_device *sdev,
 	u64 nsectors;
 
 	struct ctx_info *ctx_info;
-	struct rht_info *rht_info;
 	struct sisl_rht_entry *rht_entry;
 
 	int rc = 0;
@@ -963,8 +942,8 @@ static int cxlflash_vlun_resize(struct scsi_device *sdev,
 		      "new_size=%llx", resize->context_id,
 		      resize->rsrc_handle, resize->req_size, new_size);
 
-	if (lun_info->mode != MODE_VIRTUAL) {
-		cxlflash_err("cannot resize lun that is not virtual %d",
+	if (unlikely(lun_info->mode != MODE_VIRTUAL)) {
+		cxlflash_err("LUN mode does not support resize! (%d)",
 			     lun_info->mode);
 		rc = -EINVAL;
 		goto out;
@@ -978,40 +957,39 @@ static int cxlflash_vlun_resize(struct scsi_device *sdev,
 		goto out;
 	}
 
-	rht_info = ctx_info->rht_info;
-
-	if (res_hndl < MAX_RHT_PER_CONTEXT) {
-		rht_entry = &rht_info->rht_start[res_hndl];
-
-		if (rht_entry->nmask == 0) {	/* not open */
-			cxlflash_err("not open rhti %p rhte %p",
-				     rht_info, rht_entry);
-			rc = -EINVAL;
-			goto out;
-		}
-
-		if (new_size > rht_entry->lxt_cnt)
-			grow_lxt(afu,
-				 lun_info,
-				 resize->context_id,
-				 res_hndl,
-				 rht_entry,
-				 new_size - rht_entry->lxt_cnt,
-				 &act_new_size);
-		else if (new_size < rht_entry->lxt_cnt)
-			shrink_lxt(afu,
-				   lun_info,
-				   resize->context_id,
-				   res_hndl,
-				   rht_entry,
-				   rht_entry->lxt_cnt - new_size,
-				   &act_new_size);
-		else
-			act_new_size = new_size;
-	} else {
-		cxlflash_err("res_hndl %d invalid", res_hndl);
+	if (unlikely(res_hndl >= MAX_RHT_PER_CONTEXT)) {
+		cxlflash_err("Invalid resource handle! (%u)", res_hndl);
 		rc = -EINVAL;
+		goto out;
 	}
+
+	rht_entry = &ctx_info->rht_start[res_hndl];
+
+	if (unlikely(rht_entry->nmask == 0)) {	/* not open */
+		cxlflash_err("Invalid resource handle! (%u)", res_hndl);
+		rc = -ENXIO;
+		goto out;
+	}
+
+	if (new_size > rht_entry->lxt_cnt)
+		grow_lxt(afu,
+			 lun_info,
+			 resize->context_id,
+			 res_hndl,
+			 rht_entry,
+			 new_size - rht_entry->lxt_cnt,
+			 &act_new_size);
+	else if (new_size < rht_entry->lxt_cnt)
+		shrink_lxt(afu,
+			   lun_info,
+			   resize->context_id,
+			   res_hndl,
+			   rht_entry,
+			   rht_entry->lxt_cnt - new_size,
+			   &act_new_size);
+	else
+		act_new_size = new_size;
+
 	resize->hdr.return_flags = 0;
 	resize->last_lba = (((act_new_size * MC_CHUNK_SIZE *
 			    lun_info->blk_len) / CXLFLASH_BLOCK_SIZE) - 1);
@@ -1019,6 +997,37 @@ static int cxlflash_vlun_resize(struct scsi_device *sdev,
 out:
 	cxlflash_info("resized to %lld returning rc=%d", resize->last_lba, rc);
 	return rc;
+}
+
+int cxlflash_lun_attach(struct lun_info *lun_info, enum lun_mode desired_mode)
+{
+	int rc = 0;
+
+	spin_lock(&lun_info->slock);
+	if (lun_info->mode == MODE_NONE)
+		lun_info->mode = desired_mode;
+	else if (lun_info->mode != desired_mode) {
+		cxlflash_err("LUN operating in mode %d, requested mode %d",
+			     lun_info->mode, desired_mode);
+		rc = -EINVAL;
+		goto out;
+	}
+
+	lun_info->users++;
+out:
+	cxlflash_dbg("Returning rc=%d li_mode=%u li_users=%u", rc,
+		     lun_info->mode, lun_info->users);
+	spin_unlock(&lun_info->slock);
+	return rc;
+}
+
+void cxlflash_lun_detach(struct lun_info *lun_info)
+{
+	spin_lock(&lun_info->slock);
+	if (--lun_info->users == 0)
+		lun_info->mode = MODE_NONE;
+	cxlflash_dbg("li_users=%u", lun_info->users);
+	spin_unlock(&lun_info->slock);
 }
 
 /*
@@ -1042,8 +1051,8 @@ out:
  *               a. find a free RHT entry
  *
  */
-static int cxlflash_disk_open(struct scsi_device *sdev,
-			      void *arg, enum open_mode_type mode)
+static int cxlflash_disk_open(struct scsi_device *sdev, void *arg,
+			      enum lun_mode mode)
 {
 	struct cxlflash *cxlflash = (struct cxlflash *)sdev->host->hostdata;
 	struct afu *afu = cxlflash->afu;
@@ -1062,43 +1071,27 @@ static int cxlflash_disk_open(struct scsi_device *sdev,
 	int rc = 0;
 
 	struct ctx_info *ctx_info;
-	struct rht_info *rht_info = NULL;
 	struct sisl_rht_entry *rht_entry = NULL;
 
-	if (mode == MODE_VIRTUAL) {
+	switch (mode) {
+	case MODE_VIRTUAL:
 		context_id = virt->context_id;
 		lun_size = virt->lun_size;
-		/* Initialize to invalid value */
-		virt->rsrc_handle = -1;
-	} else if (mode == MODE_PHYSICAL) {
+		break;
+	case MODE_PHYSICAL:
 		context_id = pphys->context_id;
-		/* Initialize to invalid value */
-		pphys->rsrc_handle = -1;
-	} else {
-		cxlflash_err("unknown mode %d", mode);
+		break;
+	default:
+		cxlflash_err("Unknown mode! (%u)", mode);
 		rc = -EINVAL;
 		goto out;
 	}
-
-	spin_lock(&lun_info->slock);
-	if (lun_info->mode == MODE_NONE)
-		lun_info->mode = mode;
-	else if (lun_info->mode != mode) {
-		cxlflash_err
-		    ("disk already opened in mode %d, mode requested %d",
-		     lun_info->mode, mode);
-		rc = -EINVAL;
-		spin_unlock(&lun_info->slock);
-		goto out;
-	}
-	spin_unlock(&lun_info->slock);
 
 	cxlflash_info("context=0x%llx ls=0x%llx", context_id, lun_size);
 
-	rht_entry = rhte_checkout(cxlflash, context_id);
-	if (!rht_entry) {
-		cxlflash_err("too many opens for this context");
-		rc = -EMFILE;	/* too many opens  */
+	rc = cxlflash_lun_attach(lun_info, mode);
+	if (unlikely(rc)) {
+		cxlflash_err("Failed to attach to LUN! mode=%u", mode);
 		goto out;
 	}
 
@@ -1106,15 +1099,20 @@ static int cxlflash_disk_open(struct scsi_device *sdev,
 	if (unlikely(!ctx_info)) {
 		cxlflash_err("Invalid context! (%llu)", context_id);
 		rc = -EINVAL;
-		goto out;
+		goto err1;
 	}
 
-	rht_info = ctx_info->rht_info;
+	rht_entry = rhte_checkout(ctx_info);
+	if (unlikely(!rht_entry)) {
+		cxlflash_err("too many opens for this context");
+		rc = -EMFILE;	/* too many opens  */
+		goto err1;
+	}
 
 	/* User specified permission on attach */
-	perms = rht_info->perms;
+	perms = ctx_info->rht_perms;
 
-	rsrc_handle = (rht_entry - rht_info->rht_start);
+	rsrc_handle = (rht_entry - ctx_info->rht_start);
 
 	if (mode == MODE_VIRTUAL) {
 		rht_entry->nmask = MC_RHT_NMASK;
@@ -1127,7 +1125,7 @@ static int cxlflash_disk_open(struct scsi_device *sdev,
 			rc = cxlflash_vlun_resize(sdev, &resize);
 			if (rc) {
 				cxlflash_err("resize failed rc %d", rc);
-				goto out;
+				goto err2;
 			}
 			last_lba = resize.last_lba;
 		}
@@ -1148,6 +1146,12 @@ out:
 	cxlflash_info("returning handle 0x%llx rc=%d llba %lld",
 		      rsrc_handle, rc, last_lba);
 	return rc;
+
+err2:
+	rhte_checkin(ctx_info, rht_entry);
+err1:
+	cxlflash_lun_detach(lun_info);
+	goto out;
 }
 
 /*
@@ -1183,11 +1187,11 @@ static int cxlflash_disk_release(struct scsi_device *sdev,
 	int rc = 0;
 
 	struct ctx_info *ctx_info;
-	struct rht_info *rht_info;
 	struct sisl_rht_entry *rht_entry;
 
-	cxlflash_info("context=0x%llx res_hndl=0x%llx",
-		      release->context_id, release->rsrc_handle);
+	cxlflash_info("context=0x%llx res_hndl=0x%llx li->mode=%u li->users=%u",
+		      release->context_id, release->rsrc_handle,
+		      lun_info->mode, lun_info->users);
 
 	ctx_info =
 	    get_validated_context(cxlflash, release->context_id, false);
@@ -1197,59 +1201,63 @@ static int cxlflash_disk_release(struct scsi_device *sdev,
 		goto out;
 	}
 
-	rht_info = ctx_info->rht_info;
+	if (!ctx_info->rht_start) {
+		cxlflash_err("Release called without attached context!");
+		rc = -EINVAL;
+		goto out;
+	}
 
-	if (res_hndl < MAX_RHT_PER_CONTEXT) {
-		rht_entry = &rht_info->rht_start[res_hndl];
-		if (rht_entry->nmask == 0) {	/* not open */
-			rc = -EINVAL;
-			cxlflash_err("not open");
+	if (unlikely(res_hndl >= MAX_RHT_PER_CONTEXT)) {
+		cxlflash_err("Invalid resource handle! (%d)", res_hndl);
+		rc = -EINVAL;
+		goto out;
+	}
+
+	rht_entry = &ctx_info->rht_start[res_hndl];
+	if (unlikely(rht_entry->nmask == 0)) {	/* not open */
+		cxlflash_err("Invalid resource handle! (%d)", res_hndl);
+		rc = -EINVAL;
+		goto out;
+	}
+
+	/*
+	 * Resize to 0 for virtual LUNS by setting the size
+	 * to 0. This will clear LXT_START and LXT_CNT fields
+	 * in the RHT entry and properly sync with the AFU.
+	 * Afterwards we clear the remaining fields.
+	 */
+	if (lun_info->mode == MODE_VIRTUAL) {
+		marshall_rele_to_resize(release, &size);
+		size.req_size = 0;
+		rc = cxlflash_vlun_resize(sdev, &size);
+		if (rc) {
+			cxlflash_err("resize failed rc %d", rc);
 			goto out;
 		}
-
+		rhte_checkin(ctx_info, rht_entry);
+	} else if (lun_info->mode == MODE_PHYSICAL) {
 		/*
-		 * Resize to 0 for virtual LUNS by setting the size
-		 * to 0. This will clear LXT_START and LXT_CNT fields
-		 * in the RHT entry and properly sync with the AFU.
-		 * Afterwards we clear the remaining fields.
+		 * Clear the Format 1 RHT entry for direct access
+		 * (physical LUN) using the synchronization sequence
+		 * defined in the SISLite specification.
 		 */
-		if (lun_info->mode == MODE_VIRTUAL) {
-			marshall_rele_to_resize(release, &size);
-			size.req_size = 0;
-			rc = cxlflash_vlun_resize(sdev, &size);
-			if (rc) {
-				cxlflash_err("resize failed rc %d", rc);
-				goto out;
-			}
-			rhte_checkin(rht_entry);
-		} else if (lun_info->mode == MODE_PHYSICAL) {
-			/*
-			 * Clear the Format 1 RHT entry for direct access 
-			 * (physical LUN) using the synchronization sequence 
-			 * defined in the SISLite specification.
-			 */
-			struct sisl_rht_entry_f1 *rht_entry_f1 =
+		struct sisl_rht_entry_f1 *rht_entry_f1 =
 			    (struct sisl_rht_entry_f1 *)rht_entry;
 
-			rht_entry_f1->valid = 0;
-			smp_wmb();
+		rht_entry_f1->valid = 0;
+		smp_wmb();
 
-			rht_entry_f1->lun_id = 0;
-			smp_wmb();
+		rht_entry_f1->lun_id = 0;
+		smp_wmb();
 
-			rht_entry_f1->dw = 0;
-			smp_wmb();
-			cxlflash_afu_sync(afu, release->context_id, res_hndl,
+		rht_entry_f1->dw = 0;
+		smp_wmb();
+		cxlflash_afu_sync(afu, release->context_id, res_hndl,
 					  AFU_HW_SYNC);
-		}
-
-		/* now the RHT entry is all cleared */
-		rc = 0;
-		rht_info->ref_cnt--;
-	} else {
-		rc = -EINVAL;
-		cxlflash_info("resource handle invalid %d", res_hndl);
+		rhte_checkin(ctx_info, rht_entry);
 	}
+
+	cxlflash_lun_detach(lun_info);
 
 out:
 	cxlflash_info("returning rc=%d", rc);
@@ -1283,7 +1291,6 @@ static int cxlflash_disk_detach(struct scsi_device *sdev,
 				struct dk_cxlflash_detach *detach)
 {
 	struct cxlflash *cxlflash = (struct cxlflash *)sdev->host->hostdata;
-	struct lun_info *lun_info = sdev->hostdata;
 
 	struct dk_cxlflash_release rel;
 	struct ctx_info *ctx_info;
@@ -1301,30 +1308,30 @@ static int cxlflash_disk_detach(struct scsi_device *sdev,
 	}
 
 	if (ctx_info->ref_cnt-- == 1) {
-
-		/* for any resource still open, deallocate LBAs and close
-		 * if nobody else is using it.
-		 */
-
-		if (ctx_info->rht_info->ref_cnt-- == 1) {
+		/* Cleanup outstanding resources */
+		if (ctx_info->rht_out) {
 			marshall_det_to_rele(detach, &rel);
 			for (i = 0; i < MAX_RHT_PER_CONTEXT; i++) {
 				rel.rsrc_handle = i;
 				cxlflash_disk_release(sdev, &rel);
+
+				/* No need to loop further if we're done */
+				if (ctx_info->rht_out == 0)
+					break;
 			}
 		}
 
-		/* clear RHT registers for this context */
+		/* Clear RHT registers for this context */
 		writeq_be(0, &ctx_info->ctrl_map->rht_start);
 		writeq_be(0, &ctx_info->ctrl_map->rht_cnt_id);
-		/* drop all capabilities */
+		/* Drop all capabilities */
 		writeq_be(0, &ctx_info->ctrl_map->ctx_cap);
-		/* close the context */
+		/* Free the RHT memory */
+		free_page((unsigned long)ctx_info->rht_start);
+		ctx_info->rht_start = NULL;
+		/* Close the context */
 		cxlflash->num_user_contexts--;
 	}
-	spin_lock(&lun_info->slock);
-	lun_info->mode = MODE_NONE;
-	spin_unlock(&lun_info->slock);
 
 	cxlflash->per_context[detach->context_id].lfd = -1;
 	cxlflash->per_context[detach->context_id].pid = 0;
@@ -1481,7 +1488,6 @@ static int cxlflash_disk_clone(struct scsi_device *sdev,
 	struct dk_cxlflash_release release = { { 0 }, 0 };
 
 	struct ctx_info *ctx_info_src, *ctx_info_dst;
-	struct rht_info *rht_info_src, *rht_info_dst;
 	u32 perms;
 	int i, j;
 	int rc = 0;
@@ -1506,33 +1512,49 @@ static int cxlflash_disk_clone(struct scsi_device *sdev,
 		goto out;
 	}
 
-	rht_info_src = ctx_info_src->rht_info;
-	rht_info_dst = ctx_info_dst->rht_info;
-
 	/* Verify there is no open resource handle in the destination context */
 	for (i = 0; i < MAX_RHT_PER_CONTEXT; i++)
-		if (rht_info_dst->rht_start[i].nmask != 0) {
+		if (ctx_info_dst->rht_start[i].nmask != 0) {
 			rc = -EINVAL;
 			goto out;
 		}
 
+	if (unlikely(!ctx_info_src->rht_out)) {
+		cxlflash_info("Nothing to clone!");
+		goto out;
+	}
+
 	/* User specified permission on attach */
-	perms = rht_info_dst->perms;
+	perms = ctx_info_dst->rht_perms;
 
 	/*
-	 * This loop is equivalent to cxlflash_disk_open & cxlflash_vlun_resize.
-	 * Not checking if the source context has anything open or whether
-	 * it is even registered. Cleanup when the clone fails.
+	 * Copy over checked-out RHT (and their associated LXT) entries by
+	 * hand, stopping after we've copied all outstanding entries. This
+	 * loop is equivalent to cxlflash_disk_open & cxlflash_vlun_resize.
+	 * Cleanup when the clone fails.
+	 *
+	 * Note: This loop is equivalent to performing cxlflash_disk_open and
+	 * cxlflash_vlun_resize. As such, LUN accounting needs to be taken into
+	 * account by attaching after each successful RHT entry clone. In the
+	 * even that a clone failure is experienced, the LUN detach is handled
+	 * via the cleanup performed by cxlflash_disk_release.
 	 */
 	for (i = 0; i < MAX_RHT_PER_CONTEXT; i++) {
-		rht_info_dst->rht_start[i].nmask =
-		    rht_info_src->rht_start[i].nmask;
-		rht_info_dst->rht_start[i].fp =
-		    SISL_RHT_FP_CLONE(rht_info_src->rht_start[i].fp, perms);
+		if (ctx_info_src->rht_out == ctx_info_dst->rht_out)
+			break;
+		if (ctx_info_src->rht_start[i].nmask == 0)
+			continue;
+
+		/* Consume a destination RHT entry */
+		ctx_info_dst->rht_out++;
+		ctx_info_dst->rht_start[i].nmask =
+		    ctx_info_src->rht_start[i].nmask;
+		ctx_info_dst->rht_start[i].fp =
+		    SISL_RHT_FP_CLONE(ctx_info_src->rht_start[i].fp, perms);
 
 		rc = clone_lxt(afu, blka, clone->context_id_dst, i,
-			       &rht_info_dst->rht_start[i],
-			       &rht_info_src->rht_start[i]);
+			       &ctx_info_dst->rht_start[i],
+			       &ctx_info_src->rht_start[i]);
 		if (rc) {
 			marshall_clone_to_rele(clone, &release);
 			for (j = 0; j < i; j++) {
@@ -1540,9 +1562,12 @@ static int cxlflash_disk_clone(struct scsi_device *sdev,
 				cxlflash_disk_release(sdev, &release);
 			}
 
-			rhte_checkin(&rht_info_dst->rht_start[i]);
+			/* Put back the one we failed on */
+			rhte_checkin(ctx_info_dst, &ctx_info_dst->rht_start[i]);
 			goto out;
 		}
+
+		cxlflash_lun_attach(lun_info, lun_info->mode);
 	}
 
 out:

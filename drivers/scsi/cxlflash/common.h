@@ -28,7 +28,7 @@
 #define CXLFLASH_MAX_SECTORS	(CXLFLASH_MAX_XFER_SIZE/CXLFLASH_BLOCK_SIZE)
 
 #define NUM_RRQ_ENTRY    16     /* for master issued cmds */
-#define MAX_RHT_PER_CONTEXT 16  /* num resource hndls per context */
+#define MAX_RHT_PER_CONTEXT (PAGE_SIZE / sizeof(struct sisl_rht_entry))
 
 /* Command management definitions */
 #define CXLFLASH_NUM_CMDS	(2 * CXLFLASH_MAX_CMDS)	/* Must be a pow2 for 
@@ -82,7 +82,7 @@
 #define cxlflash_dev_dbg(_d, _s, ...)	\
 	dev_dbg(_d, CONFN(_s), __func__, ##__VA_ARGS__)
 
-enum open_mode_type {
+enum lun_mode {
 	MODE_NONE = 0,
 	MODE_VIRTUAL,
 	MODE_PHYSICAL
@@ -104,15 +104,7 @@ struct cxlflash_ctx {
 /*
  * Each context has its own set of resource handles that is visible
  * only from that context.
- *
- * The rht_info refers to all resource handles of a context and not to
- * a particular RHT entry or a single resource handle.
  */
-struct rht_info {
-	struct sisl_rht_entry *rht_start;	/* initialized at startup */
-	int ref_cnt;		/* num ctx_infos pointing to me */
-	u32 perms;		/* User-defined (@attach) permissions for RHT entries */
-};
 
 /* Single AFU context can be pointed to by multiple client connections.
  * The client can create multiple endpoints (mc_hndl_t) to the same
@@ -120,7 +112,10 @@ struct rht_info {
  */
 struct ctx_info {
 	volatile struct sisl_ctrl_map *ctrl_map;	/* initialized at startup */
-	struct rht_info *rht_info;	/* initialized when context created */
+	struct sisl_rht_entry *rht_start;	/* 1 page, alloc/free on
+						   attach/detach */
+	u32 rht_out;		/* Number of checked out RHT entries */
+	u32 rht_perms;		/* User-defined (@attach) permissions for RHT entries */
 
 	int ref_cnt;		/* num conn_infos pointing to me */
 };
@@ -190,7 +185,6 @@ struct afu {
 
 	/* Housekeeping data */
 	struct ctx_info ctx_info[MAX_CONTEXT];
-	struct rht_info rht_info[MAX_CONTEXT];
 	struct mutex afu_mutex;	/* for anything that needs serialization
 				   e. g. to access afu */
 	struct mutex err_mutex;	/* for signalling error thread */
@@ -199,9 +193,6 @@ struct afu {
 #define E_SYNC_INTR   0x1	/* synchronous error interrupt */
 #define E_ASYNC_INTR  0x2	/* asynchronous error interrupt */
 
-	/* AFU Shared Data */
-	struct sisl_rht_entry rht[MAX_CONTEXT][MAX_RHT_PER_CONTEXT];
-	/* LXTs are allocated dynamically in groups */
 	/* Beware of alignment till here. Preferably introduce new
 	 * fields after this point 
 	 */
@@ -253,7 +244,8 @@ struct lun_info {
 	u64 max_lba;		/* from read cap(16) */
 	u32 blk_len;		/* from read cap(16) */
 	u32 lun_index;
-	enum open_mode_type mode;
+	u32 users;		/* Number of users w/ references to LUN */
+	enum lun_mode mode;	/* NONE, VIRTUAL, PHYSICAL */
 
 	spinlock_t slock;
 

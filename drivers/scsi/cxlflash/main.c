@@ -1681,9 +1681,6 @@ int cxlflash_start_afu(struct cxlflash *cxlflash)
 	int i = 0;
 	int rc = 0;
 
-	for (i = 0; i < MAX_CONTEXT; i++)
-		afu->rht_info[i].rht_start = &afu->rht[i][0];
-
 	for (i = 0; i < CXLFLASH_NUM_CMDS; i++) {
 		struct timer_list *timer = &afu->cmd[i].timer;
 
