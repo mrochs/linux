@@ -388,8 +388,8 @@ struct cxl_afu {
 	int modes_supported;
 	int current_mode;
 	int crs_num;
-	int crs_len;
-	int crs_offset;
+	u64 crs_len;
+	u64 crs_offset;
 	struct list_head crs;
 	enum prefault_modes prefault_mode;
 	bool psa;
