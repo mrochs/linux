@@ -257,9 +257,6 @@ static int memcpy_afu(struct pci_dev *dev)
 			rc = -EIO;
 			goto err7;
 		}
-		schedule();
-		rc++;
-	}
 
 	if (rc == 10000) {
 		dev_err(&dev->dev, "Timed out waiting for completion");
@@ -311,7 +308,6 @@ static ssize_t device_read(struct file *fp, char __user *buff, size_t length,
 
 	bytes_read = bytes_to_read - copy_to_user(buff, read_buf + *ppos,
 						  bytes_to_read);
-
 	*ppos += bytes_read;
 	return bytes_read;
 }
