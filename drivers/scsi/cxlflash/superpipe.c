@@ -408,8 +408,11 @@ static int read_cap16(struct afu *afu, struct lun_info *lun_info, u32 port_sel)
 		      cmd->rcb.cdb[0], &cmd->rcb, cmd->rcb.data_ea);
 
 	do {
-		cxlflash_send_cmd(afu, cmd);
-		cxlflash_wait_resp(afu, cmd);
+		rc = cxlflash_send_cmd(afu, cmd);
+		if (!rc)
+			cxlflash_wait_resp(afu, cmd);
+		else
+			break;
 	} while (cxlflash_check_status(&cmd->sa));
 
 	if (cmd->sa.host_use_b[0] & B_ERROR) {
@@ -755,8 +758,11 @@ int write_same16(struct afu *afu, struct lun_info *lun_info, u64 lba, u32 nblks)
 		      cmd->rcb.cdb[0], &cmd->rcb, cmd->rcb.data_ea);
 
 	do {
-		cxlflash_send_cmd(afu, cmd);
-		cxlflash_wait_resp(afu, cmd);
+		rc = cxlflash_send_cmd(afu, cmd);
+		if (!rc)
+			cxlflash_wait_resp(afu, cmd);
+		else
+			break;
 	} while (cxlflash_check_status(&cmd->sa));
 
 	if (cmd->sa.host_use_b[0] & B_ERROR) {

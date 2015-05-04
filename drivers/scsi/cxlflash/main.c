@@ -309,8 +309,9 @@ int cxlflash_send_tmf(struct afu *afu, struct scsi_cmnd *scp, u64 tmfcmd)
 	memcpy(cmd->rcb.cdb, &tmfcmd, sizeof(tmfcmd));
 
 	/* Send the command */
-	cxlflash_send_cmd(afu, cmd);
-	wait_event(cxlflash->tmf_wait_q, !cxlflash->tmf_active);
+	rc = cxlflash_send_cmd(afu, cmd);
+	if (!rc)
+		wait_event(cxlflash->tmf_wait_q, !cxlflash->tmf_active);
 out:
 	return rc;
 
@@ -404,7 +405,7 @@ static int cxlflash_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *scp)
 	memcpy(cmd->rcb.cdb, scp->cmnd, sizeof(cmd->rcb.cdb));
 
 	/* Send the command */
-	cxlflash_send_cmd(afu, cmd);
+	rc = cxlflash_send_cmd(afu, cmd);
 
 out:
 	return rc;
@@ -1890,9 +1891,10 @@ int cxlflash_check_status(struct sisl_ioasa *ioasa)
 	return 0;
 }
 
-void cxlflash_send_cmd(struct afu *afu, struct afu_cmd *cmd)
+int cxlflash_send_cmd(struct afu *afu, struct afu_cmd *cmd)
 {
 	int nretry = 0;
+	int rc = 0;
 
 	if (afu->room == 0)
 		do {
@@ -1917,13 +1919,16 @@ void cxlflash_send_cmd(struct afu *afu, struct afu_cmd *cmd)
 	/* Write IOARRIN */
 	if (afu->room)
 		writeq_be((u64)&cmd->rcb, &afu->host_map->ioarrin);
-	else
+	else {
 		cxlflash_err("no cmd_room to send 0x%X", cmd->rcb.cdb[0]);
+		rc = -1;
+	}
 
-	cxlflash_dbg("cmd=%p len=%d ea=%p", cmd, cmd->rcb.data_len,
-		     (void *)cmd->rcb.data_ea);
+	cxlflash_dbg("cmd=%p len=%d ea=%p rc=%d", cmd, cmd->rcb.data_len,
+		     (void *)cmd->rcb.data_ea, rc);
 
 	/* Let timer fire to complete the response... */
+	return rc;
 }
 
 void cxlflash_wait_resp(struct afu *afu, struct afu_cmd *cmd)
@@ -2005,8 +2010,9 @@ retry:
 	*((u16 *)&cmd->rcb.cdb[2]) = swab16(ctx_hndl_u);
 	*((u32 *)&cmd->rcb.cdb[4]) = swab32(res_hndl_u);
 
-	cxlflash_send_cmd(afu, cmd);
-	cxlflash_wait_resp(afu, cmd);
+	rc = cxlflash_send_cmd(afu, cmd);
+	if (!rc)
+		cxlflash_wait_resp(afu, cmd);
 
 	if ((cmd->sa.ioasc != 0) || (cmd->sa.host_use_b[0] & B_ERROR)) {
 		rc = -1;

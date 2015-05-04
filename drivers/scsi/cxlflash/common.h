@@ -266,7 +266,7 @@ struct ba_lun_info {
 	unsigned char *aun_clone_map;
 };
 
-void cxlflash_send_cmd(struct afu *, struct afu_cmd *);
+int cxlflash_send_cmd(struct afu *, struct afu_cmd *);
 void cxlflash_wait_resp(struct afu *, struct afu_cmd *);
 int cxlflash_check_status(struct sisl_ioasa *);
 int cxlflash_afu_reset(struct cxlflash *);
