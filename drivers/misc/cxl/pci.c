@@ -24,6 +24,7 @@
 #include <asm/io.h>
 
 #include "cxl.h"
+#include <misc/cxl.h>
 
 
 #define CXL_PCI_VSEC_ID	0x1280
@@ -1155,10 +1156,328 @@ static void cxl_remove(struct pci_dev *dev)
 	cxl_remove_adapter(adapter);
 }
 
+static pci_ers_result_t cxl_vphb_error_detected(struct cxl_afu *afu,
+						pci_channel_state_t state)
+{
+	struct pci_dev *afu_dev;
+	pci_ers_result_t result = PCI_ERS_RESULT_NEED_RESET;
+	pci_ers_result_t afu_result = PCI_ERS_RESULT_NEED_RESET;
+
+	/* There should only be one entry, but go through the list
+	 * anyway
+	 */
+	list_for_each_entry(afu_dev, &afu->phb->bus->devices, bus_list) {
+		if (!afu_dev->driver)
+			continue;
+
+		if (afu_dev->driver->err_handler)
+			afu_result = afu_dev->driver->err_handler->error_detected(afu_dev,
+										  state);
+		/* Disconnect trumps all, NONE trumps NEED_RESET */
+		if (afu_result == PCI_ERS_RESULT_DISCONNECT)
+			result = PCI_ERS_RESULT_DISCONNECT;
+		else if ((afu_result == PCI_ERS_RESULT_NONE) &&
+			 (result == PCI_ERS_RESULT_NEED_RESET))
+			result = PCI_ERS_RESULT_NONE;
+	}
+	return result;
+}
+
+static pci_ers_result_t cxl_pci_error_detected(struct pci_dev *pdev,
+					       pci_channel_state_t state)
+{
+	struct cxl *adapter = pci_get_drvdata(pdev);
+	struct cxl_afu *afu;
+	pci_ers_result_t result = PCI_ERS_RESULT_NEED_RESET;
+	int i;
+
+	dev_warn(&pdev->dev, "EEH error detected! state: %s\n",
+	       ((state == pci_channel_io_normal) ? "normal" :
+		((state == pci_channel_io_frozen) ? "frozen" :
+		 ((state == pci_channel_io_perm_failure) ? "failed" :
+		  "unknown"))));
+
+	/* At this point, we could still have an interrupt pending.
+	 * Let's try to get them out of the way before they do anything we don't like.
+	 */
+	schedule();
+
+        /* If we're permanently dead, give up. */
+	if (state == pci_channel_io_perm_failure) {
+		/* Tell the AFU drivers; but we don't care what they
+		 * say, we're going away.
+		 */
+		for (i = 0; i < adapter->slices; i++) {
+			afu = adapter->afu[i];
+			cxl_vphb_error_detected(afu, state);
+		}
+		return PCI_ERS_RESULT_DISCONNECT;
+	}
+
+	/* We should not be called if things are normal */
+	WARN_ON(state == pci_channel_io_normal);
+
+	/* Are we reflashing?
+	 *
+	 * If we reflash, we could come back as something entirely
+	 * different, including a non-CAPI card. As such, by default
+	 * we don't participate in the process. We'll be unbound and
+	 * the slot re-probed. (TODO: check EEH doesn't blindly rebind
+	 * us!)
+	 *
+	 * However, this isn't the entire story: for reliablity
+	 * reasons, we usually want to reflash the FPGA on PERST in
+	 * order to get back to a more reliable known-good state.
+	 *
+	 * This causes us a bit of a problem: if we reflash we can't
+	 * trust that we'll come back the same - we could have a new
+	 * image and been PERSTed in order to load that
+	 * image. However, most of the time we actually *will* come
+	 * back the same - for example a regular EEH event.
+	 *
+	 * Therefore, we allow the user to assert that the image is
+	 * indeed the same and that we should continue on into EEH
+	 * anyway.
+	 */
+	if (adapter->perst_loads_image && !adapter->perst_same_image) {
+		/* TODO take the PHB out of CXL mode */
+		dev_warn(&pdev->dev, "reflashing, so opting out of EEH!\n");
+		return PCI_ERS_RESULT_NONE;
+	}
+
+	/*
+	 * At this point, we want to try to recover.  We'll always
+	 * need a complete slot reset: we don't trust any other reset.
+	 *
+	 * Now, we go through each AFU:
+	 *  - We send the driver, if bound, an error_detected callback.
+	 *    We expect it to clean up, but it can also tell us to give
+	 *    up and permanently detach the card. To simplify things, if
+	 *    any bound AFU driver doesn't support EEH, we give up on EEH.
+	 *
+	 *  - We detach all contexts associated with the AFU. This
+	 *    does not free them, but puts them into a CLOSED state
+	 *    which causes any the associated files to return useful
+	 *    errors to userland. It also unmaps, but does not free,
+	 *    any IRQs.
+	 *
+	 *  - We clean up our side: releasing and unmapping resources we hold
+	 *    so we can wire them up again when the hardware comes back up.
+	 *
+	 * Driver authors should note:
+	 *
+	 *  - Any contexts you create in your kernel driver (except
+	 *    those associated with anonymous file descriptors) are
+	 *    your responsibility to free and recreate. Likewise with
+	 *    any attached resources.
+	 *
+	 *  - We will take responsibility for re-initialising the
+	 *    device context (the one set up for you in
+	 *    cxl_pci_enable_device_hook and accessed through
+	 *    cxl_get_context). If you've attached IRQs or other
+	 *    resources to it, they remains yours to free.
+	 *
+	 * All calls you make into cxl that normally touch the
+	 * hardware will not touch the hardware during recovery. So
+	 * you can call the same functions to release resources as you
+	 * normally would.
+	 *
+	 * Two examples:
+	 *
+	 * 1) If you normally free all your resources at the end of
+	 *    each request, or if you use anonymous FDs, your
+	 *    error_detected callback can simply set a flag to tell
+	 *    your driver not to start any new calls. You can then
+	 *    clear the flag in the resume callback.
+	 *
+	 * 2) (UNTESTED) If you normally allocate your resources on startup:
+	 *     * Set a flag in error_detected as above.
+	 *     * Let CXL detach your contexts.
+	 *     * In slot_reset, free the old resources and allocate new ones.
+	 *     * In resume, clear the flag to allow things to start.
+	 */
+	for (i = 0; i < adapter->slices; i++) {
+		afu = adapter->afu[i];
+
+		result = cxl_vphb_error_detected(afu, state);
+
+		/* Only continue if everyone agrees on NEED_RESET */
+		if (result != PCI_ERS_RESULT_NEED_RESET)
+			return result;
+
+		cxl_context_detach_all(afu);
+
+		cxl_afu_deactivate_mode(afu);
+
+		cxl_release_psl_irq(afu);
+		cxl_release_serr_irq(afu);
+		cxl_unmap_slice_regs(afu);
+	}
+	cxl_release_psl_err_irq(adapter);
+	cxl_unmap_adapter_regs(adapter);
+	pci_release_region(pdev, 0);
+	pci_release_region(pdev, 2);
+	pci_disable_device(pdev);
+
+	return result;
+}
+
+static pci_ers_result_t cxl_pci_slot_reset(struct pci_dev *pdev)
+{
+	struct cxl *adapter = pci_get_drvdata(pdev);
+	struct cxl_afu *afu;
+	struct cxl_context *ctx;
+	struct pci_dev *afu_dev;
+	pci_ers_result_t afu_result = PCI_ERS_RESULT_RECOVERED;
+	pci_ers_result_t result = PCI_ERS_RESULT_RECOVERED;
+	int i;
+
+	if (pci_enable_device(pdev)) {
+		dev_err(&pdev->dev, "pci_enable_device failed\n");
+		goto err;
+	}
+
+	if (cxl_read_vsec(adapter, pdev))
+		goto err;
+
+	if (cxl_vsec_looks_ok(adapter, pdev))
+		goto err;
+
+	if (setup_cxl_bars(pdev))
+		goto err;
+
+	if (switch_card_to_cxl(pdev))
+		goto err;
+
+	if (cxl_update_image_control(adapter))
+		goto err;
+
+	if (cxl_map_adapter_regs(adapter, pdev))
+		goto err;
+
+	if (sanitise_adapter_regs(adapter))
+		goto err;
+
+	if (init_implementation_adapter_regs(adapter, pdev))
+		goto err;
+
+	if (pnv_phb_to_cxl_mode(pdev, OPAL_PHB_CAPI_MODE_CAPI))
+		goto err;
+
+	if (pnv_phb_to_cxl_mode(pdev, OPAL_PHB_CAPI_MODE_SNOOP_ON))
+		goto err;
+
+	if (cxl_register_psl_err_irq(adapter))
+		goto err;
+
+	for (i = 0; i < adapter->slices; i++) {
+		afu = adapter->afu[i];
+		if (cxl_map_slice_regs(afu, adapter, pdev))
+			goto err;
+
+		if (sanitise_afu_regs(afu))
+			goto err;
+
+		/* We need to reset the AFU before we can read the AFU descriptor */
+		if (__cxl_afu_reset(afu))
+			goto err;
+
+		if (cxl_verbose)
+			dump_afu_descriptor(afu);
+
+		if (cxl_read_afu_descriptor(afu))
+			goto err;
+
+		if (cxl_afu_descriptor_looks_ok(afu))
+			goto err;
+
+		if (init_implementation_afu_regs(afu))
+			goto err;
+
+		if (cxl_register_serr_irq(afu))
+			goto err;
+
+		if (cxl_register_psl_irq(afu))
+			goto err;
+
+		if (cxl_afu_select_best_mode(afu))
+			goto err;
+
+		list_for_each_entry(afu_dev, &afu->phb->bus->devices, bus_list) {
+			/* Reset the device context.
+			 * TODO: make this less disruptive
+			 */
+			ctx = cxl_get_context(afu_dev);
+
+			if (ctx && cxl_release_context(ctx))
+				goto err;
+
+			ctx = cxl_dev_context_init(afu_dev);
+			if (!ctx)
+				goto err;
+
+			afu_dev->dev.archdata.cxl_ctx = ctx;
+
+			if (cxl_afu_check_and_enable(afu))
+				goto err;
+
+			/* If there's a driver attached, allow it to
+			 * chime in on recovery
+			 */
+			if (!afu_dev->driver)
+				continue;
+
+			if (afu_dev->driver->err_handler &&
+			    afu_dev->driver->err_handler->slot_reset)
+				afu_result = afu_dev->driver->err_handler->slot_reset(afu_dev);
+
+			if (afu_result == PCI_ERS_RESULT_DISCONNECT)
+				result = PCI_ERS_RESULT_DISCONNECT;
+		}
+	}
+	return result;
+
+err:
+	/* TODO: make this a bit smarter
+	 * We now have a mix of unconfigured and reconfigured resources.
+	 * cxl_remove is going to be invoked, and it doesn't know what's
+	 * been done and what hasn't, so it's probably going to oops out.
+	 */
+	dev_err(&pdev->dev, "EEH recovery failed. Asking to be disconnected.\n");
+	return PCI_ERS_RESULT_DISCONNECT;
+}
+
+static void cxl_pci_resume(struct pci_dev *pdev)
+{
+	struct cxl *adapter = pci_get_drvdata(pdev);
+	struct cxl_afu *afu;
+	struct pci_dev *afu_dev;
+	int i;
+
+	/* This is pleasantly simple: just tell the AFUs. */
+	for (i = 0; i < adapter->slices; i++) {
+		afu = adapter->afu[i];
+
+		list_for_each_entry(afu_dev, &afu->phb->bus->devices, bus_list) {
+			if (afu_dev->driver && afu_dev->driver->err_handler &&
+			    afu_dev->driver->err_handler->resume)
+				afu_dev->driver->err_handler->resume(afu_dev);
+		}
+	}
+}
+
+static const struct pci_error_handlers cxl_err_handler = {
+	.error_detected = cxl_pci_error_detected,
+	.slot_reset = cxl_pci_slot_reset,
+	.resume = cxl_pci_resume,
+};
+
+
 struct pci_driver cxl_pci_driver = {
 	.name = "cxl-pci",
 	.id_table = cxl_pci_tbl,
 	.probe = cxl_probe,
 	.remove = cxl_remove,
 	.shutdown = cxl_remove,
+	.err_handler = &cxl_err_handler,
 };
