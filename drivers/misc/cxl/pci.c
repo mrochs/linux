@@ -1286,6 +1286,7 @@ static void cxl_remove(struct pci_dev *dev)
 	cxl_remove_adapter(adapter);
 }
 
+#ifdef CONFIG_CXL_EEH
 static pci_ers_result_t cxl_vphb_error_detected(struct cxl_afu *afu,
 						pci_channel_state_t state)
 {
@@ -1321,12 +1322,6 @@ static pci_ers_result_t cxl_pci_error_detected(struct pci_dev *pdev,
 	pci_ers_result_t result = PCI_ERS_RESULT_NEED_RESET;
 	int i;
 
-	dev_warn(&pdev->dev, "EEH error detected! state: %s\n",
-	       ((state == pci_channel_io_normal) ? "normal" :
-		((state == pci_channel_io_frozen) ? "frozen" :
-		 ((state == pci_channel_io_perm_failure) ? "failed" :
-		  "unknown"))));
-
 	/* At this point, we could still have an interrupt pending.
 	 * Let's try to get them out of the way before they do
 	 * anything we don't like.
@@ -1344,9 +1339,6 @@ static pci_ers_result_t cxl_pci_error_detected(struct pci_dev *pdev,
 		}
 		return PCI_ERS_RESULT_DISCONNECT;
 	}
-
-	/* We should not be called if things are normal */
-	WARN_ON(state == pci_channel_io_normal);
 
 	/* Are we reflashing?
 	 *
@@ -1372,7 +1364,7 @@ static pci_ers_result_t cxl_pci_error_detected(struct pci_dev *pdev,
 	 */
 	if (adapter->perst_loads_image && !adapter->perst_same_image) {
 		/* TODO take the PHB out of CXL mode */
-		dev_warn(&pdev->dev, "reflashing, so opting out of EEH!\n");
+		dev_info(&pdev->dev, "reflashing, so opting out of EEH!\n");
 		return PCI_ERS_RESULT_NONE;
 	}
 
@@ -1437,16 +1429,10 @@ static pci_ers_result_t cxl_pci_error_detected(struct pci_dev *pdev,
 			return result;
 
 		cxl_context_detach_all(afu);
-
 		cxl_afu_deactivate_mode(afu);
-
-		cxl_release_psl_irq(afu);
-		cxl_release_serr_irq(afu);
-		cxl_unmap_slice_regs(afu);
+		cxl_deconfigure_afu(afu);
 	}
-	cxl_release_psl_err_irq(adapter);
-	cxl_unmap_adapter_regs(adapter);
-	pci_disable_device(pdev);
+	cxl_deconfigure_adapter(adapter);
 
 	return result;
 }
@@ -1461,78 +1447,19 @@ static pci_ers_result_t cxl_pci_slot_reset(struct pci_dev *pdev)
 	pci_ers_result_t result = PCI_ERS_RESULT_RECOVERED;
 	int i;
 
-	if (pci_enable_device(pdev)) {
-		dev_err(&pdev->dev, "pci_enable_device failed\n");
-		goto err;
-	}
-
-	if (cxl_read_vsec(adapter, pdev))
-		goto err;
-
-	if (cxl_vsec_looks_ok(adapter, pdev))
-		goto err;
-
-	if (setup_cxl_bars(pdev))
-		goto err;
-
-	if (switch_card_to_cxl(pdev))
-		goto err;
-
-	if (cxl_update_image_control(adapter))
-		goto err;
-
-	if (cxl_map_adapter_regs(adapter, pdev))
-		goto err;
-
-	if (sanitise_adapter_regs(adapter))
-		goto err;
-
-	if (init_implementation_adapter_regs(adapter, pdev))
-		goto err;
-
-	if (pnv_phb_to_cxl_mode(pdev, OPAL_PHB_CAPI_MODE_CAPI))
-		goto err;
-
-	if (pnv_phb_to_cxl_mode(pdev, OPAL_PHB_CAPI_MODE_SNOOP_ON))
-		goto err;
-
-	if (cxl_register_psl_err_irq(adapter))
+	if (cxl_configure_adapter(adapter, pdev))
 		goto err;
 
 	for (i = 0; i < adapter->slices; i++) {
 		afu = adapter->afu[i];
-		if (cxl_map_slice_regs(afu, adapter, pdev))
-			goto err;
 
-		if (sanitise_afu_regs(afu))
-			goto err;
-
-		/* We need to reset the AFU before we can read the AFU
-		 * descriptor
-		 */
-		if (__cxl_afu_reset(afu))
-			goto err;
-
-		if (cxl_verbose)
-			dump_afu_descriptor(afu);
-
-		if (cxl_read_afu_descriptor(afu))
-			goto err;
-
-		if (cxl_afu_descriptor_looks_ok(afu))
-			goto err;
-
-		if (init_implementation_afu_regs(afu))
-			goto err;
-
-		if (cxl_register_serr_irq(afu))
-			goto err;
-
-		if (cxl_register_psl_irq(afu))
+		if (cxl_configure_afu(afu, adapter, pdev))
 			goto err;
 
 		if (cxl_afu_select_best_mode(afu))
 			goto err;
+
+		cxl_pci_vphb_reconfigure(afu);
 
 		list_for_each_entry(afu_dev, &afu->phb->bus->devices, bus_list) {
 			/* Reset the device context.
@@ -1553,7 +1480,8 @@ static pci_ers_result_t cxl_pci_slot_reset(struct pci_dev *pdev)
 				goto err;
 
 			/* If there's a driver attached, allow it to
-			 * chime in on recovery
+			 * chime in on recovery. Drivers should check
+			 * if everything has come back OK.
 			 */
 			if (!afu_dev->driver)
 				continue;
@@ -1584,7 +1512,10 @@ static void cxl_pci_resume(struct pci_dev *pdev)
 	struct pci_dev *afu_dev;
 	int i;
 
-	/* This is pleasantly simple: just tell the AFUs. */
+	/* Everything is back now. Drivers should restart work now.
+	 * This is not the place to be checking if everything came back up
+	 * properly, because there's no return value: do that in slot_reset.
+	 */
 	for (i = 0; i < adapter->slices; i++) {
 		afu = adapter->afu[i];
 
@@ -1601,6 +1532,7 @@ static const struct pci_error_handlers cxl_err_handler = {
 	.slot_reset = cxl_pci_slot_reset,
 	.resume = cxl_pci_resume,
 };
+#endif /* CONFIG_CXL_EEH */
 
 
 struct pci_driver cxl_pci_driver = {
@@ -1609,5 +1541,7 @@ struct pci_driver cxl_pci_driver = {
 	.probe = cxl_probe,
 	.remove = cxl_remove,
 	.shutdown = cxl_remove,
+#ifdef CONFIG_CXL_EEH
 	.err_handler = &cxl_err_handler,
+#endif
 };
