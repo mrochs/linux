@@ -1559,15 +1559,18 @@ void cxlflash_context_reset(struct afu_cmd *cmd)
 void init_pcr(struct cxlflash *cxlflash)
 {
 	struct afu *afu = cxlflash->afu;
+	struct ctx_info *ctx_info;
 	int i;
 
 	for (i = 0; i < MAX_CONTEXT; i++) {
-		afu->ctx_info[i].ctrl_map = &afu->afu_map->ctrls[i].ctrl;
+		ctx_info = &cxlflash->ctx_info[i];
+
+		ctx_info->ctrl_map = &afu->afu_map->ctrls[i].ctrl;
 		/* disrupt any clients that could be running */
 		/* e. g. clients that survived a master restart */
-		writeq_be(0, &afu->ctx_info[i].ctrl_map->rht_start);
-		writeq_be(0, &afu->ctx_info[i].ctrl_map->rht_cnt_id);
-		writeq_be(0, &afu->ctx_info[i].ctrl_map->ctx_cap);
+		writeq_be(0, &ctx_info->ctrl_map->rht_start);
+		writeq_be(0, &ctx_info->ctrl_map->rht_cnt_id);
+		writeq_be(0, &ctx_info->ctrl_map->ctx_cap);
 	}
 
 	/* copy frequently used fields into afu */

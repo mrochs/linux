@@ -147,6 +147,7 @@ struct cxlflash {
 	struct pci_dev *parent_dev;
 
 	int num_user_contexts;
+	struct ctx_info ctx_info[MAX_CONTEXT];
 	struct cxlflash_ctx per_context[MAX_CONTEXT];
 	struct file_operations cxl_fops;
 
@@ -184,7 +185,6 @@ struct afu {
 	struct afu_cmd cmd[CXLFLASH_NUM_CMDS];
 
 	/* Housekeeping data */
-	struct ctx_info ctx_info[MAX_CONTEXT];
 	struct mutex afu_mutex;	/* for anything that needs serialization
 				   e. g. to access afu */
 	struct mutex err_mutex;	/* for signalling error thread */

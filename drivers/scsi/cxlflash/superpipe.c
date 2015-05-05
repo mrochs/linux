@@ -302,7 +302,7 @@ static u64 ba_space(struct ba_lun *ba_lun)
 static int cxlflash_afu_attach(struct cxlflash *cxlflash, u64 context_id)
 {
 	struct afu *afu = cxlflash->afu;
-	struct ctx_info *ctx_info = &afu->ctx_info[context_id];
+	struct ctx_info *ctx_info = &cxlflash->ctx_info[context_id];
 	struct sisl_rht_entry *rht;
 	int rc = 0;
 	u64 reg;
@@ -577,7 +577,7 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 
 	/* Translate read/write O_* flags from fnctl.h to AFU permission bits */
 	perms = ((attach->hdr.flags + 1) & 0x3);
-	afu->ctx_info[context_id].rht_perms = perms;
+	cxlflash->ctx_info[context_id].rht_perms = perms;
 
 	attach->hdr.return_flags = 0;
 	attach->context_id = context_id;
@@ -616,7 +616,7 @@ static struct ctx_info *get_context(struct cxlflash *cxlflash, u64 ctxid,
 		pid = current->parent->pid;
 
 	if (likely(ctxid < MAX_CONTEXT)) {
-		ctx_info = &afu->ctx_info[ctxid];
+		ctx_info = &cxlflash->ctx_info[ctxid];
 		ctxpid = cxlflash->per_context[ctxid].pid;
 
 		if (checkpid)
