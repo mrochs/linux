@@ -1800,7 +1800,12 @@ int cxlflash_init_mc(struct cxlflash *cxlflash)
 	 * The CXL_IOCTL_GET_PROCESS_ELEMENT is implicit in the process
 	 * element (pe) that is embedded in the context (ctx)
 	 */
-	cxlflash_start_context(cxlflash);
+	rc = cxlflash_start_context(cxlflash);
+	if (rc) {
+		cxlflash_dev_err(dev, "start context failed rc=%d", rc);
+		level = UNMAP_FOUR;
+		goto out;
+	}
 ret:
 	cxlflash_info("returning rc=%d", rc);
 	return rc;
