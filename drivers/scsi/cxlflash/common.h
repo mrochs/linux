@@ -94,6 +94,13 @@ enum cxlflash_lr_state {
 	LINK_RESET_COMPLETE
 };
 
+enum cxlflash_init_state {
+	INIT_STATE_NONE,
+	INIT_STATE_AFU,
+	INIT_STATE_PCI,
+	INIT_STATE_SCSI
+};
+
 /*
  * Each context has its own set of resource handles that is visible
  * only from that context.
@@ -135,6 +142,7 @@ struct cxlflash {
 	wait_queue_head_t eeh_wait_q;
 
 	struct work_struct work_q;
+	enum cxlflash_init_state init_state;
 	enum cxlflash_lr_state lr_state;
 	int lr_port;
 

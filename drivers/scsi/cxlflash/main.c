@@ -878,8 +878,10 @@ static void cxlflash_remove(struct pci_dev *pdev)
 	}
 	flush_work(&cxlflash->work_q);
 
-	cxlflash_term_afu(cxlflash);
-	cxlflash_dev_dbg(&pdev->dev, "after struct cxlflash_term_afu!");
+	if (cxlflash->init_state >= INIT_STATE_AFU) {
+		cxlflash_term_afu(cxlflash);
+		cxlflash_dev_dbg(&pdev->dev, "after struct cxlflash_term_afu!");
+	}
 
 	if (cxlflash->cxlflash_regs)
 		iounmap(cxlflash->cxlflash_regs);
@@ -890,7 +892,8 @@ static void cxlflash_remove(struct pci_dev *pdev)
 	scsi_host_put(cxlflash->host);
 	cxlflash_dev_dbg(&pdev->dev, "after scsi_host_put!");
 
-	pci_disable_device(pdev);
+	if (cxlflash->init_state >= INIT_STATE_PCI)
+		pci_disable_device(pdev);
 
 	cxlflash_dbg("returning");
 }
@@ -1824,13 +1827,13 @@ static int cxlflash_init_afu(struct cxlflash *cxlflash)
 	struct afu *afu = cxlflash->afu;
 	struct device *dev = &cxlflash->dev->dev;
 
+	INIT_LIST_HEAD(&afu->luns);
+
 	rc = cxlflash_init_mc(cxlflash);
 	if (rc) {
 		cxlflash_dev_err(dev, "call to init_mc failed, rc=%d!", rc);
 		goto err1;
 	}
-
-	INIT_LIST_HEAD(&afu->luns);
 
 	/* Map the entire MMIO space of the AFU.
 	 */
@@ -2156,6 +2159,7 @@ static int cxlflash_probe(struct pci_dev *pdev,
 		goto out_remove;
 	}
 	cxlflash->parent_dev = to_pci_dev(phys_dev);
+	cxlflash->init_state = INIT_STATE_NONE;
 
 	cxlflash->cxl_afu = cxl_pci_to_afu(pdev, NULL);
 	rc = cxlflash_init_afu(cxlflash);
@@ -2164,6 +2168,7 @@ static int cxlflash_probe(struct pci_dev *pdev,
 				 "call to cxlflash_init_afu failed rc=%d!", rc);
 		goto out_remove;
 	}
+	cxlflash->init_state = INIT_STATE_AFU;
 
 	rc = cxlflash_init_pci(cxlflash);
 	if (rc) {
@@ -2171,6 +2176,7 @@ static int cxlflash_probe(struct pci_dev *pdev,
 				 "call to cxlflash_init_pci failed rc=%d!", rc);
 		goto out_remove;
 	}
+	cxlflash->init_state = INIT_STATE_PCI;
 
 	rc = cxlflash_init_scsi(cxlflash);
 	if (rc) {
@@ -2179,6 +2185,7 @@ static int cxlflash_probe(struct pci_dev *pdev,
 				 rc);
 		goto out_remove;
 	}
+	cxlflash->init_state = INIT_STATE_SCSI;
 
 out:
 	cxlflash_info("returning rc=%d", rc);
