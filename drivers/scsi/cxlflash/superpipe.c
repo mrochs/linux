@@ -488,7 +488,7 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 	struct cxl_ioctl_start_work *work;
 	int rc = 0;
 	u32 perms;
-	int context_id;
+	int context_id = -1;
 	struct file *file;
 
 	struct cxl_context *ctx;
@@ -589,8 +589,8 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 out:
 	attach->adap_fd = fd;
 
-	cxlflash_info("returning fd=%d bs=%lld rc=%d llba=%lld",
-		      fd, attach->block_size, rc, attach->last_lba);
+	cxlflash_info("returning ctxid=%d fd=%d bs=%lld rc=%d llba=%lld",
+		      context_id, fd, attach->block_size, rc, attach->last_lba);
 	return rc;
 
 err3:
@@ -617,13 +617,11 @@ static struct ctx_info *get_validated_context(struct cxlflash *cxlflash,
 
 	if (likely(ctxid < MAX_CONTEXT)) {
 		ctx_info = &afu->ctx_info[ctxid];
+		ctxpid = cxlflash->per_context[ctxid].pid;
 
-		if (checkpid) {
-			ctxpid = cxlflash->per_context[ctxid].pid;
-
+		if (checkpid)
 			if ((pid != ctxpid) && (!mc_override))
 				ctx_info = NULL;
-		}
 	}
 
 	cxlflash_dbg("ctxid=%llu ctx_info=%p ctxpid=%u pid=%u clone_path=%d",
@@ -1492,8 +1490,9 @@ static int cxlflash_disk_clone(struct scsi_device *sdev,
 	int i, j;
 	int rc = 0;
 
-	cxlflash_info("ctx_hdl_src=%llu ctx_hdl_dst=%llu",
-		      clone->context_id_src, clone->context_id_dst);
+	cxlflash_info("ctx_id_src=%llu ctx_id_dst=%llu adap_fd_src=%llu",
+		      clone->context_id_src, clone->context_id_dst,
+		      clone->adap_fd_src);
 
 	/* Do not clone yourself */
 	if (clone->context_id_src == clone->context_id_dst) {
