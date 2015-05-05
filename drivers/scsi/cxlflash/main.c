@@ -754,13 +754,14 @@ static void cxlflash_free_mem(struct cxlflash *cxlflash)
 		}
 
 		for (i = 0; i < CXLFLASH_NUM_CMDS; i++) {
-			del_timer_sync(&cxlflash->afu->cmd[i].timer);
-			buf = cxlflash->afu->cmd[i].buf;
+			if (afu->cmd[i].timer.function)
+				del_timer_sync(&afu->cmd[i].timer);
+			buf = afu->cmd[i].buf;
 			if (!((u64)buf & (PAGE_SIZE - 1)))
 				free_page((unsigned long)buf);
 		}
 
-		free_pages((unsigned long)cxlflash->afu,
+		free_pages((unsigned long)afu,
 			   get_order(sizeof(struct afu)));
 		cxlflash->afu = NULL;
 	}
@@ -788,8 +789,10 @@ static void cxlflash_stoafu(struct cxlflash *cxlflash)
 	}
 
 	/* Need to stop timers before unmapping */
-	for (i = 0; i < CXLFLASH_NUM_CMDS; i++)
-		del_timer_sync(&cxlflash->afu->cmd[i].timer);
+	for (i = 0; i < CXLFLASH_NUM_CMDS; i++) {
+		if (afu->cmd[i].timer.function)
+			del_timer_sync(&afu->cmd[i].timer);
+	}
 
 	if (afu->afu_map) {
 		cxl_psa_unmap((void *)afu->afu_map);
