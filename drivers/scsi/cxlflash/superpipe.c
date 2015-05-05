@@ -630,6 +630,35 @@ static struct ctx_info *get_validated_context(struct cxlflash *cxlflash,
 	return ctx_info;
 }
 
+static struct sisl_rht_entry *get_rhte(struct ctx_info *ctx_info,
+				       res_hndl_t res_hndl,
+				       struct lun_info *lun_info)
+{
+	struct sisl_rht_entry *rhte = NULL;
+
+	if (unlikely(!ctx_info->rht_start)) {
+		cxlflash_err("Context does not have an allocated RHT!");
+		goto out;
+	}
+
+	if (unlikely(res_hndl >= MAX_RHT_PER_CONTEXT)) {
+		cxlflash_err("Invalid resource handle! (%d)", res_hndl);
+		goto out;
+	}
+
+	rhte = &ctx_info->rht_start[res_hndl];
+	if (unlikely(rhte->nmask == 0)) {
+		cxlflash_err("Unopened resource handle! (%d)", res_hndl);
+		rhte = NULL;
+		goto out;
+	}
+
+	/* XXX - lun validation to go here */
+
+out:
+	return rhte;
+}
+
 /* Checkout a free/empty RHT entry */
 static struct sisl_rht_entry *rhte_checkout(struct ctx_info *ctx_info)
 {
@@ -955,17 +984,10 @@ static int cxlflash_vlun_resize(struct scsi_device *sdev,
 		goto out;
 	}
 
-	if (unlikely(res_hndl >= MAX_RHT_PER_CONTEXT)) {
+	rht_entry = get_rhte(ctx_info, res_hndl, lun_info);
+	if (unlikely(!rht_entry)) {
 		cxlflash_err("Invalid resource handle! (%u)", res_hndl);
 		rc = -EINVAL;
-		goto out;
-	}
-
-	rht_entry = &ctx_info->rht_start[res_hndl];
-
-	if (unlikely(rht_entry->nmask == 0)) {	/* not open */
-		cxlflash_err("Invalid resource handle! (%u)", res_hndl);
-		rc = -ENXIO;
 		goto out;
 	}
 
@@ -1199,20 +1221,8 @@ static int cxlflash_disk_release(struct scsi_device *sdev,
 		goto out;
 	}
 
-	if (!ctx_info->rht_start) {
-		cxlflash_err("Release called without attached context!");
-		rc = -EINVAL;
-		goto out;
-	}
-
-	if (unlikely(res_hndl >= MAX_RHT_PER_CONTEXT)) {
-		cxlflash_err("Invalid resource handle! (%d)", res_hndl);
-		rc = -EINVAL;
-		goto out;
-	}
-
-	rht_entry = &ctx_info->rht_start[res_hndl];
-	if (unlikely(rht_entry->nmask == 0)) {	/* not open */
+	rht_entry = get_rhte(ctx_info, res_hndl, lun_info);
+	if (unlikely(!rht_entry)) {
 		cxlflash_err("Invalid resource handle! (%d)", res_hndl);
 		rc = -EINVAL;
 		goto out;
