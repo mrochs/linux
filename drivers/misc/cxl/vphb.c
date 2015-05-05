@@ -12,7 +12,6 @@
 
 static void cxl_pci_dma_dev_setup(struct pci_dev *pdev)
 {
-	printk("WARNING %s", __func__);
 }
 
 static int cxl_dma_set_mask(struct pci_dev *pdev, u64 dma_mask)
@@ -30,19 +29,16 @@ static int cxl_dma_set_mask(struct pci_dev *pdev, u64 dma_mask)
 
 static int cxl_pci_probe_mode(struct pci_bus *bus)
 {
-	printk("WARNING %s", __func__);
 	return PCI_PROBE_NORMAL;
 }
 
 static int cxl_setup_msi_irqs(struct pci_dev *pdev, int nvec, int type)
 {
-	printk("WARNING %s", __func__);
 	return -ENODEV;
 }
 
 static void cxl_teardown_msi_irqs(struct pci_dev *pdev)
 {
-	printk("WARNING %s", __func__);
 }
 
 static bool cxl_pci_enable_device_hook(struct pci_dev *dev)
@@ -61,13 +57,12 @@ static bool cxl_pci_enable_device_hook(struct pci_dev *dev)
 static resource_size_t cxl_pci_window_alignment(struct pci_bus *bus,
 						unsigned long type)
 {
-	printk("WARNING %s", __func__);
 	return -1;
 }
 
 static void cxl_pci_reset_secondary_bus(struct pci_dev *dev)
 {
-	printk("WARNING %s", __func__);
+	/* Should we do an AFU reset here ? */
 }
 
 static int cxl_pcie_cfg_record(u8 bus, u8 devfn)
