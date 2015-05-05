@@ -546,7 +546,7 @@ static int attach_dedicated(struct cxl_context *ctx, u64 wed, u64 amr)
 		sr |= CXL_PSL_SR_An_TC;
 
 	if (ctx->kernel) {
-		sr |= (mfmsr() & MSR_SF) | CXL_PSL_SR_An_HV;
+		sr |= CXL_PSL_SR_An_R | (mfmsr() & MSR_SF) | CXL_PSL_SR_An_HV;
 		pid = 0;
 	} else { /* User space */
 		sr |= CXL_PSL_SR_An_PR | CXL_PSL_SR_An_R;
