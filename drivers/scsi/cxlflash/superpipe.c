@@ -447,7 +447,7 @@ int cxlflash_cxl_release(struct inode *inode, struct file *file)
 	}
 
 	cxlflash_info("close(%d) for context %d",
-		      cxlflash->per_context[context_id].lfd, context_id);
+		      cxlflash->ctx_info[context_id].lfd, context_id);
 
 	return cxl_fd_release(inode, file);
 }
@@ -534,8 +534,8 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 		rc = -EPERM;
 		goto out;
 	}
-	//BUG_ON(cxlflash->per_context[context_id].lfd != -1);
-	//BUG_ON(cxlflash->per_context[context_id].pid != 0);
+	//BUG_ON(cxlflash->ctx_info[context_id].lfd != -1);
+	//BUG_ON(cxlflash->ctx_info[context_id].pid != 0);
 
 	/*
 	 * Create and attach a new file descriptor. This must be the last
@@ -543,7 +543,7 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 	 * userspace and can't be undone. No error paths after this as we
 	 * can't free the fd safely.
 	 */
-	work = &cxlflash->per_context[context_id].work;
+	work = &cxlflash->ctx_info[context_id].work;
 	memset(work, 0, sizeof(*work));
 	work->num_interrupts = attach->num_interrupts;
 	work->flags = CXL_START_WORK_NUM_IRQS;
@@ -571,9 +571,9 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 	fd_install(fd, file);
 
 	cxlflash->num_user_contexts++;
-	cxlflash->per_context[context_id].lfd = fd;
-	cxlflash->per_context[context_id].pid = current->pid;
-	cxlflash->per_context[context_id].ctx = ctx;
+	cxlflash->ctx_info[context_id].lfd = fd;
+	cxlflash->ctx_info[context_id].pid = current->pid;
+	cxlflash->ctx_info[context_id].ctx = ctx;
 
 	/* Translate read/write O_* flags from fnctl.h to AFU permission bits */
 	perms = ((attach->hdr.flags + 1) & 0x3);
@@ -617,7 +617,7 @@ static struct ctx_info *get_context(struct cxlflash *cxlflash, u64 ctxid,
 
 	if (likely(ctxid < MAX_CONTEXT)) {
 		ctx_info = &cxlflash->ctx_info[ctxid];
-		ctxpid = cxlflash->per_context[ctxid].pid;
+		ctxpid = ctx_info->pid;
 
 		if (checkpid)
 			if ((pid != ctxpid) && (!mc_override))
@@ -1340,8 +1340,8 @@ static int cxlflash_disk_detach(struct scsi_device *sdev,
 		cxlflash->num_user_contexts--;
 	}
 
-	cxlflash->per_context[detach->context_id].lfd = -1;
-	cxlflash->per_context[detach->context_id].pid = 0;
+	cxlflash->ctx_info[detach->context_id].lfd = -1;
+	cxlflash->ctx_info[detach->context_id].pid = 0;
 
 out:
 	cxlflash_info("returning rc=%d", rc);

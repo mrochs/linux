@@ -94,13 +94,6 @@ enum cxlflash_lr_state {
 	LINK_RESET_COMPLETE
 };
 
-struct cxlflash_ctx {
-	struct cxl_ioctl_start_work work;
-	int lfd;
-	pid_t pid;
-	struct cxl_context *ctx;
-};
-
 /*
  * Each context has its own set of resource handles that is visible
  * only from that context.
@@ -118,6 +111,12 @@ struct ctx_info {
 	u32 rht_perms;		/* User-defined (@attach) permissions for RHT entries */
 
 	int ref_cnt;		/* num conn_infos pointing to me */
+	u32 pad;
+
+	struct cxl_ioctl_start_work work;
+	int lfd;
+	pid_t pid;
+	struct cxl_context *ctx;
 };
 
 struct cxlflash {
@@ -148,7 +147,6 @@ struct cxlflash {
 
 	int num_user_contexts;
 	struct ctx_info ctx_info[MAX_CONTEXT];
-	struct cxlflash_ctx per_context[MAX_CONTEXT];
 	struct file_operations cxl_fops;
 
 	int last_lun_index;

@@ -936,7 +936,7 @@ static int cxlflash_gb_alloc(struct cxlflash *cxlflash)
 	}
 
 	for (i = 0; i < MAX_CONTEXT; i++)
-		cxlflash->per_context[i].lfd = -1;
+		cxlflash->ctx_info[i].lfd = -1;
 
 out:
 	return rc;
