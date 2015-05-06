@@ -194,7 +194,7 @@ void cxl_handle_fault(struct work_struct *fault_work)
 	pr_devel("CXL BOTTOM HALF handling fault for afu pe: %i. "
 		"DSISR: %#llx DAR: %#llx\n", ctx->pe, dsisr, dar);
 
-	if (ctx->pid) { /* userspace */
+	if (!ctx->kernel) {
 		if (!(task = get_pid_task(ctx->pid, PIDTYPE_PID))) {
 			pr_devel("cxl_handle_fault unable to get task %i\n",
 				 pid_nr(ctx->pid));
