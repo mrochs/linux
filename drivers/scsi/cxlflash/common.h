@@ -112,10 +112,11 @@ enum cxlflash_init_state {
  */
 struct ctx_info {
 	volatile struct sisl_ctrl_map *ctrl_map;	/* initialized at startup */
-	struct sisl_rht_entry *rht_start;	/* 1 page, alloc/free on
-						   attach/detach */
+	struct sisl_rht_entry *rht_start;	/* 1 page (req'd for alignment),
+						   alloc/free on attach/detach */
 	u32 rht_out;		/* Number of checked out RHT entries */
 	u32 rht_perms;		/* User-defined (@attach) permissions for RHT entries */
+	struct lun_info **rht_lun; /* Mapping of RHT entries to LUNs */
 
 	int ref_cnt;		/* num conn_infos pointing to me */
 	u32 pad;

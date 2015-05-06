@@ -576,12 +576,18 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 	fd_install(fd, file);
 
 	cxlflash->num_user_contexts++;
+	ctx_info->rht_lun = kzalloc((MAX_RHT_PER_CONTEXT *
+				     sizeof(*ctx_info->rht_lun)), GFP_KERNEL);
+	if (!ctx_info->rht_lun)
+		BUG(); /* temporary */
+
 	INIT_LIST_HEAD(&ctx_info->luns);
 	lun_access = kzalloc(sizeof(*lun_access), GFP_KERNEL);
 	if (!lun_access)
 		BUG(); /* temporary */
 	lun_access->lun_info = lun_info;
 	list_add(&lun_access->list, &ctx_info->luns);
+
 	ctx_info->lfd = fd;
 	ctx_info->pid = current->pid;
 	ctx_info->ctx = ctx;
@@ -676,6 +682,11 @@ static struct sisl_rht_entry *get_rhte(struct ctx_info *ctx_info,
 		goto out;
 	}
 
+	if (unlikely(ctx_info->rht_lun[res_hndl] != lun_info)) {
+		cxlflash_err("Resource handle invalid for LUN! (%d)", res_hndl);
+		goto out;
+	}
+
 	rhte = &ctx_info->rht_start[res_hndl];
 	if (unlikely(rhte->nmask == 0)) {
 		cxlflash_err("Unopened resource handle! (%d)", res_hndl);
@@ -683,14 +694,13 @@ static struct sisl_rht_entry *get_rhte(struct ctx_info *ctx_info,
 		goto out;
 	}
 
-	/* XXX - lun validation to go here */
-
 out:
 	return rhte;
 }
 
 /* Checkout a free/empty RHT entry */
-static struct sisl_rht_entry *rhte_checkout(struct ctx_info *ctx_info)
+static struct sisl_rht_entry *rhte_checkout(struct ctx_info *ctx_info,
+					    struct lun_info *lun_info)
 {
 	struct sisl_rht_entry *rht_entry = NULL;
 	int i;
@@ -703,6 +713,9 @@ static struct sisl_rht_entry *rhte_checkout(struct ctx_info *ctx_info)
 			break;
 		}
 
+	if (likely(rht_entry))
+		ctx_info->rht_lun[i] = lun_info;
+
 	cxlflash_dbg("returning rht_entry=%p (%d)", rht_entry, i);
 	return rht_entry;
 }
@@ -713,6 +726,7 @@ static void rhte_checkin(struct ctx_info *ctx_info,
 	rht_entry->nmask = 0;
 	rht_entry->fp = 0;
 	ctx_info->rht_out--;
+	ctx_info->rht_lun[rht_entry - ctx_info->rht_start] = NULL;
 }
 
 static void rht_format1(struct sisl_rht_entry *rht_entry, u64 lun_id, u32 perm)
@@ -1155,7 +1169,7 @@ static int cxlflash_disk_open(struct scsi_device *sdev, void *arg,
 		goto err1;
 	}
 
-	rht_entry = rhte_checkout(ctx_info);
+	rht_entry = rhte_checkout(ctx_info, lun_info);
 	if (unlikely(!rht_entry)) {
 		cxlflash_err("too many opens for this context");
 		rc = -EMFILE;	/* too many opens  */
@@ -1375,6 +1389,8 @@ static int cxlflash_disk_detach(struct scsi_device *sdev,
 			list_del(&lun_access->list);
 			kfree(lun_access);
 		}
+		/* Free the RHT-LUN mapping table */
+		kfree(ctx_info->rht_lun);
 		/* Close the context */
 		cxlflash->num_user_contexts--;
 	}
@@ -1598,6 +1614,7 @@ static int cxlflash_disk_clone(struct scsi_device *sdev,
 		    ctx_info_src->rht_start[i].nmask;
 		ctx_info_dst->rht_start[i].fp =
 		    SISL_RHT_FP_CLONE(ctx_info_src->rht_start[i].fp, perms);
+		ctx_info_dst->rht_lun[i] = ctx_info_src->rht_lun[i];
 
 		rc = clone_lxt(afu, blka, clone->context_id_dst, i,
 			       &ctx_info_dst->rht_start[i],
