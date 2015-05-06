@@ -1726,6 +1726,7 @@ int cxlflash_ioctl(struct scsi_device *sdev, int cmd, void __user *arg)
 	size_t size = 0;
 	int idx;
 	int rc = 0;
+	struct Scsi_Host *shost = sdev->host;
 	sioctl do_ioctl = NULL;
 #define IOCTE(_s, _i) sizeof(struct _s), (sioctl)(_i)
 	static const struct {
@@ -1808,7 +1809,8 @@ int cxlflash_ioctl(struct scsi_device *sdev, int cmd, void __user *arg)
 	/* fall thru to exit */
 
 cxlflash_ioctl_exit:
-	cxlflash_info("ioctl %s (%08X) returned rc %d",
-		      decode_ioctl(cmd), cmd, rc);
+	cxlflash_info("ioctl %s (%08X) on dev(%d/%d/%d/%llu) returned rc %d",
+		      decode_ioctl(cmd), cmd, shost->host_no, sdev->channel,
+		      sdev->id, sdev->lun, rc);
 	return rc;
 }
