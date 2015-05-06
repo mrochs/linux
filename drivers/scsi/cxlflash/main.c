@@ -871,29 +871,26 @@ static void cxlflash_remove(struct pci_dev *pdev)
 	while (cxlflash->tmf_active)
 		wait_event(cxlflash->tmf_wait_q, !cxlflash->tmf_active);
 
-	/* Use this for now to indicate that scsi_add_host() was performed */
-	if (cxlflash->host->cmd_pool) {
+	switch (cxlflash->init_state) {
+	case INIT_STATE_SCSI:
 		scsi_remove_host(cxlflash->host);
 		cxlflash_dev_err(&pdev->dev, "after scsi_remove_host!");
-	}
-	flush_work(&cxlflash->work_q);
-
-	if (cxlflash->init_state >= INIT_STATE_AFU) {
+		scsi_host_put(cxlflash->host);
+		cxlflash_dev_dbg(&pdev->dev, "after scsi_host_put!");
+		/* Fall through */
+	case INIT_STATE_PCI:
+		if (cxlflash->cxlflash_regs)
+			iounmap(cxlflash->cxlflash_regs);
+		pci_release_regions(cxlflash->dev);
+		pci_disable_device(pdev);
+	case INIT_STATE_AFU:
 		cxlflash_term_afu(cxlflash);
 		cxlflash_dev_dbg(&pdev->dev, "after struct cxlflash_term_afu!");
+	case INIT_STATE_NONE:
+		flush_work(&cxlflash->work_q);
+		cxlflash_free_mem(cxlflash);
+		break;
 	}
-
-	if (cxlflash->cxlflash_regs)
-		iounmap(cxlflash->cxlflash_regs);
-
-	pci_release_regions(cxlflash->dev);
-
-	cxlflash_free_mem(cxlflash);
-	scsi_host_put(cxlflash->host);
-	cxlflash_dev_dbg(&pdev->dev, "after scsi_host_put!");
-
-	if (cxlflash->init_state >= INIT_STATE_PCI)
-		pci_disable_device(pdev);
 
 	cxlflash_dbg("returning");
 }
@@ -2130,6 +2127,7 @@ static int cxlflash_probe(struct pci_dev *pdev,
 		goto out;
 	}
 
+	cxlflash->init_state = INIT_STATE_NONE;
 	cxlflash->dev = pdev;
 	cxlflash->last_lun_index = 0;
 	cxlflash->dev_id = (struct pci_device_id *)dev_id;
@@ -2159,7 +2157,6 @@ static int cxlflash_probe(struct pci_dev *pdev,
 		goto out_remove;
 	}
 	cxlflash->parent_dev = to_pci_dev(phys_dev);
-	cxlflash->init_state = INIT_STATE_NONE;
 
 	cxlflash->cxl_afu = cxl_pci_to_afu(pdev, NULL);
 	rc = cxlflash_init_afu(cxlflash);
