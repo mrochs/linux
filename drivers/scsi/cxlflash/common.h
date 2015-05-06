@@ -124,6 +124,7 @@ struct ctx_info {
 	int lfd;
 	pid_t pid;
 	struct cxl_context *ctx;
+	struct list_head luns;	/* LUNs attached to this context */
 };
 
 struct cxlflash {
@@ -261,6 +262,11 @@ struct lun_info {
 
 	struct blka blka;
 	struct scsi_device *sdev;
+	struct list_head list;
+};
+
+struct lun_access {
+	struct lun_info *lun_info;
 	struct list_head list;
 };
 

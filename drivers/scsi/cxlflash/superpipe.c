@@ -489,6 +489,8 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 	struct afu *afu = cxlflash->afu;
 	struct lun_info *lun_info = sdev->hostdata;
 	struct cxl_ioctl_start_work *work;
+	struct ctx_info *ctx_info;
+	struct lun_access *lun_access;
 	int rc = 0;
 	u32 perms;
 	int context_id = -1;
@@ -537,8 +539,8 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 		rc = -EPERM;
 		goto out;
 	}
-	//BUG_ON(cxlflash->ctx_info[context_id].lfd != -1);
-	//BUG_ON(cxlflash->ctx_info[context_id].pid != 0);
+
+	ctx_info = &cxlflash->ctx_info[context_id];
 
 	/*
 	 * Create and attach a new file descriptor. This must be the last
@@ -546,7 +548,7 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 	 * userspace and can't be undone. No error paths after this as we
 	 * can't free the fd safely.
 	 */
-	work = &cxlflash->ctx_info[context_id].work;
+	work = &ctx_info->work;
 	memset(work, 0, sizeof(*work));
 	work->num_interrupts = attach->num_interrupts;
 	work->flags = CXL_START_WORK_NUM_IRQS;
@@ -574,13 +576,19 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 	fd_install(fd, file);
 
 	cxlflash->num_user_contexts++;
-	cxlflash->ctx_info[context_id].lfd = fd;
-	cxlflash->ctx_info[context_id].pid = current->pid;
-	cxlflash->ctx_info[context_id].ctx = ctx;
+	INIT_LIST_HEAD(&ctx_info->luns);
+	lun_access = kzalloc(sizeof(*lun_access), GFP_KERNEL);
+	if (!lun_access)
+		BUG(); /* temporary */
+	lun_access->lun_info = lun_info;
+	list_add(&lun_access->list, &ctx_info->luns);
+	ctx_info->lfd = fd;
+	ctx_info->pid = current->pid;
+	ctx_info->ctx = ctx;
 
 	/* Translate read/write O_* flags from fnctl.h to AFU permission bits */
 	perms = ((attach->hdr.flags + 1) & 0x3);
-	cxlflash->ctx_info[context_id].rht_perms = perms;
+	ctx_info->rht_perms = perms;
 
 	attach->hdr.return_flags = 0;
 	attach->context_id = context_id;
@@ -608,11 +616,13 @@ err1:
 }
 
 static struct ctx_info *get_context(struct cxlflash *cxlflash, u64 ctxid,
-				    bool clone_path)
+				    struct lun_info *lun_info, bool clone_path)
 {
 	struct afu *afu = cxlflash->afu;
 	struct ctx_info *ctx_info = NULL;
+	struct lun_access *lun_access = NULL;
 	bool mc_override = ctxid == afu->ctx_hndl;
+	bool found = false;
 	pid_t pid = current->pid, ctxpid = 0;
 
 	if (unlikely(clone_path))
@@ -622,13 +632,30 @@ static struct ctx_info *get_context(struct cxlflash *cxlflash, u64 ctxid,
 		ctx_info = &cxlflash->ctx_info[ctxid];
 		ctxpid = ctx_info->pid;
 
-		if (checkpid)
-			if ((pid != ctxpid) && (!mc_override))
+		if (mc_override)
+			goto out;
+
+		if (likely(lun_info)) {
+			list_for_each_entry(lun_access, &ctx_info->luns, list) {
+				if (lun_access->lun_info == lun_info) {
+					found = true;
+					break;
+				}
+			}
+
+			if (!found) {
 				ctx_info = NULL;
+				goto out;
+			}
+		}
+
+		if (checkpid && (pid != ctxpid))
+			ctx_info = NULL;
 	}
 
-	cxlflash_dbg("ctxid=%llu ctx_info=%p ctxpid=%u pid=%u clone_path=%d",
-		     ctxid, ctx_info, ctxpid, pid, clone_path);
+out:
+	cxlflash_dbg("ctxid=%llu ctxinfo=%p ctxpid=%u pid=%u clone=%d found=%d",
+		     ctxid, ctx_info, ctxpid, pid, clone_path, found);
 
 	return ctx_info;
 }
@@ -983,7 +1010,7 @@ static int cxlflash_vlun_resize(struct scsi_device *sdev,
 
 	}
 
-	ctx_info = get_context(cxlflash, resize->context_id, false);
+	ctx_info = get_context(cxlflash, resize->context_id, lun_info, false);
 	if (unlikely(!ctx_info)) {
 		cxlflash_err("Invalid context! (%llu)", resize->context_id);
 		rc = -EINVAL;
@@ -1121,7 +1148,7 @@ static int cxlflash_disk_open(struct scsi_device *sdev, void *arg,
 		goto out;
 	}
 
-	ctx_info = get_context(cxlflash, context_id, false);
+	ctx_info = get_context(cxlflash, context_id, lun_info, false);
 	if (unlikely(!ctx_info)) {
 		cxlflash_err("Invalid context! (%llu)", context_id);
 		rc = -EINVAL;
@@ -1219,7 +1246,7 @@ static int cxlflash_disk_release(struct scsi_device *sdev,
 		      release->context_id, release->rsrc_handle,
 		      lun_info->mode, lun_info->users);
 
-	ctx_info = get_context(cxlflash, release->context_id, false);
+	ctx_info = get_context(cxlflash, release->context_id, lun_info, false);
 	if (unlikely(!ctx_info)) {
 		cxlflash_err("Invalid context! (%llu)", release->context_id);
 		rc = -EINVAL;
@@ -1304,7 +1331,8 @@ static int cxlflash_disk_detach(struct scsi_device *sdev,
 				struct dk_cxlflash_detach *detach)
 {
 	struct cxlflash *cxlflash = (struct cxlflash *)sdev->host->hostdata;
-
+	struct lun_info *lun_info = sdev->hostdata;
+	struct lun_access *lun_access, *t;
 	struct dk_cxlflash_release rel;
 	struct ctx_info *ctx_info;
 
@@ -1313,7 +1341,7 @@ static int cxlflash_disk_detach(struct scsi_device *sdev,
 
 	cxlflash_info("context=0x%llx", detach->context_id);
 
-	ctx_info = get_context(cxlflash, detach->context_id, false);
+	ctx_info = get_context(cxlflash, detach->context_id, lun_info, false);
 	if (unlikely(!ctx_info)) {
 		cxlflash_err("Invalid context! (%llu)", detach->context_id);
 		rc = -EINVAL;
@@ -1342,6 +1370,11 @@ static int cxlflash_disk_detach(struct scsi_device *sdev,
 		/* Free the RHT memory */
 		free_page((unsigned long)ctx_info->rht_start);
 		ctx_info->rht_start = NULL;
+		/* Free the LUN access memory */
+		list_for_each_entry_safe(lun_access, t, &ctx_info->luns, list) {
+			list_del(&lun_access->list);
+			kfree(lun_access);
+		}
 		/* Close the context */
 		cxlflash->num_user_contexts--;
 	}
@@ -1358,13 +1391,14 @@ static int cxlflash_afu_recover(struct scsi_device *sdev,
 				struct dk_cxlflash_recover_afu *recover)
 {
 	struct cxlflash *cxlflash = (struct cxlflash *)sdev->host->hostdata;
+	struct lun_info *lun_info = sdev->hostdata;
 	struct afu *afu = cxlflash->afu;
 	struct ctx_info *ctx_info;
 	long reg;
 	int rc = 0;
 
 	/* Ensure that this process is attached to the context */
-	ctx_info = get_context(cxlflash, recover->context_id, false);
+	ctx_info = get_context(cxlflash, recover->context_id, lun_info, false);
 	if (unlikely(!ctx_info)) {
 		cxlflash_err("Invalid context! (%llu)", recover->context_id);
 		rc = -EINVAL;
@@ -1515,8 +1549,10 @@ static int cxlflash_disk_clone(struct scsi_device *sdev,
 		goto out;
 	}
 
-	ctx_info_src = get_context(cxlflash, clone->context_id_src, true);
-	ctx_info_dst = get_context(cxlflash, clone->context_id_dst, false);
+	ctx_info_src = get_context(cxlflash, clone->context_id_src, lun_info,
+				   true);
+	ctx_info_dst = get_context(cxlflash, clone->context_id_dst, lun_info,
+				   false);
 	if (unlikely(!ctx_info_src || !ctx_info_dst)) {
 		cxlflash_err("Invalid context! (%llu,%llu)",
 			     clone->context_id_src, clone->context_id_dst);
@@ -1657,12 +1693,13 @@ static int cxlflash_disk_verify(struct scsi_device *sdev,
 	int rc = 0;
 	struct ctx_info *ctx_info;
 	struct cxlflash *cxlflash = (struct cxlflash *)sdev->host->hostdata;
+	struct lun_info *lun_info = sdev->hostdata;
 
 	cxlflash_info("context=0x%llx res_hndl=0x%llx, hint=0x%llx",
 		      verify->context_id, verify->rsrc_handle,
 		      verify->hint);
 
-	ctx_info = get_context(cxlflash, verify->context_id, false);
+	ctx_info = get_context(cxlflash, verify->context_id, lun_info, false);
 	if (unlikely(!ctx_info)) {
 		cxlflash_err("Invalid context! (%llu)", verify->context_id);
 		rc = -EINVAL;
