@@ -1615,7 +1615,8 @@ static int process_sense(struct scsi_device *sdev,
 					     "new=%lld", prev_lba,
 					     lun_info->max_lba);
 			break;
-		case 0x3F: /* Report LUNs changed */
+		case 0x3F: /* Report LUNs changed, Rescan. */
+			scsi_scan_host(cxlflash->host);
 			break;
 		default:
 			rc = -EIO;
@@ -1626,6 +1627,8 @@ static int process_sense(struct scsi_device *sdev,
 		rc = -EIO;
 		break;
 	}
+	cxlflash_dbg("sense_key %x asc %x rc %d", sense_data->sense_key,
+		      sense_data->add_sense_key, rc);
 	return rc;
 }
 
