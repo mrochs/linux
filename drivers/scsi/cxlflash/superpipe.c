@@ -343,7 +343,6 @@ static int cxlflash_afu_attach(struct cxlflash *cxlflash, u64 context_id)
 	writeq_be(SISL_RHT_CNT_ID((u64) MAX_RHT_PER_CONTEXT,
 				  (u64) (afu->ctx_hndl)),
 		  &ctx_info->ctrl_map->rht_cnt_id);
-	ctx_info->ref_cnt = 1;
 out:
 	cxlflash_info("returning rc=%d", rc);
 	return rc;
@@ -640,6 +639,11 @@ static struct ctx_info *get_context(struct cxlflash *cxlflash, u64 ctxid,
 
 		if (mc_override)
 			goto out;
+
+		if (unlikely(!ctx_info->rht_start)) {
+			ctx_info = NULL;
+			goto out;
+		}
 
 		if (likely(lun_info)) {
 			list_for_each_entry(lun_access, &ctx_info->luns, list) {
@@ -1362,20 +1366,32 @@ static int cxlflash_disk_detach(struct scsi_device *sdev,
 		goto out;
 	}
 
-	if (ctx_info->ref_cnt-- == 1) {
-		/* Cleanup outstanding resources */
-		if (ctx_info->rht_out) {
-			marshall_det_to_rele(detach, &rel);
-			for (i = 0; i < MAX_RHT_PER_CONTEXT; i++) {
-				rel.rsrc_handle = i;
-				cxlflash_disk_release(sdev, &rel);
-
-				/* No need to loop further if we're done */
-				if (ctx_info->rht_out == 0)
-					break;
-			}
+	/* Take our LUN out of context, free the node */
+	list_for_each_entry_safe(lun_access, t, &ctx_info->luns, list)
+		if (lun_access->lun_info == lun_info) {
+			list_del(&lun_access->list);
+			kfree(lun_access);
+			lun_access = NULL;
+			break;
 		}
 
+	/* Cleanup outstanding resources tied to this LUN */
+	if (ctx_info->rht_out) {
+		marshall_det_to_rele(detach, &rel);
+		for (i = 0; i < MAX_RHT_PER_CONTEXT; i++) {
+			if (ctx_info->rht_lun[i] == lun_info) {
+				rel.rsrc_handle = i;
+				cxlflash_disk_release(sdev, &rel);
+			}
+
+			/* No need to loop further if we're done */
+			if (ctx_info->rht_out == 0)
+				break;
+		}
+	}
+
+	/* Tear down context following last LUN cleanup */
+	if (list_empty(&ctx_info->luns)) {
 		/* Clear RHT registers for this context */
 		writeq_be(0, &ctx_info->ctrl_map->rht_start);
 		writeq_be(0, &ctx_info->ctrl_map->rht_cnt_id);
@@ -1384,19 +1400,16 @@ static int cxlflash_disk_detach(struct scsi_device *sdev,
 		/* Free the RHT memory */
 		free_page((unsigned long)ctx_info->rht_start);
 		ctx_info->rht_start = NULL;
-		/* Free the LUN access memory */
-		list_for_each_entry_safe(lun_access, t, &ctx_info->luns, list) {
-			list_del(&lun_access->list);
-			kfree(lun_access);
-		}
 		/* Free the RHT-LUN mapping table */
 		kfree(ctx_info->rht_lun);
+		ctx_info->rht_lun = NULL;
+
+		ctx_info->lfd = -1;
+		ctx_info->pid = 0;
+
 		/* Close the context */
 		cxlflash->num_user_contexts--;
 	}
-
-	cxlflash->ctx_info[detach->context_id].lfd = -1;
-	cxlflash->ctx_info[detach->context_id].pid = 0;
 
 out:
 	cxlflash_info("returning rc=%d", rc);

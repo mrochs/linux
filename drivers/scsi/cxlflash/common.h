@@ -118,9 +118,6 @@ struct ctx_info {
 	u32 rht_perms;		/* User-defined (@attach) permissions for RHT entries */
 	struct lun_info **rht_lun; /* Mapping of RHT entries to LUNs */
 
-	int ref_cnt;		/* num conn_infos pointing to me */
-	u32 pad;
-
 	struct cxl_ioctl_start_work work;
 	int lfd;
 	pid_t pid;
