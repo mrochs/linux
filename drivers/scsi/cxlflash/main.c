@@ -507,7 +507,6 @@ create_lun_info_exit:
 static int cxlflash_slave_alloc(struct scsi_device *sdev)
 {
 	struct lun_info *lun_info = NULL;
-	struct Scsi_Host *shost = sdev->host;
 	unsigned long flags = 0;
 	int rc = 0;
 
@@ -518,11 +517,11 @@ static int cxlflash_slave_alloc(struct scsi_device *sdev)
 		goto out;
 	}
 
-	spin_lock_irqsave(shost->host_lock, flags);
+	spin_lock_irqsave(&global.slock, flags);
 
 	sdev->hostdata = lun_info;
 	list_add(&lun_info->list, &global.luns);
-	spin_unlock_irqrestore(shost->host_lock, flags);
+	spin_unlock_irqrestore(&global.slock, flags);
 out:
 	cxlflash_info("returning luninfo %p sdev %p", lun_info, sdev);
 	return rc;
@@ -2199,6 +2198,7 @@ static int __init init_cxlflash(void)
 	}
 
 	INIT_LIST_HEAD(&global.luns);
+	spin_lock_init(&global.slock);
 
 	return pci_register_driver(&cxlflash_driver);
 }
@@ -2206,13 +2206,15 @@ static int __init init_cxlflash(void)
 static void __exit exit_cxlflash(void)
 {
 	struct lun_info *lun_info, *temp;
+	unsigned long flags = 0;
 
+	spin_lock_irqsave(&global.slock, flags);
 	list_for_each_entry_safe(lun_info, temp, &global.luns, list) {
-		cxlflash_info("lun_info=%p", lun_info);
 		list_del(&lun_info->list);
 		ba_terminate(&lun_info->blka.ba_lun);
 		kfree(lun_info);
 	}
+	spin_unlock_irqrestore(&global.slock, flags);
 
 	pci_unregister_driver(&cxlflash_driver);
 }

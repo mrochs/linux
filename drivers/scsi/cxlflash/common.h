@@ -228,6 +228,7 @@ struct afu {
 } __attribute__ ((aligned(PAGE_SIZE_4K)));
 
 struct cxlflash_global {
+	spinlock_t slock;
 	struct list_head luns;	/* list of lun_info structs */
 };
 
