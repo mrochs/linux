@@ -37,6 +37,8 @@ u32 internal_lun = 0;
 u32 checkpid = 0;
 u32 ws = 0;
 
+struct cxlflash_global global;
+
 /*
  * This is a temporary module parameter
  *
@@ -506,8 +508,6 @@ static int cxlflash_slave_alloc(struct scsi_device *sdev)
 {
 	struct lun_info *lun_info = NULL;
 	struct Scsi_Host *shost = sdev->host;
-	struct cxlflash *cxlflash = shost_priv(shost);
-	struct afu *afu = cxlflash->afu;
 	unsigned long flags = 0;
 	int rc = 0;
 
@@ -521,7 +521,7 @@ static int cxlflash_slave_alloc(struct scsi_device *sdev)
 	spin_lock_irqsave(shost->host_lock, flags);
 
 	sdev->hostdata = lun_info;
-	list_add(&lun_info->list, &afu->luns);
+	list_add(&lun_info->list, &global.luns);
 	spin_unlock_irqrestore(shost->host_lock, flags);
 out:
 	cxlflash_info("returning luninfo %p sdev %p", lun_info, sdev);
@@ -577,14 +577,8 @@ static void cxlflash_slave_destroy(struct scsi_device *sdev)
 {
 	struct lun_info *lun_info = sdev->hostdata;
 
-	if (lun_info) {
-		sdev->hostdata = NULL;
-		list_del(&lun_info->list);
-		ba_terminate(&lun_info->blka.ba_lun);
-		kfree(lun_info);
-	}
-
 	cxlflash_info("lun_info=%p", lun_info);
+
 	return;
 }
 
@@ -744,15 +738,8 @@ static void cxlflash_free_mem(struct cxlflash *cxlflash)
 	int i;
 	char *buf = NULL;
 	struct afu *afu = cxlflash->afu;
-	struct lun_info *lun_info, *temp;
 
 	if (cxlflash->afu) {
-		list_for_each_entry_safe(lun_info, temp, &afu->luns, list) {
-			list_del(&lun_info->list);
-			ba_terminate(&lun_info->blka.ba_lun);
-			kfree(lun_info);
-		}
-
 		for (i = 0; i < CXLFLASH_NUM_CMDS; i++) {
 			if (afu->cmd[i].timer.function)
 				del_timer_sync(&afu->cmd[i].timer);
@@ -1824,7 +1811,6 @@ static int cxlflash_init_afu(struct cxlflash *cxlflash)
 	struct afu *afu = cxlflash->afu;
 	struct device *dev = &cxlflash->dev->dev;
 
-	INIT_LIST_HEAD(&afu->luns);
 
 	rc = cxlflash_init_mc(cxlflash);
 	if (rc) {
@@ -2212,11 +2198,22 @@ static int __init init_cxlflash(void)
 		return (-EINVAL);
 	}
 
+	INIT_LIST_HEAD(&global.luns);
+
 	return pci_register_driver(&cxlflash_driver);
 }
 
 static void __exit exit_cxlflash(void)
 {
+	struct lun_info *lun_info, *temp;
+
+	list_for_each_entry_safe(lun_info, temp, &global.luns, list) {
+		cxlflash_info("lun_info=%p", lun_info);
+		list_del(&lun_info->list);
+		ba_terminate(&lun_info->blka.ba_lun);
+		kfree(lun_info);
+	}
+
 	pci_unregister_driver(&cxlflash_driver);
 }
 

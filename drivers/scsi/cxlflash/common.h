@@ -223,10 +223,13 @@ struct afu {
 	char version[8];
 	u64 interface_version;
 
-	struct list_head luns;	/* list of lun_info structs */
 	struct cxlflash *back;	/* Pointer back to parent cxlflash */
 
 } __attribute__ ((aligned(PAGE_SIZE_4K)));
+
+struct cxlflash_global {
+	struct list_head luns;	/* list of lun_info structs */
+};
 
 struct ba_lun {
 	u64 lun_id;
