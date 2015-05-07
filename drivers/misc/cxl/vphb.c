@@ -81,14 +81,15 @@ static unsigned long cxl_pcie_cfg_addr(struct pci_controller* hose,
 	return (unsigned long)hose->cfg_addr + ((unsigned long)hose->cfg_data * record) + offset;
 }
 
-static int cxl_pcie_read_config(struct pci_bus *bus, unsigned int devfn,
-                               int offset, int len, u32 *val)
+
+static int cxl_pcie_config_info(struct pci_bus *bus, unsigned int devfn,
+				int offset, int len,
+				volatile void __iomem **ioaddr,
+				u32 *mask, int *shift)
 {
         struct pci_controller *hose;
 	struct cxl_afu *afu;
-        volatile void __iomem *ioaddr;
 	unsigned long addr;
-	u32 v;
 
         hose = pci_bus_to_host(bus);
 	afu = (struct cxl_afu *)hose->private_data;
@@ -97,45 +98,61 @@ static int cxl_pcie_read_config(struct pci_bus *bus, unsigned int devfn,
         if (cxl_pcie_cfg_record(bus->number, devfn) > afu->crs_num)
                 return PCIBIOS_DEVICE_NOT_FOUND;
 	if (offset >= (unsigned long)hose->cfg_data)
-                return  PCIBIOS_BAD_REGISTER_NUMBER;
+                return PCIBIOS_BAD_REGISTER_NUMBER;
         addr = cxl_pcie_cfg_addr(hose, bus->number, devfn, offset);
-	ioaddr = (void *)(addr & ~0x3ULL);
 
-	v = in_le32(ioaddr); /* can only read 32 bits */
-        switch (len) {
+	*ioaddr = (void *)(addr & ~0x3ULL);
+	*shift = ((addr & 0x3) * 8);
+	switch (len) {
         case 1:
-		*val = (v >> ((addr & 0x3) * 8)) & 0xff;
+		*mask = 0xff;
 		break;
         case 2:
-		*val = (v >> ((addr & 0x2) * 8)) & 0xffff;
+		*mask = 0xffff;
 		break;
         default:
-                *val = v;
+		*mask = 0xffffffff;
                 break;
 	}
+	return 0;
+}
+
+static int cxl_pcie_read_config(struct pci_bus *bus, unsigned int devfn,
+                               int offset, int len, u32 *val)
+{
+        volatile void __iomem *ioaddr;
+	int shift, rc;
+	u32 mask;
+
+	rc = cxl_pcie_config_info(bus, devfn, offset, len, &ioaddr,
+				  &mask, &shift);
+	if (rc)
+		return rc;
+
+	/* Can only read 32 bits */
+	*val = (in_le32(ioaddr) >> shift) & mask;
 	return PCIBIOS_SUCCESSFUL;
 }
 
 static int cxl_pcie_write_config(struct pci_bus *bus, unsigned int devfn,
 				 int offset, int len, u32 val)
 {
-        struct pci_controller *hose;
-	struct cxl_afu *afu;
         volatile void __iomem *ioaddr;
-	unsigned long addr;
+	u32 v, mask;
+	int shift, rc;
 
-        hose = pci_bus_to_host(bus);
-	afu = (struct cxl_afu *)hose->private_data;
-        if (hose == NULL)
-                return PCIBIOS_DEVICE_NOT_FOUND;
-        if (cxl_pcie_cfg_record(bus->number, devfn) > afu->crs_num)
-                return PCIBIOS_DEVICE_NOT_FOUND;
-	if (offset >= (unsigned long)hose->cfg_data)
-                return  PCIBIOS_BAD_REGISTER_NUMBER;
-        addr = cxl_pcie_cfg_addr(hose, bus->number, devfn, offset);
-	ioaddr = (void *)(addr & ~0x3ULL);
+	rc = cxl_pcie_config_info(bus, devfn, offset, len, &ioaddr,
+				  &mask, &shift);
+	if (rc)
+		return rc;
 
-	/* FIXME ADD write!!!!! */
+	/* Can only write 32 bits so do read-modify-write */
+	mask <<= shift;
+	val <<= shift;
+
+	v = (in_le32(ioaddr) & ~mask) || (val & mask);
+
+	out_le32(ioaddr, v);
         return PCIBIOS_SUCCESSFUL;
 }
 
