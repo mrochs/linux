@@ -13,6 +13,7 @@
  */
 
 #include <linux/file.h>
+#include <linux/syscalls.h>
 #include <misc/cxl.h>
 #include <asm/unaligned.h>
 
@@ -299,6 +300,57 @@ static u64 ba_space(struct ba_lun *ba_lun)
 	return lun_info->free_aun_cnt;
 }
 
+static struct ctx_info *get_context(struct cxlflash *cxlflash, u64 ctxid,
+				    struct lun_info *lun_info, bool clone_path)
+{
+	struct afu *afu = cxlflash->afu;
+	struct ctx_info *ctx_info = NULL;
+	struct lun_access *lun_access = NULL;
+	bool mc_override = ctxid == afu->ctx_hndl;
+	bool found = false;
+	pid_t pid = current->pid, ctxpid = 0;
+
+	if (unlikely(clone_path))
+		pid = current->parent->pid;
+
+	if (likely(ctxid < MAX_CONTEXT)) {
+		ctx_info = &cxlflash->ctx_info[ctxid];
+		ctxpid = ctx_info->pid;
+
+		if (mc_override)
+			goto out;
+
+		/* Use rht_start existence as a state check for context */
+		if (unlikely(!ctx_info->rht_start)) {
+			ctx_info = NULL;
+			goto out;
+		}
+
+		if (likely(lun_info)) {
+			list_for_each_entry(lun_access, &ctx_info->luns, list) {
+				if (lun_access->lun_info == lun_info) {
+					found = true;
+					break;
+				}
+			}
+
+			if (!found) {
+				ctx_info = NULL;
+				goto out;
+			}
+		}
+
+		if (checkpid && (pid != ctxpid))
+			ctx_info = NULL;
+	}
+
+out:
+	cxlflash_dbg("ctxid=%llu ctxinfo=%p ctxpid=%u pid=%u clone=%d found=%d",
+		     ctxid, ctx_info, ctxpid, pid, clone_path, found);
+
+	return ctx_info;
+}
+
 static int cxlflash_afu_attach(struct cxlflash *cxlflash, u64 context_id)
 {
 	struct afu *afu = cxlflash->afu;
@@ -434,240 +486,6 @@ out:
 	cxlflash_info("maxlba=%lld blklen=%d pcmd %p",
 		      lun_info->max_lba, lun_info->blk_len, cmd);
 	return rc;
-}
-
-int cxlflash_cxl_release(struct inode *inode, struct file *file)
-{
-	struct cxl_context *ctx = cxl_fops_get_context(file);
-	struct cxlflash *cxlflash = container_of(file->f_op, struct cxlflash,
-						   cxl_fops);
-	int context_id = cxl_process_element(ctx);
-
-	if (context_id < 0) {
-		cxlflash_err("context %d closed", context_id);
-		return 0;
-	}
-
-	cxlflash_info("close(%d) for context %d",
-		      cxlflash->ctx_info[context_id].lfd, context_id);
-
-	return cxl_fd_release(inode, file);
-}
-
-const struct file_operations cxlflash_cxl_fops = {
-	.owner = THIS_MODULE,
-	.release = cxlflash_cxl_release,
-};
-
-/*
- * NAME:        cxlflash_disk_attach
- *
- * FUNCTION:    attach a LUN to context
- *
- * INPUTS:
- *              sdev       - Pointer to scsi device structure
- *              arg        - Pointer to ioctl specific structure
- *
- * OUTPUTS:
- *              context_id - Unique context index
- *              adap_fd    - New file descriptor for user
- *
- * RETURNS:
- *              0           - Success
- *              errno       - Failure
- *
- * NOTES:
- *              When successful:
- *               a. initialize AFU for this context
- *
- */
-static int cxlflash_disk_attach(struct scsi_device *sdev,
-				struct dk_cxlflash_attach *attach)
-{
-	struct cxlflash *cxlflash = (struct cxlflash *)sdev->host->hostdata;
-	struct afu *afu = cxlflash->afu;
-	struct lun_info *lun_info = sdev->hostdata;
-	struct cxl_ioctl_start_work *work;
-	struct ctx_info *ctx_info;
-	struct lun_access *lun_access;
-	int rc = 0;
-	u32 perms;
-	int context_id = -1;
-	struct file *file;
-
-	struct cxl_context *ctx;
-
-	int fd = -1;
-
-	/* On first attach set fileops */
-	if (cxlflash->num_user_contexts == 0)
-		cxlflash->cxl_fops = cxlflash_cxl_fops;
-
-	if (attach->num_interrupts > 4) {
-		cxlflash_err("Cannot support this many interrupts %llu",
-			     attach->num_interrupts);
-		rc = -EINVAL;
-		goto out;
-	}
-
-	if (lun_info->max_lba == 0) {
-		cxlflash_info("No capacity info yet for this LUN "
-			      "(%016llX)", lun_info->lun_id);
-		read_cap16(afu, lun_info, sdev->channel + 1);
-		cxlflash_info("LBA = %016llX", lun_info->max_lba);
-		cxlflash_info("BLK_LEN = %08X", lun_info->blk_len);
-		rc = cxlflash_init_ba(lun_info);
-		if (rc) {
-			cxlflash_err("call to cxlflash_init_ba failed "
-				     "rc=%d!", rc);
-			rc = -ENOMEM;
-			goto out;
-		}
-	}
-
-	ctx = cxl_dev_context_init(cxlflash->dev);
-	if (!ctx) {
-		cxlflash_err("Could not initialize context");
-		rc = -ENODEV;
-		goto out;
-	}
-
-	context_id = cxl_process_element(ctx);
-	if ((context_id > MAX_CONTEXT) || (context_id < 0)) {
-		cxlflash_err("context_id (%u) invalid!", context_id);
-		rc = -EPERM;
-		goto out;
-	}
-
-	ctx_info = &cxlflash->ctx_info[context_id];
-
-	/*
-	 * Create and attach a new file descriptor. This must be the last
-	 * statement as once this is run, the file descritor is visible to
-	 * userspace and can't be undone. No error paths after this as we
-	 * can't free the fd safely.
-	 */
-	work = &ctx_info->work;
-	memset(work, 0, sizeof(*work));
-	work->num_interrupts = attach->num_interrupts;
-	work->flags = CXL_START_WORK_NUM_IRQS;
-
-	file = cxl_get_fd(ctx, &cxlflash->cxl_fops, &fd);
-	if (fd < 0) {
-		rc = -ENODEV;
-		cxlflash_err("Could not get file descriptor");
-		goto err1;
-	}
-
-	rc = cxl_start_work(ctx, work);
-	if (rc) {
-		cxlflash_err("Could not start context rc=%d", rc);
-		goto err2;
-	}
-
-	rc = cxlflash_afu_attach(cxlflash, context_id);
-	if (rc) {
-		cxlflash_err("Could not attach AFU rc %d", rc);
-		goto err3;
-	}
-
-	/* No error paths after installing the fd */
-	fd_install(fd, file);
-
-	cxlflash->num_user_contexts++;
-	ctx_info->rht_lun = kzalloc((MAX_RHT_PER_CONTEXT *
-				     sizeof(*ctx_info->rht_lun)), GFP_KERNEL);
-	if (!ctx_info->rht_lun)
-		BUG(); /* temporary */
-
-	INIT_LIST_HEAD(&ctx_info->luns);
-	lun_access = kzalloc(sizeof(*lun_access), GFP_KERNEL);
-	if (!lun_access)
-		BUG(); /* temporary */
-	lun_access->lun_info = lun_info;
-	list_add(&lun_access->list, &ctx_info->luns);
-
-	ctx_info->lfd = fd;
-	ctx_info->pid = current->pid;
-	ctx_info->ctx = ctx;
-
-	/* Translate read/write O_* flags from fnctl.h to AFU permission bits */
-	perms = ((attach->hdr.flags + 1) & 0x3);
-	ctx_info->rht_perms = perms;
-
-	attach->hdr.return_flags = 0;
-	attach->context_id = context_id;
-	attach->block_size = lun_info->blk_len;
-	attach->mmio_size = sizeof(afu->afu_map->hosts[0].harea);
-	attach->last_lba = lun_info->max_lba;
-	attach->max_xfer = sdev->host->max_sectors;
-
-out:
-	attach->adap_fd = fd;
-
-	cxlflash_info("returning ctxid=%d fd=%d bs=%lld rc=%d llba=%lld",
-		      context_id, fd, attach->block_size, rc, attach->last_lba);
-	return rc;
-
-err3:
-	cxl_stop_context(ctx);
-err2:
-	fput(file);
-	put_unused_fd(fd);
-	fd = -1;
-err1:
-	cxl_release_context(ctx);
-	goto out;
-}
-
-static struct ctx_info *get_context(struct cxlflash *cxlflash, u64 ctxid,
-				    struct lun_info *lun_info, bool clone_path)
-{
-	struct afu *afu = cxlflash->afu;
-	struct ctx_info *ctx_info = NULL;
-	struct lun_access *lun_access = NULL;
-	bool mc_override = ctxid == afu->ctx_hndl;
-	bool found = false;
-	pid_t pid = current->pid, ctxpid = 0;
-
-	if (unlikely(clone_path))
-		pid = current->parent->pid;
-
-	if (likely(ctxid < MAX_CONTEXT)) {
-		ctx_info = &cxlflash->ctx_info[ctxid];
-		ctxpid = ctx_info->pid;
-
-		if (mc_override)
-			goto out;
-
-		if (unlikely(!ctx_info->rht_start)) {
-			ctx_info = NULL;
-			goto out;
-		}
-
-		if (likely(lun_info)) {
-			list_for_each_entry(lun_access, &ctx_info->luns, list) {
-				if (lun_access->lun_info == lun_info) {
-					found = true;
-					break;
-				}
-			}
-
-			if (!found) {
-				ctx_info = NULL;
-				goto out;
-			}
-		}
-
-		if (checkpid && (pid != ctxpid))
-			ctx_info = NULL;
-	}
-
-out:
-	cxlflash_dbg("ctxid=%llu ctxinfo=%p ctxpid=%u pid=%u clone=%d found=%d",
-		     ctxid, ctx_info, ctxpid, pid, clone_path, found);
-
-	return ctx_info;
 }
 
 static struct sisl_rht_entry *get_rhte(struct ctx_info *ctx_info,
@@ -1085,6 +903,7 @@ int cxlflash_lun_attach(struct lun_info *lun_info, enum lun_mode desired_mode)
 	}
 
 	lun_info->users++;
+	BUG_ON(lun_info->users < 0);
 out:
 	cxlflash_dbg("Returning rc=%d li_mode=%u li_users=%u", rc,
 		     lun_info->mode, lun_info->users);
@@ -1098,6 +917,7 @@ void cxlflash_lun_detach(struct lun_info *lun_info)
 	if (--lun_info->users == 0)
 		lun_info->mode = MODE_NONE;
 	cxlflash_dbg("li_users=%u", lun_info->users);
+	BUG_ON(lun_info->users < 0);
 	spin_unlock(&lun_info->slock);
 }
 
@@ -1356,6 +1176,7 @@ static int cxlflash_disk_detach(struct scsi_device *sdev,
 
 	int i;
 	int rc = 0;
+	int lfd;
 
 	cxlflash_info("context=0x%llx", detach->context_id);
 
@@ -1365,15 +1186,6 @@ static int cxlflash_disk_detach(struct scsi_device *sdev,
 		rc = -EINVAL;
 		goto out;
 	}
-
-	/* Take our LUN out of context, free the node */
-	list_for_each_entry_safe(lun_access, t, &ctx_info->luns, list)
-		if (lun_access->lun_info == lun_info) {
-			list_del(&lun_access->list);
-			kfree(lun_access);
-			lun_access = NULL;
-			break;
-		}
 
 	/* Cleanup outstanding resources tied to this LUN */
 	if (ctx_info->rht_out) {
@@ -1390,6 +1202,15 @@ static int cxlflash_disk_detach(struct scsi_device *sdev,
 		}
 	}
 
+	/* Take our LUN out of context, free the node */
+	list_for_each_entry_safe(lun_access, t, &ctx_info->luns, list)
+		if (lun_access->lun_info == lun_info) {
+			list_del(&lun_access->list);
+			kfree(lun_access);
+			lun_access = NULL;
+			break;
+		}
+
 	/* Tear down context following last LUN cleanup */
 	if (list_empty(&ctx_info->luns)) {
 		/* Clear RHT registers for this context */
@@ -1404,16 +1225,263 @@ static int cxlflash_disk_detach(struct scsi_device *sdev,
 		kfree(ctx_info->rht_lun);
 		ctx_info->rht_lun = NULL;
 
+		lfd = ctx_info->lfd;
 		ctx_info->lfd = -1;
 		ctx_info->pid = 0;
 
 		/* Close the context */
 		cxlflash->num_user_contexts--;
+
+		/*
+		 * As a last step, clean up external resources when not
+		 * already on an external cleanup thread, ie: close(adap_fd).
+		 *
+		 * NOTE: this will free up the context from the CXL services,
+		 * allowing it to dole out the same context_id on a future
+		 * (or even currently in-flight) disk_attach operation.
+		 */
+		if ((lfd != -1) && do_sysclose) /* XXX - do_sysclose is temp */
+			sys_close(lfd);
 	}
 
 out:
 	cxlflash_info("returning rc=%d", rc);
 	return rc;
+}
+
+/*
+ * This routine is the release handler for the fops registered with
+ * the CXL services on an initial attach for a context. It is called
+ * when a close is performed on the adapter file descriptor returned
+ * to the user. Programmatically, the user is not required to perform
+ * the close, as it is handled internally via the detach ioctl when
+ * a context is being removed. Note that nothing prevents the user
+ * from performing a close, but the user should be aware that doing
+ * so is considered catastrophic and subsequent usage of the superpipe
+ * API with previously saved off tokens will fail.
+ *
+ * When initiated from an external close (either by the user or via
+ * a process tear down), the routine derives the context reference
+ * and calls detach for each LUN associated with the context. The
+ * final detach operation will cause the context itself to be freed.
+ * Note that the saved off lfd is reset prior to calling detach to
+ * signify that the final detach should not perform a close.
+ *
+ * When initiated from a detach operation as part of the tear down
+ * of a context, the context is first completely freed and then the
+ * close is performed. This routine will fail to derive the context
+ * reference (due to the context having already been freed) and then
+ * call into the CXL release entry point.
+ *
+ * Thus, with exception to when the CXL process element (context id)
+ * lookup fails (a case that should theoretically never occur), every
+ * call into this routine results in a complete freeing of a context.
+ */
+int cxlflash_cxl_release(struct inode *inode, struct file *file)
+{
+	struct cxl_context *ctx = cxl_fops_get_context(file);
+	struct cxlflash *cxlflash = container_of(file->f_op, struct cxlflash,
+						   cxl_fops);
+	struct ctx_info *ctx_info;
+	struct dk_cxlflash_detach detach = { { 0 }, 0 };
+	struct lun_access *lun_access, *t;
+	int context_id;
+
+	context_id = cxl_process_element(ctx);
+	if (unlikely(context_id < 0)) {
+		cxlflash_err("Context %p was closed! (%d)", ctx, context_id);
+		BUG(); /* XXX - remove me before submission */
+		goto out;
+	}
+
+	ctx_info = get_context(cxlflash, context_id, NULL, false);
+	if (unlikely(!ctx_info)) {
+		cxlflash_dbg("Context %d already free!", context_id);
+		goto out_release;
+	}
+
+	cxlflash_info("close(%d) for context %d", ctx_info->lfd, context_id);
+
+	/* Reset the file descriptor to indicate we're on a close() thread */
+	ctx_info->lfd = -1;
+	detach.context_id = context_id;
+	list_for_each_entry_safe(lun_access, t, &ctx_info->luns, list)
+		cxlflash_disk_detach(lun_access->sdev, &detach);
+
+	/* Don't reference ctx_info, lun_access, or t */
+
+out_release:
+	cxl_fd_release(inode, file);
+out:
+	cxlflash_dbg("returning");
+	return 0;
+}
+
+const struct file_operations cxlflash_cxl_fops = {
+	.owner = THIS_MODULE,
+	.release = cxlflash_cxl_release,
+};
+
+/*
+ * NAME:        cxlflash_disk_attach
+ *
+ * FUNCTION:    attach a LUN to context
+ *
+ * INPUTS:
+ *              sdev       - Pointer to scsi device structure
+ *              arg        - Pointer to ioctl specific structure
+ *
+ * OUTPUTS:
+ *              context_id - Unique context index
+ *              adap_fd    - New file descriptor for user
+ *
+ * RETURNS:
+ *              0           - Success
+ *              errno       - Failure
+ *
+ * NOTES:
+ *              When successful:
+ *               a. initialize AFU for this context
+ *
+ */
+static int cxlflash_disk_attach(struct scsi_device *sdev,
+				struct dk_cxlflash_attach *attach)
+{
+	struct cxlflash *cxlflash = (struct cxlflash *)sdev->host->hostdata;
+	struct afu *afu = cxlflash->afu;
+	struct lun_info *lun_info = sdev->hostdata;
+	struct cxl_ioctl_start_work *work;
+	struct ctx_info *ctx_info;
+	struct lun_access *lun_access;
+	int rc = 0;
+	u32 perms;
+	int context_id = -1;
+	struct file *file;
+
+	struct cxl_context *ctx;
+
+	int fd = -1;
+
+	/* On first attach set fileops */
+	if (cxlflash->num_user_contexts == 0)
+		cxlflash->cxl_fops = cxlflash_cxl_fops;
+
+	if (attach->num_interrupts > 4) {
+		cxlflash_err("Cannot support this many interrupts %llu",
+			     attach->num_interrupts);
+		rc = -EINVAL;
+		goto out;
+	}
+
+	if (lun_info->max_lba == 0) {
+		cxlflash_info("No capacity info yet for this LUN "
+			      "(%016llX)", lun_info->lun_id);
+		read_cap16(afu, lun_info, sdev->channel + 1);
+		cxlflash_info("LBA = %016llX", lun_info->max_lba);
+		cxlflash_info("BLK_LEN = %08X", lun_info->blk_len);
+		rc = cxlflash_init_ba(lun_info);
+		if (rc) {
+			cxlflash_err("call to cxlflash_init_ba failed "
+				     "rc=%d!", rc);
+			rc = -ENOMEM;
+			goto out;
+		}
+	}
+
+	ctx = cxl_dev_context_init(cxlflash->dev);
+	if (!ctx) {
+		cxlflash_err("Could not initialize context");
+		rc = -ENODEV;
+		goto out;
+	}
+
+	context_id = cxl_process_element(ctx);
+	if ((context_id > MAX_CONTEXT) || (context_id < 0)) {
+		cxlflash_err("context_id (%u) invalid!", context_id);
+		rc = -EPERM;
+		goto out;
+	}
+
+	ctx_info = &cxlflash->ctx_info[context_id];
+
+	/*
+	 * Create and attach a new file descriptor. This must be the last
+	 * statement as once this is run, the file descritor is visible to
+	 * userspace and can't be undone. No error paths after this as we
+	 * can't free the fd safely.
+	 */
+	work = &ctx_info->work;
+	memset(work, 0, sizeof(*work));
+	work->num_interrupts = attach->num_interrupts;
+	work->flags = CXL_START_WORK_NUM_IRQS;
+
+	file = cxl_get_fd(ctx, &cxlflash->cxl_fops, &fd);
+	if (fd < 0) {
+		rc = -ENODEV;
+		cxlflash_err("Could not get file descriptor");
+		goto err1;
+	}
+
+	rc = cxl_start_work(ctx, work);
+	if (rc) {
+		cxlflash_err("Could not start context rc=%d", rc);
+		goto err2;
+	}
+
+	rc = cxlflash_afu_attach(cxlflash, context_id);
+	if (rc) {
+		cxlflash_err("Could not attach AFU rc %d", rc);
+		goto err3;
+	}
+
+	/* No error paths after installing the fd */
+	fd_install(fd, file);
+
+	cxlflash->num_user_contexts++;
+	ctx_info->rht_lun = kzalloc((MAX_RHT_PER_CONTEXT *
+				     sizeof(*ctx_info->rht_lun)), GFP_KERNEL);
+	if (!ctx_info->rht_lun)
+		BUG(); /* temporary */
+
+	INIT_LIST_HEAD(&ctx_info->luns);
+	lun_access = kzalloc(sizeof(*lun_access), GFP_KERNEL);
+	if (!lun_access)
+		BUG(); /* temporary */
+	lun_access->lun_info = lun_info;
+	lun_access->sdev = sdev;
+	list_add(&lun_access->list, &ctx_info->luns);
+
+	ctx_info->lfd = fd;
+	ctx_info->pid = current->pid;
+	ctx_info->ctx = ctx;
+
+	/* Translate read/write O_* flags from fnctl.h to AFU permission bits */
+	perms = ((attach->hdr.flags + 1) & 0x3);
+	ctx_info->rht_perms = perms;
+
+	attach->hdr.return_flags = 0;
+	attach->context_id = context_id;
+	attach->block_size = lun_info->blk_len;
+	attach->mmio_size = sizeof(afu->afu_map->hosts[0].harea);
+	attach->last_lba = lun_info->max_lba;
+	attach->max_xfer = sdev->host->max_sectors;
+
+out:
+	attach->adap_fd = fd;
+
+	cxlflash_info("returning ctxid=%d fd=%d bs=%lld rc=%d llba=%lld",
+		      context_id, fd, attach->block_size, rc, attach->last_lba);
+	return rc;
+
+err3:
+	cxl_stop_context(ctx);
+err2:
+	fput(file);
+	put_unused_fd(fd);
+	fd = -1;
+err1:
+	cxl_release_context(ctx);
+	goto out;
 }
 
 static int cxlflash_afu_recover(struct scsi_device *sdev,

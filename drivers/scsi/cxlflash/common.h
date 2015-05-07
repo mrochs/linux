@@ -253,7 +253,7 @@ struct lun_info {
 	u64 max_lba;		/* from read cap(16) */
 	u32 blk_len;		/* from read cap(16) */
 	u32 lun_index;
-	u32 users;		/* Number of users w/ references to LUN */
+	int users;		/* Number of users w/ references to LUN */
 	enum lun_mode mode;	/* NONE, VIRTUAL, PHYSICAL */
 
 	spinlock_t slock;
@@ -265,6 +265,7 @@ struct lun_info {
 
 struct lun_access {
 	struct lun_info *lun_info;
+	struct scsi_device *sdev;
 	struct list_head list;
 };
 

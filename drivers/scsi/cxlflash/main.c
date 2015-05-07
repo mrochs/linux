@@ -36,6 +36,7 @@ MODULE_LICENSE("GPL");
 u32 internal_lun = 0;
 u32 checkpid = 0;
 u32 ws = 0;
+u32 do_sysclose = 0;
 
 struct cxlflash_global global;
 
@@ -74,6 +75,12 @@ MODULE_PARM_DESC(checkpid, " 1 = Enforce PID/context ownership policy");
  */
 module_param_named(ws, ws, uint, 0);
 MODULE_PARM_DESC(ws, " 1 = Perform WRITE_SAME16 per chunk on VLUN shrink");
+
+/*
+ * This is a temporary module parameter
+ */
+module_param_named(close, do_sysclose, uint, 0);
+MODULE_PARM_DESC(close, " 1 = Perform close(adap_fd) on detach");
 
 /* Check out a command */
 struct afu_cmd *cxlflash_cmd_checkout(struct afu *afu)
