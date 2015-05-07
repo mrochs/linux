@@ -12,12 +12,11 @@
 
 static void cxl_pci_dma_dev_setup(struct pci_dev *pdev)
 {
+	/* no-op for now */
 }
 
 static int cxl_dma_set_mask(struct pci_dev *pdev, u64 dma_mask)
 {
-	pr_devel("%s", __func__);
-
 	if (dma_mask < DMA_BIT_MASK(64)) {
 		pr_info("%s only 64bit DMA supported on CXL", __func__);
 		return EIO;
@@ -39,6 +38,10 @@ static int cxl_setup_msi_irqs(struct pci_dev *pdev, int nvec, int type)
 
 static void cxl_teardown_msi_irqs(struct pci_dev *pdev)
 {
+	/*
+	 * MSI should never be set but need still need to provide thiscall
+	 * back.
+	 */
 }
 
 static bool cxl_pci_enable_device_hook(struct pci_dev *dev)
