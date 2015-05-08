@@ -177,18 +177,20 @@ static struct pci_controller_ops cxl_pci_controller_ops =
 
 int cxl_pci_vphb_add(struct cxl_afu *afu)
 {
-	struct pci_dev *dev = to_pci_dev(afu->adapter->dev.parent);
-	struct pci_controller *hose, *phys_hose = pci_bus_to_host(dev->bus);
+	struct pci_dev *phys_dev;
+	struct pci_controller *hose, *phys_hose;
+
+	phys_dev = to_pci_dev(afu->adapter->dev.parent);
+	phys_hose = pci_bus_to_host(phys_dev->bus);
 
 	/* Alloc and setup PHB data structure */
 	hose = pcibios_alloc_controller(phys_hose->dn);
-
 
 	if (!hose)
 		return -ENODEV;
 
 	/* Setup parent in sysfs */
-//	hose->parent = &afu->dev;
+	hose->parent = &phys_dev->dev;
 
 	/* Setup the PHB using arch provided callback */
 	// POPULATE cfg_ops, etc...
