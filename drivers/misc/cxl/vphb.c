@@ -177,11 +177,11 @@ static struct pci_controller_ops cxl_pci_controller_ops =
 
 int cxl_pci_vphb_add(struct cxl_afu *afu)
 {
-	struct pci_controller *hose;
+	struct pci_dev *dev = to_pci_dev(afu->adapter->dev.parent);
+	struct pci_controller *hose, *phys_hose = pci_bus_to_host(dev->bus);
 
 	/* Alloc and setup PHB data structure */
-//	hose = pcibios_alloc_controller(afu->dev.parent->of_node);
-	hose = pcibios_alloc_controller(of_find_node_by_name(NULL, "chosen"));
+	hose = pcibios_alloc_controller(phys_hose->dn);
 
 
 	if (!hose)
