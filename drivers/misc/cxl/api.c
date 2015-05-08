@@ -138,7 +138,6 @@ int cxl_start_context(struct cxl_context *ctx, u64 wed,
 		kernel = false;
 	}
 
-	/* FIXME: if userspace, then set amr here */
 	if ((rc = cxl_attach_process(ctx, kernel, wed , 0)))
 		goto out;
 
@@ -253,7 +252,6 @@ struct cxl_context *cxl_fops_get_context(struct file *file)
 }
 EXPORT_SYMBOL_GPL(cxl_fops_get_context);
 
-/* */
 int cxl_start_work(struct cxl_context *ctx,
 		   struct cxl_ioctl_start_work *work)
 {
