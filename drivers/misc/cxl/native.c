@@ -353,8 +353,13 @@ static int terminate_process_element(struct cxl_context *ctx)
 
 	mutex_lock(&ctx->afu->spa_mutex);
 	pr_devel("%s Terminate pe: %i started\n", __func__, ctx->pe);
-	rc = do_process_element_cmd(ctx, CXL_SPA_SW_CMD_TERMINATE,
-				    CXL_PE_SOFTWARE_STATE_V | CXL_PE_SOFTWARE_STATE_T);
+	/* We could be asked to terminate when the hw is down.  That
+	 * should always succeed: it's not running if the hw has gone
+	 * away and is being reset.
+	 */
+	if (cxl_adapter_link_ok(ctx->afu->adapter))
+		rc = do_process_element_cmd(ctx, CXL_SPA_SW_CMD_TERMINATE,
+					    CXL_PE_SOFTWARE_STATE_V | CXL_PE_SOFTWARE_STATE_T);
 	ctx->elem->software_state = 0;	/* Remove Valid bit */
 	pr_devel("%s Terminate pe: %i finished\n", __func__, ctx->pe);
 	mutex_unlock(&ctx->afu->spa_mutex);
@@ -367,7 +372,14 @@ static int remove_process_element(struct cxl_context *ctx)
 
 	mutex_lock(&ctx->afu->spa_mutex);
 	pr_devel("%s Remove pe: %i started\n", __func__, ctx->pe);
-	if (!(rc = do_process_element_cmd(ctx, CXL_SPA_SW_CMD_REMOVE, 0)))
+
+	/* We could be asked to remove when the hw is down.  Again, if
+	 * the hw is down, the PE is gone, so we succeed.
+	 */
+	if (cxl_adapter_link_ok(ctx->afu->adapter))
+		rc = do_process_element_cmd(ctx, CXL_SPA_SW_CMD_REMOVE, 0);
+
+	if (!rc)
 		ctx->pe_inserted = false;
 	slb_invalid(ctx);
 	pr_devel("%s Remove pe: %i finished\n", __func__, ctx->pe);

@@ -122,6 +122,14 @@ static int cxl_pcie_config_info(struct pci_bus *bus, unsigned int devfn,
 		return PCIBIOS_BAD_REGISTER_NUMBER;
 	addr = cxl_pcie_cfg_addr(phb, bus->number, devfn, offset);
 
+	/* addr is based on phb->cfg_addr, which is based on
+	 * afu_desc_mmio. This isn't safe to read/write when the link
+	 * goes down, as EEH tears down MMIO space. Check if the link
+	 * is OK before proceeding.
+	 */
+	if (!cxl_adapter_link_ok(afu->adapter))
+		return PCIBIOS_DEVICE_NOT_FOUND;
+
 	*ioaddr = (void *)(addr & ~0x3ULL);
 	*shift = ((addr & 0x3) * 8);
 	switch (len) {
