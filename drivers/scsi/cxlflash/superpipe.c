@@ -74,7 +74,7 @@ static int ba_init(struct ba_lun *ba_lun)
 		return -EINVAL;
 	}
 
-	/* Allocate lun_fino */
+	/* Allocate lun information container */
 	lun_info = kzalloc(sizeof(struct ba_lun_info), GFP_KERNEL);
 	if (unlikely(!lun_info)) {
 		cxlflash_err("Failed to allocate lun_info for lun_id %llX",
