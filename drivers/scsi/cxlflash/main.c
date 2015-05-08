@@ -813,9 +813,6 @@ void cxlflash_term_mc(struct cxlflash *cxlflash, enum undo_level level)
 	switch (level) {
 	case UNDO_START:
 		cxl_stop_context(cxlflash->mcctx);
-	case UNMAP_FOUR:
-		cxlflash_info("before unmap 4");
-		cxl_unmap_afu_irq(cxlflash->mcctx, 4, afu);
 	case UNMAP_THREE:
 		cxlflash_info("before unmap 3");
 		cxl_unmap_afu_irq(cxlflash->mcctx, 3, afu);
@@ -1271,13 +1268,6 @@ static void afu_err_intr_init(struct afu *afu)
 	/* set LISN#, it is always sent to the context that wrote IOARRIN */
 	writeq_be(SISL_MSI_SYNC_ERROR, &afu->host_map->ctx_ctrl);
 	writeq_be(SISL_ISTATUS_MASK, &afu->host_map->intr_mask);
-}
-
-static irqreturn_t cxlflash_dummy_irq_handler(int irq, void *data)
-{
-	/* XXX - to be removed once we settle the 4th interrupt */
-	cxlflash_info("returning rc=%d", IRQ_HANDLED);
-	return IRQ_HANDLED;
 }
 
 static irqreturn_t cxlflash_sync_err_irq(int irq, void *data)
@@ -1738,7 +1728,7 @@ int cxlflash_init_mc(struct cxlflash *cxlflash)
 	}
 
 	/* Allocate AFU generated interrupt handler */
-	rc = cxl_allocate_afu_irqs(ctx, 4);
+	rc = cxl_allocate_afu_irqs(ctx, 3);
 	if (rc) {
 		cxlflash_dev_err(dev, "call to allocate_afu_irqs failed rc=%d!",
 				 rc);
@@ -1774,23 +1764,7 @@ int cxlflash_init_mc(struct cxlflash *cxlflash)
 		goto out;
 	}
 
-	/*
-	 * XXX - why did we put a 4th interrupt? Were we thinking this is
-	 * for the SISL_MSI_PSL_XLATE? Wouldn't that be covered under the
-	 * cxl_register_error_irq() ?
-	 */
-
-	/* Register AFU interrupt 4 for errors. */
-	rc = cxl_map_afu_irq(ctx, 4, cxlflash_dummy_irq_handler, afu, "err3");
-	if (!rc) {
-		cxlflash_dev_err(dev, "IRQ 4 map failed!");
-		level = UNMAP_THREE;
-		goto out;
-	}
 	rc = 0;
-
-	/* Register for PSL errors. TODO: implement this */
-	/* cxl_register_error_irq(dev,... ,callback function, private data); */
 
 	/* This performs the equivalent of the CXL_IOCTL_START_WORK.
 	 * The CXL_IOCTL_GET_PROCESS_ELEMENT is implicit in the process
@@ -1799,7 +1773,7 @@ int cxlflash_init_mc(struct cxlflash *cxlflash)
 	rc = cxlflash_start_context(cxlflash);
 	if (rc) {
 		cxlflash_dev_err(dev, "start context failed rc=%d", rc);
-		level = UNMAP_FOUR;
+		level = UNMAP_THREE;
 		goto out;
 	}
 ret:

@@ -92,7 +92,6 @@ enum undo_level {
 	UNMAP_ONE,
 	UNMAP_TWO,
 	UNMAP_THREE,
-	UNMAP_FOUR,
 	UNDO_START
 };
 

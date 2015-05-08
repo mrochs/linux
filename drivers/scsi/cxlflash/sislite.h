@@ -63,13 +63,10 @@ struct sisl_ioarcb {
 		u64 ioadl_ea;
 	};
 	u8 msi;			/* LISN to send on RRQ write */
-#define SISL_MSI_PSL_XLATE         0	/* reserved for PSL */
+#define SISL_MSI_CXL_PFAULT        0	/* reserved for CXL page faults */
 #define SISL_MSI_SYNC_ERROR        1	/* recommended for AFU sync error */
 #define SISL_MSI_RRQ_UPDATED       2	/* recommended for IO completion */
 #define SISL_MSI_ASYNC_ERROR       3	/* master only - for AFU async error */
-	/* The above LISN allocation permits user contexts to use 3 interrupts.
-	 * Only master needs 4. This saves IRQs on the system.
-	 */
 
 	u8 rrq;			/* 0 for a single RRQ */
 	u16 timeout;		/* in units specified by req_flags */
