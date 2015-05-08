@@ -327,12 +327,11 @@ static struct ctx_info *get_context(struct cxlflash *cxlflash, u64 ctxid,
 		}
 
 		if (likely(lun_info)) {
-			list_for_each_entry(lun_access, &ctx_info->luns, list) {
+			list_for_each_entry(lun_access, &ctx_info->luns, list)
 				if (lun_access->lun_info == lun_info) {
 					found = true;
 					break;
 				}
-			}
 
 			if (!found) {
 				ctx_info = NULL;
@@ -1351,8 +1350,8 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 	struct afu *afu = cxlflash->afu;
 	struct lun_info *lun_info = sdev->hostdata;
 	struct cxl_ioctl_start_work *work;
-	struct ctx_info *ctx_info;
-	struct lun_access *lun_access;
+	struct ctx_info *ctx_info = NULL;
+	struct lun_access *lun_access = NULL;
 	int rc = 0;
 	u32 perms;
 	int context_id = -1;
@@ -1388,18 +1387,48 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 		}
 	}
 
+	if (attach->hdr.flags & DK_CXLFLASH_ATTACH_REUSE_CONTEXT) {
+		context_id = attach->context_id;
+		ctx_info = get_context(cxlflash, context_id, NULL, false);
+		if (!ctx_info) {
+			cxlflash_err("Invalid context! (%d)", context_id);
+			rc = -EINVAL;
+			goto out;
+		}
+
+		list_for_each_entry(lun_access, &ctx_info->luns, list)
+			if (lun_access->lun_info == lun_info) {
+				cxlflash_err("Context already attached!");
+				rc = -EINVAL;
+				goto out;
+			}
+	}
+
+	lun_access = kzalloc(sizeof(*lun_access), GFP_KERNEL);
+	if (!lun_access)
+		BUG(); /* temporary */
+	lun_access->lun_info = lun_info;
+	lun_access->sdev = sdev;
+
+	/* Non-NULL context indicates reuse */
+	if (ctx_info) {
+		cxlflash_dbg("Reusing context for LUN! (%d)", context_id);
+		list_add(&lun_access->list, &ctx_info->luns);
+		goto out;
+	}
+
 	ctx = cxl_dev_context_init(cxlflash->dev);
 	if (!ctx) {
 		cxlflash_err("Could not initialize context");
 		rc = -ENODEV;
-		goto out;
+		goto err0;
 	}
 
 	context_id = cxl_process_element(ctx);
 	if ((context_id > MAX_CONTEXT) || (context_id < 0)) {
 		cxlflash_err("context_id (%u) invalid!", context_id);
 		rc = -EPERM;
-		goto out;
+		goto err0;
 	}
 
 	ctx_info = &cxlflash->ctx_info[context_id];
@@ -1444,11 +1473,6 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 		BUG(); /* temporary */
 
 	INIT_LIST_HEAD(&ctx_info->luns);
-	lun_access = kzalloc(sizeof(*lun_access), GFP_KERNEL);
-	if (!lun_access)
-		BUG(); /* temporary */
-	lun_access->lun_info = lun_info;
-	lun_access->sdev = sdev;
 	list_add(&lun_access->list, &ctx_info->luns);
 
 	ctx_info->lfd = fd;
@@ -1481,6 +1505,8 @@ err2:
 	fd = -1;
 err1:
 	cxl_release_context(ctx);
+err0:
+	kfree(lun_access);
 	goto out;
 }
 
