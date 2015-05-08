@@ -132,9 +132,15 @@ static irqreturn_t cxl_memcpy_copy_error(int irq, void *data)
 	return IRQ_HANDLED;
 }
 
+<<<<<<< HEAD
 static irqreturn_t cxl_memcpy_psl_error(int irq, void *data)
 {
 	printk("%s IRQ %i PSL error!\n", __func__, irq);
+=======
+static irqreturn_t cxl_memcpy_afu_error(int irq, void *data)
+{
+	printk("%s IRQ %i AFU error!\n", __func__, irq);
+>>>>>>> cxl/kernelapi
 	return IRQ_HANDLED;
 }
 
@@ -217,7 +223,11 @@ static int memcpy_afu(struct pci_dev *dev)
 	if (!rc)
 		goto err3;
 	/* Register AFU interrupt 3 for errors. */
+<<<<<<< HEAD
 	rc = cxl_map_afu_irq(ctx, 3, cxl_memcpy_psl_error, ctx, "err2");
+=======
+	rc = cxl_map_afu_irq(ctx, 3, cxl_memcpy_afu_error, ctx, "err2");
+>>>>>>> cxl/kernelapi
 	if (!rc)
 		goto err4;
 
@@ -248,7 +258,11 @@ static int memcpy_afu(struct pci_dev *dev)
 	 */
 	rc = 0;
 	while(!info->afu_irq_done) {
+<<<<<<< HEAD
 		cpu_relax();
+=======
+		schedule();
+>>>>>>> cxl/kernelapi
 		rc++;
 	}
 

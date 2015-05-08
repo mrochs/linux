@@ -27,6 +27,7 @@
 #include <uapi/misc/cxl.h>
 
 extern uint cxl_verbose;
+extern int cxl_def_perst_image;
 
 #define CXL_TIMEOUT 5
 
@@ -387,8 +388,8 @@ struct cxl_afu {
 	int modes_supported;
 	int current_mode;
 	int crs_num;
-	int crs_len;
-	int crs_offset;
+	u64 crs_len;
+	u64 crs_offset;
 	struct list_head crs;
 	enum prefault_modes prefault_mode;
 	bool psa;
@@ -680,6 +681,5 @@ int afu_mmap(struct file *file, struct vm_area_struct *vm);
 unsigned int afu_poll(struct file *file, struct poll_table_struct *poll);
 ssize_t afu_read(struct file *file, char __user *buf, size_t count, loff_t *off);
 extern const struct file_operations afu_fops;
-
 
 #endif
