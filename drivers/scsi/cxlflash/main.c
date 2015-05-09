@@ -662,6 +662,26 @@ static ssize_t cxlflash_store_lun_mode(struct device *dev,
 }
 
 /**
+ * cxlflash_show_dev_mode - Show the mode for this device.
+ * @dev:        device struct
+ * @attr:       device attribute structure
+ * @buf:        buffer
+ *
+ * Return value:
+ *      number of bytes printed to buffer
+ **/
+static ssize_t cxlflash_show_dev_mode(struct device *dev,
+				      struct device_attribute *attr, char *buf)
+{
+        struct scsi_device *sdev = to_scsi_device(dev);
+	struct lun_info *lun_info = sdev->hostdata;
+	char *legacy = "legacy",
+	     *superpipe = "superpipe";
+
+	return snprintf(buf, PAGE_SIZE, "%s\n", lun_info ? superpipe : legacy);
+}
+
+/**
  * cxlflash_wait_for_pci_err_recovery - Wait for any PCI error recovery to
  *					complete during probe time
  * @cxlflash:    cxlflash config struct
@@ -684,10 +704,17 @@ static DEVICE_ATTR(port1, S_IRUGO, cxlflash_show_port_status, NULL);
 static DEVICE_ATTR(lun_mode, S_IRUGO | S_IWUSR, cxlflash_show_lun_mode,
 		   cxlflash_store_lun_mode);
 
-static struct device_attribute *cxlflash_attrs[] = {
+static struct device_attribute *cxlflash_host_attrs[] = {
 	&dev_attr_port0,
 	&dev_attr_port1,
 	&dev_attr_lun_mode,
+	NULL
+};
+
+static DEVICE_ATTR(mode, S_IRUGO, cxlflash_show_dev_mode, NULL);
+
+static struct device_attribute *cxlflash_dev_attrs[] = {
+	&dev_attr_mode,
 	NULL
 };
 
@@ -710,7 +737,8 @@ static struct scsi_host_template driver_template = {
 	.sg_tablesize = SG_NONE,	/* No scatter gather support. */
 	.max_sectors = CXLFLASH_MAX_SECTORS,
 	.use_clustering = ENABLE_CLUSTERING,
-	.shost_attrs = cxlflash_attrs,
+	.shost_attrs = cxlflash_host_attrs,
+	.sdev_attrs = cxlflash_dev_attrs,
 };
 
 static struct dev_dependent_vals dev_corsa_vals = { CXLFLASH_MAX_SECTORS };
