@@ -1510,6 +1510,19 @@ err0:
 	goto out;
 }
 
+static int cxlflash_manage_lun(struct scsi_device *sdev,
+			       struct dk_cxlflash_manage_lun *manage)
+{
+	struct lun_info *lun_info = sdev->hostdata;
+
+	cxlflash_info("ENTER: WWID = %016llX%016llX, flags = %016llX li = %p",
+		      get_unaligned_le64(&manage->wwid[0]),
+		      get_unaligned_le64(&manage->wwid[8]),
+		      manage->hdr.flags,
+		      lun_info);
+	return 0;
+}
+
 static int cxlflash_afu_recover(struct scsi_device *sdev,
 				struct dk_cxlflash_recover_afu *recover)
 {
@@ -1906,7 +1919,8 @@ int cxlflash_ioctl(struct scsi_device *sdev, int cmd, void __user *arg)
 		IOCTE(dk_cxlflash_detach, cxlflash_disk_detach)}, {
 		IOCTE(dk_cxlflash_verify, cxlflash_disk_verify)}, {
 		IOCTE(dk_cxlflash_clone, cxlflash_disk_clone)}, {
-		IOCTE(dk_cxlflash_recover_afu, cxlflash_afu_recover)}
+		IOCTE(dk_cxlflash_recover_afu, cxlflash_afu_recover)}, {
+		IOCTE(dk_cxlflash_manage_lun, cxlflash_manage_lun)}
 	};
 
 	/* Restrict command set to physical support only for internal LUN */
@@ -1932,6 +1946,7 @@ int cxlflash_ioctl(struct scsi_device *sdev, int cmd, void __user *arg)
 	case DK_CXLFLASH_VERIFY:
 	case DK_CXLFLASH_CLONE:
 	case DK_CXLFLASH_RECOVER_AFU:
+	case DK_CXLFLASH_MANAGE_LUN:
 		idx = _IOC_NR(cmd) - _IOC_NR(DK_CXLFLASH_ATTACH);
 		size = ioctl_tbl[idx].size;
 		do_ioctl = ioctl_tbl[idx].ioctl;

@@ -107,6 +107,15 @@ struct dk_cxlflash_recover_afu {
 	__u64 reason;			/* Reason for recovery request */
 };
 
+#define DK_CXLFLASH_MANAGE_LUN_WWID_LEN			16
+#define DK_CXLFLASH_MANAGE_LUN_ENABLE_SUPERPIPE		0x8000000000000000ULL
+#define DK_CXLFLASH_MANAGE_LUN_DISABLE_SUPERPIPE	0x4000000000000000ULL
+
+struct dk_cxlflash_manage_lun {
+	struct dk_cxlflash_hdr hdr;			/* Common fields */
+	__u8 wwid[DK_CXLFLASH_MANAGE_LUN_WWID_LEN];	/* Page83 WWID, NAA-6 */
+};
+
 union cxlflash_ioctls {
 	struct dk_cxlflash_attach attach;
 	struct dk_cxlflash_detach detach;
@@ -117,6 +126,7 @@ union cxlflash_ioctls {
 	struct dk_cxlflash_clone clone;
 	struct dk_cxlflash_verify verify;
 	struct dk_cxlflash_recover_afu recover_afu;
+	struct dk_cxlflash_manage_lun manage_lun;
 };
 
 #define MAX_CXLFLASH_IOCTL_SZ	(sizeof(union cxlflash_ioctls))
@@ -134,5 +144,6 @@ union cxlflash_ioctls {
 #define DK_CXLFLASH_VERIFY		CXL_IOW(0x86, dk_cxlflash_verify)
 #define DK_CXLFLASH_CLONE		CXL_IOW(0x87, dk_cxlflash_clone)
 #define DK_CXLFLASH_RECOVER_AFU		CXL_IOW(0x88, dk_cxlflash_recover_afu)
+#define DK_CXLFLASH_MANAGE_LUN		CXL_IOW(0x89, dk_cxlflash_manage_lun)
 
 #endif /* ifndef _CXLFLASH_IOCTL_H */
