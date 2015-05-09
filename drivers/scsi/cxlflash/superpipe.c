@@ -887,16 +887,16 @@ out:
 	return rc;
 }
 
-int cxlflash_lun_attach(struct lun_info *lun_info, enum lun_mode desired_mode)
+static int cxlflash_lun_attach(struct lun_info *lun_info, enum lun_mode mode)
 {
 	int rc = 0;
 
 	spin_lock(&lun_info->slock);
 	if (lun_info->mode == MODE_NONE)
-		lun_info->mode = desired_mode;
-	else if (lun_info->mode != desired_mode) {
+		lun_info->mode = mode;
+	else if (lun_info->mode != mode) {
 		cxlflash_err("LUN operating in mode %d, requested mode %d",
-			     lun_info->mode, desired_mode);
+			     lun_info->mode, mode);
 		rc = -EINVAL;
 		goto out;
 	}
@@ -910,7 +910,7 @@ out:
 	return rc;
 }
 
-void cxlflash_lun_detach(struct lun_info *lun_info)
+static void cxlflash_lun_detach(struct lun_info *lun_info)
 {
 	spin_lock(&lun_info->slock);
 	if (--lun_info->users == 0)
@@ -1239,7 +1239,7 @@ static int cxlflash_disk_detach(struct scsi_device *sdev,
 		 * allowing it to dole out the same context_id on a future
 		 * (or even currently in-flight) disk_attach operation.
 		 */
-		if ((lfd != -1) && do_sysclose) /* XXX - do_sysclose is temp */
+		if (lfd != -1)
 			sys_close(lfd);
 	}
 

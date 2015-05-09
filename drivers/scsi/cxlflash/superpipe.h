@@ -18,7 +18,6 @@
 extern u32 checkpid;
 extern u32 internal_lun;
 extern u32 ws;
-extern u32 do_sysclose;
 
 /*----------------------------------------------------------------------------*/
 /* Constants                                                                  */
