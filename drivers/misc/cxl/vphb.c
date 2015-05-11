@@ -41,11 +41,11 @@ static void cxl_teardown_msi_irqs(struct pci_dev *pdev)
 
 static bool cxl_pci_enable_device_hook(struct pci_dev *dev)
 {
-        struct pci_controller *hose;
+	struct pci_controller *phb;
 	struct cxl_afu *afu;
 
-        hose = pci_bus_to_host(dev->bus);
-	afu = (struct cxl_afu *)hose->private_data;
+	phb = pci_bus_to_host(dev->bus);
+	afu = (struct cxl_afu *)phb->private_data;
 	set_dma_ops(&dev->dev, &dma_direct_ops);
 	set_dma_offset(&dev->dev, PAGE_OFFSET);
 
@@ -68,12 +68,12 @@ static int cxl_pcie_cfg_record(u8 bus, u8 devfn)
 	return (bus << 8) + devfn;
 }
 
-static unsigned long cxl_pcie_cfg_addr(struct pci_controller* hose,
-						u8 bus, u8 devfn, int offset)
+static unsigned long cxl_pcie_cfg_addr(struct pci_controller* phb,
+				       u8 bus, u8 devfn, int offset)
 {
 	int record = cxl_pcie_cfg_record(bus, devfn);
 
-	return (unsigned long)hose->cfg_addr + ((unsigned long)hose->cfg_data * record) + offset;
+	return (unsigned long)phb->cfg_addr + ((unsigned long)phb->cfg_data * record) + offset;
 }
 
 
@@ -82,40 +82,40 @@ static int cxl_pcie_config_info(struct pci_bus *bus, unsigned int devfn,
 				volatile void __iomem **ioaddr,
 				u32 *mask, int *shift)
 {
-        struct pci_controller *hose;
+	struct pci_controller *phb;
 	struct cxl_afu *afu;
 	unsigned long addr;
 
-        hose = pci_bus_to_host(bus);
-	afu = (struct cxl_afu *)hose->private_data;
-        if (hose == NULL)
-                return PCIBIOS_DEVICE_NOT_FOUND;
-        if (cxl_pcie_cfg_record(bus->number, devfn) > afu->crs_num)
-                return PCIBIOS_DEVICE_NOT_FOUND;
-	if (offset >= (unsigned long)hose->cfg_data)
-                return PCIBIOS_BAD_REGISTER_NUMBER;
-        addr = cxl_pcie_cfg_addr(hose, bus->number, devfn, offset);
+	phb = pci_bus_to_host(bus);
+	afu = (struct cxl_afu *)phb->private_data;
+	if (phb == NULL)
+		return PCIBIOS_DEVICE_NOT_FOUND;
+	if (cxl_pcie_cfg_record(bus->number, devfn) > afu->crs_num)
+		return PCIBIOS_DEVICE_NOT_FOUND;
+	if (offset >= (unsigned long)phb->cfg_data)
+		return PCIBIOS_BAD_REGISTER_NUMBER;
+	addr = cxl_pcie_cfg_addr(phb, bus->number, devfn, offset);
 
 	*ioaddr = (void *)(addr & ~0x3ULL);
 	*shift = ((addr & 0x3) * 8);
 	switch (len) {
-        case 1:
+	case 1:
 		*mask = 0xff;
 		break;
-        case 2:
+	case 2:
 		*mask = 0xffff;
 		break;
-        default:
+	default:
 		*mask = 0xffffffff;
-                break;
+		break;
 	}
 	return 0;
 }
 
 static int cxl_pcie_read_config(struct pci_bus *bus, unsigned int devfn,
-                               int offset, int len, u32 *val)
+				int offset, int len, u32 *val)
 {
-        volatile void __iomem *ioaddr;
+	volatile void __iomem *ioaddr;
 	int shift, rc;
 	u32 mask;
 
@@ -132,7 +132,7 @@ static int cxl_pcie_read_config(struct pci_bus *bus, unsigned int devfn,
 static int cxl_pcie_write_config(struct pci_bus *bus, unsigned int devfn,
 				 int offset, int len, u32 val)
 {
-        volatile void __iomem *ioaddr;
+	volatile void __iomem *ioaddr;
 	u32 v, mask;
 	int shift, rc;
 
@@ -148,7 +148,7 @@ static int cxl_pcie_write_config(struct pci_bus *bus, unsigned int devfn,
 	v = (in_le32(ioaddr) & ~mask) || (val & mask);
 
 	out_le32(ioaddr, v);
-        return PCIBIOS_SUCCESSFUL;
+	return PCIBIOS_SUCCESSFUL;
 }
 
 static struct pci_ops cxl_pcie_pci_ops =
@@ -172,43 +172,42 @@ static struct pci_controller_ops cxl_pci_controller_ops =
 int cxl_pci_vphb_add(struct cxl_afu *afu)
 {
 	struct pci_dev *phys_dev;
-	struct pci_controller *hose, *phys_hose;
+	struct pci_controller *phb, *phys_phb;
 
 	phys_dev = to_pci_dev(afu->adapter->dev.parent);
-	phys_hose = pci_bus_to_host(phys_dev->bus);
+	phys_phb = pci_bus_to_host(phys_dev->bus);
 
 	/* Alloc and setup PHB data structure */
-	hose = pcibios_alloc_controller(phys_hose->dn);
+	phb = pcibios_alloc_controller(phys_phb->dn);
 
-	if (!hose)
+	if (!phb)
 		return -ENODEV;
 
 	/* Setup parent in sysfs */
-	hose->parent = &phys_dev->dev;
+	phb->parent = &phys_dev->dev;
 
 	/* Setup the PHB using arch provided callback */
-	// POPULATE cfg_ops, etc...
-	hose->ops = &cxl_pcie_pci_ops;
-        hose->cfg_addr = afu->afu_desc_mmio + afu->crs_offset;
-        hose->cfg_data = (void *)(u64)afu->crs_len;
-	hose->private_data = afu;
-	hose->controller_ops = cxl_pci_controller_ops;
+	phb->ops = &cxl_pcie_pci_ops;
+	phb->cfg_addr = afu->afu_desc_mmio + afu->crs_offset;
+	phb->cfg_data = (void *)(u64)afu->crs_len;
+	phb->private_data = afu;
+	phb->controller_ops = cxl_pci_controller_ops;
 
 	/* Scan the bus */
-	pcibios_scan_phb(hose);
-	if (hose->bus == NULL)
+	pcibios_scan_phb(phb);
+	if (phb->bus == NULL)
 		return -ENXIO;
 
 	/* Claim resources. This might need some rework as well depending
 	 * whether we are doing probe-only or not, like assigning unassigned
 	 * resources etc...
 	 */
-	pcibios_claim_one_bus(hose->bus);
+	pcibios_claim_one_bus(phb->bus);
 
 	/* Add probed PCI devices to the device model */
-	pci_bus_add_devices(hose->bus);
+	pci_bus_add_devices(phb->bus);
 
-	afu->hose = hose;
+	afu->phb = phb;
 
 	return 0;
 }
@@ -216,25 +215,25 @@ int cxl_pci_vphb_add(struct cxl_afu *afu)
 
 void cxl_pci_vphb_remove(struct cxl_afu *afu)
 {
-	struct pci_controller *hose;
+	struct pci_controller *phb;
 
 	/* If there is no configuration record we won't have one of these */
-	if (!afu || !afu->hose)
+	if (!afu || !afu->phb)
 		return;
 
-	hose = afu->hose;
+	phb = afu->phb;
 
-	pci_remove_root_bus(hose->bus);
+	pci_remove_root_bus(phb->bus);
 }
 
 struct cxl_afu *cxl_pci_to_afu(struct pci_dev *dev, unsigned int *cfg_record)
 {
-	struct pci_controller *hose;
+	struct pci_controller *phb;
 	struct cxl_afu *afu;
 
-	hose = pci_bus_to_host(dev->bus);
+	phb = pci_bus_to_host(dev->bus);
 
-	afu = (struct cxl_afu *)hose->private_data;
+	afu = (struct cxl_afu *)phb->private_data;
 
 	if (cfg_record)
 		*cfg_record = cxl_pcie_cfg_record(dev->bus->number,

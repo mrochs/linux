@@ -378,7 +378,7 @@ struct cxl_afu {
 	unsigned int psl_virq;
 
 	/* pointer to the vphb */
-	struct pci_controller *hose;
+	struct pci_controller *phb;
 
 	int pp_irqs;
 	int irqs_max;
