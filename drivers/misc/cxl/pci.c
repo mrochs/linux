@@ -1032,12 +1032,6 @@ static struct cxl *cxl_init_adapter(struct pci_dev *dev)
 	if ((rc = dev_set_name(&adapter->dev, "card%i", adapter->adapter_num)))
 		goto err2;
 
-	if ((rc = cxl_read_vsec(adapter, dev)))
-		goto err2;
-
-	if ((rc = cxl_vsec_looks_ok(adapter, dev)))
-		goto err2;
-
 	if ((rc = cxl_update_image_control(adapter)))
 		goto err2;
 
