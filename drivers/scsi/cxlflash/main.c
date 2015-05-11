@@ -1297,27 +1297,33 @@ static irqreturn_t cxlflash_rrq_irq(int irq, void *data)
 {
 	struct afu *afu = (struct afu *)data;
 	struct afu_cmd *cmd;
-
-	/*
-	 * XXX - might want to look at using locals for loop control
-	 * as an optimization
-	 */
+	u32 toggle = afu->toggle;
+	u64 entry;
+	u64 *hrrq_start = afu->hrrq_start,
+	    *hrrq_end = afu->hrrq_end;
+	volatile u64 *hrrq_curr = afu->hrrq_curr;
 
 	/* Process however many RRQ entries that are ready */
-	while ((*afu->hrrq_curr & SISL_RESP_HANDLE_T_BIT) == afu->toggle) {
-		cmd = (struct afu_cmd *)
-		    ((*afu->hrrq_curr) & (~SISL_RESP_HANDLE_T_BIT));
+	while (true) {
+		entry = *hrrq_curr;
 
+		if ((entry & SISL_RESP_HANDLE_T_BIT) != toggle)
+			break;
+
+		cmd = (struct afu_cmd *)(entry & ~SISL_RESP_HANDLE_T_BIT);
 		cmd_complete(cmd);
 
 		/* Advance to next entry or wrap and flip the toggle bit */
-		if (afu->hrrq_curr < afu->hrrq_end)
-			afu->hrrq_curr++;
+		if (hrrq_curr < hrrq_end)
+			hrrq_curr++;
 		else {
-			afu->hrrq_curr = afu->hrrq_start;
-			afu->toggle ^= SISL_RESP_HANDLE_T_BIT;
+			hrrq_curr = hrrq_start;
+			toggle ^= SISL_RESP_HANDLE_T_BIT;
 		}
 	}
+
+	afu->hrrq_curr = hrrq_curr;
+	afu->toggle = toggle;
 
 	return IRQ_HANDLED;
 }
