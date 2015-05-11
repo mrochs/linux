@@ -1345,8 +1345,14 @@ int cxlflash_cxl_release(struct inode *inode, struct file *file)
 
 	ctx_info = get_context(cxlflash, context_id, NULL, false);
 	if (unlikely(!ctx_info)) {
-		cxlflash_dbg("Context %d already free!", context_id);
-		goto out_release;
+		ctx_info = get_context(cxlflash, context_id, NULL, true);
+		if (!ctx_info) {
+			cxlflash_dbg("Context %d already free!", context_id);
+			goto out_release;
+		}
+
+		cxlflash_dbg("Another process owns context %d!", context_id);
+		goto out;
 	}
 
 	cxlflash_info("close(%d) for context %d", ctx_info->lfd, context_id);
@@ -1722,16 +1728,19 @@ static int cxlflash_disk_clone(struct scsi_device *sdev,
 	struct dk_cxlflash_release release = { { 0 }, 0 };
 
 	struct ctx_info *ctx_info_src, *ctx_info_dst;
+	struct lun_access *lun_access_src, *lun_access_dst;
 	u32 perms;
+	int adap_fd_src = clone->adap_fd_src;
 	int i, j;
 	int rc = 0;
+	bool found;
 
 	cxlflash_info("ctx_id_src=%llu ctx_id_dst=%llu adap_fd_src=%llu",
 		      clone->context_id_src, clone->context_id_dst,
 		      clone->adap_fd_src);
 
 	/* Do not clone yourself */
-	if (clone->context_id_src == clone->context_id_dst) {
+	if (unlikely(clone->context_id_src == clone->context_id_dst)) {
 		rc = -EINVAL;
 		goto out;
 	}
@@ -1747,6 +1756,12 @@ static int cxlflash_disk_clone(struct scsi_device *sdev,
 		goto out;
 	}
 
+	if (unlikely(adap_fd_src != ctx_info_src->lfd)) {
+		cxlflash_err("Invalid source adapter fd! (%d)", adap_fd_src);
+		rc = -EINVAL;
+		goto out;
+	}
+
 	/* Verify there is no open resource handle in the destination context */
 	for (i = 0; i < MAX_RHT_PER_CONTEXT; i++)
 		if (ctx_info_dst->rht_start[i].nmask != 0) {
@@ -1754,9 +1769,32 @@ static int cxlflash_disk_clone(struct scsi_device *sdev,
 			goto out;
 		}
 
+	/* Clone LUN access list */
+	list_for_each_entry(lun_access_src, &ctx_info_src->luns, list) {
+		found = false;
+		list_for_each_entry(lun_access_dst, &ctx_info_dst->luns, list)
+			if (lun_access_dst->sdev == lun_access_src->sdev) {
+				found = true;
+				break;
+			}
+
+		if (!found) {
+			lun_access_dst = kzalloc(sizeof(*lun_access_dst),
+						 GFP_KERNEL);
+			if (unlikely(!lun_access_dst)) {
+				cxlflash_err("Unable to allocate lun_access!");
+				rc = -ENOMEM;
+				goto out;
+			}
+
+			*lun_access_dst = *lun_access_src;
+			list_add(&lun_access_dst->list, &ctx_info_dst->luns);
+		}
+	}
+
 	if (unlikely(!ctx_info_src->rht_out)) {
 		cxlflash_info("Nothing to clone!");
-		goto out;
+		goto out_close;
 	}
 
 	/* User specified permission on attach */
@@ -1805,6 +1843,10 @@ static int cxlflash_disk_clone(struct scsi_device *sdev,
 		cxlflash_lun_attach(lun_info, lun_info->mode);
 	}
 
+out_close:
+	sys_close(adap_fd_src);
+
+	/* fall thru */
 out:
 	cxlflash_info("returning rc=%d", rc);
 	return rc;
