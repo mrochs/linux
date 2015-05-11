@@ -10,11 +10,6 @@
 #include <linux/pci.h>
 #include "cxl.h"
 
-static void cxl_pci_dma_dev_setup(struct pci_dev *pdev)
-{
-	/* no-op for now */
-}
-
 static int cxl_dma_set_mask(struct pci_dev *pdev, u64 dma_mask)
 {
 	if (dma_mask < DMA_BIT_MASK(64)) {
@@ -165,7 +160,6 @@ static struct pci_ops cxl_pcie_pci_ops =
 
 static struct pci_controller_ops cxl_pci_controller_ops =
 {
-	.dma_dev_setup = cxl_pci_dma_dev_setup,
 	.probe_mode = cxl_pci_probe_mode,
 	.enable_device_hook = cxl_pci_enable_device_hook,
 	.window_alignment = cxl_pci_window_alignment,
