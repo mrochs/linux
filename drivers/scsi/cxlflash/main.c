@@ -1138,7 +1138,7 @@ static int afu_set_wwpn(struct afu *afu,
 		/*
 		 * Override for internal lun!!!
 		 */
-		if (internal_lun) {
+		if (internal_lun || afu->internal_lun) {
 			cxlflash_info("Overriding port %d online timeout!!!",
 				      port);
 			ret = 0;
@@ -1230,7 +1230,7 @@ static void afu_err_intr_init(struct afu *afu)
 	/* set LISN# to send and point to master context */
 	reg = ((u64) (((afu->ctx_hndl << 8) | SISL_MSI_ASYNC_ERROR)) << 40);
 
-	if (internal_lun)
+	if (internal_lun || afu->internal_lun)
 		reg |= 1;	/* Bit 63 indicates local lun */
 	writeq_be(reg, &afu->afu_map->global.regs.afu_ctrl);
 	/* clear all */
@@ -1246,7 +1246,7 @@ static void afu_err_intr_init(struct afu *afu)
 	reg = readq_be(&afu->afu_map->global.fc_regs[0][FC_CONFIG2 / 8]);
 	cxlflash_info("ilun p0 = %016llX", reg);
 	reg &= SISL_FC_INTERNAL_MASK;
-	if (internal_lun)
+	if (internal_lun || afu->internal_lun)
 		reg |= ((u64) (internal_lun - 1) << SISL_FC_INTERNAL_SHIFT);
 	cxlflash_info("ilun p0 = %016llX", reg);
 	writeq_be(reg, &afu->afu_map->global.fc_regs[0][FC_CONFIG2 / 8]);
@@ -1584,7 +1584,7 @@ int init_global(struct cxlflash *cxlflash)
 {
 	struct afu *afu = cxlflash->afu;
 	u64 wwpn[NUM_FC_PORTS];	/* wwpn of AFU ports */
-	int i = 0;
+	int i = 0, num_ports = 0;
 	int rc = 0;
 	u64 reg;
 
@@ -1608,14 +1608,18 @@ int init_global(struct cxlflash *cxlflash)
 	writeq_be(reg, &afu->afu_map->global.regs.afu_config);
 
 	/* global port select: select either port */
-#if 0				/* XXX - check with Andy/Todd b/c this doesn't work */
-	if (internal_lun)
+	if (internal_lun || afu->internal_lun) {
+		/* only use port 0 */
 		writeq_be(0x1, &afu->afu_map->global.regs.afu_port_sel);
+		num_ports = NUM_FC_PORTS - 1;
+	}
 	else
-#endif
+	{
 		writeq_be(0x3, &afu->afu_map->global.regs.afu_port_sel);
+		num_ports = NUM_FC_PORTS;
+	}
 
-	for (i = 0; i < NUM_FC_PORTS; i++) {
+	for (i = 0; i < num_ports; i++) {
 		/* unmask all errors (but they are still masked at AFU) */
 		writeq_be(0, &afu->afu_map->global.fc_regs[i][FC_ERRMSK / 8]);
 		/* clear CRC error cnt & set a threshold */
@@ -2078,7 +2082,10 @@ static int cxlflash_probe(struct pci_dev *pdev,
 
 	host->max_id = CXLFLASH_MAX_NUM_TARGETS_PER_BUS;
 	host->max_lun = CXLFLASH_MAX_NUM_LUNS_PER_TARGET;
-	host->max_channel = NUM_FC_PORTS - 1;
+	if (internal_lun)
+		host->max_channel = 0;
+	else
+		host->max_channel = NUM_FC_PORTS - 1;
 	host->unique_id = host->host_no;
 	host->max_cmd_len = CXLFLASH_MAX_CDB_LEN;
 

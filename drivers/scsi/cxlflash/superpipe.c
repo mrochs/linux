@@ -624,12 +624,7 @@ static void rht_format1(struct sisl_rht_entry *rht_entry, u64 lun_id, u32 perm)
 	 */
 	dummy.valid = 0x80;
 	dummy.fp = SISL_RHT_FP(1U, perm);
-#if 0				/* XXX - check with Andy/Todd b/c this doesn't work */
-	if (internal_lun)
-		dummy.port_sel = 0x1;
-	else
-#endif
-		dummy.port_sel = 0x3;
+	dummy.port_sel = 0x3;
 	rht_entry_f1->dw = dummy.dw;
 
 	smp_wmb();
