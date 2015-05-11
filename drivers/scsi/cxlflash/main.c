@@ -134,11 +134,6 @@ static void process_cmd_err(struct afu_cmd *cmd, struct scsi_cmnd *scp)
 		scp->result = (DID_ERROR << 16);
 	}
 
-	/*
-	 * TODO: ?? We need to look at the order these errors are prioritized
-	 * to see if this code order needs to change.
-	 */
-
 	cxlflash_dbg("cmd failed afu_rc=%d scsi_rc=%d fc_rc=%d "
 		     "afu_extra=0x%x, scsi_entra=0x%x, fc_extra=0x%x",
 		     ioasa->rc.afu_rc, ioasa->rc.scsi_rc, ioasa->rc.fc_rc,
@@ -479,9 +474,6 @@ static int cxlflash_eh_host_reset_handler(struct scsi_cmnd *scp)
  * cxlflash_slave_alloc - Allocate a per LUN structure
  * @sdev:       struct scsi_device device to configure
  *
- * Set the device's task set value so that error handling works as
- * expected.
- *
  * Returns:
  *      0 on success / -ENOMEM when memory allocation fails
  **/
@@ -508,8 +500,7 @@ out:
  * cxlflash_slave_configure - Configure the device
  * @sdev:       struct scsi_device device to configure
  *
- * Enable allow_restart for a device if it is a disk. Adjust the
- * queue_depth here also.
+ * Store the lun_id field, and program the LUN mapping table on the AFU.
  *
  * Returns:
  *      0
@@ -532,21 +523,6 @@ static int cxlflash_slave_configure(struct scsi_device *sdev)
 		  [cxlflash->last_lun_index++]);
 
 	return 0;
-}
-
-static void ba_terminate(struct ba_lun *ba_lun)
-{
-	struct ba_lun_info *lun_info =
-	    (struct ba_lun_info *)ba_lun->ba_lun_handle;
-
-	if (lun_info) {
-		if (lun_info->aun_clone_map)
-			kfree(lun_info->aun_clone_map);
-		if (lun_info->lun_alloc_map)
-			kfree(lun_info->lun_alloc_map);
-		kfree(lun_info);
-		ba_lun->ba_lun_handle = NULL;
-	}
 }
 
 static void cxlflash_slave_destroy(struct scsi_device *sdev)
@@ -887,7 +863,7 @@ static void cxlflash_remove(struct pci_dev *pdev)
  * cxlflash_gb_alloc - Global allocator
  * @cxlflash:       struct cxlflash
  *
- * Adapter hot plug remove entry point.
+ * Allocate and initialize per adapter memory.
  *
  * Return value:
  *      none
@@ -1833,8 +1809,6 @@ static int cxlflash_init_afu(struct cxlflash *cxlflash)
 		afu->afu_map = NULL;
 	}
 
-	/* XXX: Add threads for afu_rrq_rx and afu_err_rx */
-	/* after creating afu_err_rx thread, unmask error interrupts */
 	afu_err_intr_init(cxlflash->afu);
 
 err1:
@@ -2026,9 +2000,8 @@ int cxlflash_afu_reset(struct cxlflash *cxlflash)
  * cxlflash_worker_thread - Worker thread
  * @work:               work queue pointer
  *
- * Called at task level from a work thread. This function takes care
- * of adding and removing device from the mid-layer as configuration
- * changes are detected by the adapter.
+ * For now, it performs a link reset which cannot be performed
+ * from the interrupt context as it might take a few seconds to complete.
  *
  * Return value:
  *      nothing
@@ -2197,16 +2170,7 @@ static int __init init_cxlflash(void)
 
 static void __exit exit_cxlflash(void)
 {
-	struct lun_info *lun_info, *temp;
-	unsigned long flags = 0;
-
-	spin_lock_irqsave(&global.slock, flags);
-	list_for_each_entry_safe(lun_info, temp, &global.luns, list) {
-		list_del(&lun_info->list);
-		ba_terminate(&lun_info->blka.ba_lun);
-		kfree(lun_info);
-	}
-	spin_unlock_irqrestore(&global.slock, flags);
+	cxlflash_lun_terminate(&global);
 
 	pci_unregister_driver(&cxlflash_driver);
 }

@@ -350,6 +350,35 @@ out:
 	return lun_info;
 }
 
+static void ba_terminate(struct ba_lun *ba_lun)
+{
+	struct ba_lun_info *lun_info =
+	    (struct ba_lun_info *)ba_lun->ba_lun_handle;
+
+	if (lun_info) {
+		if (lun_info->aun_clone_map)
+			kfree(lun_info->aun_clone_map);
+		if (lun_info->lun_alloc_map)
+			kfree(lun_info->lun_alloc_map);
+		kfree(lun_info);
+		ba_lun->ba_lun_handle = NULL;
+	}
+}
+
+void cxlflash_lun_terminate(struct cxlflash_global *globalp)
+{
+	struct lun_info *lun_info, *temp;
+	unsigned long flags = 0;
+
+	spin_lock_irqsave(&globalp->slock, flags);
+	list_for_each_entry_safe(lun_info, temp, &globalp->luns, list) {
+		list_del(&lun_info->list);
+		ba_terminate(&lun_info->blka.ba_lun);
+		kfree(lun_info);
+	}
+	spin_unlock_irqrestore(&globalp->slock, flags);
+}
+
 static struct ctx_info *get_context(struct cxlflash *cxlflash, u64 ctxid,
 				    struct lun_info *lun_info, bool clone_path)
 {
