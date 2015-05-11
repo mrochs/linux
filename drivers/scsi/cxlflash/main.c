@@ -475,27 +475,8 @@ static int cxlflash_eh_host_reset_handler(struct scsi_cmnd *scp)
 	return rc;
 }
 
-static struct lun_info *create_lun_info(struct scsi_device *sdev)
-{
-	struct lun_info *lun_info = NULL;
-
-	lun_info = kzalloc(sizeof(*lun_info), GFP_KERNEL);
-	if (unlikely(!lun_info)) {
-		cxlflash_err("could not allocate lun_info");
-		goto create_lun_info_exit;
-	}
-
-	lun_info->sdev = sdev;
-
-	spin_lock_init(&lun_info->slock);
-
-create_lun_info_exit:
-	cxlflash_info("returning %p", lun_info);
-	return lun_info;
-}
-
 /**
- * cxlflash_slave_alloc - Setup the device's task set value
+ * cxlflash_slave_alloc - Allocate a per LUN structure
  * @sdev:       struct scsi_device device to configure
  *
  * Set the device's task set value so that error handling works as
@@ -507,21 +488,17 @@ create_lun_info_exit:
 static int cxlflash_slave_alloc(struct scsi_device *sdev)
 {
 	struct lun_info *lun_info = NULL;
-	unsigned long flags = 0;
 	int rc = 0;
 
-	lun_info = create_lun_info(sdev);
+	lun_info = lookup_lun(sdev, NULL);
 	if (unlikely(!lun_info)) {
 		cxlflash_err("failed to allocate lun_info!");
 		rc = -ENOMEM;
 		goto out;
 	}
 
-	spin_lock_irqsave(&global.slock, flags);
-
 	sdev->hostdata = lun_info;
-	list_add(&lun_info->list, &global.luns);
-	spin_unlock_irqrestore(&global.slock, flags);
+
 out:
 	cxlflash_info("returning luninfo %p sdev %p", lun_info, sdev);
 	return rc;

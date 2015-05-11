@@ -256,6 +256,8 @@ struct lun_info {
 	int users;		/* Number of users w/ references to LUN */
 	enum lun_mode mode;	/* NONE, VIRTUAL, PHYSICAL */
 
+	__u8 wwid[16];
+
 	spinlock_t slock;
 
 	struct blka blka;
@@ -290,5 +292,6 @@ int cxlflash_afu_reset(struct cxlflash *);
 struct afu_cmd *cxlflash_cmd_checkout(struct afu *);
 void cxlflash_cmd_checkin(struct afu_cmd *);
 int cxlflash_afu_sync(struct afu *, ctx_hndl_t, res_hndl_t, u8);
+struct lun_info *lookup_lun(struct scsi_device *sdev, __u8 *wwid);
 #endif /* ifndef _CXLFLASH_COMMON_H */
 

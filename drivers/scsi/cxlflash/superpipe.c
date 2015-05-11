@@ -24,6 +24,8 @@
 #include "common.h"
 #include "superpipe.h"
 
+extern struct cxlflash_global global;
+
 static void marshall_virt_to_resize(struct dk_cxlflash_uvirtual *virt,
 				    struct dk_cxlflash_resize *resize)
 {
@@ -298,6 +300,54 @@ static u64 ba_space(struct ba_lun *ba_lun)
 	    (struct ba_lun_info *)ba_lun->ba_lun_handle;
 
 	return lun_info->free_aun_cnt;
+}
+
+static struct lun_info *create_lun_info(struct scsi_device *sdev)
+{
+	struct lun_info *lun_info = NULL;
+
+	lun_info = kzalloc(sizeof(*lun_info), GFP_KERNEL);
+	if (unlikely(!lun_info)) {
+		cxlflash_err("could not allocate lun_info");
+		goto create_lun_info_exit;
+	}
+
+	lun_info->sdev = sdev;
+
+	spin_lock_init(&lun_info->slock);
+
+create_lun_info_exit:
+	cxlflash_info("returning %p", lun_info);
+	return lun_info;
+}
+
+struct lun_info *lookup_lun(struct scsi_device *sdev, __u8 *wwid)
+{
+	struct lun_info *lun_info, *temp;
+	unsigned long flags = 0UL;
+
+
+	if (wwid)
+		list_for_each_entry_safe(lun_info, temp, &global.luns, list) {
+			if (!memcmp(lun_info->wwid, wwid,
+				    DK_CXLFLASH_MANAGE_LUN_WWID_LEN))
+				return lun_info;
+		}
+
+        lun_info = create_lun_info(sdev);
+	if (unlikely(!lun_info)) {
+		cxlflash_err("failed to allocate lun_info!");
+		goto out;
+	}
+
+	spin_lock_irqsave(&global.slock, flags);
+	if (wwid)
+		memcpy(lun_info->wwid, wwid, DK_CXLFLASH_MANAGE_LUN_WWID_LEN);
+	list_add(&lun_info->list, &global.luns);
+	spin_unlock_irqrestore(&global.slock, flags);
+out:
+	cxlflash_info("returning %p", lun_info);
+	return lun_info;
 }
 
 static struct ctx_info *get_context(struct cxlflash *cxlflash, u64 ctxid,
@@ -1513,8 +1563,9 @@ err0:
 static int cxlflash_manage_lun(struct scsi_device *sdev,
 			       struct dk_cxlflash_manage_lun *manage)
 {
-	struct lun_info *lun_info = sdev->hostdata;
+	struct lun_info *lun_info = NULL;
 
+	lun_info = lookup_lun (sdev, manage->wwid);
 	cxlflash_info("ENTER: WWID = %016llX%016llX, flags = %016llX li = %p",
 		      get_unaligned_le64(&manage->wwid[0]),
 		      get_unaligned_le64(&manage->wwid[8]),
