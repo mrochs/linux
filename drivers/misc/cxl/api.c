@@ -248,7 +248,7 @@ EXPORT_SYMBOL_GPL(cxl_get_fd);
 
 struct cxl_context *cxl_fops_get_context(struct file *file)
 {
-        return file->private_data;
+	return file->private_data;
 }
 EXPORT_SYMBOL_GPL(cxl_fops_get_context);
 
