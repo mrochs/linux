@@ -1734,6 +1734,7 @@ static int cxlflash_disk_clone(struct scsi_device *sdev,
 	int i, j;
 	int rc = 0;
 	bool found;
+	LIST_HEAD(sidecar);
 
 	cxlflash_info("ctx_id_src=%llu ctx_id_dst=%llu adap_fd_src=%llu",
 		      clone->context_id_src, clone->context_id_dst,
@@ -1788,13 +1789,13 @@ static int cxlflash_disk_clone(struct scsi_device *sdev,
 			}
 
 			*lun_access_dst = *lun_access_src;
-			list_add(&lun_access_dst->list, &ctx_info_dst->luns);
+			list_add(&lun_access_dst->list, &sidecar);
 		}
 	}
 
 	if (unlikely(!ctx_info_src->rht_out)) {
 		cxlflash_info("Nothing to clone!");
-		goto out_close;
+		goto out_success;
 	}
 
 	/* User specified permission on attach */
@@ -1837,19 +1838,25 @@ static int cxlflash_disk_clone(struct scsi_device *sdev,
 
 			/* Put back the one we failed on */
 			rhte_checkin(ctx_info_dst, &ctx_info_dst->rht_start[i]);
-			goto out;
+			goto err;
 		}
 
 		cxlflash_lun_attach(lun_info, lun_info->mode);
 	}
 
-out_close:
+out_success:
+	list_splice(&sidecar, &ctx_info_dst->luns);
 	sys_close(adap_fd_src);
 
 	/* fall thru */
 out:
 	cxlflash_info("returning rc=%d", rc);
 	return rc;
+
+err:
+	list_for_each_entry_safe(lun_access_src, lun_access_dst, &sidecar, list)
+		kfree(lun_access_src);
+	goto out;
 }
 
 static int process_sense(struct scsi_device *sdev,
