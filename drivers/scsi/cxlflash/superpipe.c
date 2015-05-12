@@ -365,6 +365,22 @@ out:
 	return rc;
 }
 
+void cxlflash_init_lun(struct scsi_device *sdev)
+{
+	struct lun_info *lun_info = sdev->hostdata;
+	struct Scsi_Host *shost = sdev->host;
+	struct cxlflash *cxlflash = shost_priv(shost);
+	struct afu *afu = cxlflash->afu;
+
+	/* Store off lun in unpacked, AFU-friendly format */
+	lun_info->lun_id = lun_to_lunid(sdev->lun);
+
+	writeq_be(lun_info->lun_id,
+		  &afu->afu_map->global.fc_port[sdev->channel]
+		  [cxlflash->last_lun_index++]);
+
+}
+
 static void ba_terminate(struct ba_lun *ba_lun)
 {
 	struct ba_lun_info *lun_info =

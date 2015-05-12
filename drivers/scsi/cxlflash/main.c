@@ -497,21 +497,12 @@ static int cxlflash_slave_alloc(struct scsi_device *sdev)
  **/
 static int cxlflash_slave_configure(struct scsi_device *sdev)
 {
-	struct lun_info *lun_info = sdev->hostdata;
 	struct Scsi_Host *shost = sdev->host;
-	struct cxlflash *cxlflash = shost_priv(shost);
-	struct afu *afu = cxlflash->afu;
 
 	cxlflash_info("id = %d/%d/%d/%llu", shost->host_no, sdev->channel,
 		      sdev->id, sdev->lun);
 
-	/* Store off lun in unpacked, AFU-friendly format */
-	lun_info->lun_id = lun_to_lunid(sdev->lun);
-
-	writeq_be(lun_info->lun_id,
-		  &afu->afu_map->global.fc_port[sdev->channel]
-		  [cxlflash->last_lun_index++]);
-
+	cxlflash_init_lun(sdev);
 	return 0;
 }
 

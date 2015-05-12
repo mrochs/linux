@@ -285,6 +285,14 @@ struct ba_lun_info {
 	unsigned char *aun_clone_map;
 };
 
+static inline u64 lun_to_lunid(u64 lun)
+{
+	u64 lun_id;
+
+	int_to_scsilun(lun, (struct scsi_lun *)&lun_id);
+	return swab64(lun_id);
+}
+
 int cxlflash_send_cmd(struct afu *, struct afu_cmd *);
 void cxlflash_wait_resp(struct afu *, struct afu_cmd *);
 int cxlflash_check_status(struct sisl_ioasa *);
@@ -293,6 +301,7 @@ struct afu_cmd *cxlflash_cmd_checkout(struct afu *);
 void cxlflash_cmd_checkin(struct afu_cmd *);
 int cxlflash_afu_sync(struct afu *, ctx_hndl_t, res_hndl_t, u8);
 int cxlflash_alloc_lun(struct scsi_device *);
+void cxlflash_init_lun(struct scsi_device *);
 void cxlflash_lun_terminate(struct cxlflash_global *);
 #endif /* ifndef _CXLFLASH_COMMON_H */
 

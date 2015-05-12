@@ -108,13 +108,6 @@ struct asyc_intr_info {
 #define LINK_RESET     0x02
 };
 
-static inline u64 lun_to_lunid(u64 lun)
-{
-	u64 lun_id;
-
-	int_to_scsilun(lun, (struct scsi_lun *)&lun_id);
-	return swab64(lun_id);
-}
 /*
  * Externs and Prototypes
  */
