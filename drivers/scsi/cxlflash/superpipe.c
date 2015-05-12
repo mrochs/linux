@@ -21,8 +21,8 @@
 #include <uapi/scsi/cxlflash_ioctl.h>
 
 #include "sislite.h"
-#include "common.h"
 #include "superpipe.h"
+#include "common.h"
 
 extern struct cxlflash_global global;
 

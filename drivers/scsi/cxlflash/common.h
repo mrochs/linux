@@ -82,12 +82,6 @@
 #define cxlflash_dev_dbg(_d, _s, ...)	\
 	dev_dbg(_d, CONFN(_s), __func__, ##__VA_ARGS__)
 
-enum lun_mode {
-	MODE_NONE = 0,
-	MODE_VIRTUAL,
-	MODE_PHYSICAL
-};
-
 enum cxlflash_lr_state {
 	LINK_RESET_INVALID,
 	LINK_RESET_REQUIRED,
@@ -229,60 +223,6 @@ struct afu {
 struct cxlflash_global {
 	spinlock_t slock;
 	struct list_head luns;	/* list of lun_info structs */
-};
-
-struct ba_lun {
-	u64 lun_id;
-	u64 wwpn;
-	size_t lsize;		/* Lun size in number of LBAs             */
-	size_t lba_size;	/* LBA size in number of bytes            */
-	size_t au_size;		/* Allocation Unit size in number of LBAs */
-	void *ba_lun_handle;
-};
-
-/* Block Alocator */
-struct blka {
-	struct ba_lun ba_lun;
-	u64 nchunk;		/* number of chunks */
-	struct mutex mutex;
-};
-
-/* LUN discovery results are in lun_info */
-struct lun_info {
-	u64 lun_id;		/* from REPORT_LUNS */
-	u64 max_lba;		/* from read cap(16) */
-	u32 blk_len;		/* from read cap(16) */
-	u32 lun_index;
-	int users;		/* Number of users w/ references to LUN */
-	enum lun_mode mode;	/* NONE, VIRTUAL, PHYSICAL */
-
-	__u8 wwid[16];
-
-	spinlock_t slock;
-
-	struct blka blka;
-	struct scsi_device *sdev;
-	struct list_head list;
-};
-
-struct lun_access {
-	struct lun_info *lun_info;
-	struct scsi_device *sdev;
-	struct list_head list;
-};
-
-struct ba_lun_info {
-	u64 *lun_alloc_map;
-	u32 lun_bmap_size;
-	u32 total_aus;
-	u64 free_aun_cnt;
-
-	/* indices to be used for elevator lookup of free map */
-	u32 free_low_idx;
-	u32 free_curr_idx;
-	u32 free_high_idx;
-
-	unsigned char *aun_clone_map;
 };
 
 static inline u64 lun_to_lunid(u64 lun)
