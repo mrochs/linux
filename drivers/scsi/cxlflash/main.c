@@ -479,20 +479,10 @@ static int cxlflash_eh_host_reset_handler(struct scsi_cmnd *scp)
  **/
 static int cxlflash_slave_alloc(struct scsi_device *sdev)
 {
-	struct lun_info *lun_info = NULL;
 	int rc = 0;
+	rc = cxlflash_alloc_lun(sdev);
 
-	lun_info = lookup_lun(sdev, NULL);
-	if (unlikely(!lun_info)) {
-		cxlflash_err("failed to allocate lun_info!");
-		rc = -ENOMEM;
-		goto out;
-	}
-
-	sdev->hostdata = lun_info;
-
-out:
-	cxlflash_info("returning luninfo %p sdev %p", lun_info, sdev);
+	cxlflash_info("returning sdev %p rc=%d", sdev, rc);
 	return rc;
 }
 

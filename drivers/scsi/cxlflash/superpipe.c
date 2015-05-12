@@ -317,15 +317,13 @@ static struct lun_info *create_lun_info(struct scsi_device *sdev)
 	spin_lock_init(&lun_info->slock);
 
 create_lun_info_exit:
-	cxlflash_info("returning %p", lun_info);
 	return lun_info;
 }
 
-struct lun_info *lookup_lun(struct scsi_device *sdev, __u8 *wwid)
+static struct lun_info *lookup_lun(struct scsi_device *sdev, __u8 *wwid)
 {
 	struct lun_info *lun_info, *temp;
 	unsigned long flags = 0UL;
-
 
 	if (wwid)
 		list_for_each_entry_safe(lun_info, temp, &global.luns, list) {
@@ -336,7 +334,6 @@ struct lun_info *lookup_lun(struct scsi_device *sdev, __u8 *wwid)
 
         lun_info = create_lun_info(sdev);
 	if (unlikely(!lun_info)) {
-		cxlflash_err("failed to allocate lun_info!");
 		goto out;
 	}
 
@@ -345,9 +342,27 @@ struct lun_info *lookup_lun(struct scsi_device *sdev, __u8 *wwid)
 		memcpy(lun_info->wwid, wwid, DK_CXLFLASH_MANAGE_LUN_WWID_LEN);
 	list_add(&lun_info->list, &global.luns);
 	spin_unlock_irqrestore(&global.slock, flags);
+
 out:
 	cxlflash_info("returning %p", lun_info);
 	return lun_info;
+}
+
+int cxlflash_alloc_lun(struct scsi_device *sdev)
+{
+	struct lun_info *lun_info = NULL;
+	int rc = 0;
+
+	lun_info = lookup_lun(sdev, NULL);
+	if (unlikely(!lun_info)) {
+		rc = -ENOMEM;
+		goto out;
+	}
+
+	sdev->hostdata = lun_info;
+
+out:
+	return rc;
 }
 
 static void ba_terminate(struct ba_lun *ba_lun)
