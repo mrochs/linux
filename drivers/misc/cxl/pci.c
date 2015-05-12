@@ -604,7 +604,9 @@ static int cxl_read_afu_descriptor(struct cxl_afu *afu)
 	afu->crs_len = AFUD_CR_LEN(val) * 256;
 	afu->crs_offset = AFUD_READ_CR_OFF(afu);
 
-	if ((afu->crs_num > 0) && (AFUD_CR_READ(afu, 0) == 0)) {
+	if ((afu->crs_num > 0) &&
+	    ((AFUD_CR_READ(afu, 0) == 0) || (afu->crs_offset & 0xff)))
+	{
 		dev_err(&afu->adapter->dev, "ABORTING: AFU has invalid configuration record\n");
 		return -EINVAL;
 	}
