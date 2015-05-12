@@ -508,7 +508,7 @@ static int cxlflash_slave_configure(struct scsi_device *sdev)
 
 static void cxlflash_slave_destroy(struct scsi_device *sdev)
 {
-	struct lun_info *lun_info = sdev->hostdata;
+	void *lun_info = (void *)sdev->hostdata;
 
 	cxlflash_info("lun_info=%p", lun_info);
 
@@ -608,7 +608,7 @@ static ssize_t cxlflash_show_dev_mode(struct device *dev,
 				      struct device_attribute *attr, char *buf)
 {
         struct scsi_device *sdev = to_scsi_device(dev);
-	struct lun_info *lun_info = sdev->hostdata;
+	void *lun_info = (void *)sdev->hostdata;
 	char *legacy = "legacy",
 	     *superpipe = "superpipe";
 
