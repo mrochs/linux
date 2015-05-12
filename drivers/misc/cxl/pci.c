@@ -310,7 +310,7 @@ static void dump_afu_descriptor(struct cxl_afu *afu)
 	val = AFUD_READ_CR(afu);
 	show_reg("Reserved", (val >> (63-7)) & 0xff);
 	show_reg("AFU_CR_len", AFUD_CR_LEN(val));
-	afu_cr_len = AFUD_CR_LEN(val);
+	afu_cr_len = AFUD_CR_LEN(val) * 256;
 
 	val = AFUD_READ_CR_OFF(afu);
 	afu_cr_off = val;
@@ -331,7 +331,7 @@ static void dump_afu_descriptor(struct cxl_afu *afu)
 	show_reg("AFU_EB_offset", val);
 
 	for (i = 0; i < afu_cr_num; i++) {
-		val = AFUD_READ_LE(afu, afu_cr_off + i*256);
+		val = AFUD_READ_LE(afu, afu_cr_off + i * afu_cr_len);
 		show_reg("CR Vendor", val & 0xffff);
 		show_reg("CR Device", (val >> 16) & 0xffff);
 	}
