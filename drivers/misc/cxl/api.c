@@ -47,9 +47,13 @@ struct device *cxl_get_phys_dev(struct pci_dev *dev)
 }
 EXPORT_SYMBOL_GPL(cxl_get_phys_dev);
 
-void cxl_release_context(struct cxl_context *ctx)
+int cxl_release_context(struct cxl_context *ctx)
 {
+	if (ctx->status != CLOSED)
+		return 1;
+
 	cxl_context_free(ctx);
+	return 0;
 }
 EXPORT_SYMBOL_GPL(cxl_release_context);
 
@@ -159,11 +163,11 @@ int cxl_process_element(struct cxl_context *ctx)
 }
 EXPORT_SYMBOL_GPL(cxl_process_element);
 
-/* Stop a context */
-void cxl_stop_context(struct cxl_context *ctx)
+/* Stop a context.  Returns 0 on success, otherwise 1 */
+int cxl_stop_context(struct cxl_context *ctx)
 {
 	put_device(&ctx->afu->dev);
-	___detach_context(ctx);
+	return ___detach_context(ctx);
 }
 EXPORT_SYMBOL_GPL(cxl_stop_context);
 

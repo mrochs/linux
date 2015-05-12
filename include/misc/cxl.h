@@ -75,7 +75,7 @@ extern struct cxl_context *cxl_dev_context_init(struct pci_dev *dev);
 /*
  * Cleanup context and free it
  */
-void cxl_release_context(struct cxl_context *ctx);
+int cxl_release_context(struct cxl_context *ctx);
 
 /*
  * Allocate AFU interrupts for this context. num=0 will allocate the default
@@ -110,8 +110,9 @@ int cxl_process_element(struct cxl_context *ctx);
 
 /*
  * Stop a context and remove it from the PSL
+ * Returns 0 on success, otherwise 1.
  */
-void cxl_stop_context(struct cxl_context *ctx);
+int cxl_stop_context(struct cxl_context *ctx);
 
 /*
  * Set a context as a master context
@@ -140,14 +141,5 @@ int cxl_start_work(struct cxl_context *ctx,
 void __iomem *cxl_psa_map(struct cxl_context *ctx);
 void cxl_psa_unmap(void __iomem *addr);
 int cxl_afu_reset(struct cxl_context *ctx);
-
-/*
- * Register callback on errors.  PSL may generate different types of errors
- * (like slice errors). This will register a callback to get notified of
- * certain types of these errors.  Since multiple drivers may want to register
- * for these interrupts, drivers can't access the raw irq_handler_t.
- * TODO: implement this.
- */
-//int cxl_register_error_irq(dev, flags, callback function, private data);
 
 #endif
