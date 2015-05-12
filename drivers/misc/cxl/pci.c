@@ -132,7 +132,6 @@ u8 cxl_afu_cr_read8(struct cxl_afu *afu, int cr, u64 off)
 	val = cxl_afu_cr_read32(afu, cr, aligned_off);
 	return (val >> ((off & 0x3) * 8)) & 0xff;
 }
-#define AFUD_CR_READ(afu, off)		AFUD_READ_LE(afu, afu->crs_offset + off)
 
 static DEFINE_PCI_DEVICE_TABLE(cxl_pci_tbl) = {
 	{ PCI_DEVICE(PCI_VENDOR_ID_IBM, 0x0477), },
@@ -603,13 +602,6 @@ static int cxl_read_afu_descriptor(struct cxl_afu *afu)
 	val = AFUD_READ_CR(afu);
 	afu->crs_len = AFUD_CR_LEN(val) * 256;
 	afu->crs_offset = AFUD_READ_CR_OFF(afu);
-
-	if ((afu->crs_num > 0) &&
-	    ((AFUD_CR_READ(afu, 0) == 0) || (afu->crs_offset & 0xff)))
-	{
-		dev_err(&afu->adapter->dev, "ABORTING: AFU has invalid configuration record\n");
-		return -EINVAL;
-	}
 
 	/* We have a valid configuration record, lets make a virtual PHB */
 	cxl_pci_vphb_add(afu);
