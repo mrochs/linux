@@ -113,8 +113,10 @@ struct ctx_info {
 	struct lun_info **rht_lun; /* Mapping of RHT entries to LUNs */
 
 	struct cxl_ioctl_start_work work;
+	int ctxid;
 	int lfd;
 	pid_t pid;
+	u32 padding;
 	struct cxl_context *ctx;
 	struct list_head luns;	/* LUNs attached to this context */
 };
@@ -147,7 +149,7 @@ struct cxlflash {
 	struct pci_dev *parent_dev;
 
 	int num_user_contexts;
-	struct ctx_info ctx_info[MAX_CONTEXT];
+	struct ctx_info *ctx_info[MAX_CONTEXT];
 	struct file_operations cxl_fops;
 
 	int last_lun_index;

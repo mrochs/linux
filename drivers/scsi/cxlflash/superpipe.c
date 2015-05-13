@@ -413,10 +413,8 @@ void cxlflash_lun_terminate(struct cxlflash_global *globalp)
 static struct ctx_info *get_context(struct cxlflash *cxlflash, u64 ctxid,
 				    struct lun_info *lun_info, bool clone_path)
 {
-	struct afu *afu = cxlflash->afu;
 	struct ctx_info *ctx_info = NULL;
 	struct lun_access *lun_access = NULL;
-	bool mc_override = ctxid == afu->ctx_hndl;
 	bool found = false;
 	pid_t pid = current->pid, ctxpid = 0;
 
@@ -424,14 +422,12 @@ static struct ctx_info *get_context(struct cxlflash *cxlflash, u64 ctxid,
 		pid = current->parent->pid;
 
 	if (likely(ctxid < MAX_CONTEXT)) {
-		ctx_info = &cxlflash->ctx_info[ctxid];
-		ctxpid = ctx_info->pid;
-
-		if (mc_override)
+		ctx_info = cxlflash->ctx_info[ctxid];
+		if (unlikely(!ctx_info))
 			goto out;
 
-		/* Use rht_start existence as a state check for context */
-		if (unlikely(!ctx_info->rht_start)) {
+		ctxpid = ctx_info->pid;
+		if (checkpid && (pid != ctxpid)) {
 			ctx_info = NULL;
 			goto out;
 		}
@@ -448,9 +444,6 @@ static struct ctx_info *get_context(struct cxlflash *cxlflash, u64 ctxid,
 				goto out;
 			}
 		}
-
-		if (checkpid && (pid != ctxpid))
-			ctx_info = NULL;
 	}
 
 out:
@@ -460,11 +453,10 @@ out:
 	return ctx_info;
 }
 
-static int cxlflash_afu_attach(struct cxlflash *cxlflash, u64 context_id)
+static int cxlflash_afu_attach(struct cxlflash *cxlflash,
+			       struct ctx_info *ctx_info)
 {
 	struct afu *afu = cxlflash->afu;
-	struct ctx_info *ctx_info = &cxlflash->ctx_info[context_id];
-	struct sisl_rht_entry *rht;
 	int rc = 0;
 	u64 reg;
 
@@ -488,21 +480,10 @@ static int cxlflash_afu_attach(struct cxlflash *cxlflash, u64 context_id)
 		goto out;
 	}
 
-	/* the context gets a dedicated RHT tbl */
-	rht = (struct sisl_rht_entry *)get_zeroed_page(GFP_KERNEL);
-	if (unlikely(!rht)) {
-		cxlflash_err("Unable to allocate RHT memory!");
-		rc = -ENOMEM;
-		goto out;
-	}
-
-	ctx_info->rht_start = rht;
-	ctx_info->rht_out = 0;
-
 	/* set up MMIO registers pointing to the RHT */
-	writeq_be((u64)rht, &ctx_info->ctrl_map->rht_start);
-	writeq_be(SISL_RHT_CNT_ID((u64) MAX_RHT_PER_CONTEXT,
-				  (u64) (afu->ctx_hndl)),
+	writeq_be((u64)ctx_info->rht_start, &ctx_info->ctrl_map->rht_start);
+	writeq_be(SISL_RHT_CNT_ID((u64)MAX_RHT_PER_CONTEXT,
+				  (u64)(afu->ctx_hndl)),
 		  &ctx_info->ctrl_map->rht_cnt_id);
 out:
 	cxlflash_info("returning rc=%d", rc);
@@ -1246,6 +1227,71 @@ out:
 	return rc;
 }
 
+static void destroy_context(struct cxlflash *cxlflash,
+			    struct ctx_info *ctx_info)
+{
+	BUG_ON(!list_empty(&ctx_info->luns));
+
+	/* Clear RHT registers and drop all capabilities for this context */
+	writeq_be(0, &ctx_info->ctrl_map->rht_start);
+	writeq_be(0, &ctx_info->ctrl_map->rht_cnt_id);
+	writeq_be(0, &ctx_info->ctrl_map->ctx_cap);
+
+	/* Free the RHT memory */
+	free_page((unsigned long)ctx_info->rht_start);
+
+	/* Free the context; note that rht_lun was allocated at same time */
+	kfree(ctx_info);
+	cxlflash->num_user_contexts--;
+}
+
+static struct ctx_info *create_context(struct cxlflash *cxlflash,
+				       struct cxl_context *ctx, int ctxid,
+				       int adap_fd, u32 perms)
+{
+	char *tmp = NULL;
+	size_t size;
+	struct afu *afu = cxlflash->afu;
+	struct ctx_info *ctx_info = NULL;
+	struct sisl_rht_entry *rht;
+
+	size = ((MAX_RHT_PER_CONTEXT * sizeof(*ctx_info->rht_lun)) +
+		sizeof(*ctx_info));
+
+	tmp = kzalloc(size, GFP_KERNEL);
+	if (unlikely(!tmp)) {
+		cxlflash_err("Unable to allocate context! (%ld)", size);
+		goto out;
+	}
+
+	rht = (struct sisl_rht_entry *)get_zeroed_page(GFP_KERNEL);
+	if (unlikely(!rht)) {
+		cxlflash_err("Unable to allocate RHT!");
+		goto err;
+	}
+
+	ctx_info = (struct ctx_info *)tmp;
+	ctx_info->rht_lun = (struct lun_info **)(tmp + sizeof(*ctx_info));
+	ctx_info->rht_start = rht;
+	ctx_info->rht_perms = perms;
+
+	ctx_info->ctrl_map = &afu->afu_map->ctrls[ctxid].ctrl;
+	ctx_info->ctxid = ctxid;
+	ctx_info->lfd = adap_fd;
+	ctx_info->pid = current->pid;
+	ctx_info->ctx = ctx;
+	INIT_LIST_HEAD(&ctx_info->luns);
+
+	cxlflash->num_user_contexts++;
+
+out:
+	return ctx_info;
+
+err:
+	kfree(tmp);
+	goto out;
+}
+
 /*
  * NAME:        cxlflash_disk_detach
  *
@@ -1317,24 +1363,11 @@ static int cxlflash_disk_detach(struct scsi_device *sdev,
 
 	/* Tear down context following last LUN cleanup */
 	if (list_empty(&ctx_info->luns)) {
-		/* Clear RHT registers for this context */
-		writeq_be(0, &ctx_info->ctrl_map->rht_start);
-		writeq_be(0, &ctx_info->ctrl_map->rht_cnt_id);
-		/* Drop all capabilities */
-		writeq_be(0, &ctx_info->ctrl_map->ctx_cap);
-		/* Free the RHT memory */
-		free_page((unsigned long)ctx_info->rht_start);
-		ctx_info->rht_start = NULL;
-		/* Free the RHT-LUN mapping table */
-		kfree(ctx_info->rht_lun);
-		ctx_info->rht_lun = NULL;
-
 		lfd = ctx_info->lfd;
-		ctx_info->lfd = -1;
-		ctx_info->pid = 0;
 
-		/* Close the context */
-		cxlflash->num_user_contexts--;
+		cxlflash->ctx_info[detach->context_id] = NULL;
+		destroy_context(cxlflash, ctx_info);
+		ctx_info = NULL;
 
 		/*
 		 * As a last step, clean up external resources when not
@@ -1516,8 +1549,12 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 	}
 
 	lun_access = kzalloc(sizeof(*lun_access), GFP_KERNEL);
-	if (!lun_access)
-		BUG(); /* temporary */
+	if (unlikely(!lun_access)) {
+		cxlflash_err("Unable to allocate lun_access!");
+		rc = -ENOMEM;
+		goto out;
+	}
+
 	lun_access->lun_info = lun_info;
 	lun_access->sdev = sdev;
 
@@ -1537,23 +1574,10 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 
 	context_id = cxl_process_element(ctx);
 	if ((context_id > MAX_CONTEXT) || (context_id < 0)) {
-		cxlflash_err("context_id (%u) invalid!", context_id);
+		cxlflash_err("context_id (%d) invalid!", context_id);
 		rc = -EPERM;
-		goto err0;
+		goto err1;
 	}
-
-	ctx_info = &cxlflash->ctx_info[context_id];
-
-	/*
-	 * Create and attach a new file descriptor. This must be the last
-	 * statement as once this is run, the file descritor is visible to
-	 * userspace and can't be undone. No error paths after this as we
-	 * can't free the fd safely.
-	 */
-	work = &ctx_info->work;
-	memset(work, 0, sizeof(*work));
-	work->num_interrupts = attach->num_interrupts;
-	work->flags = CXL_START_WORK_NUM_IRQS;
 
 	file = cxl_get_fd(ctx, &cxlflash->cxl_fops, &fd);
 	if (fd < 0) {
@@ -1562,37 +1586,38 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 		goto err1;
 	}
 
-	rc = cxl_start_work(ctx, work);
-	if (rc) {
-		cxlflash_err("Could not start context rc=%d", rc);
+	/* Translate read/write O_* flags from fnctl.h to AFU permission bits */
+	perms = ((attach->hdr.flags + 1) & 0x3);
+
+	ctx_info = create_context(cxlflash, ctx, context_id, fd, perms);
+	if (unlikely(!ctx_info)) {
+		cxlflash_err("Failed to create context! (%d)", context_id);
 		goto err2;
 	}
 
-	rc = cxlflash_afu_attach(cxlflash, context_id);
+	work = &ctx_info->work;
+	work->num_interrupts = attach->num_interrupts;
+	work->flags = CXL_START_WORK_NUM_IRQS;
+
+	rc = cxl_start_work(ctx, work);
 	if (rc) {
-		cxlflash_err("Could not attach AFU rc %d", rc);
+		cxlflash_err("Could not start context rc=%d", rc);
 		goto err3;
 	}
 
-	/* No error paths after installing the fd */
-	fd_install(fd, file);
+	rc = cxlflash_afu_attach(cxlflash, ctx_info);
+	if (rc) {
+		cxlflash_err("Could not attach AFU rc %d", rc);
+		goto err4;
+	}
 
-	cxlflash->num_user_contexts++;
-	ctx_info->rht_lun = kzalloc((MAX_RHT_PER_CONTEXT *
-				     sizeof(*ctx_info->rht_lun)), GFP_KERNEL);
-	if (!ctx_info->rht_lun)
-		BUG(); /* temporary */
-
-	INIT_LIST_HEAD(&ctx_info->luns);
+	/*
+	 * No error paths after this point. Once the fd is installed it's
+	 * visible to userspace and can't be undone safely on this thread.
+	 */
 	list_add(&lun_access->list, &ctx_info->luns);
-
-	ctx_info->lfd = fd;
-	ctx_info->pid = current->pid;
-	ctx_info->ctx = ctx;
-
-	/* Translate read/write O_* flags from fnctl.h to AFU permission bits */
-	perms = ((attach->hdr.flags + 1) & 0x3);
-	ctx_info->rht_perms = perms;
+	cxlflash->ctx_info[context_id] = ctx_info;
+	fd_install(fd, file);
 
 	attach->hdr.return_flags = 0;
 	attach->context_id = context_id;
@@ -1608,8 +1633,10 @@ out:
 		      context_id, fd, attach->block_size, rc, attach->last_lba);
 	return rc;
 
-err3:
+err4:
 	cxl_stop_context(ctx);
+err3:
+	destroy_context(cxlflash, ctx_info);
 err2:
 	fput(file);
 	put_unused_fd(fd);
