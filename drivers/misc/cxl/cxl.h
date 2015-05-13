@@ -639,7 +639,7 @@ int cxl_context_iomap(struct cxl_context *ctx, struct vm_area_struct *vma);
 unsigned int cxl_map_irq(struct cxl *adapter, irq_hw_number_t hwirq,
 			 irq_handler_t handler, void *cookie, const char *name);
 void cxl_unmap_irq(unsigned int virq, void *cookie);
-int ___detach_context(struct cxl_context *ctx);
+int __detach_context(struct cxl_context *ctx);
 
 /* This matches the layout of the H_COLLECT_CA_INT_INFO retbuf */
 struct cxl_irq_info {

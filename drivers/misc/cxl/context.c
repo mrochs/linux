@@ -174,7 +174,7 @@ int cxl_context_iomap(struct cxl_context *ctx, struct vm_area_struct *vma)
  * return until all outstanding interrupts for this context have completed. The
  * hardware should no longer access *ctx after this has returned.
  */
-int ___detach_context(struct cxl_context *ctx)
+int __detach_context(struct cxl_context *ctx)
 {
 	enum cxl_context_status status;
 
@@ -183,23 +183,10 @@ int ___detach_context(struct cxl_context *ctx)
 	ctx->status = CLOSED;
 	mutex_unlock(&ctx->status_mutex);
 	if (status != STARTED)
-		return 1;
+		return -EBUSY;
 
 	WARN_ON(cxl_detach_process(ctx));
 	return 0;
-}
-
-void __detach_context(struct cxl_context *ctx)
-{
-	int rc;
-
-	rc = ___detach_context(ctx);
-	if (rc)
-		return;
-
-	afu_release_irqs(ctx, ctx);
-	flush_work(&ctx->fault_work); /* Only needed for dedicated process */
-	wake_up_all(&ctx->wq);
 }
 
 /*
@@ -210,7 +197,15 @@ void __detach_context(struct cxl_context *ctx)
  */
 void cxl_context_detach(struct cxl_context *ctx)
 {
-	__detach_context(ctx);
+	int rc;
+
+	rc = __detach_context(ctx);
+	if (rc)
+		return;
+
+	afu_release_irqs(ctx, ctx);
+	flush_work(&ctx->fault_work); /* Only needed for dedicated process */
+	wake_up_all(&ctx->wq);
 }
 
 /*
@@ -227,7 +222,7 @@ void cxl_context_detach_all(struct cxl_afu *afu)
 		 * Anything done in here needs to be setup before the IDR is
 		 * created and torn down after the IDR removed
 		 */
-		__detach_context(ctx);
+		cxl_context_detach(ctx);
 
 		/*
 		 * We are force detaching - remove any active PSA mappings so

@@ -167,7 +167,7 @@ EXPORT_SYMBOL_GPL(cxl_process_element);
 int cxl_stop_context(struct cxl_context *ctx)
 {
 	put_device(&ctx->afu->dev);
-	return ___detach_context(ctx);
+	return __detach_context(ctx);
 }
 EXPORT_SYMBOL_GPL(cxl_stop_context);
 
