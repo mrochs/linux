@@ -110,7 +110,7 @@ int cxl_process_element(struct cxl_context *ctx);
 
 /*
  * Stop a context and remove it from the PSL
- * Returns 0 on success, otherwise 1.
+ * Returns 0 on success, or negative errno.
  */
 int cxl_stop_context(struct cxl_context *ctx);
 

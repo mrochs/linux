@@ -50,7 +50,7 @@ EXPORT_SYMBOL_GPL(cxl_get_phys_dev);
 int cxl_release_context(struct cxl_context *ctx)
 {
 	if (ctx->status != CLOSED)
-		return 1;
+		return -EBUSY;
 
 	cxl_context_free(ctx);
 	return 0;
