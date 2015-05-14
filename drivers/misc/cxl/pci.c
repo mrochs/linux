@@ -603,9 +603,6 @@ static int cxl_read_afu_descriptor(struct cxl_afu *afu)
 	afu->crs_len = AFUD_CR_LEN(val) * 256;
 	afu->crs_offset = AFUD_READ_CR_OFF(afu);
 
-	/* We have a valid configuration record, lets make a virtual PHB */
-	cxl_pci_vphb_add(afu);
-
 	return 0;
 }
 
@@ -743,6 +740,9 @@ static int cxl_init_afu(struct cxl *adapter, int slice, struct pci_dev *dev)
 		goto err_put2;
 
 	adapter->afu[afu->slice] = afu;
+
+	if ((rc = cxl_pci_vphb_add(afu)))
+		dev_info(&afu->dev, "Can't register vPHB\n");
 
 	return 0;
 
