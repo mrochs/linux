@@ -65,11 +65,7 @@ struct cxl_afu *cxl_pci_to_afu(struct pci_dev *dev, unsigned int *cfg_record);
  */
 struct device *cxl_get_phys_dev(struct pci_dev *dev);
 
-/*
- * Initalise a context from a AFU PCI device
- * Should this take a pci_dev or cxl_afu?
- * FIXME: should we specify some context info here like the memory
- */
+/* Initalise a context from a AFU PCI device */
 extern struct cxl_context *cxl_dev_context_init(struct pci_dev *dev);
 
 /*

@@ -32,6 +32,7 @@ struct cxl_context *cxl_dev_context_init(struct pci_dev *dev)
 		kfree(ctx);
 		return ERR_PTR(-ENOMEM);
 	}
+	assign_psn_space(ctx);
 
 	return ctx;
 }
@@ -53,6 +54,8 @@ int cxl_release_context(struct cxl_context *ctx)
 		return -EBUSY;
 
 	cxl_context_free(ctx);
+
+	cxl_ctx_put();
 	return 0;
 }
 EXPORT_SYMBOL_GPL(cxl_release_context);
@@ -142,8 +145,13 @@ int cxl_start_context(struct cxl_context *ctx, u64 wed,
 		kernel = false;
 	}
 
-	if ((rc = cxl_attach_process(ctx, kernel, wed , 0)))
+	cxl_ctx_get();
+
+	if ((rc = cxl_attach_process(ctx, kernel, wed , 0))) {
+		put_pid(ctx->pid);
+		cxl_ctx_put();
 		goto out;
+	}
 
 	ctx->status = STARTED;
 	rc = 0;
@@ -157,13 +165,13 @@ EXPORT_SYMBOL_GPL(cxl_start_context);
 int cxl_process_element(struct cxl_context *ctx)
 {
 	if (ctx->status == CLOSED)
-		return -EINVAL;
+		return -EIO;
 
 	return ctx->pe;
 }
 EXPORT_SYMBOL_GPL(cxl_process_element);
 
-/* Stop a context.  Returns 0 on success, otherwise 1 */
+/* Stop a context.  Returns 0 on success, otherwise -Errno */
 int cxl_stop_context(struct cxl_context *ctx)
 {
 	put_device(&ctx->afu->dev);
@@ -265,8 +273,9 @@ int cxl_start_work(struct cxl_context *ctx,
 	if (!(work->flags & CXL_START_WORK_NUM_IRQS))
 		work->num_interrupts = ctx->afu->pp_irqs;
 	else if ((work->num_interrupts < ctx->afu->pp_irqs) ||
-		 (work->num_interrupts > ctx->afu->irqs_max))
+		 (work->num_interrupts > ctx->afu->irqs_max)) {
 		return -EINVAL;
+	}
 
 	rc = afu_register_irqs(ctx, work->num_interrupts);
 	if (rc)
@@ -293,7 +302,7 @@ void __iomem *cxl_psa_map(struct cxl_context *ctx)
 
 	pr_devel("%s: psn_phys%llx size:%llx\n",
 		 __func__, afu->psn_phys, afu->adapter->ps_size);
-	return ioremap(afu->psn_phys, afu->adapter->ps_size);
+	return ioremap(ctx->psn_phys, ctx->psn_size);
 }
 EXPORT_SYMBOL_GPL(cxl_psa_map);
 
