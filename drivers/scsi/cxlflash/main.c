@@ -128,7 +128,7 @@ void cxlflash_cmd_checkin(struct afu_cmd *cmd)
 }
 
 /**
- * process_cmd_err() - command error handler 
+ * process_cmd_err() - command error handler
  * @cmd:	AFU command that experienced the error.
  * @scp:	SCSI command associated with the AFU command in error.
  *
@@ -191,7 +191,7 @@ static void process_cmd_err(struct afu_cmd *cmd, struct scsi_cmnd *scp)
 				/* If the SISL_RC_FLAGS_OVERRUN flag was set,
 				 * then we will handle this error else where.
 				 * If not then we must handle it here.
-				 * This is probably an AFU bug. We will 
+				 * This is probably an AFU bug. We will
 				 * attempt a retry to see if that resolves it.
 				 */
 				scp->result = (DID_IMM_RETRY << 16);
@@ -235,7 +235,7 @@ static void process_cmd_err(struct afu_cmd *cmd, struct scsi_cmnd *scp)
 }
 
 /**
- * cmd_complete() - command completion handler 
+ * cmd_complete() - command completion handler
  * @cmd:	AFU command that has completed.
  *
  * Prepares and submits command that has either completed or timed out to
@@ -466,7 +466,7 @@ static int cxlflash_eh_device_reset_handler(struct scsi_cmnd *scp)
 }
 
 /**
- * cxlflash_eh_host_reset_handler() - reset the host adapter 
+ * cxlflash_eh_host_reset_handler() - reset the host adapter
  * @scp:	SCSI command from stack identifying host.
  *
  * Return:
@@ -1487,7 +1487,7 @@ static irqreturn_t cxlflash_async_err_irq(int irq, void *data)
 				      [info->port][FC_STATUS / 8]));
 
 		/*
-		 * do link reset first, some OTHER errors will set FC_ERROR 
+		 * do link reset first, some OTHER errors will set FC_ERROR
 		 * again if cleared before or w/o a reset
 		 */
 		if (info->action & LINK_RESET) {
@@ -1828,7 +1828,7 @@ int cxlflash_start_afu(struct cxlflash *cxlflash)
  * Return:
  *	0 on success
  *	-ENOMEM when unable to obtain a context from CXL services
- *	A failure value from CXL services. 
+ *	A failure value from CXL services.
  */
 int cxlflash_init_mc(struct cxlflash *cxlflash)
 {
@@ -1976,7 +1976,7 @@ err1:
  * @ioasa:	The IOASA of an AFU command.
  *
  * Return:
- *	TRUE (1) when the IOASA contains an error 
+ *	TRUE (1) when the IOASA contains an error
  *	FALSE (0) when the IOASA does not contain an error
  */
 int cxlflash_check_status(struct sisl_ioasa *ioasa)
@@ -2177,7 +2177,7 @@ int cxlflash_afu_reset(struct cxlflash *cxlflash)
 {
 	int rc = 0;
 	/* Stop the context before the reset. Since the context is
-	 * no longer available restart it after the reset is complete 
+	 * no longer available restart it after the reset is complete
 	 */
 
 	cxlflash_term_afu(cxlflash);

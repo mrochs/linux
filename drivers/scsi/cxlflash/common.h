@@ -31,10 +31,10 @@
 #define MAX_RHT_PER_CONTEXT (PAGE_SIZE / sizeof(struct sisl_rht_entry))
 
 /* Command management definitions */
-#define CXLFLASH_NUM_CMDS	(2 * CXLFLASH_MAX_CMDS)	/* Must be a pow2 for 
-							   alignment and more 
-							   efficient array 
-							   index derivation 
+#define CXLFLASH_NUM_CMDS	(2 * CXLFLASH_MAX_CMDS)	/* Must be a pow2 for
+							   alignment and more
+							   efficient array
+							   index derivation
 							 */
 
 #define CXLFLASH_MAX_CMDS               16
@@ -195,7 +195,7 @@ struct afu {
 #define E_ASYNC_INTR  0x2	/* asynchronous error interrupt */
 
 	/* Beware of alignment till here. Preferably introduce new
-	 * fields after this point 
+	 * fields after this point
 	 */
 
 	/* AFU HW */

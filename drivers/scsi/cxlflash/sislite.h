@@ -310,7 +310,7 @@ struct sisl_global_map {
 
 };
 
-/* CXL Flash Memory Map 
+/* CXL Flash Memory Map
                      +-------------------------------+
                      |    512 * 64 KB User MMIO      |
                      |        (per context)          |

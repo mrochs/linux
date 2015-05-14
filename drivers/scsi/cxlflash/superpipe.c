@@ -2025,7 +2025,7 @@ static int cxlflash_disk_verify(struct scsi_device *sdev,
 		goto out;
 	}
 
-	/* XXX: We would have to look at the hint/sense to see if it 
+	/* XXX: We would have to look at the hint/sense to see if it
 	 * requires us to redrive inquiry (i.e. the Unit attention is
 	 * due to the WWN changing).
 	 */
