@@ -375,6 +375,7 @@ void cxlflash_init_lun(struct scsi_device *sdev)
 
 	/* Store off lun in unpacked, AFU-friendly format */
 	lun_info->lun_id = lun_to_lunid(sdev->lun);
+	lun_info->lun_index = cxlflash->last_lun_index;
 
 	writeq_be(lun_info->lun_id,
 		  &afu->afu_map->global.fc_port[sdev->channel]
