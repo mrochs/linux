@@ -68,10 +68,6 @@ typedef unsigned int useconds_t;        /* time in microseconds */
 /* AFU command timeout values */
 #define MC_AFU_SYNC_TIMEOUT  5	/* 5 secs */
 
-/* AFU command retry limit */
-#define MC_RETRY_CNT         5	/* sufficient for SCSI check and
-				   certain AFU errors */
-
 /* AFU command room retry limit */
 #define MC_ROOM_RETRY_CNT    10
 

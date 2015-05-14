@@ -30,6 +30,10 @@
 #define NUM_RRQ_ENTRY    16     /* for master issued cmds */
 #define MAX_RHT_PER_CONTEXT (PAGE_SIZE / sizeof(struct sisl_rht_entry))
 
+/* AFU command retry limit */
+#define MC_RETRY_CNT         5	/* sufficient for SCSI check and
+				   certain AFU errors */
+
 /* Command management definitions */
 #define CXLFLASH_NUM_CMDS	(2 * CXLFLASH_MAX_CMDS)	/* Must be a pow2 for
 							   alignment and more
@@ -237,7 +241,6 @@ static inline u64 lun_to_lunid(u64 lun)
 
 int cxlflash_send_cmd(struct afu *, struct afu_cmd *);
 void cxlflash_wait_resp(struct afu *, struct afu_cmd *);
-int cxlflash_check_status(struct sisl_ioasa *);
 int cxlflash_afu_reset(struct cxlflash *);
 struct afu_cmd *cxlflash_cmd_checkout(struct afu *);
 void cxlflash_cmd_checkin(struct afu_cmd *);

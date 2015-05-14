@@ -1972,46 +1972,6 @@ err1:
 }
 
 /**
- * cxlflash_check_status() - evaluates the status of an AFU command
- * @ioasa:	The IOASA of an AFU command.
- *
- * Return:
- *	TRUE (1) when the IOASA contains an error
- *	FALSE (0) when the IOASA does not contain an error
- */
-int cxlflash_check_status(struct sisl_ioasa *ioasa)
-{
-	/* do we need to retry AFU_CMDs (sync) on afu_rc = 0x30 ? */
-	/* can we not avoid that ? */
-	/* not retrying afu timeouts (B_TIMEOUT) */
-	/* returns 1 if the cmd should be retried, 0 otherwise */
-	/* sets B_ERROR flag based on IOASA */
-
-	if (ioasa->ioasc == 0)
-		return 0;
-
-	ioasa->host_use_b[0] |= B_ERROR;
-
-	if (!(ioasa->host_use_b[1]++ < MC_RETRY_CNT))
-		return 0;
-
-	switch (ioasa->rc.afu_rc) {
-	case SISL_AFU_RC_NO_CHANNELS:
-	case SISL_AFU_RC_OUT_OF_DATA_BUFS:
-		msleep(1);	/* 1 msec */
-		return 1;
-
-	case 0:
-		/* no afu_rc, but either scsi_rc and/or fc_rc is set */
-		/* retry all scsi_rc and fc_rc after a small delay */
-		msleep(1);	/* 1 msec */
-		return 1;
-	}
-
-	return 0;
-}
-
-/**
  * cxlflash_send_cmd() - sends an AFU command
  * @afu:	AFU associated with the host.
  * @cmd:	AFU command to send.
