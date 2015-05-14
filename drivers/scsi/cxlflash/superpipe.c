@@ -145,13 +145,13 @@ static int find_free_range(u32 low,
 {
 	int i;
 	u64 bit_pos = -1;
-	ulong *lam;
+	ulong *lam, num_bits;
 
 	for (i = low; i < high; i++)
 		if (lun_info->lun_alloc_map[i] != 0) {
 			lam = (ulong *)&lun_info->lun_alloc_map[i];
-			/* size argument is in number of bits */
-			bit_pos = find_first_bit(lam, sizeof(u64)*8);
+			num_bits = (sizeof(*lam) * BITS_PER_BYTE);
+			bit_pos = find_first_bit(lam, num_bits);
 
 			cxlflash_dbg("Found free bit %llX in lun "
 				     "map entry %llX at bitmap index = %X",
