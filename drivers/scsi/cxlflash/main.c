@@ -604,6 +604,14 @@ static ssize_t cxlflash_show_port_status(struct device *dev,
 	return snprintf(buf, PAGE_SIZE, "%s\n", disp_status);
 }
 
+/**
+ * cxlflash_show_lun_mode() - presents the current LUN mode of the host
+ * @dev:	Generic device associated with the host.
+ * @attr:	Device attribute representing the lun mode.
+ * @buf:	Buffer of length PAGE_SIZE to report back the LUN mode in ASCII.
+ *
+ * Return: The size of the ASCII string returned in @buf.
+ */
 static ssize_t cxlflash_show_lun_mode(struct device *dev,
 				      struct device_attribute *attr, char *buf)
 {
@@ -614,6 +622,15 @@ static ssize_t cxlflash_show_lun_mode(struct device *dev,
 	return snprintf(buf, PAGE_SIZE, "%u\n", afu->internal_lun);
 }
 
+/**
+ * cxlflash_store_lun_mode() - sets the LUN mode of the host
+ * @dev:	Generic device associated with the host.
+ * @attr:	Device attribute representing the lun mode.
+ * @buf:	Buffer of length PAGE_SIZE containing the LUN mode in ASCII.
+ * @count:	Length of data resizing in @buf.
+ *
+ * Return: The size of the ASCII string returned in @buf.
+ */
 static ssize_t cxlflash_store_lun_mode(struct device *dev,
 				       struct device_attribute *attr,
 				       const char *buf, size_t count)
@@ -634,14 +651,13 @@ static ssize_t cxlflash_store_lun_mode(struct device *dev,
 }
 
 /**
- * cxlflash_show_dev_mode - Show the mode for this device.
- * @dev:        device struct
- * @attr:       device attribute structure
- * @buf:        buffer
+ * cxlflash_show_dev_mode() - presents the current mode of the device
+ * @dev:	Generic device associated with the device.
+ * @attr:	Device attribute representing the device mode.
+ * @buf:	Buffer of length PAGE_SIZE to report back the dev mode in ASCII.
  *
- * Return value:
- *      number of bytes printed to buffer
- **/
+ * Return: The size of the ASCII string returned in @buf.
+ */
 static ssize_t cxlflash_show_dev_mode(struct device *dev,
 				      struct device_attribute *attr, char *buf)
 {
@@ -654,12 +670,8 @@ static ssize_t cxlflash_show_dev_mode(struct device *dev,
 }
 
 /**
- * cxlflash_wait_for_pci_err_recovery - Wait for any PCI error recovery to
- *					complete during probe time
- * @cxlflash:    cxlflash config struct
- *
- * Return value:
- *	None
+ * cxlflash_wait_for_pci_err_recovery() - wait for error recovery during probe
+ * @cxlflash:	Internal structure associated with the host.
  */
 static void cxlflash_wait_for_pci_err_recovery(struct cxlflash *cxlflash)
 {
@@ -671,6 +683,9 @@ static void cxlflash_wait_for_pci_err_recovery(struct cxlflash *cxlflash)
 				   CXLFLASH_PCI_ERROR_RECOVERY_TIMEOUT);
 }
 
+/*
+ * Host attributes
+ */
 static DEVICE_ATTR(port0, S_IRUGO, cxlflash_show_port_status, NULL);
 static DEVICE_ATTR(port1, S_IRUGO, cxlflash_show_port_status, NULL);
 static DEVICE_ATTR(lun_mode, S_IRUGO | S_IWUSR, cxlflash_show_lun_mode,
@@ -683,6 +698,9 @@ static struct device_attribute *cxlflash_host_attrs[] = {
 	NULL
 };
 
+/*
+ * Device attributes
+ */
 static DEVICE_ATTR(mode, S_IRUGO, cxlflash_show_dev_mode, NULL);
 
 static struct device_attribute *cxlflash_dev_attrs[] = {
@@ -690,6 +708,9 @@ static struct device_attribute *cxlflash_dev_attrs[] = {
 	NULL
 };
 
+/*
+ * Host template
+ */
 static struct scsi_host_template driver_template = {
 	.module = THIS_MODULE,
 	.name = CXLFLASH_ADAPTER_NAME,
@@ -713,8 +734,14 @@ static struct scsi_host_template driver_template = {
 	.sdev_attrs = cxlflash_dev_attrs,
 };
 
+/*
+ * Device dependent values
+ */
 static struct dev_dependent_vals dev_corsa_vals = { CXLFLASH_MAX_SECTORS };
 
+/*
+ * PCI device binding table
+ */
 static struct pci_device_id cxlflash_pci_table[] = {
 	{PCI_VENDOR_ID_IBM, PCI_DEVICE_ID_IBM_CORSA,
 	 PCI_ANY_ID, PCI_ANY_ID, 0, 0, (kernel_ulong_t)&dev_corsa_vals},
@@ -726,12 +753,12 @@ MODULE_DEVICE_TABLE(pci, cxlflash_pci_table);
 #endif
 
 /**
- * cxlflash_free_mem - Frees memory allocated for an adapter
- * @cxlflash:    struct cxlflash reference
+ * cxlflash_free_mem() - free memory associated with the AFU
+ * @cxlflash:	Internal structure associated with the host.
  *
- * Return value:
- *      nothing
- **/
+ * As part of draining the AFU command pool, the timers of each
+ * command are ensured to be stopped.
+ */
 static void cxlflash_free_mem(struct cxlflash *cxlflash)
 {
 	int i;
@@ -756,15 +783,12 @@ static void cxlflash_free_mem(struct cxlflash *cxlflash)
 }
 
 /**
- * cxlflash_stoafu - Stop AFU
- * @cxlflash:       struct cxlflash
+ * cxlflash_stop_afu() - stops the AFU command timers and unmaps the MMIO space
+ * @cxlflash:	Internal structure associated with the host.
  *
- * Tear down timers, Unmap the MMIO space
- *
- * Return value:
- *      none
- **/
-static void cxlflash_stoafu(struct cxlflash *cxlflash)
+ * Safe to call with AFU in a partially allocated/initialized state.
+ */
+static void cxlflash_stop_afu(struct cxlflash *cxlflash)
 {
 	int i;
 	struct afu *afu = cxlflash->afu;
@@ -787,12 +811,11 @@ static void cxlflash_stoafu(struct cxlflash *cxlflash)
 }
 
 /**
- * cxlflash_term_mc - Terminate the master context
- * @cxlflash:        struct cxlflash pointer
- * @level:           level to back out from
+ * cxlflash_term_mc() - terminates the master context
+ * @cxlflash:	Internal structure associated with the host.
+ * @level:	Depth of allocation, where to begin waterfall tear down.
  *
- * Returns:
- *      NONE
+ * Safe to call with AFU/MC in partially allocated/initialized state.
  */
 void cxlflash_term_mc(struct cxlflash *cxlflash, enum undo_level level)
 {
@@ -825,26 +848,29 @@ void cxlflash_term_mc(struct cxlflash *cxlflash, enum undo_level level)
 	}
 }
 
+/**
+ * cxlflash_term_afu() - terminates the AFU
+ * @cxlflash:	Internal structure associated with the host.
+ *
+ * Safe to call with AFU/MC in partially allocated/initialized state.
+ */
 static void cxlflash_term_afu(struct cxlflash *cxlflash)
 {
 	cxlflash_term_mc(cxlflash, UNDO_START);
 
 	/* Need to stop timers before unmapping */
 	if (cxlflash->afu)
-		cxlflash_stoafu(cxlflash);
+		cxlflash_stop_afu(cxlflash);
 
 	cxlflash_info("returning");
 }
 
 /**
- * cxlflash_remove - CXLFLASH hot plug remove entry point
- * @pdev:       pci device struct
+ * cxlflash_remove() - PCI entry point to tear down host
+ * @pdev:	PCI device associated with the host.
  *
- * Adapter hot plug remove entry point.
- *
- * Return value:
- *      none
- **/
+ * Safe to use as a cleanup in partially allocated/initialized state.
+ */
 static void cxlflash_remove(struct pci_dev *pdev)
 {
 	struct cxlflash *cxlflash = pci_get_drvdata(pdev);
@@ -879,14 +905,15 @@ static void cxlflash_remove(struct pci_dev *pdev)
 }
 
 /**
- * cxlflash_gb_alloc - Global allocator
- * @cxlflash:       struct cxlflash
+ * cxlflash_gb_alloc() - allocates the AFU and its command pool
+ * @cxlflash:	Internal structure associated with the host.
  *
- * Allocate and initialize per adapter memory.
+ * A partially allocated state remains on failure.
  *
- * Return value:
- *      none
- **/
+ * Return:
+ *	0 on success
+ *	-ENOMEM on failure to allocate memory
+ */
 static int cxlflash_gb_alloc(struct cxlflash *cxlflash)
 {
 	int rc = 0;
@@ -927,14 +954,14 @@ out:
 }
 
 /**
- * cxlflash_init_pci - Initialize PCI
- * @cxlflash:       struct cxlflash
+ * cxlflash_init_pci() - initializes the host as a PCI device
+ * @cxlflash:	Internal structure associated with the host.
  *
- * All PCI setup
- *
- * Return value:
- *      none
- **/
+ * Return:
+ *	0 on success
+ *	-EIO on unable to communicate with device
+ *	A return code from the PCI sub-routines
+ */
 static int cxlflash_init_pci(struct cxlflash *cxlflash)
 {
 	struct pci_dev *pdev = cxlflash->dev;
@@ -1018,6 +1045,14 @@ out_release_regions:
 
 }
 
+/**
+ * cxlflash_init_scsi() - adds the host to the SCSI stack and kicks off host scan
+ * @cxlflash:	Internal structure associated with the host.
+ *
+ * Return:
+ *	0 on success
+ *	A return code from adding the host
+ */
 static int cxlflash_init_scsi(struct cxlflash *cxlflash)
 {
 	struct pci_dev *pdev = cxlflash->dev;
@@ -1039,8 +1074,13 @@ out:
 	return rc;
 }
 
-/* online means the FC link layer has sync and has completed the link
- * layer handshake. It is ready for login to start.
+/**
+ * set_port_online() - transitions the specified host FC port to online state
+ * @fc_regs:	Top of MMIO region defined for specified port.
+ *
+ * The provided MMIO region must be mapped prior to call. Online state means
+ * that the FC link layer has synced, completed the handshaking process, and
+ * is ready for login to start.
  */
 static void set_port_online(volatile u64 *fc_regs)
 {
@@ -1052,6 +1092,12 @@ static void set_port_online(volatile u64 *fc_regs)
 	writeq_be(cmdcfg, &fc_regs[FC_MTIP_CMDCONFIG / 8]);
 }
 
+/**
+ * set_port_offline() - transitions the specified host FC port to offline state
+ * @fc_regs:	Top of MMIO region defined for specified port.
+ *
+ * The provided MMIO region must be mapped prior to call.
+ */
 static void set_port_offline(volatile u64 *fc_regs)
 {
 	u64 cmdcfg;
@@ -1062,8 +1108,20 @@ static void set_port_offline(volatile u64 *fc_regs)
 	writeq_be(cmdcfg, &fc_regs[FC_MTIP_CMDCONFIG / 8]);
 }
 
-/* returns 1 - went online */
-/* wait_port_xxx will timeout when cable is not pluggd in */
+/**
+ * wait_port_online() - waits for the specified host FC port come online
+ * @fc_regs:	Top of MMIO region defined for specified port.
+ * @delay_us:	Number of microseconds to delay between reading port status.
+ * @nretry:	Number of cycles to retry reading port status.
+ *
+ * The provided MMIO region must be mapped prior to call. This will timeout
+ * when the cable is not plugged in.
+ *
+ * Return:
+ *	TRUE (1) when the specified port is online
+ *	FALSE (0) when the specified port fails to come online after timeout
+ *	-EINVAL when @delay_us is less than 1000
+ */
 static int wait_port_online(volatile u64 *fc_regs,
 			    useconds_t delay_us, unsigned int nretry)
 {
@@ -1083,7 +1141,19 @@ static int wait_port_online(volatile u64 *fc_regs,
 	return ((status & FC_MTIP_STATUS_MASK) == FC_MTIP_STATUS_ONLINE);
 }
 
-/* returns 1 - went offline */
+/**
+ * wait_port_offline() - waits for the specified host FC port go offline
+ * @fc_regs:	Top of MMIO region defined for specified port.
+ * @delay_us:	Number of microseconds to delay between reading port status.
+ * @nretry:	Number of cycles to retry reading port status.
+ *
+ * The provided MMIO region must be mapped prior to call.
+ *
+ * Return:
+ *	TRUE (1) when the specified port is offline
+ *	FALSE (0) when the specified port fails to go offline after timeout
+ *	-EINVAL when @delay_us is less than 1000
+ */
 static int wait_port_offline(volatile u64 *fc_regs,
 			     useconds_t delay_us, unsigned int nretry)
 {
@@ -1103,9 +1173,25 @@ static int wait_port_offline(volatile u64 *fc_regs,
 	return ((status & FC_MTIP_STATUS_MASK) == FC_MTIP_STATUS_OFFLINE);
 }
 
-/* this function can block up to a few seconds */
-static int afu_set_wwpn(struct afu *afu,
-			int port, volatile u64 *fc_regs, u64 wwpn)
+/**
+ * afu_set_wwpn() - configures the WWPN for the specified host FC port
+ * @afu:	AFU associated with the host that owns the specified FC port.
+ * @port:	Port number being configured.
+ * @fc_regs:	Top of MMIO region defined for specified port.
+ * @wwpn:	The world-wide-port-number previously discovered for port.
+ *
+ * The provided MMIO region must be mapped prior to call. As part of the
+ * sequence to configure the WWPN, the port is toggled offline and then back
+ * online. This toggling action can cause this routine to delay up to a few
+ * seconds. When configured to use the internal LUN feature of the AFU, a
+ * failure to come online is overridden.
+ *
+ * Return:
+ *	0 when the WWPN is successfully written and the port comes back online
+ *	-1 when the port fails to go offline or come back up online
+ */
+static int afu_set_wwpn(struct afu *afu, int port,
+			volatile u64 *fc_regs, u64 wwpn)
 {
 	int ret = 0;
 
@@ -1142,7 +1228,19 @@ static int afu_set_wwpn(struct afu *afu,
 	return ret;
 }
 
-/* this function can block up to a few seconds */
+/**
+ * afu_link_reset() - resets the specified host FC port
+ * @afu:	AFU associated with the host that owns the specified FC port.
+ * @port:	Port number being configured.
+ * @fc_regs:	Top of MMIO region defined for specified port.
+ *
+ * The provided MMIO region must be mapped prior to call. The sequence to
+ * reset the port involves toggling it offline and then back online. This
+ * action can cause this routine to delay up to a few seconds. An effort
+ * is made to maintain link with the device by switching to host to use
+ * the alternate port exclusively while the reset takes place.
+ * failure to come online is overridden.
+ */
 static void afu_link_reset(struct afu *afu, int port, volatile u64 *fc_regs)
 {
 	u64 port_sel;
@@ -1171,6 +1269,9 @@ static void afu_link_reset(struct afu *afu, int port, volatile u64 *fc_regs)
 	cxlflash_info("returning port_sel=%lld", port_sel);
 }
 
+/*
+ * Asynchronous interrupt information table
+ */
 static const struct asyc_intr_info ainfo[] = {
 	{SISL_ASTATUS_FC0_OTHER, "fc 0: other error", 0,
 		CLR_FC_ERROR | LINK_RESET},
@@ -1194,6 +1295,12 @@ static const struct asyc_intr_info ainfo[] = {
 	{0x0, "", 0, 0}		/* terminator */
 };
 
+/**
+ * find_ainfo() - locates and returns asynchronous interrupt information
+ * @status:	Status code set by AFU on error.
+ *
+ * Return: The located information or NULL when the status code is invalid.
+ */
 static const struct asyc_intr_info *find_ainfo(u64 status)
 {
 	const struct asyc_intr_info *info;
@@ -1205,6 +1312,10 @@ static const struct asyc_intr_info *find_ainfo(u64 status)
 	return NULL;
 }
 
+/**
+ * afu_err_intr_init() - clears and initializes the AFU for error interrupts
+ * @afu:	AFU associated with the host.
+ */
 static void afu_err_intr_init(struct afu *afu)
 {
 	int i;
@@ -1260,6 +1371,13 @@ static void afu_err_intr_init(struct afu *afu)
 	writeq_be(SISL_ISTATUS_MASK, &afu->host_map->intr_mask);
 }
 
+/**
+ * cxlflash_sync_err_irq() - interrupt handler for synchronous errors
+ * @irq:	Interrupt number.
+ * @data:	Private data provided at interrupt registration, the AFU.
+ *
+ * Return: Always return IRQ_HANDLED.
+ */
 static irqreturn_t cxlflash_sync_err_irq(int irq, void *data)
 {
 	struct afu *afu = (struct afu *)data;
@@ -1285,6 +1403,13 @@ cxlflash_sync_err_irq_exit:
 	return IRQ_HANDLED;
 }
 
+/**
+ * cxlflash_rrq_irq() - interrupt handler for read-response queue (normal path)
+ * @irq:	Interrupt number.
+ * @data:	Private data provided at interrupt registration, the AFU.
+ *
+ * Return: Always return IRQ_HANDLED.
+ */
 static irqreturn_t cxlflash_rrq_irq(int irq, void *data)
 {
 	struct afu *afu = (struct afu *)data;
@@ -1320,6 +1445,13 @@ static irqreturn_t cxlflash_rrq_irq(int irq, void *data)
 	return IRQ_HANDLED;
 }
 
+/**
+ * cxlflash_async_err_irq() - interrupt handler for asynchronous errors
+ * @irq:	Interrupt number.
+ * @data:	Private data provided at interrupt registration, the AFU.
+ *
+ * Return: Always return IRQ_HANDLED.
+ */
 static irqreturn_t cxlflash_async_err_irq(int irq, void *data)
 {
 	struct afu *afu = (struct afu *)data;
@@ -1391,9 +1523,11 @@ out:
 	return IRQ_HANDLED;
 }
 
-/*
- * Start the afu context.  This is calling into the generic CXL driver code
- * (except for the contents of the WED).
+/**
+ * cxlflash_start_context() - starts the master context
+ * @cxlflash:	Internal structure associated with the host.
+ *
+ * Return: A success or failure value from CXL services.
  */
 int cxlflash_start_context(struct cxlflash *cxlflash)
 {
@@ -1408,14 +1542,14 @@ int cxlflash_start_context(struct cxlflash *cxlflash)
 }
 
 /**
- * cxlflash_read_vpd - Read the Vital Product Data on the Card.
- * @cxlflash:       struct cxlflash
+ * cxlflash_read_vpd() - obtains the WWPNs from VPD
+ * @cxlflash:	Internal structure associated with the host.
+ * @wwpn:	Array of size NUM_FC_PORTS to pass back WWPNs
  *
- * Read and parse the VPD
- *
- * Return value:
- *      WWPN for each port
- **/
+ * Return:
+ *	0 on success
+ *	-ENODEV when VPD or WWPN keywords not found
+ */
 int cxlflash_read_vpd(struct cxlflash *cxlflash, u64 wwpn[])
 {
 	struct pci_dev *dev = cxlflash->parent_dev;
@@ -1497,11 +1631,10 @@ out:
 }
 
 /**
- * cxlflash_context_reset - perform a context reset
- * @afu:        struct afu pointer
+ * cxlflash_context_reset() - timeout handler for AFU commands
+ * @cmd:	AFU command that timed out.
  *
- * Returns:
- *      NONE
+ * Sends a reset to the AFU.
  */
 void cxlflash_context_reset(struct afu_cmd *cmd)
 {
@@ -1533,11 +1666,11 @@ void cxlflash_context_reset(struct afu_cmd *cmd)
 }
 
 /**
- * init_pcr - Initialize the Provisioning and Control Registers.
- * @cxlflash:        struct cxlflash pointer
+ * init_pcr() - initialize the provisioning and control registers
+ * @cxlflash:	Internal structure associated with the host.
  *
- * Returns:
- *      NONE
+ * Also sets up fast access to the mapped registers and initializes AFU
+ * command fields that never change.
  */
 void init_pcr(struct cxlflash *cxlflash)
 {
@@ -1570,11 +1703,8 @@ void init_pcr(struct cxlflash *cxlflash)
 }
 
 /**
- * init_global - Initialize the AFU Global Registers
- * @cxlflash:        struct cxlflash pointer
- *
- * Returns:
- *      NONE
+ * init_global() - initialize AFU global registers
+ * @cxlflash:	Internal structure associated with the host.
  */
 int init_global(struct cxlflash *cxlflash)
 {
@@ -1656,11 +1786,8 @@ out:
 }
 
 /**
- * cxlflash_start_afu - Start the AFU, in a pristine state
- * @cxlflash:        struct cxlflash pointer
- *
- * Returns:
- *      NONE
+ * cxlflash_start_afu() - initializes and starts the AFU
+ * @cxlflash:	Internal structure associated with the host.
  */
 int cxlflash_start_afu(struct cxlflash *cxlflash)
 {
@@ -1695,11 +1822,13 @@ int cxlflash_start_afu(struct cxlflash *cxlflash)
 }
 
 /**
- * cxlflash_init_mc - setup the master context
- * @cxlflash:        struct cxlflash pointer
+ * cxlflash_init_mc() - create and register as the master context
+ * @cxlflash:	Internal structure associated with the host.
  *
- * Returns:
- *      NONE
+ * Return:
+ *	0 on success
+ *	-ENOMEM when unable to obtain a context from CXL services
+ *	A failure value from CXL services. 
  */
 int cxlflash_init_mc(struct cxlflash *cxlflash)
 {
@@ -1782,6 +1911,18 @@ out:
 	goto ret;
 }
 
+/**
+ * cxlflash_init_afu() - setup as master context and start AFU
+ * @cxlflash:	Internal structure associated with the host.
+ *
+ * This routine is a higher level of control for configuring the
+ * AFU on probe and reset paths.
+ *
+ * Return:
+ *	0 on success
+ *	-ENOMEM when unable to map the AFU MMIO space
+ *	A failure value from internal services.
+ */
 static int cxlflash_init_afu(struct cxlflash *cxlflash)
 {
 	u64 reg;
@@ -1830,13 +1971,22 @@ err1:
 	return rc;
 }
 
-/* do we need to retry AFU_CMDs (sync) on afu_rc = 0x30 ? */
-/* can we not avoid that ? */
-/* not retrying afu timeouts (B_TIMEOUT) */
-/* returns 1 if the cmd should be retried, 0 otherwise */
-/* sets B_ERROR flag based on IOASA */
+/**
+ * cxlflash_check_status() - evaluates the status of an AFU command
+ * @ioasa:	The IOASA of an AFU command.
+ *
+ * Return:
+ *	TRUE (1) when the IOASA contains an error 
+ *	FALSE (0) when the IOASA does not contain an error
+ */
 int cxlflash_check_status(struct sisl_ioasa *ioasa)
 {
+	/* do we need to retry AFU_CMDs (sync) on afu_rc = 0x30 ? */
+	/* can we not avoid that ? */
+	/* not retrying afu timeouts (B_TIMEOUT) */
+	/* returns 1 if the cmd should be retried, 0 otherwise */
+	/* sets B_ERROR flag based on IOASA */
+
 	if (ioasa->ioasc == 0)
 		return 0;
 
@@ -1861,6 +2011,15 @@ int cxlflash_check_status(struct sisl_ioasa *ioasa)
 	return 0;
 }
 
+/**
+ * cxlflash_send_cmd() - sends an AFU command
+ * @afu:	AFU associated with the host.
+ * @cmd:	AFU command to send.
+ *
+ * Return:
+ *	0 on success
+ *	-1 on failure
+ */
 int cxlflash_send_cmd(struct afu *afu, struct afu_cmd *cmd)
 {
 	int nretry = 0;
@@ -1901,6 +2060,11 @@ int cxlflash_send_cmd(struct afu *afu, struct afu_cmd *cmd)
 	return rc;
 }
 
+/**
+ * cxlflash_wait_resp() - polls for a response or timeout to a sent AFU command
+ * @afu:	AFU associated with the host.
+ * @cmd:	AFU command that was sent.
+ */
 void cxlflash_wait_resp(struct afu *afu, struct afu_cmd *cmd)
 {
 	unsigned long lock_flags = 0;
@@ -1924,13 +2088,20 @@ void cxlflash_wait_resp(struct afu *afu, struct afu_cmd *cmd)
 			     cmd->sa.rc.scsi_rc, cmd->sa.rc.fc_rc);
 }
 
-/*
- * afu_sync can be called from interrupt thread and the main processing
- * thread. Caller is responsible for any serialization.
- * Also, it can be called even before/during discovery, so we must use
- * a dedicated cmd not used by discovery.
+/**
+ * cxlflash_afu_sync() - builds and sends an AFU sync command
+ * @afu:	AFU associated with the host.
+ * @ctx_hndl_u:	Identifies context requesting sync.
+ * @res_hndl_u:	Identifies resource requesting sync.
+ * @mode:	Type of sync to issue (lightweight, heavyweight, global).
  *
- * AFU takes only 1 sync cmd at a time.
+ * The AFU can only take 1 sync command at a time. This routine can be
+ * called from both interrupt and process context. The caller is responsible
+ * for any serialization.
+ *
+ * Return:
+ *	0 on success
+ *	-1 on failure
  */
 int cxlflash_afu_sync(struct afu *afu, ctx_hndl_t ctx_hndl_u,
 		      res_hndl_t res_hndl_u, u8 mode)
@@ -1994,6 +2165,14 @@ out:
 	return rc;
 }
 
+/**
+ * cxlflash_afu_reset() - resets the AFU
+ * @cxlflash:	Internal structure associated with the host.
+ *
+ * Return:
+ *	0 on success
+ *	A failure value from internal services.
+ */
 int cxlflash_afu_reset(struct cxlflash *cxlflash)
 {
 	int rc = 0;
@@ -2011,15 +2190,12 @@ int cxlflash_afu_reset(struct cxlflash *cxlflash)
 }
 
 /**
- * cxlflash_worker_thread - Worker thread
- * @work:               work queue pointer
+ * cxlflash_worker_thread() - work thread handler for the AFU
+ * @work:	Work structure contained within cxlflash associated with host.
  *
- * For now, it performs a link reset which cannot be performed
- * from the interrupt context as it might take a few seconds to complete.
- *
- * Return value:
- *      nothing
- **/
+ * Handles link reset which cannot be performed on interrupt context due to
+ * blocking up to a few seconds.
+ */
 static void cxlflash_worker_thread(struct work_struct *work)
 {
 	struct cxlflash *cxlflash =
@@ -2045,13 +2221,12 @@ static void cxlflash_worker_thread(struct work_struct *work)
 }
 
 /**
- * cxlflash_probe - Adapter hot plug add entry point
- * @pdev:       pci device struct
- * @dev_id:     pci device id
+ * cxlflash_probe() - PCI entry point to add host
+ * @pdev:	PCI device associated with the host.
+ * @dev_id:	PCI device id associated with device.
  *
- * Return value:
- *      0 on success / non-zero on failure
- **/
+ * Return: 0 on success / non-zero on failure
+ */
 static int cxlflash_probe(struct pci_dev *pdev,
 			  const struct pci_device_id *dev_id)
 {
@@ -2157,6 +2332,9 @@ out_remove:
 	goto out;
 }
 
+/*
+ * PCI device structure
+ */
 static struct pci_driver cxlflash_driver = {
 	.name = CXLFLASH_NAME,
 	.id_table = cxlflash_pci_table,
@@ -2164,6 +2342,11 @@ static struct pci_driver cxlflash_driver = {
 	.remove = cxlflash_remove,
 };
 
+/**
+ * init_cxlflash() - module entry point
+ *
+ * Return: 0 on success / non-zero on failure
+ */
 static int __init init_cxlflash(void)
 {
 	cxlflash_info("IBM Power CXL Flash Adapter version: %s %s",
@@ -2182,6 +2365,9 @@ static int __init init_cxlflash(void)
 	return pci_register_driver(&cxlflash_driver);
 }
 
+/**
+ * exit_cxlflash() - module exit point
+ */
 static void __exit exit_cxlflash(void)
 {
 	cxlflash_lun_terminate(&global);
