@@ -14,6 +14,7 @@
 
 #include <linux/delay.h>
 #include <linux/file.h>
+#include <linux/moduleparam.h>
 #include <linux/syscalls.h>
 #include <misc/cxl.h>
 #include <asm/unaligned.h>
@@ -26,6 +27,14 @@
 #include "common.h"
 
 extern struct cxlflash_global global;
+
+static u32 ws = 0;
+
+/*
+ * This is a temporary module parameter
+ */
+module_param_named(ws, ws, uint, 0);
+MODULE_PARM_DESC(ws, " 1 = Perform WRITE_SAME16 per chunk on VLUN shrink");
 
 static void marshall_virt_to_resize(struct dk_cxlflash_uvirtual *virt,
 				    struct dk_cxlflash_resize *resize)

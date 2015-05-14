@@ -16,7 +16,6 @@
 #define _CXLFLASH_SUPERPIPE_H
 
 extern u32 internal_lun;
-extern u32 ws;
 
 /*----------------------------------------------------------------------------*/
 /* Constants                                                                  */
