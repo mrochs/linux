@@ -859,8 +859,11 @@ static int shrink_lxt(struct afu *afu,
 	/* free LBAs allocated to freed chunks */
 	mutex_lock(&blka->mutex);
 	for (i = delta - 1; i >= 0; i--) {
-		aun = (lxt_old[*act_new_size + i].rlba_base >>
-		       MC_CHUNK_SHIFT);
+		/* Mask the higher 48 bits before shifting, even though
+		 * it is a noop
+		 */
+		aun = ((lxt_old[*act_new_size + i].rlba_base &
+			SISL_ASTATUS_MASK) >> MC_CHUNK_SHIFT);
 		if (ws)
 			write_same16(afu, lun_info, aun, MC_CHUNK_SIZE);
 		ba_free(&blka->ba_lun, aun);

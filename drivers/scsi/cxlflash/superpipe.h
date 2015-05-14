@@ -43,8 +43,6 @@ extern u32 ws;
 #define MC_RHT_NMASK      16	/* in bits */
 #define MC_CHUNK_SIZE     (1 << MC_RHT_NMASK)	/* in LBAs, see mclient.h */
 #define MC_CHUNK_SHIFT    MC_RHT_NMASK	/* shift to go from LBA to chunk# */
-#define MC_CHUNK_OFF_MASK (MC_CHUNK_SIZE - 1)	/* apply to LBA get offset
-						   into a chunk */
 #define LXT_LUNIDX_SHIFT  8	/* LXT entry, shift for LUN index */
 
 /* LXT tables are allocated dynamically in groups. This is done to
