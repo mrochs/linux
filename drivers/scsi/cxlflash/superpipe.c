@@ -413,16 +413,23 @@ void cxlflash_lun_terminate(struct cxlflash_global *globalp)
 	spin_unlock_irqrestore(&globalp->slock, flags);
 }
 
+/*
+ * NOTE: despite the name pid, in linux, current->pid actually refers
+ * to the lightweight process id (tid) and can change if the process is
+ * multithreaded. The tgid remains constant for the process and only changes
+ * when the process of fork. For all intents and purposes, think of tgid
+ * as a pid in the traditional sense.
+ */
 static struct ctx_info *get_context(struct cxlflash *cxlflash, u64 ctxid,
 				    struct lun_info *lun_info, bool clone_path)
 {
 	struct ctx_info *ctx_info = NULL;
 	struct lun_access *lun_access = NULL;
 	bool found = false;
-	pid_t pid = current->pid, ctxpid = 0;
+	pid_t pid = current->tgid, ctxpid = 0;
 
 	if (unlikely(clone_path))
-		pid = current->parent->pid;
+		pid = current->parent->tgid;
 
 	if (likely(ctxid < MAX_CONTEXT)) {
 		ctx_info = cxlflash->ctx_info[ctxid];
