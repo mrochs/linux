@@ -437,7 +437,7 @@ static struct ctx_info *get_context(struct cxlflash *cxlflash, u64 ctxid,
 			goto out;
 
 		ctxpid = ctx_info->pid;
-		if (checkpid && (pid != ctxpid)) {
+		if (pid != ctxpid) {
 			ctx_info = NULL;
 			goto out;
 		}

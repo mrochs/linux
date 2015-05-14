@@ -34,7 +34,6 @@ MODULE_AUTHOR("Matthew R. Ochs <mrochs@linux.vnet.ibm.com>");
 MODULE_LICENSE("GPL");
 
 u32 internal_lun = 0;
-u32 checkpid = 0;
 u32 ws = 0;
 
 struct cxlflash_global global;
@@ -57,17 +56,6 @@ MODULE_PARM_DESC(lun_mode, " 0 = external LUN[s](default),\n"
 		 " 2 = internal LUN (1 x 64K, 4K blocks, id 0),\n"
 		 " 3 = internal LUN (2 x 32K, 512B blocks, ids 0,1),\n"
 		 " 4 = internal LUN (2 x 32K, 4K blocks, ids 0,1)");
-
-/*
- * This is a temporary module parameter
- *
- * Contexts are only valid under the process that created them.
- * This tunable enables logic to enforce this behavior. It is
- * currently defaulted to disable as there are some tests that
- * violate this rule. This will be removed in the near future.
- */
-module_param_named(checkpid, checkpid, uint, 0);
-MODULE_PARM_DESC(checkpid, " 1 = Enforce PID/context ownership policy");
 
 /*
  * This is a temporary module parameter
