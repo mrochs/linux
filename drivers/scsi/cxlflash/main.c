@@ -460,51 +460,6 @@ static int cxlflash_eh_host_reset_handler(struct scsi_cmnd *scp)
 }
 
 /**
- * cxlflash_slave_alloc - Allocate a per LUN structure
- * @sdev:       struct scsi_device device to configure
- *
- * Returns:
- *      0 on success / -ENOMEM when memory allocation fails
- **/
-static int cxlflash_slave_alloc(struct scsi_device *sdev)
-{
-	int rc = 0;
-	rc = cxlflash_alloc_lun(sdev);
-
-	cxlflash_info("returning sdev %p rc=%d", sdev, rc);
-	return rc;
-}
-
-/**
- * cxlflash_slave_configure - Configure the device
- * @sdev:       struct scsi_device device to configure
- *
- * Store the lun_id field, and program the LUN mapping table on the AFU.
- *
- * Returns:
- *      0
- **/
-static int cxlflash_slave_configure(struct scsi_device *sdev)
-{
-	struct Scsi_Host *shost = sdev->host;
-
-	cxlflash_info("id = %d/%d/%d/%llu", shost->host_no, sdev->channel,
-		      sdev->id, sdev->lun);
-
-	cxlflash_init_lun(sdev);
-	return 0;
-}
-
-static void cxlflash_slave_destroy(struct scsi_device *sdev)
-{
-	void *lun_info = (void *)sdev->hostdata;
-
-	cxlflash_info("lun_info=%p", lun_info);
-
-	return;
-}
-
-/**
  * cxlflash_change_queue_depth() - change the queue depth for the device
  * @sdev:	SCSI device destined for queue depth change.
  * @qdepth:	Requested queue depth value to set.

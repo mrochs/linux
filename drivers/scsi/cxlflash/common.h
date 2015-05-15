@@ -243,5 +243,8 @@ int cxlflash_alloc_lun(struct scsi_device *);
 void cxlflash_init_lun(struct scsi_device *);
 void cxlflash_list_init(void);
 void cxlflash_list_terminate(void);
+int cxlflash_slave_alloc(struct scsi_device *);
+int cxlflash_slave_configure(struct scsi_device *);
+void cxlflash_slave_destroy(struct scsi_device *);
 #endif /* ifndef _CXLFLASH_COMMON_H */
 
