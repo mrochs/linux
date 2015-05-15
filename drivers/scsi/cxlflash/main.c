@@ -721,9 +721,7 @@ static struct pci_device_id cxlflash_pci_table[] = {
 	{}
 };
 
-#if 0 /* Temporarily disable auto-load */
 MODULE_DEVICE_TABLE(pci, cxlflash_pci_table);
-#endif
 
 /**
  * cxlflash_free_mem() - free memory associated with the AFU
