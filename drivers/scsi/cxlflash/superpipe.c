@@ -84,7 +84,7 @@ static struct lun_info *lookup_lun(struct scsi_device *sdev, __u8 *wwid)
 	spin_unlock_irqrestore(&global.slock, flags);
 
 out:
-	cxlflash_info("returning %p", lun_info);
+	cxlflash_dbg("returning %p", lun_info);
 	return lun_info;
 }
 
@@ -149,7 +149,7 @@ int cxlflash_slave_alloc(struct scsi_device *sdev)
 	int rc = 0;
 	rc = cxlflash_alloc_lun(sdev);
 
-	cxlflash_info("returning sdev %p rc=%d", sdev, rc);
+	cxlflash_dbg("returning sdev %p rc=%d", sdev, rc);
 	return rc;
 }
 
@@ -177,7 +177,7 @@ void cxlflash_slave_destroy(struct scsi_device *sdev)
 {
 	void *lun_info = (void *)sdev->hostdata;
 
-	cxlflash_info("lun_info=%p", lun_info);
+	cxlflash_dbg("lun_info=%p", lun_info);
 
 	return;
 }

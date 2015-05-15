@@ -748,7 +748,7 @@ void cxlflash_term_mc(struct cxlflash *cxlflash, enum undo_level level)
 	struct afu *afu = cxlflash->afu;
 
 	if (!afu || !cxlflash->mcctx) {
-		cxlflash_info("returning from term_mc with NULL afu or MC");
+		cxlflash_err("returning from term_mc with NULL afu or MC");
 		return;
 	}
 
@@ -756,18 +756,18 @@ void cxlflash_term_mc(struct cxlflash *cxlflash, enum undo_level level)
 	case UNDO_START:
 		cxl_stop_context(cxlflash->mcctx);
 	case UNMAP_THREE:
-		cxlflash_info("before unmap 3");
+		cxlflash_dbg("before unmap 3");
 		cxl_unmap_afu_irq(cxlflash->mcctx, 3, afu);
 	case UNMAP_TWO:
-		cxlflash_info("before unmap 2");
+		cxlflash_dbg("before unmap 2");
 		cxl_unmap_afu_irq(cxlflash->mcctx, 2, afu);
 	case UNMAP_ONE:
-		cxlflash_info("before unmap 1");
+		cxlflash_dbg("before unmap 1");
 		cxl_unmap_afu_irq(cxlflash->mcctx, 1, afu);
 	case FREE_IRQ:
-		cxlflash_info("before cxl_free_afu_irqs");
+		cxlflash_dbg("before cxl_free_afu_irqs");
 		cxl_free_afu_irqs(cxlflash->mcctx);
-		cxlflash_info("before cxl_release_context");
+		cxlflash_dbg("before cxl_release_context");
 	case RELEASE_CONTEXT:
 		cxl_release_context(cxlflash->mcctx);
 		cxlflash->mcctx = NULL;
@@ -788,7 +788,7 @@ static void cxlflash_term_afu(struct cxlflash *cxlflash)
 	if (cxlflash->afu)
 		cxlflash_stop_afu(cxlflash);
 
-	cxlflash_info("returning");
+	cxlflash_dbg("returning");
 }
 
 /**
@@ -801,7 +801,7 @@ static void cxlflash_remove(struct pci_dev *pdev)
 {
 	struct cxlflash *cxlflash = pci_get_drvdata(pdev);
 
-	cxlflash_dev_err(&pdev->dev, "enter cxlflash_remove!");
+	cxlflash_dev_dbg(&pdev->dev, "enter cxlflash_remove!");
 
 	while (cxlflash->tmf_active)
 		wait_event(cxlflash->tmf_wait_q, !cxlflash->tmf_active);
@@ -809,7 +809,7 @@ static void cxlflash_remove(struct pci_dev *pdev)
 	switch (cxlflash->init_state) {
 	case INIT_STATE_SCSI:
 		scsi_remove_host(cxlflash->host);
-		cxlflash_dev_err(&pdev->dev, "after scsi_remove_host!");
+		cxlflash_dev_dbg(&pdev->dev, "after scsi_remove_host!");
 		scsi_host_put(cxlflash->host);
 		cxlflash_dev_dbg(&pdev->dev, "after scsi_host_put!");
 		/* Fall through */
@@ -825,7 +825,7 @@ static void cxlflash_remove(struct pci_dev *pdev)
 		break;
 	}
 
-	cxlflash_dbg("returning");
+	cxlflash_info("returning");
 }
 
 /**
@@ -943,7 +943,7 @@ static int cxlflash_init_pci(struct cxlflash *cxlflash)
 	}
 
 out:
-	cxlflash_info("returning rc=%d", rc);
+	cxlflash_dbg("returning rc=%d", rc);
 	return rc;
 
 cleanup_nolog:
@@ -982,7 +982,7 @@ static int cxlflash_init_scsi(struct cxlflash *cxlflash)
 	scsi_scan_host(cxlflash->host);
 
 out:
-	cxlflash_info("returning rc=%d", rc);
+	cxlflash_dbg("returning rc=%d", rc);
 	return rc;
 }
 
@@ -1135,7 +1135,7 @@ static int afu_set_wwpn(struct afu *afu, int port,
 		}
 	}
 
-	cxlflash_info("returning rc=%d", ret);
+	cxlflash_dbg("returning rc=%d", ret);
 
 	return ret;
 }
@@ -1259,11 +1259,11 @@ static void afu_err_intr_init(struct afu *afu)
 
 	/* Clear/Set internal lun bits */
 	reg = readq_be(&afu->afu_map->global.fc_regs[0][FC_CONFIG2 / 8]);
-	cxlflash_info("ilun p0 = %016llX", reg);
+	cxlflash_dbg("ilun p0 = %016llX", reg);
 	reg &= SISL_FC_INTERNAL_MASK;
 	if (afu->internal_lun)
 		reg |= ((u64)(afu->internal_lun - 1) << SISL_FC_INTERNAL_SHIFT);
-	cxlflash_info("ilun p0 = %016llX", reg);
+	cxlflash_dbg("ilun p0 = %016llX", reg);
 	writeq_be(reg, &afu->afu_map->global.fc_regs[0][FC_CONFIG2 / 8]);
 
 	/* now clear FC errors */
@@ -1449,7 +1449,7 @@ int cxlflash_start_context(struct cxlflash *cxlflash)
 			       cxlflash->afu->work.work_element_descriptor,
 			       NULL);
 
-	cxlflash_info("returning rc=%d", rc);
+	cxlflash_dbg("returning rc=%d", rc);
 	return rc;
 }
 
@@ -1729,7 +1729,7 @@ int cxlflash_start_afu(struct cxlflash *cxlflash)
 
 	rc = init_global(cxlflash);
 
-	cxlflash_info("returning rc=%d", rc);
+	cxlflash_dbg("returning rc=%d", rc);
 	return rc;
 }
 
@@ -1816,7 +1816,7 @@ int cxlflash_init_mc(struct cxlflash *cxlflash)
 		goto out;
 	}
 ret:
-	cxlflash_info("returning rc=%d", rc);
+	cxlflash_dbg("returning rc=%d", rc);
 	return rc;
 out:
 	cxlflash_term_mc(cxlflash, level);
@@ -1879,7 +1879,7 @@ static int cxlflash_init_afu(struct cxlflash *cxlflash)
 	afu_err_intr_init(cxlflash->afu);
 
 err1:
-	cxlflash_info("returning rc=%d", rc);
+	cxlflash_dbg("returning rc=%d", rc);
 	return rc;
 }
 
@@ -2192,7 +2192,7 @@ static int cxlflash_probe(struct pci_dev *pdev,
 	cxlflash->init_state = INIT_STATE_SCSI;
 
 out:
-	cxlflash_info("returning rc=%d", rc);
+	cxlflash_dbg("returning rc=%d", rc);
 	return rc;
 
 out_remove:
