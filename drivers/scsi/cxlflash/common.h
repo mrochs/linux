@@ -247,6 +247,7 @@ void cxlflash_cmd_checkin(struct afu_cmd *);
 int cxlflash_afu_sync(struct afu *, ctx_hndl_t, res_hndl_t, u8);
 int cxlflash_alloc_lun(struct scsi_device *);
 void cxlflash_init_lun(struct scsi_device *);
+void cxlflash_list_init(void);
 void cxlflash_list_terminate(void);
 #endif /* ifndef _CXLFLASH_COMMON_H */
 

@@ -33,7 +33,6 @@ MODULE_AUTHOR("Manoj N. Kumar <manoj@linux.vnet.ibm.com>");
 MODULE_AUTHOR("Matthew R. Ochs <mrochs@linux.vnet.ibm.com>");
 MODULE_LICENSE("GPL");
 
-struct cxlflash_global global;
 
 /**
  * cxlflash_cmd_checkout() - checks out an AFU command
@@ -2283,8 +2282,7 @@ static int __init init_cxlflash(void)
 	cxlflash_info("IBM Power CXL Flash Adapter version: %s %s",
 		      CXLFLASH_DRIVER_VERSION, CXLFLASH_DRIVER_DATE);
 
-	INIT_LIST_HEAD(&global.luns);
-	spin_lock_init(&global.slock);
+	cxlflash_list_init();
 
 	return pci_register_driver(&cxlflash_driver);
 }

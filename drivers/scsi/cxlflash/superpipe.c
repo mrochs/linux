@@ -26,7 +26,7 @@
 #include "common.h"
 #include "superpipe.h"
 
-extern struct cxlflash_global global;
+struct cxlflash_global global;
 
 static void marshall_det_to_rele(struct dk_cxlflash_detach *detach,
 				 struct dk_cxlflash_release *release)
@@ -135,6 +135,12 @@ static void ba_terminate(struct ba_lun *ba_lun)
 		kfree(lun_info);
 		ba_lun->ba_lun_handle = NULL;
 	}
+}
+
+void cxlflash_list_init()
+{
+	INIT_LIST_HEAD(&global.luns);
+	spin_lock_init(&global.slock);
 }
 
 void cxlflash_list_terminate()
