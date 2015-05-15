@@ -142,6 +142,12 @@ struct lun_access {
 	struct list_head list;
 };
 
+struct cxlflash_global {
+	spinlock_t slock;
+	struct list_head luns;  /* list of lun_info structs */
+};
+
+
 int ba_init(struct ba_lun *);
 
 void marshall_virt_to_resize(struct dk_cxlflash_uvirtual *, struct dk_cxlflash_resize *);
