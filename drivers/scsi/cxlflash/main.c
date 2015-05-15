@@ -189,8 +189,6 @@ static void process_cmd_err(struct afu_cmd *cmd, struct scsi_cmnd *scp)
 			scp->result = (DID_ERROR << 16);
 		}
 	}
-
-	return;
 }
 
 /**
@@ -417,7 +415,7 @@ static int cxlflash_eh_device_reset_handler(struct scsi_cmnd *scp)
 		     get_unaligned_be32(&((u32 *)scp->cmnd)[2]),
 		     get_unaligned_be32(&((u32 *)scp->cmnd)[3]));
 
-	scp->result = (DID_OK << 16);;
+	scp->result = (DID_OK << 16);
 	cxlflash_send_tmf(afu, scp, TMF_LUN_RESET);
 
 	cxlflash_info("returning rc=%d", rc);
@@ -448,7 +446,7 @@ static int cxlflash_eh_host_reset_handler(struct scsi_cmnd *scp)
 		     get_unaligned_be32(&((u32 *)scp->cmnd)[2]),
 		     get_unaligned_be32(&((u32 *)scp->cmnd)[3]));
 
-	scp->result = (DID_OK << 16);;
+	scp->result = (DID_OK << 16);
 	rcr = cxlflash_afu_reset(cxlflash);
 	if (rcr == 0)
 		rc = SUCCESS;
@@ -589,7 +587,7 @@ static ssize_t cxlflash_store_lun_mode(struct device *dev,
 static ssize_t cxlflash_show_dev_mode(struct device *dev,
 				      struct device_attribute *attr, char *buf)
 {
-        struct scsi_device *sdev = to_scsi_device(dev);
+	struct scsi_device *sdev = to_scsi_device(dev);
 	void *lun_info = (void *)sdev->hostdata;
 	char *legacy = "legacy",
 	     *superpipe = "superpipe";
@@ -704,8 +702,6 @@ static void cxlflash_free_mem(struct cxlflash *cxlflash)
 			   get_order(sizeof(struct afu)));
 		cxlflash->afu = NULL;
 	}
-
-	return;
 }
 
 /**
@@ -855,7 +851,7 @@ static int cxlflash_gb_alloc(struct cxlflash *cxlflash)
 	cxlflash->afu->back = cxlflash;
 	cxlflash->afu->afu_map = NULL;
 
-	for (i = 0; i < CXLFLASH_NUM_CMDS; buf+=CMD_BUFSIZE, i++) {
+	for (i = 0; i < CXLFLASH_NUM_CMDS; buf += CMD_BUFSIZE, i++) {
 		if (!((u64)buf & (PAGE_SIZE - 1))) {
 			buf = (void *)__get_free_page(GFP_KERNEL | __GFP_ZERO);
 			if (unlikely(!buf)) {
@@ -1112,7 +1108,7 @@ static int afu_set_wwpn(struct afu *afu, int port,
 	if (!wait_port_offline(fc_regs, FC_PORT_STATUS_RETRY_INTERVAL_US,
 			       FC_PORT_STATUS_RETRY_CNT)) {
 		cxlflash_dbg("wait on port %d to go offline timed out", port);
-		ret = -1;	/* but continue on to leave the port back online */
+		ret = -1; /* but continue on to leave the port back online */
 	}
 
 	if (ret == 0)
@@ -1389,10 +1385,9 @@ static irqreturn_t cxlflash_async_err_irq(int irq, void *data)
 
 	/* check each bit that is on */
 	for (i = 0; reg_unmasked; i++, reg_unmasked = (reg_unmasked >> 1)) {
-		if ((reg_unmasked & 0x1) == 0 ||
-		    (info = find_ainfo(1ull << i)) == NULL) {
+		info = find_ainfo(1ULL << i);
+		if ((reg_unmasked & 0x1) || !info)
 			continue;
-		}
 
 		cxlflash_err("%s, fc_status 0x%08llx", info->desc,
 			     readq_be(&global->fc_regs
@@ -1650,9 +1645,7 @@ int init_global(struct cxlflash *cxlflash)
 		/* only use port 0 */
 		writeq_be(0x1, &afu->afu_map->global.regs.afu_port_sel);
 		num_ports = NUM_FC_PORTS - 1;
-	}
-	else
-	{
+	} else {
 		writeq_be(0x3, &afu->afu_map->global.regs.afu_port_sel);
 		num_ports = NUM_FC_PORTS;
 	}

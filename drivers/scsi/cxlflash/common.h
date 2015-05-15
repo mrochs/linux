@@ -44,7 +44,7 @@
 #define CXLFLASH_MAX_CMDS               16
 #define CXLFLASH_MAX_CMDS_PER_LUN       CXLFLASH_MAX_CMDS
 
-#define NOT_POW2(_x) ((_x) & ((_x) & ((_x) -1)))
+#define NOT_POW2(_x) ((_x) & ((_x) & ((_x) - 1)))
 #if NOT_POW2(CXLFLASH_NUM_CMDS)
 #error "CXLFLASH_NUM_CMDS is not a power of 2!"
 #endif
@@ -109,11 +109,11 @@ enum cxlflash_init_state {
  * (context + AFU).
  */
 struct ctx_info {
-	volatile struct sisl_ctrl_map *ctrl_map;	/* initialized at startup */
-	struct sisl_rht_entry *rht_start;	/* 1 page (req'd for alignment),
-						   alloc/free on attach/detach */
+	volatile struct sisl_ctrl_map *ctrl_map; /* initialized at startup */
+	struct sisl_rht_entry *rht_start; /* 1 page (req'd for alignment),
+					     alloc/free on attach/detach */
 	u32 rht_out;		/* Number of checked out RHT entries */
-	u32 rht_perms;		/* User-defined (@attach) permissions for RHT entries */
+	u32 rht_perms;		/* User-defined permissions for RHT entries */
 	struct lun_info **rht_lun; /* Mapping of RHT entries to LUNs */
 
 	struct cxl_ioctl_start_work work;
@@ -177,7 +177,7 @@ struct afu_cmd {
 	u8 internal:1;
 	u8 sync:1;
 
-} __attribute__ ((aligned(cache_line_size())));
+} __aligned(cache_line_size());
 
 struct afu {
 	/* Stuff requiring alignment go first. */
@@ -205,8 +205,8 @@ struct afu {
 	int afu_fd;
 	struct cxl_ioctl_start_work work;
 	volatile struct cxlflash_afu_map *afu_map;	/* entire MMIO map */
-	volatile struct sisl_host_map *host_map;	/* master's sislite host map */
-	volatile struct sisl_ctrl_map *ctrl_map;	/* master's control map */
+	volatile struct sisl_host_map *host_map;	/* MC host map */
+	volatile struct sisl_ctrl_map *ctrl_map;	/* MC control map */
 
 	ctx_hndl_t ctx_hndl;	/* master's context handle */
 	u64 *hrrq_start;
@@ -223,7 +223,7 @@ struct afu {
 
 	struct cxlflash *back;	/* Pointer back to parent cxlflash */
 
-} __attribute__ ((aligned(PAGE_SIZE_4K)));
+} __aligned(PAGE_SIZE_4K);
 
 static inline u64 lun_to_lunid(u64 lun)
 {

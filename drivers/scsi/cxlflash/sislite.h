@@ -99,7 +99,7 @@ struct sisl_rc {
 						 */
 #define SISL_AFU_RC_LXT_RW_PERM           0x15u	/* no RW perms, user error */
 
-#define SISL_AFU_RC_NOT_XLATE_HOST        0x1au	/* possible when master exited */
+#define SISL_AFU_RC_NOT_XLATE_HOST        0x1au	/* possible if master exited */
 
 	/* NO_CHANNELS means the FC ports selected by dest_port in
 	 * IOARCB or in the LXT entry are down when the AFU tried to select
@@ -121,8 +121,8 @@ struct sisl_rc {
 
 	u8 fc_rc;		/* retry */
 	/*
-	 * We should only see fc_rc=0x57 (LINKDOWN) or 0x54(NOLOGI)
-	 * for commands that are in flight when a link goes down or is logged out.
+	 * We should only see fc_rc=0x57 (LINKDOWN) or 0x54(NOLOGI) for
+	 * commands that are in flight when a link goes down or is logged out.
 	 * If the link is down or logged out before AFU selects the port, either
 	 * it will choose the other port or we will get afu_rc=0x20 (no_channel)
 	 * if there is no valid port to use.
@@ -136,20 +136,19 @@ struct sisl_rc {
 	 * So it maybe retried once and reset the link if it happens again.
 	 * The link can also be reset on the CRC error threshold interrupt.
 	 */
-#define SISL_FC_RC_ABORTPEND              0x52	/* exchange timeout or abort request */
-#define SISL_FC_RC_WRABORTPEND            0x53	/* due to write XFER_RDY invalid */
-#define SISL_FC_RC_NOLOGI                 0x54	/* port not logged in, in-flight cmds */
-#define SISL_FC_RC_NOEXP                  0x55	/* FC protocol error or HW bug */
-#define SISL_FC_RC_INUSE                  0x56	/* tag already in use, HW bug */
-#define SISL_FC_RC_LINKDOWN               0x57	/* link down, in-flight cmds */
-#define SISL_FC_RC_ABORTOK                0x58	/* pending abort completed w/success */
-#define SISL_FC_RC_ABORTFAIL              0x59	/* pending abort completed w/fail */
-#define SISL_FC_RC_RESID                  0x5A	/* ioasa underrun/overrun flags set */
-#define SISL_FC_RC_RESIDERR               0x5B	/* actual data len does not match SCSI
-						   reported len, possbly due to dropped
-						   frames */
-#define SISL_FC_RC_TGTABORT               0x5C	/* command aborted by target */
-
+#define SISL_FC_RC_ABORTPEND	0x52	/* exchange timeout or abort request */
+#define SISL_FC_RC_WRABORTPEND	0x53	/* due to write XFER_RDY invalid */
+#define SISL_FC_RC_NOLOGI	0x54	/* port not logged in, in-flight cmds */
+#define SISL_FC_RC_NOEXP	0x55	/* FC protocol error or HW bug */
+#define SISL_FC_RC_INUSE	0x56	/* tag already in use, HW bug */
+#define SISL_FC_RC_LINKDOWN	0x57	/* link down, in-flight cmds */
+#define SISL_FC_RC_ABORTOK	0x58	/* pending abort completed w/success */
+#define SISL_FC_RC_ABORTFAIL	0x59	/* pending abort completed w/fail */
+#define SISL_FC_RC_RESID	0x5A	/* ioasa underrun/overrun flags set */
+#define SISL_FC_RC_RESIDERR	0x5B	/* actual data len does not match SCSI
+					   reported len, possbly due to dropped
+					   frames */
+#define SISL_FC_RC_TGTABORT	0x5C	/* command aborted by target */
 };
 
 #define SISL_SENSE_DATA_LEN     20	/* Sense data length         */
@@ -170,14 +169,14 @@ struct sisl_ioasa {
 	/* when afu_rc=0x04, 0x14, 0x31 (_xxx_DMA_ERR):
 	 * afu_exta contains PSL response code. Useful codes are:
 	 */
-#define SISL_AFU_DMA_ERR_PAGE_IN      0x0A	/* AFU_retry_on_pagein SW_Implication
+#define SISL_AFU_DMA_ERR_PAGE_IN	0x0A	/* AFU_retry_on_pagein Action
 						 *  Enabled            N/A
 						 *  Disabled           retry
 						 */
-#define SISL_AFU_DMA_ERR_INVALID_EA   0x0B	/* this is a hard error
-						 * afu_rc              SW_Implication
-						 * 0x04, 0x14          Indicates master exit.
-						 * 0x31                user error.
+#define SISL_AFU_DMA_ERR_INVALID_EA	0x0B	/* this is a hard error
+						 * afu_rc	Implies
+						 * 0x04, 0x14	master exit.
+						 * 0x31         user error.
 						 */
 	/* when afu rc=0x20 (no channels):
 	 * afu_extra bits [4:5]: available portmask,  [6:7]: requested portmask.
@@ -203,8 +202,9 @@ struct sisl_ioasa {
 struct sisl_host_map {
 	__be64 endian_ctrl;
 	__be64 intr_status;	/* this sends LISN# programmed in ctx_ctrl.
-				 * Only recovery in a PERM_ERR is a context exit since
-				 * there is no way to tell which command caused the error.
+				 * Only recovery in a PERM_ERR is a context
+				 * exit since there is no way to tell which
+				 * command caused the error.
 				 */
 #define SISL_ISTATUS_PERM_ERR_CMDROOM    0x0010ull	/* b59, user error */
 #define SISL_ISTATUS_PERM_ERR_RCB_READ   0x0008ull	/* b60, user error */
@@ -213,11 +213,13 @@ struct sisl_host_map {
 	/* Page in wait accessing RCB/IOASA/RRQ is reported in b63.
 	 * Same error in data/LXT/RHT access is reported via IOASA.
 	 */
-#define SISL_ISTATUS_TEMP_ERR_PAGEIN     0x0001ull	/* b63,  can be generated
-							 * only when AFU auto retry is
-							 * disabled. If user can determine
-							 * the command that caused the error,
-							 * it can be retried.
+#define SISL_ISTATUS_TEMP_ERR_PAGEIN     0x0001ull	/* b63, can be generated
+							 * only when AFU auto
+							 * retry is disabled.
+							 * If user can determine
+							 * the command that
+							 * caused the error, it
+							 * can be retried.
 							 */
 #define SISL_ISTATUS_UNMASK  (0x001Full)	/* 1 means unmasked */
 #define SISL_ISTATUS_MASK    ~(SISL_ISTATUS_UNMASK)	/* 1 means masked */
@@ -239,15 +241,15 @@ struct sisl_ctrl_map {
 	/* both cnt & ctx_id args must be ull */
 #define SISL_RHT_CNT_ID(cnt, ctx_id)  (((cnt) << 48) | ((ctx_id) << 32))
 
-	__be64 ctx_cap;		/* afu_rc below is when the capability is violated */
-#define SISL_CTX_CAP_PROXY_ISSUE       0x8000000000000000ull	/* afu_rc 0x21 */
-#define SISL_CTX_CAP_REAL_MODE         0x4000000000000000ull	/* afu_rc 0x21 */
-#define SISL_CTX_CAP_HOST_XLATE        0x2000000000000000ull	/* afu_rc 0x1a */
-#define SISL_CTX_CAP_PROXY_TARGET      0x1000000000000000ull	/* afu_rc 0x21 */
-#define SISL_CTX_CAP_AFU_CMD           0x0000000000000008ull	/* afu_rc 0x21 */
-#define SISL_CTX_CAP_GSCSI_CMD         0x0000000000000004ull	/* afu_rc 0x21 */
-#define SISL_CTX_CAP_WRITE_CMD         0x0000000000000002ull	/* afu_rc 0x21 */
-#define SISL_CTX_CAP_READ_CMD          0x0000000000000001ull	/* afu_rc 0x21 */
+	__be64 ctx_cap;	/* afu_rc below is when the capability is violated */
+#define SISL_CTX_CAP_PROXY_ISSUE       0x8000000000000000ull /* afu_rc 0x21 */
+#define SISL_CTX_CAP_REAL_MODE         0x4000000000000000ull /* afu_rc 0x21 */
+#define SISL_CTX_CAP_HOST_XLATE        0x2000000000000000ull /* afu_rc 0x1a */
+#define SISL_CTX_CAP_PROXY_TARGET      0x1000000000000000ull /* afu_rc 0x21 */
+#define SISL_CTX_CAP_AFU_CMD           0x0000000000000008ull /* afu_rc 0x21 */
+#define SISL_CTX_CAP_GSCSI_CMD         0x0000000000000004ull /* afu_rc 0x21 */
+#define SISL_CTX_CAP_WRITE_CMD         0x0000000000000002ull /* afu_rc 0x21 */
+#define SISL_CTX_CAP_READ_CMD          0x0000000000000001ull /* afu_rc 0x21 */
 	__be64 mbox_r;
 };
 
@@ -255,32 +257,34 @@ struct sisl_ctrl_map {
 struct sisl_global_regs {
 	__be64 aintr_status;
 	/* In cxlflash, each FC port/link gets a byte of status */
-#define SISL_ASTATUS_FC0_OTHER    0x8000ull	/* b48, other err, FC_ERRCAP[31:20] */
-#define SISL_ASTATUS_FC0_LOGO     0x4000ull	/* b49, target sent FLOGI/PLOGI/LOGO
+#define SISL_ASTATUS_FC0_OTHER	 0x8000ull /* b48, other err,
+					      FC_ERRCAP[31:20] */
+#define SISL_ASTATUS_FC0_LOGO    0x4000ull /* b49, target sent FLOGI/PLOGI/LOGO
 						   while logged in */
-#define SISL_ASTATUS_FC0_CRC_T    0x2000ull	/* b50, CRC threshold exceeded */
-#define SISL_ASTATUS_FC0_LOGI_R   0x1000ull	/* b51, login state mechine timed out
+#define SISL_ASTATUS_FC0_CRC_T   0x2000ull /* b50, CRC threshold exceeded */
+#define SISL_ASTATUS_FC0_LOGI_R  0x1000ull /* b51, login state mechine timed out
 						   and retrying */
-#define SISL_ASTATUS_FC0_LOGI_F   0x0800ull	/* b52, login failed, FC_ERROR[19:0] */
-#define SISL_ASTATUS_FC0_LOGI_S   0x0400ull	/* b53, login succeeded */
-#define SISL_ASTATUS_FC0_LINK_DN  0x0200ull	/* b54, link online to offline */
-#define SISL_ASTATUS_FC0_LINK_UP  0x0100ull	/* b55, link offline to online */
+#define SISL_ASTATUS_FC0_LOGI_F  0x0800ull /* b52, login failed,
+					      FC_ERROR[19:0] */
+#define SISL_ASTATUS_FC0_LOGI_S  0x0400ull /* b53, login succeeded */
+#define SISL_ASTATUS_FC0_LINK_DN 0x0200ull /* b54, link online to offline */
+#define SISL_ASTATUS_FC0_LINK_UP 0x0100ull /* b55, link offline to online */
 
-#define SISL_ASTATUS_FC1_OTHER    0x0080ull	/* b56 */
-#define SISL_ASTATUS_FC1_LOGO     0x0040ull	/* b57 */
-#define SISL_ASTATUS_FC1_CRC_T    0x0020ull	/* b58 */
-#define SISL_ASTATUS_FC1_LOGI_R   0x0010ull	/* b59 */
-#define SISL_ASTATUS_FC1_LOGI_F   0x0008ull	/* b60 */
-#define SISL_ASTATUS_FC1_LOGI_S   0x0004ull	/* b61 */
-#define SISL_ASTATUS_FC1_LINK_DN  0x0002ull	/* b62 */
-#define SISL_ASTATUS_FC1_LINK_UP  0x0001ull	/* b63 */
+#define SISL_ASTATUS_FC1_OTHER   0x0080ull /* b56 */
+#define SISL_ASTATUS_FC1_LOGO    0x0040ull /* b57 */
+#define SISL_ASTATUS_FC1_CRC_T   0x0020ull /* b58 */
+#define SISL_ASTATUS_FC1_LOGI_R  0x0010ull /* b59 */
+#define SISL_ASTATUS_FC1_LOGI_F  0x0008ull /* b60 */
+#define SISL_ASTATUS_FC1_LOGI_S  0x0004ull /* b61 */
+#define SISL_ASTATUS_FC1_LINK_DN 0x0002ull /* b62 */
+#define SISL_ASTATUS_FC1_LINK_UP 0x0001ull /* b63 */
 
-#define SISL_FC_INTERNAL_UNMASK     0x0000000300000000ull	/* 1 means unmasked */
-#define SISL_FC_INTERNAL_MASK     ~(SISL_FC_INTERNAL_UNMASK)
-#define SISL_FC_INTERNAL_SHIFT     32
+#define SISL_FC_INTERNAL_UNMASK	0x0000000300000000ull	/* 1 means unmasked */
+#define SISL_FC_INTERNAL_MASK	~(SISL_FC_INTERNAL_UNMASK)
+#define SISL_FC_INTERNAL_SHIFT	32
 
-#define SISL_ASTATUS_UNMASK       0xFFFFull	/* 1 means unmasked */
-#define SISL_ASTATUS_MASK         ~(SISL_ASTATUS_UNMASK)	/* 1 means masked */
+#define SISL_ASTATUS_UNMASK	0xFFFFull		/* 1 means unmasked */
+#define SISL_ASTATUS_MASK	~(SISL_ASTATUS_UNMASK)	/* 1 means masked */
 
 	__be64 aintr_clear;
 	__be64 aintr_mask;
@@ -305,26 +309,31 @@ struct sisl_global_map {
 	};
 
 	char page1[PAGE_SIZE_4K];	/* page 1 */
-	__be64 fc_regs[CXLFLASH_NUM_FC_PORTS][CXLFLASH_NUM_VLUNS];	/* pages 2 & 3, see afu_fc.h */
-	__be64 fc_port[CXLFLASH_NUM_FC_PORTS][CXLFLASH_NUM_VLUNS];	/* pages 4 & 5 (lun tbl) */
+
+	/* pages 2 & 3 */
+	__be64 fc_regs[CXLFLASH_NUM_FC_PORTS][CXLFLASH_NUM_VLUNS];
+
+	/* pages 4 & 5 (lun tbl) */
+	__be64 fc_port[CXLFLASH_NUM_FC_PORTS][CXLFLASH_NUM_VLUNS];
 
 };
 
-/* CXL Flash Memory Map
-                     +-------------------------------+
-                     |    512 * 64 KB User MMIO      |
-                     |        (per context)          |
-                     |       User Accessible         |
-                     +-------------------------------+
-                     |    512 * 128 B per context    |
-                     |    Provisioning and Control   |
-                     |   Trusted Process accessible  |
-                     +-------------------------------+
-                     |         64 KB Global          |
-                     |   Trusted Process accessible  |
-                     +-------------------------------+
+/*
+ * CXL Flash Memory Map
+ *
+ *	+-------------------------------+
+ *	|    512 * 64 KB User MMIO      |
+ *	|        (per context)          |
+ *	|       User Accessible         |
+ *	+-------------------------------+
+ *	|    512 * 128 B per context    |
+ *	|    Provisioning and Control   |
+ *	|   Trusted Process accessible  |
+ *	+-------------------------------+
+ *	|         64 KB Global          |
+ *	|   Trusted Process accessible  |
+ *	+-------------------------------+
 */
-
 struct cxlflash_afu_map {
 	union {
 		struct sisl_host_map host;
@@ -362,7 +371,7 @@ struct sisl_rht_entry {
 				 * (if no perm, afu_rc=0x05)
 				 */
 	u8 nmask;
-} __attribute__ ((aligned(16)));
+} __aligned(16);
 
 struct sisl_rht_entry_f1 {
 	__be64 lun_id;
@@ -376,7 +385,7 @@ struct sisl_rht_entry_f1 {
 
 		__be64 dw;
 	};
-} __attribute__ ((aligned(16)));
+} __aligned(16);
 
 /* make the fp byte */
 #define SISL_RHT_FP(fmt, perm) (((fmt) << 4) | (perm))
@@ -384,7 +393,7 @@ struct sisl_rht_entry_f1 {
 /* make the fp byte for a clone from a source fp and clone flags
  * flags must be only 2 LSB bits.
  */
-#define SISL_RHT_FP_CLONE(src_fp, clone_flags) ((src_fp) & (0xFC | (clone_flags)))
+#define SISL_RHT_FP_CLONE(src_fp, cln_flags) ((src_fp) & (0xFC | (cln_flags)))
 
 /* extract the perm bits from a fp */
 #define SISL_RHT_PERM(fp) ((fp) & 0x3)
