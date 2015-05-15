@@ -128,8 +128,8 @@ static void process_cmd_err(struct afu_cmd *cmd, struct scsi_cmnd *scp)
 	}
 
 	/*
-	 * We encountered an error. For now return
-	 * EIO for all errors.
+	 * We encountered an error. Set scp->result based on nature
+	 * of error.
 	 */
 	if (ioasa->rc.fc_rc) {
 		/* We have an FC status */
@@ -904,7 +904,6 @@ static int cxlflash_gb_alloc(struct cxlflash *cxlflash)
 	cxlflash->afu->back = cxlflash;
 	cxlflash->afu->afu_map = NULL;
 
-	/* Allocate one extra, just in case the SYNC command needs a buffer */
 	for (i = 0; i < CXLFLASH_NUM_CMDS; buf+=CMD_BUFSIZE, i++) {
 		if (!((u64)buf & (PAGE_SIZE - 1))) {
 			buf = (void *)__get_free_page(GFP_KERNEL | __GFP_ZERO);
