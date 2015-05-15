@@ -558,14 +558,15 @@ int cxlflash_vlun_resize(struct scsi_device *sdev, struct dk_cxlflash_resize *re
 
 	}
 
-	ctx_info = get_context(cxlflash, resize->context_id, lun_info, false);
+	ctx_info = cxlflash_get_context(cxlflash, resize->context_id,
+					lun_info, false);
 	if (unlikely(!ctx_info)) {
 		cxlflash_err("Invalid context! (%llu)", resize->context_id);
 		rc = -EINVAL;
 		goto out;
 	}
 
-	rht_entry = get_rhte(ctx_info, res_hndl, lun_info);
+	rht_entry = cxlflash_get_rhte(ctx_info, res_hndl, lun_info);
 	if (unlikely(!rht_entry)) {
 		cxlflash_err("Invalid resource handle! (%u)", res_hndl);
 		rc = -EINVAL;
@@ -601,7 +602,7 @@ out:
 }
 
 /*
- * NAME:	clone_lxt()
+ * NAME:	cxlflash_clone_lxt()
  *
  * FUNCTION:	clone a LXT table
  *
@@ -620,12 +621,12 @@ out:
  *
  * NOTES:
  */
-int clone_lxt(struct afu *afu,
-	      struct blka *blka,
-	      ctx_hndl_t ctx_hndl_u,
-	      res_hndl_t res_hndl_u,
-	      struct sisl_rht_entry *rht_entry,
-	      struct sisl_rht_entry *rht_entry_src)
+int cxlflash_clone_lxt(struct afu *afu,
+		       struct blka *blka,
+		       ctx_hndl_t ctx_hndl_u,
+		       res_hndl_t res_hndl_u,
+		       struct sisl_rht_entry *rht_entry,
+		       struct sisl_rht_entry *rht_entry_src)
 {
 	struct sisl_lxt_entry *lxt;
 	unsigned int ngrps;

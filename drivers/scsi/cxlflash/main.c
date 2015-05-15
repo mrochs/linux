@@ -2056,7 +2056,6 @@ int cxlflash_afu_reset(struct cxlflash *cxlflash)
 
 	rc = cxlflash_init_afu(cxlflash);
 
-	/* XXX: Need to restart/reattach all user contexts */
 	cxlflash_info("returning rc=%d", rc);
 	return rc;
 }
