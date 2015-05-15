@@ -1635,8 +1635,15 @@ int cxlflash_ioctl(struct scsi_device *sdev, int cmd, void __user *arg)
 	/* fall thru to exit */
 
 cxlflash_ioctl_exit:
-	cxlflash_info("ioctl %s (%08X) on dev(%d/%d/%d/%llu) returned rc %d",
-		      decode_ioctl(cmd), cmd, shost->host_no, sdev->channel,
-		      sdev->id, sdev->lun, rc);
+	if (rc)
+		cxlflash_err("ioctl %s (%08X) on dev(%d/%d/%d/%llu) "
+			     "returned rc %d",
+			     decode_ioctl(cmd), cmd, shost->host_no,
+			     sdev->channel, sdev->id, sdev->lun, rc);
+	else
+		cxlflash_dbg("ioctl %s (%08X) on dev(%d/%d/%d/%llu) "
+			     "returned rc %d",
+			     decode_ioctl(cmd), cmd, shost->host_no,
+			     sdev->channel, sdev->id, sdev->lun, rc);
 	return rc;
 }
