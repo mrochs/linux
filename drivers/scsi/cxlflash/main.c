@@ -555,7 +555,7 @@ static ssize_t cxlflash_show_lun_mode(struct device *dev,
  * 2 = internal LUN (1 x 64K, 4K blocks, id 0)
  * 3 = internal LUN (2 x 32K, 512B blocks, ids 0,1)
  * 4 = internal LUN (2 x 32K, 4K blocks, ids 0,1)
- * 
+ *
  * Return: The size of the ASCII string returned in @buf.
  */
 static ssize_t cxlflash_store_lun_mode(struct device *dev,
