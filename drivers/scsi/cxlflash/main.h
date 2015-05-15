@@ -24,8 +24,8 @@ typedef unsigned int useconds_t;        /* time in microseconds */
 
 #define CXLFLASH_NAME                      "cxlflash"
 #define CXLFLASH_ADAPTER_NAME              "IBM POWER CXL Flash Adapter"
-#define CXLFLASH_DRIVER_VERSION           "1.0.2"
-#define CXLFLASH_DRIVER_DATE              "(April 13, 2015)"
+#define CXLFLASH_DRIVER_VERSION           "1.0.3"
+#define CXLFLASH_DRIVER_DATE              "(May 15, 2015)"
 
 #define PCI_DEVICE_ID_IBM_CORSA		0x04F0
 #define CXLFLASH_SUBS_DEV_ID		0x04F0
