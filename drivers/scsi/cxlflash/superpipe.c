@@ -1511,14 +1511,14 @@ int cxlflash_ioctl(struct scsi_device *sdev, int cmd, void __user *arg)
 	};
 
 	/* Restrict command set to physical support only for internal LUN */
-	if (internal_lun || afu->internal_lun)
+	if (afu->internal_lun)
 		switch (cmd) {
 		case DK_CXLFLASH_USER_VIRTUAL:
 		case DK_CXLFLASH_VLUN_RESIZE:
 		case DK_CXLFLASH_RELEASE:
 		case DK_CXLFLASH_CLONE:
 			cxlflash_err("%s not supported for lun_mode=%d",
-				     decode_ioctl(cmd), internal_lun);
+				     decode_ioctl(cmd), afu->internal_lun);
 			rc = -EINVAL;
 			goto cxlflash_ioctl_exit;
 		}

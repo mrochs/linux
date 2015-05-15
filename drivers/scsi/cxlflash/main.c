@@ -33,27 +33,7 @@ MODULE_AUTHOR("Manoj N. Kumar <manoj@linux.vnet.ibm.com>");
 MODULE_AUTHOR("Matthew R. Ochs <mrochs@linux.vnet.ibm.com>");
 MODULE_LICENSE("GPL");
 
-u32 internal_lun = 0;
 struct cxlflash_global global;
-
-/*
- * This is a temporary module parameter
- *
- * The CXL Flash AFU supports a dummy LUN mode where the external
- * links and storage are not required. Space on the FPGA is used
- * to create 1 or 2 small LUNs which are presented to the system
- * as if they were a normal storage device. This feature is useful
- * during development and also provides manufacturing with a way
- * to test the AFU without an actual device. The setting for this
- * mode will eventually be fully migrated to a per-adapter sysfs
- * tunable.
- */
-module_param_named(lun_mode, internal_lun, uint, 0);
-MODULE_PARM_DESC(lun_mode, " 0 = external LUN[s](default),\n"
-		 " 1 = internal LUN (1 x 64K, 512B blocks, id 0),\n"
-		 " 2 = internal LUN (1 x 64K, 4K blocks, id 0),\n"
-		 " 3 = internal LUN (2 x 32K, 512B blocks, ids 0,1),\n"
-		 " 4 = internal LUN (2 x 32K, 4K blocks, ids 0,1)");
 
 /**
  * cxlflash_cmd_checkout() - checks out an AFU command
@@ -609,6 +589,19 @@ static ssize_t cxlflash_show_lun_mode(struct device *dev,
  * @buf:	Buffer of length PAGE_SIZE containing the LUN mode in ASCII.
  * @count:	Length of data resizing in @buf.
  *
+ * The CXL Flash AFU supports a dummy LUN mode where the external
+ * links and storage are not required. Space on the FPGA is used
+ * to create 1 or 2 small LUNs which are presented to the system
+ * as if they were a normal storage device. This feature is useful
+ * during development and also provides manufacturing with a way
+ * to test the AFU without an actual device.
+ *
+ * 0 = external LUN[s] (default)
+ * 1 = internal LUN (1 x 64K, 512B blocks, id 0)
+ * 2 = internal LUN (1 x 64K, 4K blocks, id 0)
+ * 3 = internal LUN (2 x 32K, 512B blocks, ids 0,1)
+ * 4 = internal LUN (2 x 32K, 4K blocks, ids 0,1)
+ * 
  * Return: The size of the ASCII string returned in @buf.
  */
 static ssize_t cxlflash_store_lun_mode(struct device *dev,
@@ -622,10 +615,11 @@ static ssize_t cxlflash_store_lun_mode(struct device *dev,
 	u32 lun_mode;
 
 	rc = kstrtouint(buf, 10, &lun_mode);
-	if (!rc && (lun_mode < 5) && (lun_mode != afu->internal_lun))
+	if (!rc && (lun_mode < 5) && (lun_mode != afu->internal_lun)) {
 		afu->internal_lun = lun_mode;
-
-	/* XXX - need to reset device w/ new lun mode */
+		cxlflash_afu_reset(cxlflash);
+		scsi_scan_host(cxlflash->host);
+	}
 
 	return count;
 }
@@ -1196,7 +1190,7 @@ static int afu_set_wwpn(struct afu *afu, int port,
 		/*
 		 * Override for internal lun!!!
 		 */
-		if (internal_lun || afu->internal_lun) {
+		if (afu->internal_lun) {
 			cxlflash_info("Overriding port %d online timeout!!!",
 				      port);
 			ret = 0;
@@ -1313,7 +1307,7 @@ static void afu_err_intr_init(struct afu *afu)
 	/* set LISN# to send and point to master context */
 	reg = ((u64) (((afu->ctx_hndl << 8) | SISL_MSI_ASYNC_ERROR)) << 40);
 
-	if (internal_lun || afu->internal_lun)
+	if (afu->internal_lun)
 		reg |= 1;	/* Bit 63 indicates local lun */
 	writeq_be(reg, &afu->afu_map->global.regs.afu_ctrl);
 	/* clear all */
@@ -1329,8 +1323,8 @@ static void afu_err_intr_init(struct afu *afu)
 	reg = readq_be(&afu->afu_map->global.fc_regs[0][FC_CONFIG2 / 8]);
 	cxlflash_info("ilun p0 = %016llX", reg);
 	reg &= SISL_FC_INTERNAL_MASK;
-	if (internal_lun || afu->internal_lun)
-		reg |= ((u64) (internal_lun - 1) << SISL_FC_INTERNAL_SHIFT);
+	if (afu->internal_lun)
+		reg |= ((u64)(afu->internal_lun - 1) << SISL_FC_INTERNAL_SHIFT);
 	cxlflash_info("ilun p0 = %016llX", reg);
 	writeq_be(reg, &afu->afu_map->global.fc_regs[0][FC_CONFIG2 / 8]);
 
@@ -1714,7 +1708,7 @@ int init_global(struct cxlflash *cxlflash)
 	writeq_be(reg, &afu->afu_map->global.regs.afu_config);
 
 	/* global port select: select either port */
-	if (internal_lun || afu->internal_lun) {
+	if (afu->internal_lun) {
 		/* only use port 0 */
 		writeq_be(0x1, &afu->afu_map->global.regs.afu_port_sel);
 		num_ports = NUM_FC_PORTS - 1;
@@ -2190,10 +2184,7 @@ static int cxlflash_probe(struct pci_dev *pdev,
 
 	host->max_id = CXLFLASH_MAX_NUM_TARGETS_PER_BUS;
 	host->max_lun = CXLFLASH_MAX_NUM_LUNS_PER_TARGET;
-	if (internal_lun)
-		host->max_channel = 0;
-	else
-		host->max_channel = NUM_FC_PORTS - 1;
+	host->max_channel = NUM_FC_PORTS - 1;
 	host->unique_id = host->host_no;
 	host->max_cmd_len = CXLFLASH_MAX_CDB_LEN;
 
@@ -2291,13 +2282,6 @@ static int __init init_cxlflash(void)
 {
 	cxlflash_info("IBM Power CXL Flash Adapter version: %s %s",
 		      CXLFLASH_DRIVER_VERSION, CXLFLASH_DRIVER_DATE);
-
-	/* Validate module parameters */
-	if (internal_lun > 4) {
-		cxlflash_err("Invalid lun_mode parameter! (%d > 4)",
-			     internal_lun);
-		return (-EINVAL);
-	}
 
 	INIT_LIST_HEAD(&global.luns);
 	spin_lock_init(&global.slock);
