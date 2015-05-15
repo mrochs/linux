@@ -88,40 +88,6 @@ out:
 	return lun_info;
 }
 
-int cxlflash_alloc_lun(struct scsi_device *sdev)
-{
-	struct lun_info *lun_info = NULL;
-	int rc = 0;
-
-	lun_info = lookup_lun(sdev, NULL);
-	if (unlikely(!lun_info)) {
-		rc = -ENOMEM;
-		goto out;
-	}
-
-	sdev->hostdata = lun_info;
-
-out:
-	return rc;
-}
-
-void cxlflash_init_lun(struct scsi_device *sdev)
-{
-	struct lun_info *lun_info = sdev->hostdata;
-	struct Scsi_Host *shost = sdev->host;
-	struct cxlflash *cxlflash = shost_priv(shost);
-	struct afu *afu = cxlflash->afu;
-
-	/* Store off lun in unpacked, AFU-friendly format */
-	lun_info->lun_id = lun_to_lunid(sdev->lun);
-	lun_info->lun_index = cxlflash->last_lun_index;
-
-	writeq_be(lun_info->lun_id,
-		  &afu->afu_map->global.fc_port[sdev->channel]
-		  [cxlflash->last_lun_index++]);
-
-}
-
 static void ba_terminate(struct ba_lun *ba_lun)
 {
 	struct ba_lun_info *lun_info =
@@ -147,8 +113,17 @@ static void ba_terminate(struct ba_lun *ba_lun)
 int cxlflash_slave_alloc(struct scsi_device *sdev)
 {
 	int rc = 0;
-	rc = cxlflash_alloc_lun(sdev);
+	struct lun_info *lun_info = NULL;
 
+	lun_info = lookup_lun(sdev, NULL);
+	if (unlikely(!lun_info)) {
+		rc = -ENOMEM;
+		goto out;
+	}
+
+	sdev->hostdata = lun_info;
+
+out:
 	cxlflash_dbg("returning sdev %p rc=%d", sdev, rc);
 	return rc;
 }
@@ -165,11 +140,21 @@ int cxlflash_slave_alloc(struct scsi_device *sdev)
 int cxlflash_slave_configure(struct scsi_device *sdev)
 {
 	struct Scsi_Host *shost = sdev->host;
+	struct lun_info *lun_info = sdev->hostdata;
+	struct cxlflash *cxlflash = shost_priv(shost);
+	struct afu *afu = cxlflash->afu;
 
 	cxlflash_info("id = %d/%d/%d/%llu", shost->host_no, sdev->channel,
 		      sdev->id, sdev->lun);
 
-	cxlflash_init_lun(sdev);
+	/* Store off lun in unpacked, AFU-friendly format */
+	lun_info->lun_id = lun_to_lunid(sdev->lun);
+	lun_info->lun_index = cxlflash->last_lun_index;
+
+	writeq_be(lun_info->lun_id,
+		  &afu->afu_map->global.fc_port[sdev->channel]
+		  [cxlflash->last_lun_index++]);
+
 	return 0;
 }
 

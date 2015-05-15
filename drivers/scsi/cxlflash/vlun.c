@@ -349,6 +349,7 @@ out:
 	cxlflash_info("returning rc=%d", rc);
 	return rc;
 }
+
 static int grow_lxt(struct afu *afu,
 		    struct lun_info *lun_info,
 		    ctx_hndl_t ctx_hndl_u,
