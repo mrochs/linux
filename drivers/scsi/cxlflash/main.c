@@ -2294,7 +2294,7 @@ static int __init init_cxlflash(void)
  */
 static void __exit exit_cxlflash(void)
 {
-	cxlflash_lun_terminate(&global);
+	cxlflash_list_terminate();
 
 	pci_unregister_driver(&cxlflash_driver);
 }

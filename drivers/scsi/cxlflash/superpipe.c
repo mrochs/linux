@@ -137,18 +137,18 @@ static void ba_terminate(struct ba_lun *ba_lun)
 	}
 }
 
-void cxlflash_lun_terminate(struct cxlflash_global *globalp)
+void cxlflash_list_terminate()
 {
 	struct lun_info *lun_info, *temp;
 	unsigned long flags = 0;
 
-	spin_lock_irqsave(&globalp->slock, flags);
-	list_for_each_entry_safe(lun_info, temp, &globalp->luns, list) {
+	spin_lock_irqsave(&global.slock, flags);
+	list_for_each_entry_safe(lun_info, temp, &global.luns, list) {
 		list_del(&lun_info->list);
 		ba_terminate(&lun_info->blka.ba_lun);
 		kfree(lun_info);
 	}
-	spin_unlock_irqrestore(&globalp->slock, flags);
+	spin_unlock_irqrestore(&global.slock, flags);
 }
 
 /*
