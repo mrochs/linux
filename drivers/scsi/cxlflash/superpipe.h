@@ -144,4 +144,19 @@ struct lun_access {
 	struct list_head list;
 };
 
+int ba_init(struct ba_lun *);
+
+void marshall_virt_to_resize(struct dk_cxlflash_uvirtual *, struct dk_cxlflash_resize *);
+void marshall_rele_to_resize(struct dk_cxlflash_release *, struct dk_cxlflash_resize *);
+int cxlflash_vlun_resize(struct scsi_device *, struct dk_cxlflash_resize *);
+
+int clone_lxt(struct afu *, struct blka *, ctx_hndl_t , res_hndl_t , struct sisl_rht_entry *, struct sisl_rht_entry *);
+
+int cxlflash_check_status(struct sisl_ioasa *);
+
+struct ctx_info *get_context(struct cxlflash *, u64 , struct lun_info *, bool);
+
+struct sisl_rht_entry *get_rhte(struct ctx_info *, res_hndl_t , struct lun_info *);
+
+
 #endif /* ifndef _CXLFLASH_SUPERPIPE_H */
