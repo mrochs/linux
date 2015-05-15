@@ -859,8 +859,6 @@ static void cxlflash_remove(struct pci_dev *pdev)
 		cxlflash_dev_dbg(&pdev->dev, "after scsi_host_put!");
 		/* Fall through */
 	case INIT_STATE_PCI:
-		if (cxlflash->cxlflash_regs)
-			iounmap(cxlflash->cxlflash_regs);
 		pci_release_regions(cxlflash->dev);
 		pci_disable_device(pdev);
 	case INIT_STATE_AFU:
@@ -959,16 +957,6 @@ static int cxlflash_init_pci(struct cxlflash *cxlflash)
 		}
 	}
 
-	/*
-	   cxlflash->cxlflash_regs = pci_ioremap_bar(pdev, 0);
-	   if (!cxlflash->cxlflash_regs) {
-	   cxlflash_dev_err(&pdev->dev,
-	   "Couldn't map memory range of registers");
-	   rc = -ENOMEM;
-	   goto out_disable;
-	   }
-	 */
-
 	rc = pci_set_dma_mask(pdev, DMA_BIT_MASK(64));
 	if (rc < 0) {
 		cxlflash_dev_dbg(&pdev->dev,
@@ -1006,7 +994,6 @@ out:
 cleanup_nolog:
 out_msi_disable:
 	cxlflash_wait_for_pci_err_recovery(cxlflash);
-	iounmap(cxlflash->cxlflash_regs);
 out_disable:
 	pci_disable_device(pdev);
 out_release_regions:

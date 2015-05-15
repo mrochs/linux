@@ -134,7 +134,6 @@ struct cxlflash {
 	struct Scsi_Host *host;
 
 	unsigned long cxlflash_regs_pci;
-	void __iomem *cxlflash_regs;
 
 	wait_queue_head_t reset_wait_q;
 	wait_queue_head_t msi_wait_q;
