@@ -21,6 +21,9 @@
  */
 struct cxl_afu *cxl_pci_to_afu(struct pci_dev *dev, unsigned int *cfg_record);
 
+/* Get default context associated with this pci_dev */
+struct cxl_context *cxl_get_context(struct pci_dev *dev);
+
 /*
  * Get the physical device which the AFU is attached.  We return a device here
  * not a pci_dev.
