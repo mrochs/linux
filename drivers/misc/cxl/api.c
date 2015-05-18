@@ -11,6 +11,7 @@
 #include <linux/slab.h>
 #include <linux/anon_inodes.h>
 #include <linux/file.h>
+#include <misc/cxl.h>
 
 #include "cxl.h"
 
