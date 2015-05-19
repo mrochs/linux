@@ -35,7 +35,7 @@ static int cxl_setup_msi_irqs(struct pci_dev *pdev, int nvec, int type)
 static void cxl_teardown_msi_irqs(struct pci_dev *pdev)
 {
 	/*
-	 * MSI should never be set but need still need to provide thiscall
+	 * MSI should never be set but need still need to provide this call
 	 * back.
 	 */
 }
