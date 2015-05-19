@@ -977,7 +977,7 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 	}
 
 	/* Translate read/write O_* flags from fnctl.h to AFU permission bits */
-	perms = ((attach->hdr.flags + 1) & 0x3);
+	perms = SISL_RHT_PERM(attach->hdr.flags + 1);
 
 	ctx_info = create_context(cxlflash, ctx, ctxid, fd, perms);
 	if (unlikely(!ctx_info)) {

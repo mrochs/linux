@@ -395,11 +395,12 @@ struct sisl_rht_entry_f1 {
  */
 #define SISL_RHT_FP_CLONE(src_fp, cln_flags) ((src_fp) & (0xFC | (cln_flags)))
 
-/* extract the perm bits from a fp */
-#define SISL_RHT_PERM(fp) ((fp) & 0x3)
-
 #define RHT_PERM_READ  0x01u
 #define RHT_PERM_WRITE 0x02u
+#define RHT_PERM_RW    (RHT_PERM_READ | RHT_PERM_WRITE)
+
+/* extract the perm bits from a fp */
+#define SISL_RHT_PERM(fp) ((fp) & RHT_PERM_RW)
 
 /* AFU Sync Mode byte */
 #define AFU_LW_SYNC 0x0u
