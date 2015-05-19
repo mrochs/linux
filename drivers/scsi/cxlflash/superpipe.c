@@ -1407,17 +1407,15 @@ static int cxlflash_disk_direct_open(struct scsi_device *sdev, void *arg)
 	struct dk_cxlflash_udirect *pphys = (struct dk_cxlflash_udirect *)arg;
 
 	u32 perms;
-	u64 ctxid;
+	u64 ctxid = pphys->context_id;
 	u64 lun_size = 0;
 	u64 last_lba = 0;
 	u64 rsrc_handle = -1;
 
 	int rc = 0;
 
-	struct ctx_info *ctx_info;
+	struct ctx_info *ctx_info = NULL;
 	struct sisl_rht_entry *rht_entry = NULL;
-
-	ctxid = pphys->context_id;
 
 	cxlflash_info("ctxid=%llu ls=0x%llx", ctxid, lun_size);
 

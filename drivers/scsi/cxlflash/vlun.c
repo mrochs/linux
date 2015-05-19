@@ -684,20 +684,17 @@ int cxlflash_disk_virtual_open(struct scsi_device *sdev, void *arg)
 	struct dk_cxlflash_resize resize;
 
 	u32 perms;
-	u64 context_id;
-	u64 lun_size = 0;
+	u64 ctxid = virt->context_id;
+	u64 lun_size = virt->lun_size;
 	u64 last_lba = 0;
 	u64 rsrc_handle = -1;
 
 	int rc = 0;
 
-	struct ctx_info *ctx_info;
+	struct ctx_info *ctx_info = NULL;
 	struct sisl_rht_entry *rht_entry = NULL;
 
-	context_id = virt->context_id;
-	lun_size = virt->lun_size;
-
-	cxlflash_info("context=0x%llx ls=0x%llx", context_id, lun_size);
+	cxlflash_info("ctxid=%llu ls=0x%llx", ctxid, lun_size);
 
 	if (lun_info->mode == MODE_NONE) {
 		rc = cxlflash_init_ba(lun_info);
@@ -715,9 +712,9 @@ int cxlflash_disk_virtual_open(struct scsi_device *sdev, void *arg)
 		goto out;
 	}
 
-	ctx_info = cxlflash_get_context(cxlflash, context_id, lun_info, false);
+	ctx_info = cxlflash_get_context(cxlflash, ctxid, lun_info, false);
 	if (unlikely(!ctx_info)) {
-		cxlflash_err("Invalid context! (%llu)", context_id);
+		cxlflash_err("Invalid context! (%llu)", ctxid);
 		rc = -EINVAL;
 		goto err1;
 	}
@@ -753,6 +750,8 @@ int cxlflash_disk_virtual_open(struct scsi_device *sdev, void *arg)
 	virt->rsrc_handle = rsrc_handle;
 
 out:
+	if (likely(ctx_info))
+		atomic_dec(&ctx_info->nrefs);
 	cxlflash_info("returning handle 0x%llx rc=%d llba %lld",
 		      rsrc_handle, rc, last_lba);
 	return rc;
