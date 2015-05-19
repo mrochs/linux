@@ -460,8 +460,9 @@ static int grow_lxt(struct afu *afu,
 
 		/* select both ports, use r/w perms from RHT */
 		lxt[i].rlba_base = ((aun << MC_CHUNK_SHIFT) |
-				      (lun_info->lun_index <<
-				       LXT_LUNIDX_SHIFT) | 0x33);
+				    (lun_info->lun_index << LXT_LUNIDX_SHIFT) |
+				    (RHT_PERM_RW << LXT_PERM_SHIFT | 
+				     BOTH_PORTS));
 	}
 
 	mutex_unlock(&blka->mutex);

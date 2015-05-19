@@ -40,6 +40,7 @@
 #define MC_CHUNK_SIZE     (1 << MC_RHT_NMASK)	/* in LBAs, see mclient.h */
 #define MC_CHUNK_SHIFT    MC_RHT_NMASK	/* shift to go from LBA to chunk# */
 #define LXT_LUNIDX_SHIFT  8	/* LXT entry, shift for LUN index */
+#define LXT_PERM_SHIFT    4	/* LXT entry, shift for permission bits */
 
 /* LXT tables are allocated dynamically in groups. This is done to
    avoid a malloc/free overhead each time the LXT has to grow
