@@ -402,6 +402,10 @@ struct sisl_rht_entry_f1 {
 /* extract the perm bits from a fp */
 #define SISL_RHT_PERM(fp) ((fp) & RHT_PERM_RW)
 
+#define PORT0  0x01u
+#define PORT1  0x02u
+#define BOTH_PORTS    (PORT0 | PORT1)
+
 /* AFU Sync Mode byte */
 #define AFU_LW_SYNC 0x0u
 #define AFU_HW_SYNC 0x1u

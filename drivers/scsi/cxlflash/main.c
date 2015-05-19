@@ -1643,10 +1643,10 @@ int init_global(struct cxlflash *cxlflash)
 	/* global port select: select either port */
 	if (afu->internal_lun) {
 		/* only use port 0 */
-		writeq_be(0x1, &afu->afu_map->global.regs.afu_port_sel);
+		writeq_be(PORT0, &afu->afu_map->global.regs.afu_port_sel);
 		num_ports = NUM_FC_PORTS - 1;
 	} else {
-		writeq_be(0x3, &afu->afu_map->global.regs.afu_port_sel);
+		writeq_be(BOTH_PORTS, &afu->afu_map->global.regs.afu_port_sel);
 		num_ports = NUM_FC_PORTS;
 	}
 
