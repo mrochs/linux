@@ -1333,6 +1333,27 @@ static char *decode_ioctl(int cmd)
 	return ("UNKNOWN");
 }
 
+/* NAME:	cxlflash_disk_direct_open	
+ *	
+ * FUNCTION:	open a virtual lun of specified size	
+ *	
+ * INPUTS:	
+ *              sdev       - Pointer to scsi device structure
+ *              arg        - Pointer to ioctl specific structure
+ *	
+ * OUTPUTS:	
+ *              none
+ *	
+ * RETURNS:	
+ *              0           - Success
+ *              errno       - Failure
+ *	
+ * NOTES:	
+ *		When successful:	
+ *		a. find a free RHT entry	
+ *		b. Program it with FORMAT1
+ *	
+ */
 static int cxlflash_disk_direct_open(struct scsi_device *sdev, void *arg)
 {
 	struct cxlflash *cxlflash = (struct cxlflash *)sdev->host->hostdata;
