@@ -573,7 +573,8 @@ static int shrink_lxt(struct afu *afu,
  *		Setting new_size=0 will clear LXT_START and LXT_CNT fields
  *		in the RHT entry.
  */
-int cxlflash_vlun_resize(struct scsi_device *sdev, struct dk_cxlflash_resize *resize)
+int cxlflash_vlun_resize(struct scsi_device *sdev,
+			 struct dk_cxlflash_resize *resize)
 {
 	struct cxlflash *cxlflash = (struct cxlflash *)sdev->host->hostdata;
 	struct lun_info *lun_info = sdev->hostdata;
@@ -583,6 +584,7 @@ int cxlflash_vlun_resize(struct scsi_device *sdev, struct dk_cxlflash_resize *re
 	res_hndl_t res_hndl = resize->rsrc_handle;
 	u64 new_size;
 	u64 nsectors;
+	u64 ctxid = resize->context_id;
 
 	struct ctx_info *ctx_info = NULL;
 	struct sisl_rht_entry *rht_entry;
@@ -596,9 +598,9 @@ int cxlflash_vlun_resize(struct scsi_device *sdev, struct dk_cxlflash_resize *re
 	    (lun_info->blk_len);
 	new_size = (nsectors + MC_CHUNK_SIZE - 1) / MC_CHUNK_SIZE;
 
-	cxlflash_info("context=0x%llx res_hndl=0x%llx, req_size=0x%llx,"
-		      "new_size=%llx", resize->context_id,
-		      resize->rsrc_handle, resize->req_size, new_size);
+	cxlflash_info("ctxid=%llu res_hndl=0x%llx, req_size=0x%llx,"
+		      "new_size=%llx", ctxid, resize->rsrc_handle,
+		      resize->req_size, new_size);
 
 	if (unlikely(lun_info->mode != MODE_VIRTUAL)) {
 		cxlflash_err("LUN mode does not support resize! (%d)",
@@ -608,10 +610,9 @@ int cxlflash_vlun_resize(struct scsi_device *sdev, struct dk_cxlflash_resize *re
 
 	}
 
-	ctx_info = cxlflash_get_context(cxlflash, resize->context_id,
-					lun_info, false);
+	ctx_info = cxlflash_get_context(cxlflash, ctxid, lun_info, false);
 	if (unlikely(!ctx_info)) {
-		cxlflash_err("Invalid context! (%llu)", resize->context_id);
+		cxlflash_err("Invalid context! (%llu)", ctxid);
 		rc = -EINVAL;
 		goto out;
 	}
@@ -626,7 +627,7 @@ int cxlflash_vlun_resize(struct scsi_device *sdev, struct dk_cxlflash_resize *re
 	if (new_size > rht_entry->lxt_cnt)
 		rc = grow_lxt(afu,
 			      lun_info,
-			      resize->context_id,
+			      ctxid,
 			      res_hndl,
 			      rht_entry,
 			      new_size - rht_entry->lxt_cnt,
@@ -634,7 +635,7 @@ int cxlflash_vlun_resize(struct scsi_device *sdev, struct dk_cxlflash_resize *re
 	else if (new_size < rht_entry->lxt_cnt)
 		rc = shrink_lxt(afu,
 				lun_info,
-				resize->context_id,
+				ctxid,
 				res_hndl,
 				rht_entry,
 				rht_entry->lxt_cnt - new_size,
