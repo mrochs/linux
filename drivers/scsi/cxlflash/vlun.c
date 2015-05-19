@@ -299,6 +299,21 @@ static u64 ba_space(struct ba_lun *ba_lun)
 	return lun_info->free_aun_cnt;
 }
 
+void ba_terminate(struct ba_lun *ba_lun)
+{
+	struct ba_lun_info *lun_info =
+	    (struct ba_lun_info *)ba_lun->ba_lun_handle;
+
+	if (lun_info) {
+		if (lun_info->aun_clone_map)
+			kfree(lun_info->aun_clone_map);
+		if (lun_info->lun_alloc_map)
+			kfree(lun_info->lun_alloc_map);
+		kfree(lun_info);
+		ba_lun->ba_lun_handle = NULL;
+	}
+}
+
 static int write_same16(struct afu *afu, struct lun_info *lun_info, u64 lba, u32 nblks)
 {
 	struct afu_cmd *cmd;

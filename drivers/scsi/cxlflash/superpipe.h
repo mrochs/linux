@@ -162,5 +162,6 @@ struct ctx_info *cxlflash_get_context(struct cxlflash *, u64 , struct lun_info *
 
 struct sisl_rht_entry *cxlflash_get_rhte(struct ctx_info *, res_hndl_t , struct lun_info *);
 
+void ba_terminate(struct ba_lun *);
 
 #endif /* ifndef _CXLFLASH_SUPERPIPE_H */

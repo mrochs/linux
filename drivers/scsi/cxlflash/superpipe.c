@@ -88,21 +88,6 @@ out:
 	return lun_info;
 }
 
-static void ba_terminate(struct ba_lun *ba_lun)
-{
-	struct ba_lun_info *lun_info =
-	    (struct ba_lun_info *)ba_lun->ba_lun_handle;
-
-	if (lun_info) {
-		if (lun_info->aun_clone_map)
-			kfree(lun_info->aun_clone_map);
-		if (lun_info->lun_alloc_map)
-			kfree(lun_info->lun_alloc_map);
-		kfree(lun_info);
-		ba_lun->ba_lun_handle = NULL;
-	}
-}
-
 /**
  * cxlflash_slave_alloc - Allocate a per LUN structure
  * @sdev:       struct scsi_device device to configure
