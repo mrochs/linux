@@ -36,7 +36,7 @@ static u32 ws = 0;
 module_param_named(ws, ws, uint, 0);
 MODULE_PARM_DESC(ws, " 1 = Perform WRITE_SAME16 per chunk on VLUN shrink");
 
-void marshall_virt_to_resize(struct dk_cxlflash_uvirtual *virt,
+static void marshall_virt_to_resize(struct dk_cxlflash_uvirtual *virt,
 				    struct dk_cxlflash_resize *resize)
 {
 	resize->hdr = virt->hdr;

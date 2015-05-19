@@ -150,7 +150,6 @@ struct cxlflash_global {
 
 int ba_init(struct ba_lun *);
 
-void marshall_virt_to_resize(struct dk_cxlflash_uvirtual *, struct dk_cxlflash_resize *);
 void marshall_rele_to_resize(struct dk_cxlflash_release *, struct dk_cxlflash_resize *);
 int cxlflash_vlun_resize(struct scsi_device *, struct dk_cxlflash_resize *);
 
