@@ -683,7 +683,6 @@ int cxlflash_disk_virtual_open(struct scsi_device *sdev, void *arg)
 	struct dk_cxlflash_uvirtual *virt = (struct dk_cxlflash_uvirtual *)arg;
 	struct dk_cxlflash_resize resize;
 
-	u32 perms;
 	u64 ctxid = virt->context_id;
 	u64 lun_size = virt->lun_size;
 	u64 last_lba = 0;
@@ -726,13 +725,10 @@ int cxlflash_disk_virtual_open(struct scsi_device *sdev, void *arg)
 		goto err1;
 	}
 
-	/* User specified permission on attach */
-	perms = ctx_info->rht_perms;
-
 	rsrc_handle = (rht_entry - ctx_info->rht_start);
 
 	rht_entry->nmask = MC_RHT_NMASK;
-	rht_entry->fp = SISL_RHT_FP(0U, perms);
+	rht_entry->fp = SISL_RHT_FP(0U, ctx_info->rht_perms);
 	/* format 0 & perms */
 
 	if (lun_size != 0) {

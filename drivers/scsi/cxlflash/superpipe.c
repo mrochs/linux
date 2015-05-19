@@ -1406,7 +1406,6 @@ static int cxlflash_disk_direct_open(struct scsi_device *sdev, void *arg)
 
 	struct dk_cxlflash_udirect *pphys = (struct dk_cxlflash_udirect *)arg;
 
-	u32 perms;
 	u64 ctxid = pphys->context_id;
 	u64 lun_size = 0;
 	u64 last_lba = 0;
@@ -1439,12 +1438,9 @@ static int cxlflash_disk_direct_open(struct scsi_device *sdev, void *arg)
 		goto err1;
 	}
 
-	/* User specified permission on attach */
-	perms = ctx_info->rht_perms;
-
 	rsrc_handle = (rht_entry - ctx_info->rht_start);
 
-	rht_format1(rht_entry, lun_info->lun_id, perms);
+	rht_format1(rht_entry, lun_info->lun_id, ctx_info->rht_perms);
 	cxlflash_afu_sync(afu, ctxid, rsrc_handle, AFU_LW_SYNC);
 
 	last_lba = lun_info->max_lba;
