@@ -151,10 +151,12 @@ struct cxlflash_global {
 
 int ba_init(struct ba_lun *);
 
-void marshall_rele_to_resize(struct dk_cxlflash_release *, struct dk_cxlflash_resize *);
+void marshall_rele_to_resize(struct dk_cxlflash_release *,
+			     struct dk_cxlflash_resize *);
 int cxlflash_vlun_resize(struct scsi_device *, struct dk_cxlflash_resize *);
 
-int cxlflash_clone_lxt(struct afu *, struct blka *, ctx_hndl_t , res_hndl_t , struct sisl_rht_entry *, struct sisl_rht_entry *);
+int cxlflash_clone_lxt(struct afu *, struct blka *, ctx_hndl_t, res_hndl_t,
+		       struct sisl_rht_entry *, struct sisl_rht_entry *);
 
 int cxlflash_disk_virtual_open(struct scsi_device *, void *);
 
@@ -163,9 +165,11 @@ void cxlflash_lun_detach(struct lun_info *);
 
 int cxlflash_check_status(struct sisl_ioasa *);
 
-struct ctx_info *cxlflash_get_context(struct cxlflash *, u64 , struct lun_info *, bool);
+struct ctx_info *cxlflash_get_context(struct cxlflash *, u64, struct lun_info *,
+				      bool);
 
-struct sisl_rht_entry *cxlflash_get_rhte(struct ctx_info *, res_hndl_t , struct lun_info *);
+struct sisl_rht_entry *cxlflash_get_rhte(struct ctx_info *, res_hndl_t,
+					 struct lun_info *);
 
 struct sisl_rht_entry *rhte_checkout(struct ctx_info *, struct lun_info *);
 void rhte_checkin(struct ctx_info *, struct sisl_rht_entry *);

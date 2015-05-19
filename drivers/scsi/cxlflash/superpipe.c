@@ -72,10 +72,9 @@ static struct lun_info *lookup_lun(struct scsi_device *sdev, __u8 *wwid)
 				return lun_info;
 		}
 
-        lun_info = create_lun_info(sdev);
-	if (unlikely(!lun_info)) {
+	lun_info = create_lun_info(sdev);
+	if (unlikely(!lun_info))
 		goto out;
-	}
 
 	spin_lock_irqsave(&global.slock, flags);
 	if (wwid)
@@ -148,17 +147,15 @@ void cxlflash_slave_destroy(struct scsi_device *sdev)
 	void *lun_info = (void *)sdev->hostdata;
 
 	cxlflash_dbg("lun_info=%p", lun_info);
-
-	return;
 }
 
-void cxlflash_list_init()
+void cxlflash_list_init(void)
 {
 	INIT_LIST_HEAD(&global.luns);
 	spin_lock_init(&global.slock);
 }
 
-void cxlflash_list_terminate()
+void cxlflash_list_terminate(void)
 {
 	struct lun_info *lun_info, *temp;
 	unsigned long flags = 0;
@@ -209,9 +206,8 @@ struct ctx_info *cxlflash_get_context(struct cxlflash *cxlflash,
 		spin_unlock_irqrestore(&cxlflash->ctx_tbl_slock, flags);
 
 		ctxpid = ctx_info->pid;
-		if (pid != ctxpid) {
+		if (pid != ctxpid)
 			goto denied;
-		}
 
 		if (likely(lun_info)) {
 			list_for_each_entry(lun_access, &ctx_info->luns, list)
@@ -220,9 +216,8 @@ struct ctx_info *cxlflash_get_context(struct cxlflash *cxlflash,
 					break;
 				}
 
-			if (!found) {
+			if (!found)
 				goto denied;
-			}
 		}
 	}
 
@@ -468,8 +463,6 @@ static void rht_format1(struct sisl_rht_entry *rht_entry, u64 lun_id, u32 perm)
 	rht_entry_f1->dw = dummy.dw;
 
 	smp_wmb();
-
-	return;
 }
 
 int cxlflash_lun_attach(struct lun_info *lun_info, enum lun_mode mode)
@@ -1046,7 +1039,7 @@ static int cxlflash_manage_lun(struct scsi_device *sdev,
 {
 	struct lun_info *lun_info = NULL;
 
-	lun_info = lookup_lun (sdev, manage->wwid);
+	lun_info = lookup_lun(sdev, manage->wwid);
 	cxlflash_info("ENTER: WWID = %016llX%016llX, flags = %016llX li = %p",
 		      get_unaligned_le64(&manage->wwid[0]),
 		      get_unaligned_le64(&manage->wwid[8]),
@@ -1286,7 +1279,7 @@ static int process_sense(struct scsi_device *sdev,
 			read_cap16(afu, lun_info, sdev->channel + 1);
 			verify->last_lba = lun_info->max_lba;
 			if (prev_lba != lun_info->max_lba)
-				cxlflash_dbg("Capacity changed old=%lld"
+				cxlflash_dbg("Capacity changed old=%lld "
 					     "new=%lld", prev_lba,
 					     lun_info->max_lba);
 			break;
@@ -1374,29 +1367,29 @@ static char *decode_ioctl(int cmd)
 		_CASE2STR(DK_CXLFLASH_VERIFY);
 	}
 
-	return ("UNKNOWN");
+	return "UNKNOWN";
 }
 
-/* NAME:	cxlflash_disk_direct_open	
- *	
- * FUNCTION:	open a virtual lun of specified size	
- *	
- * INPUTS:	
+/* NAME:	cxlflash_disk_direct_open
+ *
+ * FUNCTION:	open a virtual lun of specified size
+ *
+ * INPUTS:
  *              sdev       - Pointer to scsi device structure
  *              arg        - Pointer to ioctl specific structure
- *	
- * OUTPUTS:	
+ *
+ * OUTPUTS:
  *              none
- *	
- * RETURNS:	
+ *
+ * RETURNS:
  *              0           - Success
  *              errno       - Failure
- *	
- * NOTES:	
- *		When successful:	
- *		a. find a free RHT entry	
+ *
+ * NOTES:
+ *		When successful:
+ *		a. find a free RHT entry
  *		b. Program it with FORMAT1
- *	
+ *
  */
 static int cxlflash_disk_direct_open(struct scsi_device *sdev, void *arg)
 {
