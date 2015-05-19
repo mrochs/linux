@@ -518,130 +518,6 @@ static void cxlflash_lun_detach(struct lun_info *lun_info)
 }
 
 /*
- * NAME:        cxlflash_disk_open
- *
- * FUNCTION:    open a virtual lun of specified size
- *
- * INPUTS:
- *              sdev       - Pointer to scsi device structure
- *              arg        - Pointer to ioctl specific structure
- *
- * OUTPUTS:
- *              none
- *
- * RETURNS:
- *              0           - Success
- *              errno       - Failure
- *
- * NOTES:
- *              When successful:
- *               a. find a free RHT entry
- *
- */
-static int cxlflash_disk_open(struct scsi_device *sdev, void *arg,
-			      enum lun_mode mode)
-{
-	struct cxlflash *cxlflash = (struct cxlflash *)sdev->host->hostdata;
-	struct afu *afu = cxlflash->afu;
-	struct lun_info *lun_info = sdev->hostdata;
-
-	struct dk_cxlflash_uvirtual *virt = (struct dk_cxlflash_uvirtual *)arg;
-	struct dk_cxlflash_udirect *pphys = (struct dk_cxlflash_udirect *)arg;
-	struct dk_cxlflash_resize resize;
-
-	u32 perms;
-	u64 context_id;
-	u64 lun_size = 0;
-	u64 last_lba = 0;
-	u64 rsrc_handle = -1;
-
-	int rc = 0;
-
-	struct ctx_info *ctx_info;
-	struct sisl_rht_entry *rht_entry = NULL;
-
-	switch (mode) {
-	case MODE_VIRTUAL:
-		context_id = virt->context_id;
-		lun_size = virt->lun_size;
-		break;
-	case MODE_PHYSICAL:
-		context_id = pphys->context_id;
-		break;
-	default:
-		cxlflash_err("Unknown mode! (%u)", mode);
-		rc = -EINVAL;
-		goto out;
-	}
-
-	cxlflash_info("context=0x%llx ls=0x%llx", context_id, lun_size);
-
-	rc = cxlflash_lun_attach(lun_info, mode);
-	if (unlikely(rc)) {
-		cxlflash_err("Failed to attach to LUN! mode=%u", mode);
-		goto out;
-	}
-
-	ctx_info = cxlflash_get_context(cxlflash, context_id, lun_info, false);
-	if (unlikely(!ctx_info)) {
-		cxlflash_err("Invalid context! (%llu)", context_id);
-		rc = -EINVAL;
-		goto err1;
-	}
-
-	rht_entry = rhte_checkout(ctx_info, lun_info);
-	if (unlikely(!rht_entry)) {
-		cxlflash_err("too many opens for this context");
-		rc = -EMFILE;	/* too many opens  */
-		goto err1;
-	}
-
-	/* User specified permission on attach */
-	perms = ctx_info->rht_perms;
-
-	rsrc_handle = (rht_entry - ctx_info->rht_start);
-
-	if (mode == MODE_VIRTUAL) {
-		rht_entry->nmask = MC_RHT_NMASK;
-		rht_entry->fp = SISL_RHT_FP(0U, perms);
-		/* format 0 & perms */
-
-		if (lun_size != 0) {
-			marshall_virt_to_resize(virt, &resize);
-			resize.rsrc_handle = rsrc_handle;
-			rc = cxlflash_vlun_resize(sdev, &resize);
-			if (rc) {
-				cxlflash_err("resize failed rc %d", rc);
-				goto err2;
-			}
-			last_lba = resize.last_lba;
-		}
-		virt->hdr.return_flags = 0;
-		virt->last_lba = last_lba;
-		virt->rsrc_handle = rsrc_handle;
-	} else if (mode == MODE_PHYSICAL) {
-		rht_format1(rht_entry, lun_info->lun_id, perms);
-		cxlflash_afu_sync(afu, context_id, rsrc_handle, AFU_LW_SYNC);
-
-		last_lba = lun_info->max_lba;
-		pphys->hdr.return_flags = 0;
-		pphys->last_lba = last_lba;
-		pphys->rsrc_handle = rsrc_handle;
-	}
-
-out:
-	cxlflash_info("returning handle 0x%llx rc=%d llba %lld",
-		      rsrc_handle, rc, last_lba);
-	return rc;
-
-err2:
-	rhte_checkin(ctx_info, rht_entry);
-err1:
-	cxlflash_lun_detach(lun_info);
-	goto out;
-}
-
-/*
  * NAME:        cxlflash_disk_release
  *
  * FUNCTION:    Close a virtual LBA space setting it to 0 size and
@@ -1492,12 +1368,147 @@ static char *decode_ioctl(int cmd)
 
 static int cxlflash_disk_virtual_open(struct scsi_device *sdev, void *arg)
 {
-	return cxlflash_disk_open(sdev, arg, MODE_VIRTUAL);
+	struct cxlflash *cxlflash = (struct cxlflash *)sdev->host->hostdata;
+	struct lun_info *lun_info = sdev->hostdata;
+
+	struct dk_cxlflash_uvirtual *virt = (struct dk_cxlflash_uvirtual *)arg;
+	struct dk_cxlflash_resize resize;
+
+	u32 perms;
+	u64 context_id;
+	u64 lun_size = 0;
+	u64 last_lba = 0;
+	u64 rsrc_handle = -1;
+
+	int rc = 0;
+
+	struct ctx_info *ctx_info;
+	struct sisl_rht_entry *rht_entry = NULL;
+
+	context_id = virt->context_id;
+	lun_size = virt->lun_size;
+
+	cxlflash_info("context=0x%llx ls=0x%llx", context_id, lun_size);
+
+	rc = cxlflash_lun_attach(lun_info, MODE_VIRTUAL);
+	if (unlikely(rc)) {
+		cxlflash_err("Failed to attach to LUN! mode=%u", MODE_VIRTUAL);
+		goto out;
+	}
+
+	ctx_info = cxlflash_get_context(cxlflash, context_id, lun_info, false);
+	if (unlikely(!ctx_info)) {
+		cxlflash_err("Invalid context! (%llu)", context_id);
+		rc = -EINVAL;
+		goto err1;
+	}
+
+	rht_entry = rhte_checkout(ctx_info, lun_info);
+	if (unlikely(!rht_entry)) {
+		cxlflash_err("too many opens for this context");
+		rc = -EMFILE;	/* too many opens  */
+		goto err1;
+	}
+
+	/* User specified permission on attach */
+	perms = ctx_info->rht_perms;
+
+	rsrc_handle = (rht_entry - ctx_info->rht_start);
+
+	rht_entry->nmask = MC_RHT_NMASK;
+	rht_entry->fp = SISL_RHT_FP(0U, perms);
+	/* format 0 & perms */
+
+	if (lun_size != 0) {
+		marshall_virt_to_resize(virt, &resize);
+		resize.rsrc_handle = rsrc_handle;
+		rc = cxlflash_vlun_resize(sdev, &resize);
+		if (rc) {
+			cxlflash_err("resize failed rc %d", rc);
+			goto err2;
+		}
+		last_lba = resize.last_lba;
+	}
+	virt->hdr.return_flags = 0;
+	virt->last_lba = last_lba;
+	virt->rsrc_handle = rsrc_handle;
+
+out:
+	cxlflash_info("returning handle 0x%llx rc=%d llba %lld",
+		      rsrc_handle, rc, last_lba);
+	return rc;
+
+err2:
+	rhte_checkin(ctx_info, rht_entry);
+err1:
+	cxlflash_lun_detach(lun_info);
+	goto out;
 }
 
 static int cxlflash_disk_direct_open(struct scsi_device *sdev, void *arg)
 {
-	return cxlflash_disk_open(sdev, arg, MODE_PHYSICAL);
+	struct cxlflash *cxlflash = (struct cxlflash *)sdev->host->hostdata;
+	struct afu *afu = cxlflash->afu;
+	struct lun_info *lun_info = sdev->hostdata;
+
+	struct dk_cxlflash_udirect *pphys = (struct dk_cxlflash_udirect *)arg;
+
+	u32 perms;
+	u64 context_id;
+	u64 lun_size = 0;
+	u64 last_lba = 0;
+	u64 rsrc_handle = -1;
+
+	int rc = 0;
+
+	struct ctx_info *ctx_info;
+	struct sisl_rht_entry *rht_entry = NULL;
+
+	context_id = pphys->context_id;
+
+	cxlflash_info("context=0x%llx ls=0x%llx", context_id, lun_size);
+
+	rc = cxlflash_lun_attach(lun_info, MODE_PHYSICAL);
+	if (unlikely(rc)) {
+		cxlflash_err("Failed to attach to LUN! mode=%u", MODE_PHYSICAL);
+		goto out;
+	}
+
+	ctx_info = cxlflash_get_context(cxlflash, context_id, lun_info, false);
+	if (unlikely(!ctx_info)) {
+		cxlflash_err("Invalid context! (%llu)", context_id);
+		rc = -EINVAL;
+		goto err1;
+	}
+
+	rht_entry = rhte_checkout(ctx_info, lun_info);
+	if (unlikely(!rht_entry)) {
+		cxlflash_err("too many opens for this context");
+		rc = -EMFILE;	/* too many opens  */
+		goto err1;
+	}
+
+	/* User specified permission on attach */
+	perms = ctx_info->rht_perms;
+
+	rsrc_handle = (rht_entry - ctx_info->rht_start);
+
+	rht_format1(rht_entry, lun_info->lun_id, perms);
+	cxlflash_afu_sync(afu, context_id, rsrc_handle, AFU_LW_SYNC);
+
+	last_lba = lun_info->max_lba;
+	pphys->hdr.return_flags = 0;
+	pphys->last_lba = last_lba;
+	pphys->rsrc_handle = rsrc_handle;
+
+out:
+	cxlflash_info("returning handle 0x%llx rc=%d llba %lld",
+		      rsrc_handle, rc, last_lba);
+	return rc;
+
+err1:
+	cxlflash_lun_detach(lun_info);
+	goto out;
 }
 
 /**
