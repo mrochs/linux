@@ -262,32 +262,6 @@ out:
 
 }
 
-static int cxlflash_init_ba(struct lun_info *lun_info)
-{
-	int rc = 0;
-	struct blka *blka = &lun_info->blka;
-
-	memset(blka, 0, sizeof(*blka));
-	mutex_init(&blka->mutex);
-
-	blka->ba_lun.lun_id = lun_info->lun_id;
-	blka->ba_lun.lsize = lun_info->max_lba + 1;
-	blka->ba_lun.lba_size = lun_info->blk_len;
-
-	blka->ba_lun.au_size = MC_CHUNK_SIZE;
-	blka->nchunk = blka->ba_lun.lsize / MC_CHUNK_SIZE;
-
-	rc = ba_init(&blka->ba_lun);
-	if (rc) {
-		cxlflash_err("cannot init block_alloc, rc=%d", rc);
-		goto cxlflash_init_ba_exit;
-	}
-
-cxlflash_init_ba_exit:
-	cxlflash_info("returning rc=%d lun_info=%p", rc, lun_info);
-	return rc;
-}
-
 /**
  * cxlflash_check_status() - evaluates the status of an AFU command
  * @ioasa:	The IOASA of an AFU command.
@@ -912,13 +886,6 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 		read_cap16(afu, lun_info, sdev->channel + 1);
 		cxlflash_info("LBA = %016llX", lun_info->max_lba);
 		cxlflash_info("BLK_LEN = %08X", lun_info->blk_len);
-		rc = cxlflash_init_ba(lun_info);
-		if (rc) {
-			cxlflash_err("call to cxlflash_init_ba failed "
-				     "rc=%d!", rc);
-			rc = -ENOMEM;
-			goto out;
-		}
 	}
 
 	if (attach->hdr.flags & DK_CXLFLASH_ATTACH_REUSE_CONTEXT) {

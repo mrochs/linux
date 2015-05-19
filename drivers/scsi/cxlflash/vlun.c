@@ -314,6 +314,32 @@ void ba_terminate(struct ba_lun *ba_lun)
 	}
 }
 
+static int cxlflash_init_ba(struct lun_info *lun_info)
+{
+	int rc = 0;
+	struct blka *blka = &lun_info->blka;
+
+	memset(blka, 0, sizeof(*blka));
+	mutex_init(&blka->mutex);
+
+	blka->ba_lun.lun_id = lun_info->lun_id;
+	blka->ba_lun.lsize = lun_info->max_lba + 1;
+	blka->ba_lun.lba_size = lun_info->blk_len;
+
+	blka->ba_lun.au_size = MC_CHUNK_SIZE;
+	blka->nchunk = blka->ba_lun.lsize / MC_CHUNK_SIZE;
+
+	rc = ba_init(&blka->ba_lun);
+	if (rc) {
+		cxlflash_err("cannot init block_alloc, rc=%d", rc);
+		goto cxlflash_init_ba_exit;
+	}
+
+cxlflash_init_ba_exit:
+	cxlflash_info("returning rc=%d lun_info=%p", rc, lun_info);
+	return rc;
+}
+
 static int write_same16(struct afu *afu, struct lun_info *lun_info, u64 lba, u32 nblks)
 {
 	struct afu_cmd *cmd;
@@ -649,6 +675,16 @@ int cxlflash_disk_virtual_open(struct scsi_device *sdev, void *arg)
 	lun_size = virt->lun_size;
 
 	cxlflash_info("context=0x%llx ls=0x%llx", context_id, lun_size);
+
+	if (lun_info->mode == MODE_NONE) {
+		rc = cxlflash_init_ba(lun_info);
+		if (rc) {
+			cxlflash_err("call to cxlflash_init_ba failed "
+				     "rc=%d!", rc);
+			rc = -ENOMEM;
+			goto out;
+		}
+	}
 
 	rc = cxlflash_lun_attach(lun_info, MODE_VIRTUAL);
 	if (unlikely(rc)) {
