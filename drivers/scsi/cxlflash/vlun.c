@@ -355,7 +355,8 @@ static int grow_lxt(struct afu *afu,
 		    ctx_hndl_t ctx_hndl_u,
 		    res_hndl_t res_hndl_u,
 		    struct sisl_rht_entry *rht_entry,
-		    u64 delta, u64 * act_new_size)
+		    u64 delta,
+		    u64 * act_new_size)
 {
 	struct sisl_lxt_entry *lxt = NULL, *lxt_old = NULL;
 	unsigned int av_size;
@@ -371,6 +372,13 @@ static int grow_lxt(struct afu *afu,
 	 */
 	mutex_lock(&blka->mutex);
 	av_size = ba_space(&blka->ba_lun);
+	if (av_size <= 0)
+	{
+		cxlflash_err("ba_space error: av_size %d", av_size);
+		mutex_unlock(&blka->mutex);
+		return -ENOSPC;
+	}
+
 	if (av_size < delta)
 		delta = av_size;
 
@@ -575,21 +583,21 @@ int cxlflash_vlun_resize(struct scsi_device *sdev, struct dk_cxlflash_resize *re
 	}
 
 	if (new_size > rht_entry->lxt_cnt)
-		grow_lxt(afu,
-			 lun_info,
-			 resize->context_id,
-			 res_hndl,
-			 rht_entry,
-			 new_size - rht_entry->lxt_cnt,
-			 &act_new_size);
+		rc = grow_lxt(afu,
+			      lun_info,
+			      resize->context_id,
+			      res_hndl,
+			      rht_entry,
+			      new_size - rht_entry->lxt_cnt,
+			      &act_new_size);
 	else if (new_size < rht_entry->lxt_cnt)
-		shrink_lxt(afu,
-			   lun_info,
-			   resize->context_id,
-			   res_hndl,
-			   rht_entry,
-			   rht_entry->lxt_cnt - new_size,
-			   &act_new_size);
+		rc = shrink_lxt(afu,
+				lun_info,
+				resize->context_id,
+				res_hndl,
+				rht_entry,
+				rht_entry->lxt_cnt - new_size,
+				&act_new_size);
 	else
 		act_new_size = new_size;
 
