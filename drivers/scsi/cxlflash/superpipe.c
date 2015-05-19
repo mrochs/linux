@@ -188,19 +188,29 @@ struct ctx_info *cxlflash_get_context(struct cxlflash *cxlflash,
 	struct lun_access *lun_access = NULL;
 	bool found = false;
 	pid_t pid = current->tgid, ctxpid = 0;
+	unsigned long flags = 0;
 
 	if (unlikely(clone_path))
 		pid = current->parent->tgid;
 
 	if (likely(ctxid < MAX_CONTEXT)) {
-		ctx_info = cxlflash->ctx_info[ctxid];
-		if (unlikely(!ctx_info))
+		spin_lock_irqsave(&cxlflash->ctx_tbl_slock, flags);
+		ctx_info = cxlflash->ctx_tbl[ctxid];
+		if (unlikely(!ctx_info)) {
+			spin_unlock_irqrestore(&cxlflash->ctx_tbl_slock, flags);
 			goto out;
+		}
+
+		/*
+		 * Increment the reference count under lock so the context
+		 * is not yanked from under us on a removal thread.
+		 */
+		atomic_inc(&ctx_info->nrefs);
+		spin_unlock_irqrestore(&cxlflash->ctx_tbl_slock, flags);
 
 		ctxpid = ctx_info->pid;
 		if (pid != ctxpid) {
-			ctx_info = NULL;
-			goto out;
+			goto denied;
 		}
 
 		if (likely(lun_info)) {
@@ -211,8 +221,7 @@ struct ctx_info *cxlflash_get_context(struct cxlflash *cxlflash,
 				}
 
 			if (!found) {
-				ctx_info = NULL;
-				goto out;
+				goto denied;
 			}
 		}
 	}
@@ -222,6 +231,11 @@ out:
 		     ctxid, ctx_info, ctxpid, pid, clone_path, found);
 
 	return ctx_info;
+
+denied:
+	atomic_dec(&ctx_info->nrefs);
+	ctx_info = NULL;
+	goto out;
 }
 
 static int cxlflash_afu_attach(struct cxlflash *cxlflash,
@@ -523,7 +537,7 @@ static int cxlflash_disk_release(struct scsi_device *sdev,
 
 	int rc = 0;
 
-	struct ctx_info *ctx_info;
+	struct ctx_info *ctx_info = NULL;
 	struct sisl_rht_entry *rht_entry;
 
 	cxlflash_info("context=0x%llx res_hndl=0x%llx li->mode=%u li->users=%u",
@@ -585,6 +599,8 @@ static int cxlflash_disk_release(struct scsi_device *sdev,
 	cxlflash_lun_detach(lun_info);
 
 out:
+	if (likely(ctx_info))
+		atomic_dec(&ctx_info->nrefs);
 	cxlflash_info("returning rc=%d", rc);
 	return rc;
 }
@@ -643,6 +659,7 @@ static struct ctx_info *create_context(struct cxlflash *cxlflash,
 	ctx_info->pid = current->pid;
 	ctx_info->ctx = ctx;
 	INIT_LIST_HEAD(&ctx_info->luns);
+	atomic_set(&ctx_info->nrefs, 1);
 
 	cxlflash->num_user_contexts++;
 
@@ -684,11 +701,12 @@ static int cxlflash_disk_detach(struct scsi_device *sdev,
 	struct lun_info *lun_info = sdev->hostdata;
 	struct lun_access *lun_access, *t;
 	struct dk_cxlflash_release rel;
-	struct ctx_info *ctx_info;
+	struct ctx_info *ctx_info = NULL;
 
 	int i;
 	int rc = 0;
 	int lfd;
+	unsigned long flags = 0;
 
 	cxlflash_info("context=0x%llx", detach->context_id);
 
@@ -726,9 +744,17 @@ static int cxlflash_disk_detach(struct scsi_device *sdev,
 
 	/* Tear down context following last LUN cleanup */
 	if (list_empty(&ctx_info->luns)) {
-		lfd = ctx_info->lfd;
+		spin_lock_irqsave(&cxlflash->ctx_tbl_slock, flags);
+		cxlflash->ctx_tbl[detach->context_id] = NULL;
+		spin_unlock_irqrestore(&cxlflash->ctx_tbl_slock, flags);
 
-		cxlflash->ctx_info[detach->context_id] = NULL;
+		while (atomic_read(&ctx_info->nrefs) > 1) {
+			cxlflash_dbg("waiting on threads... (%d)",
+				     atomic_read(&ctx_info->nrefs));
+			cpu_relax();
+		}
+
+		lfd = ctx_info->lfd;
 		destroy_context(cxlflash, ctx_info);
 		ctx_info = NULL;
 
@@ -745,6 +771,8 @@ static int cxlflash_disk_detach(struct scsi_device *sdev,
 	}
 
 out:
+	if (likely(ctx_info))
+		atomic_dec(&ctx_info->nrefs);
 	cxlflash_info("returning rc=%d", rc);
 	return rc;
 }
@@ -782,7 +810,7 @@ int cxlflash_cxl_release(struct inode *inode, struct file *file)
 	struct cxl_context *ctx = cxl_fops_get_context(file);
 	struct cxlflash *cxlflash = container_of(file->f_op, struct cxlflash,
 						   cxl_fops);
-	struct ctx_info *ctx_info;
+	struct ctx_info *ctx_info = NULL;
 	struct dk_cxlflash_detach detach = { { 0 }, 0 };
 	struct lun_access *lun_access, *t;
 	int context_id;
@@ -812,14 +840,21 @@ int cxlflash_cxl_release(struct inode *inode, struct file *file)
 	/* Reset the file descriptor to indicate we're on a close() thread */
 	ctx_info->lfd = -1;
 	detach.context_id = context_id;
+	atomic_dec(&ctx_info->nrefs); /* fix up reference count */
 	list_for_each_entry_safe(lun_access, t, &ctx_info->luns, list)
 		cxlflash_disk_detach(lun_access->sdev, &detach);
 
-	/* Don't reference ctx_info, lun_access, or t */
+	/*
+	 * Don't reference lun_access, or t (or ctx_info for that matter, even
+	 * though it's invalidated to appease the reference counting code.
+	 */
+	ctx_info = NULL;
 
 out_release:
 	cxl_fd_release(inode, file);
 out:
+	if (likely(ctx_info))
+		atomic_dec(&ctx_info->nrefs);
 	cxlflash_dbg("returning");
 	return 0;
 }
@@ -974,7 +1009,7 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 	 * visible to userspace and can't be undone safely on this thread.
 	 */
 	list_add(&lun_access->list, &ctx_info->luns);
-	cxlflash->ctx_info[context_id] = ctx_info;
+	cxlflash->ctx_tbl[context_id] = ctx_info;
 	fd_install(fd, file);
 
 	attach->hdr.return_flags = 0;
@@ -986,6 +1021,9 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 
 out:
 	attach->adap_fd = fd;
+
+	if (likely(ctx_info))
+		atomic_dec(&ctx_info->nrefs);
 
 	cxlflash_info("returning ctxid=%d fd=%d bs=%lld rc=%d llba=%lld",
 		      context_id, fd, attach->block_size, rc, attach->last_lba);
@@ -1026,7 +1064,7 @@ static int cxlflash_afu_recover(struct scsi_device *sdev,
 	struct cxlflash *cxlflash = (struct cxlflash *)sdev->host->hostdata;
 	struct lun_info *lun_info = sdev->hostdata;
 	struct afu *afu = cxlflash->afu;
-	struct ctx_info *ctx_info;
+	struct ctx_info *ctx_info = NULL;
 	long reg;
 	int rc = 0;
 
@@ -1053,6 +1091,8 @@ static int cxlflash_afu_recover(struct scsi_device *sdev,
 	}
 
 out:
+	if (likely(ctx_info))
+		atomic_dec(&ctx_info->nrefs);
 	return rc;
 }
 
@@ -1086,7 +1126,8 @@ static int cxlflash_disk_clone(struct scsi_device *sdev,
 	struct afu *afu = cxlflash->afu;
 	struct dk_cxlflash_release release = { { 0 }, 0 };
 
-	struct ctx_info *ctx_info_src, *ctx_info_dst;
+	struct ctx_info *ctx_info_src = NULL,
+			*ctx_info_dst = NULL;
 	struct lun_access *lun_access_src, *lun_access_dst;
 	u32 perms;
 	int adap_fd_src = clone->adap_fd_src;
@@ -1209,6 +1250,10 @@ out_success:
 
 	/* fall thru */
 out:
+	if (likely(ctx_info_src))
+		atomic_dec(&ctx_info_src->nrefs);
+	if (likely(ctx_info_dst))
+		atomic_dec(&ctx_info_dst->nrefs);
 	cxlflash_info("returning rc=%d", rc);
 	return rc;
 
@@ -1287,7 +1332,7 @@ static int cxlflash_disk_verify(struct scsi_device *sdev,
 				struct dk_cxlflash_verify *verify)
 {
 	int rc = 0;
-	struct ctx_info *ctx_info;
+	struct ctx_info *ctx_info = NULL;
 	struct cxlflash *cxlflash = (struct cxlflash *)sdev->host->hostdata;
 	struct lun_info *lun_info = sdev->hostdata;
 
@@ -1311,6 +1356,8 @@ static int cxlflash_disk_verify(struct scsi_device *sdev,
 		rc = process_sense(sdev, verify);
 
 out:
+	if (likely(ctx_info))
+		atomic_dec(&ctx_info->nrefs);
 	cxlflash_info("returning rc=%d llba=%lld", rc, verify->last_lba);
 	return rc;
 }
@@ -1363,7 +1410,7 @@ static int cxlflash_disk_direct_open(struct scsi_device *sdev, void *arg)
 	struct dk_cxlflash_udirect *pphys = (struct dk_cxlflash_udirect *)arg;
 
 	u32 perms;
-	u64 context_id;
+	u64 ctxid;
 	u64 lun_size = 0;
 	u64 last_lba = 0;
 	u64 rsrc_handle = -1;
@@ -1373,9 +1420,9 @@ static int cxlflash_disk_direct_open(struct scsi_device *sdev, void *arg)
 	struct ctx_info *ctx_info;
 	struct sisl_rht_entry *rht_entry = NULL;
 
-	context_id = pphys->context_id;
+	ctxid = pphys->context_id;
 
-	cxlflash_info("context=0x%llx ls=0x%llx", context_id, lun_size);
+	cxlflash_info("ctxid=%llu ls=0x%llx", ctxid, lun_size);
 
 	rc = cxlflash_lun_attach(lun_info, MODE_PHYSICAL);
 	if (unlikely(rc)) {
@@ -1383,9 +1430,9 @@ static int cxlflash_disk_direct_open(struct scsi_device *sdev, void *arg)
 		goto out;
 	}
 
-	ctx_info = cxlflash_get_context(cxlflash, context_id, lun_info, false);
+	ctx_info = cxlflash_get_context(cxlflash, ctxid, lun_info, false);
 	if (unlikely(!ctx_info)) {
-		cxlflash_err("Invalid context! (%llu)", context_id);
+		cxlflash_err("Invalid context! (%llu)", ctxid);
 		rc = -EINVAL;
 		goto err1;
 	}
@@ -1403,7 +1450,7 @@ static int cxlflash_disk_direct_open(struct scsi_device *sdev, void *arg)
 	rsrc_handle = (rht_entry - ctx_info->rht_start);
 
 	rht_format1(rht_entry, lun_info->lun_id, perms);
-	cxlflash_afu_sync(afu, context_id, rsrc_handle, AFU_LW_SYNC);
+	cxlflash_afu_sync(afu, ctxid, rsrc_handle, AFU_LW_SYNC);
 
 	last_lba = lun_info->max_lba;
 	pphys->hdr.return_flags = 0;
@@ -1411,6 +1458,8 @@ static int cxlflash_disk_direct_open(struct scsi_device *sdev, void *arg)
 	pphys->rsrc_handle = rsrc_handle;
 
 out:
+	if (likely(ctx_info))
+		atomic_dec(&ctx_info->nrefs);
 	cxlflash_info("returning handle 0x%llx rc=%d llba %lld",
 		      rsrc_handle, rc, last_lba);
 	return rc;

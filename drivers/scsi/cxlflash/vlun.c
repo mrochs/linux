@@ -584,7 +584,7 @@ int cxlflash_vlun_resize(struct scsi_device *sdev, struct dk_cxlflash_resize *re
 	u64 new_size;
 	u64 nsectors;
 
-	struct ctx_info *ctx_info;
+	struct ctx_info *ctx_info = NULL;
 	struct sisl_rht_entry *rht_entry;
 
 	int rc = 0;
@@ -647,6 +647,8 @@ int cxlflash_vlun_resize(struct scsi_device *sdev, struct dk_cxlflash_resize *re
 			    lun_info->blk_len) / CXLFLASH_BLOCK_SIZE) - 1);
 
 out:
+	if (likely(ctx_info))
+		atomic_dec(&ctx_info->nrefs);
 	cxlflash_info("resized to %lld returning rc=%d", resize->last_lba, rc);
 	return rc;
 }

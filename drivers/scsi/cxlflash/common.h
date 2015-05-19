@@ -120,7 +120,7 @@ struct ctx_info {
 	int ctxid;
 	int lfd;
 	pid_t pid;
-	u32 padding;
+	atomic_t nrefs;	/* Number of active references, must be 0 for removal */
 	struct cxl_context *ctx;
 	struct list_head luns;	/* LUNs attached to this context */
 };
@@ -151,10 +151,11 @@ struct cxlflash {
 	struct pci_pool *cxlflash_cmd_pool;
 	struct pci_dev *parent_dev;
 
-	int num_user_contexts;
-	struct ctx_info *ctx_info[MAX_CONTEXT];
+	spinlock_t ctx_tbl_slock;
+	struct ctx_info *ctx_tbl[MAX_CONTEXT];
 	struct file_operations cxl_fops;
 
+	int num_user_contexts;
 	int last_lun_index;
 
 	wait_queue_head_t tmf_wait_q;

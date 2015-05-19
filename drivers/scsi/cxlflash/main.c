@@ -2143,6 +2143,7 @@ static int cxlflash_probe(struct pci_dev *pdev,
 	INIT_WORK(&cxlflash->work_q, cxlflash_worker_thread);
 	cxlflash->lr_state = LINK_RESET_INVALID;
 	cxlflash->lr_port = -1;
+	spin_lock_init(&cxlflash->ctx_tbl_slock);
 
 	pci_set_drvdata(pdev, cxlflash);
 
