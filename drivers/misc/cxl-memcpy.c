@@ -87,7 +87,7 @@ static int cxl_memcpy_probe(struct pci_dev *dev, const struct pci_device_id *id)
 	if (rc)
 		return rc;
 
-	afu = cxl_pci_to_afu(dev, NULL);
+	afu = cxl_pci_to_afu(dev);
 
 	minor = atomic_inc_return(&minor_number);
 	if (minor >= MINOR_MAX) {

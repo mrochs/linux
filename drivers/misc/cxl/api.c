@@ -21,7 +21,7 @@ struct cxl_context *cxl_dev_context_init(struct pci_dev *dev)
 	struct cxl_context  *ctx;
 	int rc;
 
-	afu = cxl_pci_to_afu(dev, NULL);
+	afu = cxl_pci_to_afu(dev);
 
 	ctx = cxl_context_alloc();
 	if (IS_ERR(ctx))
@@ -49,7 +49,7 @@ struct device *cxl_get_phys_dev(struct pci_dev *dev)
 {
 	struct cxl_afu *afu;
 
-	afu = cxl_pci_to_afu(dev, NULL);
+	afu = cxl_pci_to_afu(dev);
 
 	return afu->adapter->dev.parent;
 }

@@ -251,19 +251,18 @@ void cxl_pci_vphb_remove(struct cxl_afu *afu)
 	pci_remove_root_bus(phb->bus);
 }
 
-struct cxl_afu *cxl_pci_to_afu(struct pci_dev *dev, unsigned int *cfg_record)
+struct cxl_afu *cxl_pci_to_afu(struct pci_dev *dev)
 {
 	struct pci_controller *phb;
-	struct cxl_afu *afu;
 
 	phb = pci_bus_to_host(dev->bus);
 
-	afu = (struct cxl_afu *)phb->private_data;
-
-	if (cfg_record)
-		*cfg_record = cxl_pcie_cfg_record(dev->bus->number,
-						  dev->devfn);
-
-	return afu;
+	return (struct cxl_afu *)phb->private_data;
 }
 EXPORT_SYMBOL_GPL(cxl_pci_to_afu);
+
+unsigned int cxl_pci_to_cfg_record(struct pci_dev *dev)
+{
+	return cxl_pcie_cfg_record(dev->bus->number, dev->devfn);
+}
+EXPORT_SYMBOL_GPL(cxl_pci_to_cfg_record);

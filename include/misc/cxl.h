@@ -19,15 +19,14 @@
  * Get the AFU and configuration record number associated with a particular
  * PCI_dev.  NULL may be pased to cfg_record if it's not required.
  */
-struct cxl_afu *cxl_pci_to_afu(struct pci_dev *dev, unsigned int *cfg_record);
 
-/* Get default context associated with this pci_dev */
-struct cxl_context *cxl_get_context(struct pci_dev *dev);
+/* Get the AFU associated with a pci_dev */
+struct cxl_afu *cxl_pci_to_afu(struct pci_dev *dev);
 
-/*
- * Get the physical device which the AFU is attached.  We return a device here
- * not a pci_dev.
- */
+/* Get the AFU conf record number associated with a pci_dev */
+unsigned int cxl_pci_to_cfg_record(struct pci_dev *dev);
+
+/* Get the physical device (ie. the PCIe card) which the AFU is attached */
 struct device *cxl_get_phys_dev(struct pci_dev *dev);
 
 /* Initalise a context from a AFU PCI device */
