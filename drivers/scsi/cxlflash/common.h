@@ -195,15 +195,6 @@ struct afu {
 	 */
 	struct afu_cmd cmd[CXLFLASH_NUM_CMDS];
 
-	/* Housekeeping data */
-	struct mutex afu_mutex;	/* for anything that needs serialization
-				   e. g. to access afu */
-	struct mutex err_mutex;	/* for signalling error thread */
-	wait_queue_head_t err_cv;
-	int err_flag;
-#define E_SYNC_INTR   0x1	/* synchronous error interrupt */
-#define E_ASYNC_INTR  0x2	/* asynchronous error interrupt */
-
 	/* Beware of alignment till here. Preferably introduce new
 	 * fields after this point
 	 */
