@@ -698,7 +698,7 @@ static void cxlflash_free_mem(struct cxlflash *cxlflash)
 				free_page((unsigned long)buf);
 		}
 
-		kfree(afu);
+		free_pages((unsigned long)afu, get_order(sizeof(struct afu)));
 		cxlflash->afu = NULL;
 	}
 }
@@ -839,7 +839,11 @@ static int cxlflash_gb_alloc(struct cxlflash *cxlflash)
 	int i;
 	char *buf = NULL;
 
-	cxlflash->afu = kzalloc(sizeof(struct afu), GFP_KERNEL);
+	/* This allocation is about 12K, i.e. only 1 64k page
+	 * and upto 4 4k pages
+	 */
+	cxlflash->afu = (void *)__get_free_pages(GFP_KERNEL | __GFP_ZERO,
+						 get_order(sizeof(struct afu)));
 
 	if (unlikely(!cxlflash->afu)) {
 		cxlflash_err("cannot get %d free pages",
