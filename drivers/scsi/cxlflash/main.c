@@ -2169,6 +2169,7 @@ static int cxlflash_probe(struct pci_dev *pdev,
 	cxlflash->parent_dev = to_pci_dev(phys_dev);
 
 	cxlflash->cxl_afu = cxl_pci_to_afu(pdev, NULL);
+	//cxlflash->cxl_afu = cxl_pci_to_afu(pdev); XXX
 	rc = cxlflash_init_afu(cxlflash);
 	if (rc) {
 		cxlflash_dev_err(&pdev->dev,
