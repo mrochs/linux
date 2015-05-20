@@ -50,6 +50,7 @@
 #endif
 
 #define CMD_BUFSIZE     PAGE_SIZE_4K
+#define IOARCB_ALIGN    16
 
 /* flags in IOA status area for host use */
 #define B_DONE       0x01
@@ -178,7 +179,8 @@ struct afu_cmd {
 	u8 internal:1;
 	u8 sync:1;
 
-} __aligned(cache_line_size());
+	/* As per the SISLITE spec the IOARCB EA has to be 16-byte aligned */
+} __aligned(IOARCB_ALIGN);
 
 struct afu {
 	/* Stuff requiring alignment go first. */
