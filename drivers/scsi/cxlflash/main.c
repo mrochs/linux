@@ -2161,7 +2161,7 @@ static int cxlflash_probe(struct pci_dev *pdev,
 	 * PCI host bus (vphb)
 	 */
 	phys_dev = cxl_get_phys_dev(pdev);
-	if (!dev_is_pci(phys_dev)) {	/* make sure it's pci */
+	if (!dev_is_pci(phys_dev)) {
 		cxlflash_err("not a pci dev");
 		rc = ENODEV;
 		goto out_remove;
