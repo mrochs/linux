@@ -698,8 +698,7 @@ static void cxlflash_free_mem(struct cxlflash *cxlflash)
 				free_page((unsigned long)buf);
 		}
 
-		free_pages((unsigned long)afu,
-			   get_order(sizeof(struct afu)));
+		kfree(afu);
 		cxlflash->afu = NULL;
 	}
 }
