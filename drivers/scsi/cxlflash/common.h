@@ -50,7 +50,6 @@
 #endif
 
 #define CMD_BUFSIZE     PAGE_SIZE_4K
-#define IOARCB_ALIGN    16
 
 /* flags in IOA status area for host use */
 #define B_DONE       0x01
@@ -179,13 +178,16 @@ struct afu_cmd {
 	u8 internal:1;
 	u8 sync:1;
 
-	/* As per the SISLITE spec the IOARCB EA has to be 16-byte aligned */
-} __aligned(IOARCB_ALIGN);
+	/* As per the SISLITE spec the IOARCB EA has to be 16-byte aligned.
+	 * However for performance reasons the IOARCB/IOASA should be
+	 * cache line aligned.
+	 */
+} __aligned(cache_line_size());
 
 struct afu {
 	/* Stuff requiring alignment go first. */
 
-	u64 rrq_entry[NUM_RRQ_ENTRY];	/* 128B RRQ (page aligned) */
+	u64 rrq_entry[NUM_RRQ_ENTRY];	/* 128B RRQ */
 	/*
 	 * Command & data for AFU commands.
 	 */
@@ -226,8 +228,7 @@ struct afu {
 
 	struct cxlflash *back;	/* Pointer back to parent cxlflash */
 
-	/* AFU struct has to be 4K Aligned */
-} __aligned(CMD_BUFSIZE);
+};
 
 static inline u64 lun_to_lunid(u64 lun)
 {
