@@ -188,6 +188,9 @@ struct sisl_ioasa {
 	u8 fc_extra;
 	u8 sense_data[SISL_SENSE_DATA_LEN];
 
+	/* These fields are defined by the SISlite architecture for the
+	 * host to use as they see fit for their implementation.
+	 */
 	union {
 		u64 host_use[4];
 		u8 host_use_b[32];
