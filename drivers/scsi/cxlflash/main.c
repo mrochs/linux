@@ -1562,8 +1562,9 @@ void cxlflash_context_reset(struct afu_cmd *cmd)
 
 	if (afu->room == 0) {
 		do {
-			afu->room = readq_be(&afu->host_map->cmd_room);
+			/* Spread out wait time on successive retries */
 			udelay(nretry);
+			afu->room = readq_be(&afu->host_map->cmd_room);
 		} while ((afu->room == 0) && (nretry++ < MC_ROOM_RETRY_CNT));
 	}
 
