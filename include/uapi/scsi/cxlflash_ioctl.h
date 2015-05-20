@@ -61,7 +61,7 @@ struct dk_cxlflash_udirect {
 struct dk_cxlflash_uvirtual {
 	struct dk_cxlflash_hdr hdr;	/* Common fields */
 	__u64 context_id;		/* Context ID for the attach */
-	__u64 lun_size;			/* Requested size, blocks */
+	__u64 lun_size;			/* Requested size, in 4K blocks */
 	__u64 rsrc_handle;		/* Returned resource handle */
 	__u64 last_lba;			/* Returned last LBA of LUN */
 };
@@ -76,7 +76,7 @@ struct dk_cxlflash_resize {
 	struct dk_cxlflash_hdr hdr;	/* Common fields */
 	__u64 context_id;		/* Context ID of LUN to resize */
 	__u64 rsrc_handle;		/* Resource handle of LUN to resize */
-	__u64 req_size;			/* New requested size, blocks */
+	__u64 req_size;			/* New requested size, in 4K blocks */
 	__u64 last_lba;			/* Returned last LBA of LUN */
 };
 
