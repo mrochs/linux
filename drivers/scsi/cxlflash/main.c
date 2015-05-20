@@ -1485,7 +1485,7 @@ int cxlflash_read_vpd(struct cxlflash *cxlflash, u64 wwpn[])
 	ro_start = pci_vpd_find_tag(vpd_data, 0, vpd_size,
 				    PCI_VPD_LRDT_RO_DATA);
 	if (unlikely(ro_start < 0)) {
-		cxlflash_err("VPD Read-only not found");
+		cxlflash_err("VPD Read-only data not found");
 		rc = -ENODEV;
 		goto out;
 	}
@@ -1495,8 +1495,8 @@ int cxlflash_read_vpd(struct cxlflash *cxlflash, u64 wwpn[])
 	j = ro_size;
 	i = ro_start + PCI_VPD_LRDT_TAG_SIZE;
 	if (unlikely((i + j) > vpd_size)) {
-		cxlflash_warn("Might need to read more VPD (%d > %ld)",
-			      (i + j), vpd_size);
+		cxlflash_dbg("Might need to read more VPD (%d > %ld)",
+			     (i + j), vpd_size);
 		ro_size = vpd_size - i;
 	}
 
@@ -1532,7 +1532,7 @@ int cxlflash_read_vpd(struct cxlflash *cxlflash, u64 wwpn[])
 		rc = kstrtoul(tmp_buf, WWPN_LEN, (unsigned long *)&wwpn[k]);
 		if (unlikely(rc)) {
 			cxlflash_err
-			    ("Unable to convert port 0 WWPN to integer");
+			    ("Unable to convert port %d WWPN to integer", k);
 			rc = -ENODEV;
 			goto out;
 		}
