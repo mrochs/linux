@@ -224,7 +224,7 @@ struct afu {
 
 	struct cxlflash *back;	/* Pointer back to parent cxlflash */
 
-} __aligned(PAGE_SIZE_4K);
+};
 
 static inline u64 lun_to_lunid(u64 lun)
 {
