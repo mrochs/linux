@@ -418,7 +418,7 @@ static int cxlflash_eh_device_reset_handler(struct scsi_cmnd *scp)
 	scp->result = (DID_OK << 16);
 	cxlflash_send_tmf(afu, scp, TMF_LUN_RESET);
 
-	cxlflash_info("returning rc=%d", rc);
+	cxlflash_dbg("returning rc=%d", rc);
 	return rc;
 }
 
@@ -453,7 +453,7 @@ static int cxlflash_eh_host_reset_handler(struct scsi_cmnd *scp)
 	else
 		rc = FAILED;
 
-	cxlflash_info("returning rc=%d", rc);
+	cxlflash_dbg("returning rc=%d", rc);
 	return rc;
 }
 
@@ -715,7 +715,7 @@ static void cxlflash_stop_afu(struct cxlflash *cxlflash)
 	struct afu *afu = cxlflash->afu;
 
 	if (!afu) {
-		cxlflash_info("returning because afu is NULl");
+		cxlflash_dbg("returning because afu is NULl");
 		return;
 	}
 
@@ -820,7 +820,7 @@ static void cxlflash_remove(struct pci_dev *pdev)
 		break;
 	}
 
-	cxlflash_info("returning");
+	cxlflash_dbg("returning");
 }
 
 /**
@@ -1128,7 +1128,7 @@ static int afu_set_wwpn(struct afu *afu, int port,
 		 * Override for internal lun!!!
 		 */
 		if (afu->internal_lun) {
-			cxlflash_info("Overriding port %d online timeout!!!",
+			cxlflash_dbg("Overriding port %d online timeout!!!",
 				      port);
 			ret = 0;
 		}
@@ -1177,7 +1177,7 @@ static void afu_link_reset(struct afu *afu, int port, volatile u64 *fc_regs)
 	writeq_be(port_sel, &afu->afu_map->global.regs.afu_port_sel);
 	cxlflash_afu_sync(afu, 0, 0, AFU_GSYNC);
 
-	cxlflash_info("returning port_sel=%lld", port_sel);
+	cxlflash_dbg("returning port_sel=%lld", port_sel);
 }
 
 /*
@@ -1310,7 +1310,7 @@ static irqreturn_t cxlflash_sync_err_irq(int irq, void *data)
 	writeq_be(reg_unmasked, &afu->host_map->intr_clear);
 
 cxlflash_sync_err_irq_exit:
-	cxlflash_info("returning rc=%d", IRQ_HANDLED);
+	cxlflash_dbg("returning rc=%d", IRQ_HANDLED);
 	return IRQ_HANDLED;
 }
 
@@ -1429,7 +1429,7 @@ static irqreturn_t cxlflash_async_err_irq(int irq, void *data)
 	}
 
 out:
-	cxlflash_info("returning rc=%d, afu=%p", IRQ_HANDLED, afu);
+	cxlflash_dbg("returning rc=%d, afu=%p", IRQ_HANDLED, afu);
 	return IRQ_HANDLED;
 }
 
@@ -1552,7 +1552,7 @@ void cxlflash_context_reset(struct afu_cmd *cmd)
 	u64 rrin = 0x1;
 	struct afu *afu = cmd->parent;
 
-	cxlflash_info("cmd=%p", cmd);
+	cxlflash_dbg("cmd=%p", cmd);
 
 	/* First process completion of the command that timed out */
 	cmd_complete(cmd);
@@ -1632,7 +1632,7 @@ int init_global(struct cxlflash *cxlflash)
 		cxlflash_err("could not read vpd rc=%d", rc);
 		goto out;
 	}
-	cxlflash_info("wwpn0=0x%llx wwpn1=0x%llx", wwpn[0], wwpn[1]);
+	cxlflash_dbg("wwpn0=0x%llx wwpn1=0x%llx", wwpn[0], wwpn[1]);
 
 	/* set up RRQ in AFU for master issued cmds */
 	writeq_be((u64) afu->hrrq_start, &afu->host_map->rrq_start);
@@ -1864,8 +1864,8 @@ static int cxlflash_init_afu(struct cxlflash *cxlflash)
 	memcpy(afu->version, &reg, 8);
 	afu->interface_version =
 	    readq_be(&afu->afu_map->global.regs.interface_version);
-	cxlflash_info("afu version %s, interface version 0x%llx",
-		      afu->version, afu->interface_version);
+	cxlflash_dbg("afu version %s, interface version 0x%llx",
+		     afu->version, afu->interface_version);
 
 	rc = cxlflash_start_afu(cxlflash);
 	if (rc) {
@@ -2055,7 +2055,7 @@ int cxlflash_afu_reset(struct cxlflash *cxlflash)
 
 	rc = cxlflash_init_afu(cxlflash);
 
-	cxlflash_info("returning rc=%d", rc);
+	cxlflash_dbg("returning rc=%d", rc);
 	return rc;
 }
 
