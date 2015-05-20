@@ -134,6 +134,7 @@ int cxlflash_slave_configure(struct scsi_device *sdev)
 	/* Store off lun in unpacked, AFU-friendly format */
 	lun_info->lun_id = lun_to_lunid(sdev->lun);
 	lun_info->lun_index = cxlflash->last_lun_index;
+	lun_info->port_sel = sdev->channel + 1;
 
 	writeq_be(lun_info->lun_id,
 		  &afu->afu_map->global.fc_port[sdev->channel]
