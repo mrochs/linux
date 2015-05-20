@@ -1769,7 +1769,6 @@ int cxlflash_init_mc(struct cxlflash *cxlflash)
 		goto out;
 	}
 
-	/* Allocate AFU generated interrupt handler */
 	rc = cxl_allocate_afu_irqs(ctx, 3);
 	if (rc) {
 		cxlflash_dev_err(dev, "call to allocate_afu_irqs failed rc=%d!",
@@ -1778,7 +1777,6 @@ int cxlflash_init_mc(struct cxlflash *cxlflash)
 		goto out;
 	}
 
-	/* Register AFU interrupt 1 (SISL_MSI_SYNC_ERROR) */
 	rc = cxl_map_afu_irq(ctx, 1, cxlflash_sync_err_irq, afu,
 			     "SISL_MSI_SYNC_ERROR");
 	if (!rc) {
@@ -1787,7 +1785,7 @@ int cxlflash_init_mc(struct cxlflash *cxlflash)
 		level = FREE_IRQ;
 		goto out;
 	}
-	/* Register AFU interrupt 2 (SISL_MSI_RRQ_UPDATED) */
+
 	rc = cxl_map_afu_irq(ctx, 2, cxlflash_rrq_irq, afu,
 			     "SISL_MSI_RRQ_UPDATED");
 	if (!rc) {
@@ -1796,7 +1794,7 @@ int cxlflash_init_mc(struct cxlflash *cxlflash)
 		level = UNMAP_ONE;
 		goto out;
 	}
-	/* Register AFU interrupt 3 (SISL_MSI_ASYNC_ERROR) */
+
 	rc = cxl_map_afu_irq(ctx, 3, cxlflash_async_err_irq, afu,
 			     "SISL_MSI_ASYNC_ERROR");
 	if (!rc) {
