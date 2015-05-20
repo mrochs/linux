@@ -125,7 +125,6 @@ struct lun_info {
 	u64 max_lba;		/* from read cap(16) */
 	u32 blk_len;		/* from read cap(16) */
 	u32 lun_index;
-	u32 port_sel;
 	int users;		/* Number of users w/ references to LUN */
 	enum lun_mode mode;	/* NONE, VIRTUAL, PHYSICAL */
 

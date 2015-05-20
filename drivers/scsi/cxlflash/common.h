@@ -156,7 +156,7 @@ struct cxlflash {
 	struct file_operations cxl_fops;
 
 	int num_user_contexts;
-	int last_lun_index;
+	int last_lun_index[CXLFLASH_NUM_FC_PORTS];
 
 	wait_queue_head_t tmf_wait_q;
 	wait_queue_head_t sync_wait_q;

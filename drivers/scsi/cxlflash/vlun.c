@@ -462,7 +462,7 @@ static int grow_lxt(struct afu *afu,
 		lxt[i].rlba_base = ((aun << MC_CHUNK_SHIFT) |
 				    (lun_info->lun_index << LXT_LUNIDX_SHIFT) |
 				    (RHT_PERM_RW << LXT_PERM_SHIFT | 
-				     lun_info->port_sel));
+				     BOTH_PORTS));
 	}
 
 	mutex_unlock(&blka->mutex);

@@ -2129,7 +2129,8 @@ static int cxlflash_probe(struct pci_dev *pdev,
 
 	cxlflash->init_state = INIT_STATE_NONE;
 	cxlflash->dev = pdev;
-	cxlflash->last_lun_index = 0;
+	cxlflash->last_lun_index[0] = 0;
+	cxlflash->last_lun_index[1] = 0;
 	cxlflash->dev_id = (struct pci_device_id *)dev_id;
 	cxlflash->tmf_active = 0;
 	cxlflash->mcctx = NULL;
