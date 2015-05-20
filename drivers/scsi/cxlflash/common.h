@@ -95,6 +95,7 @@ struct ctx_info {
 	atomic_t nrefs;	/* Number of active references, must be 0 for removal */
 	struct cxl_context *ctx;
 	struct list_head luns;	/* LUNs attached to this context */
+	const struct vm_operations_struct *cxl_mmap_vmops;
 };
 
 struct cxlflash {

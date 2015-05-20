@@ -850,8 +850,120 @@ out:
 	return 0;
 }
 
+#if 0
+static int cxlflash_mmap_page_control(struct cxlflash *cxlflash, struct ctx_info
+				*ctx_info, bool hide_page)
+{
+	int rc = 0;
+	static char *err_page = NULL; /* temporary, will tuck in cxlflash */
+
+	if (hide_page) {
+		if (!err_page) {
+			err_page = (char *)__get_free_page(GFP_KERNEL);
+			if (!err_page) {
+				cxlflash_err("Unable to allocate err_page!");
+				rc = -ENOMEM;
+				goto out;
+			}
+
+			memset(err_page, -1, PAGE_SIZE);
+		}
+	}
+
+	//vm_insert_pfn(vma, address, (area + offset) >> PAGE_SHIFT);
+
+out:
+	cxlflash_dbg("returning rc=%d", rc);
+	return rc;
+}
+#endif
+
+static int cxlflash_mmap_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
+{
+	struct file *file = vma->vm_file;
+	struct cxl_context *ctx = cxl_fops_get_context(file);
+	struct cxlflash *cxlflash = container_of(file->f_op, struct cxlflash,
+						   cxl_fops);
+	struct ctx_info *ctx_info = NULL;
+	int rc = 0;
+	int ctxid;
+	u64 offset = vmf->pgoff << PAGE_SHIFT;
+	unsigned long address = (unsigned long)vmf->virtual_address;
+
+	ctxid = cxl_process_element(ctx);
+	if (unlikely(ctxid < 0)) {
+		cxlflash_err("Context %p was closed! (%d)", ctx, ctxid);
+		BUG(); /* XXX - remove me before submission */
+		goto err;
+	}
+
+	ctx_info = cxlflash_get_context(cxlflash, ctxid, NULL, false);
+	if (unlikely(!ctx_info)) {
+		cxlflash_err("Invalid context! (%d)", ctxid);
+		goto err;
+	}
+
+	cxlflash_info("fault(%d) for context %d", ctx_info->lfd, ctxid);
+	cxlflash_info("address = 0x%lX offset = 0x%llX", address, offset);
+
+	rc = ctx_info->cxl_mmap_vmops->fault(vma, vmf);
+
+out:
+	if (likely(ctx_info))
+		atomic_dec(&ctx_info->nrefs);
+	cxlflash_dbg("returning rc=%d", rc);
+	return rc;
+
+err:
+	cxlflash_err("Faulting...");
+	rc = VM_FAULT_SIGBUS;
+	goto out;
+}
+
+static const struct vm_operations_struct cxlflash_mmap_vmops = {
+	.fault = cxlflash_mmap_fault,
+};
+
+int cxlflash_cxl_mmap(struct file *file, struct vm_area_struct *vma)
+{
+	struct cxl_context *ctx = cxl_fops_get_context(file);
+	struct cxlflash *cxlflash = container_of(file->f_op, struct cxlflash,
+						   cxl_fops);
+	struct ctx_info *ctx_info = NULL;
+	int ctxid;
+	int rc = 0;
+
+	ctxid = cxl_process_element(ctx);
+	if (unlikely(ctxid < 0)) {
+		cxlflash_err("Context %p was closed! (%d)", ctx, ctxid);
+		BUG(); /* XXX - remove me before submission */
+		goto out;
+	}
+
+	ctx_info = cxlflash_get_context(cxlflash, ctxid, NULL, false);
+	if (unlikely(!ctx_info)) {
+		cxlflash_err("Invalid context! (%d)", ctxid);
+		goto out;
+	}
+
+	cxlflash_info("mmap(%d) for context %d", ctx_info->lfd, ctxid);
+
+	rc = cxl_fd_mmap(file, vma);
+	if (!rc) {
+		/* Insert ourself in the mmap fault handler path */
+		ctx_info->cxl_mmap_vmops = vma->vm_ops;
+		vma->vm_ops = &cxlflash_mmap_vmops;
+	}
+
+out:
+	if (likely(ctx_info))
+		atomic_dec(&ctx_info->nrefs);
+	return rc;
+}
+
 const struct file_operations cxlflash_cxl_fops = {
 	.owner = THIS_MODULE,
+	.mmap = cxlflash_cxl_mmap,
 	.release = cxlflash_cxl_release,
 };
 
