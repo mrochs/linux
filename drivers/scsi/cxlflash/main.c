@@ -738,6 +738,7 @@ static void cxlflash_stop_afu(struct cxlflash *cxlflash)
  */
 void cxlflash_term_mc(struct cxlflash *cxlflash, enum undo_level level)
 {
+	int rc = 0;
 	struct afu *afu = cxlflash->afu;
 
 	if (!afu || !cxlflash->mcctx) {
@@ -748,6 +749,8 @@ void cxlflash_term_mc(struct cxlflash *cxlflash, enum undo_level level)
 	switch (level) {
 	case UNDO_START:
 		cxl_stop_context(cxlflash->mcctx);
+		//rc = cxl_stop_context(cxlflash->mcctx); XXX
+		BUG_ON(rc);
 	case UNMAP_THREE:
 		cxlflash_dbg("before unmap 3");
 		cxl_unmap_afu_irq(cxlflash->mcctx, 3, afu);
@@ -763,6 +766,8 @@ void cxlflash_term_mc(struct cxlflash *cxlflash, enum undo_level level)
 		cxlflash_dbg("before cxl_release_context");
 	case RELEASE_CONTEXT:
 		cxl_release_context(cxlflash->mcctx);
+		//rc = cxl_release_context(cxlflash->mcctx); XXX
+		BUG_ON(rc);
 		cxlflash->mcctx = NULL;
 	}
 }
