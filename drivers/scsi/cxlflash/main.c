@@ -202,8 +202,8 @@ static void cmd_complete(struct afu_cmd *cmd)
 {
 	unsigned long lock_flags = 0UL;
 	struct scsi_cmnd *scp;
-	struct afu *afu = cmd->back;
-	struct cxlflash *cxlflash = afu->back;
+	struct afu *afu = cmd->parent;
+	struct cxlflash *cxlflash = afu->parent;
 
 	spin_lock_irqsave(&cmd->slock, lock_flags);
 	cmd->sa.host_use_b[0] |= B_DONE;
@@ -851,7 +851,7 @@ static int cxlflash_gb_alloc(struct cxlflash *cxlflash)
 		rc = -ENOMEM;
 		goto out;
 	}
-	cxlflash->afu->back = cxlflash;
+	cxlflash->afu->parent = cxlflash;
 	cxlflash->afu->afu_map = NULL;
 
 	for (i = 0; i < CXLFLASH_NUM_CMDS; buf += CMD_BUFSIZE, i++) {
@@ -1373,7 +1373,7 @@ static irqreturn_t cxlflash_async_err_irq(int irq, void *data)
 	u64 reg;
 	int i;
 
-	cxlflash = afu->back;
+	cxlflash = afu->parent;
 
 	reg = readq_be(&global->regs.aintr_status);
 	reg_unmasked = (reg & SISL_ASTATUS_UNMASK);
@@ -1550,7 +1550,7 @@ void cxlflash_context_reset(struct afu_cmd *cmd)
 {
 	int nretry = 0;
 	u64 rrin = 0x1;
-	struct afu *afu = cmd->back;
+	struct afu *afu = cmd->parent;
 
 	cxlflash_info("cmd=%p", cmd);
 
@@ -1716,7 +1716,7 @@ int cxlflash_start_afu(struct cxlflash *cxlflash)
 		    cxlflash_context_reset;
 
 		spin_lock_init(&afu->cmd[i].slock);
-		afu->cmd[i].back = afu;
+		afu->cmd[i].parent = afu;
 	}
 	init_pcr(cxlflash);
 
@@ -1977,7 +1977,7 @@ void cxlflash_wait_resp(struct afu *afu, struct afu_cmd *cmd)
 int cxlflash_afu_sync(struct afu *afu, ctx_hndl_t ctx_hndl_u,
 		      res_hndl_t res_hndl_u, u8 mode)
 {
-	struct cxlflash *cxlflash = afu->back;
+	struct cxlflash *cxlflash = afu->parent;
 	struct afu_cmd *cmd;
 	int rc = 0;
 	int retry_cnt = 0;

@@ -173,7 +173,7 @@ struct afu_cmd {
 	spinlock_t slock;
 	struct timer_list timer;
 	char *buf;		/* per command buffer */
-	struct afu *back;
+	struct afu *parent;
 	int slot;
 	atomic_t free;
 	u8 special:1;
@@ -219,7 +219,7 @@ struct afu {
 	char version[8];
 	u64 interface_version;
 
-	struct cxlflash *back;	/* Pointer back to parent cxlflash */
+	struct cxlflash *parent; /* Pointer back to parent cxlflash */
 
 };
 
