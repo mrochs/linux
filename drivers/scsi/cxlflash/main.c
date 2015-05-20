@@ -840,8 +840,8 @@ static int cxlflash_gb_alloc(struct cxlflash *cxlflash)
 	int i;
 	char *buf = NULL;
 
-	cxlflash->afu = (void *)__get_free_pages(GFP_KERNEL | __GFP_ZERO,
-						 get_order(sizeof(struct afu)));
+	cxlflash->afu = kzalloc(sizeof(struct afu), GFP_KERNEL);
+
 	if (unlikely(!cxlflash->afu)) {
 		cxlflash_err("cannot get %d free pages",
 			     get_order(sizeof(struct afu)));
