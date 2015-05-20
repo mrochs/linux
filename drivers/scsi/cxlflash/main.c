@@ -1599,6 +1599,9 @@ void init_pcr(struct cxlflash *cxlflash)
 	afu->host_map = &afu->afu_map->hosts[afu->ctx_hndl].host;
 	afu->ctrl_map = &afu->afu_map->ctrls[afu->ctx_hndl].ctrl;
 
+	/* Program the Endian Control for the master context */
+	writeq_be((u64) SISL_ENDIAN_CTRL, &afu->host_map->endian_ctrl);
+
 	/* initialize cmd fields that never change */
 	for (i = 0; i < CXLFLASH_NUM_CMDS; i++) {
 		afu->cmd[i].rcb.ctx_id = afu->ctx_hndl;

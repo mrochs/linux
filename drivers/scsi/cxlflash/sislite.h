@@ -198,9 +198,18 @@ struct sisl_ioasa {
 
 /* MMIO space is required to support only 64-bit access */
 
+#ifdef __BIG_ENDIAN
+#define SISL_ENDIAN_CTRL             0x8000000000000080ull
+#else
+#define SISL_ENDIAN_CTRL             0x0000000000000000ull
+#endif
+
 /* per context host transport MMIO  */
 struct sisl_host_map {
-	__be64 endian_ctrl;
+	__be64 endian_ctrl;     /* Per context Endian Control. The AFU will
+				 * operate on whatever the context is of the
+				 * host application 
+				 */
 	__be64 intr_status;	/* this sends LISN# programmed in ctx_ctrl.
 				 * Only recovery in a PERM_ERR is a context
 				 * exit since there is no way to tell which
