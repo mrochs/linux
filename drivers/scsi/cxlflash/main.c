@@ -715,7 +715,7 @@ static void cxlflash_stop_afu(struct cxlflash *cxlflash)
 	struct afu *afu = cxlflash->afu;
 
 	if (!afu) {
-		cxlflash_dbg("returning because afu is NULl");
+		cxlflash_dbg("returning because afu is NULL");
 		return;
 	}
 
