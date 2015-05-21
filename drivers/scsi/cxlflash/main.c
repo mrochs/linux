@@ -205,14 +205,11 @@ static void process_cmd_err(struct afu_cmd *cmd, struct scsi_cmnd *scp)
  */
 static void cmd_complete(struct afu_cmd *cmd)
 {
-	unsigned long lock_flags = 0UL;
 	struct scsi_cmnd *scp;
 	struct afu *afu = cmd->parent;
 	struct cxlflash_cfg *cfg = afu->parent;
 
-	spin_lock_irqsave(&cmd->slock, lock_flags);
 	cmd->sa.host_use_b[0] |= B_DONE;
-	spin_unlock_irqrestore(&cmd->slock, lock_flags);
 
 	/* already stopped if timer fired */
 	del_timer(&cmd->timer);
@@ -1965,15 +1962,8 @@ int cxlflash_send_cmd(struct afu *afu, struct afu_cmd *cmd)
  */
 void cxlflash_wait_resp(struct afu *afu, struct afu_cmd *cmd)
 {
-	unsigned long lock_flags = 0;
-
-	spin_lock_irqsave(&cmd->slock, lock_flags);
-	while (!(cmd->sa.host_use_b[0] & B_DONE)) {
-		spin_unlock_irqrestore(&cmd->slock, lock_flags);
-		udelay(10);
-		spin_lock_irqsave(&cmd->slock, lock_flags);
-	}
-	spin_unlock_irqrestore(&cmd->slock, lock_flags);
+	while (!(cmd->sa.host_use_b[0] & B_DONE))
+		cpu_relax();
 
 	del_timer(&cmd->timer);	/* already stopped if timer fired */
 
