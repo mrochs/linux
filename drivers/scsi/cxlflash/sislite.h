@@ -390,6 +390,7 @@ struct sisl_lxt_entry {
 
 };
 
+/* Per the SISlite spec, RHT entries are to be 16-byte aligned */
 struct sisl_rht_entry {
 	struct sisl_lxt_entry *lxt_start;
 	__be32 lxt_cnt;
