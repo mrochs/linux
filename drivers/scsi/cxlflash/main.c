@@ -267,8 +267,7 @@ int cxlflash_send_tmf(struct afu *afu, struct scsi_cmnd *scp, u64 tmfcmd)
 	struct cxlflash *cxlflash = (struct cxlflash *)host->hostdata;
 	int rc = 0;
 
-	while (cxlflash->tmf_active)
-		wait_event(cxlflash->tmf_wait_q, !cxlflash->tmf_active);
+	wait_event(cxlflash->tmf_wait_q, !cxlflash->tmf_active);
 
 	cmd = cxlflash_cmd_checkout(afu);
 	if (unlikely(!cmd)) {
@@ -346,8 +345,7 @@ static int cxlflash_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *scp)
 		 get_unaligned_be32(&((u32 *)scp->cmnd)[2]),
 		 get_unaligned_be32(&((u32 *)scp->cmnd)[3]));
 
-	while (cxlflash->tmf_active)
-		wait_event(cxlflash->tmf_wait_q, !cxlflash->tmf_active);
+	wait_event(cxlflash->tmf_wait_q, !cxlflash->tmf_active);
 
 	cmd = cxlflash_cmd_checkout(afu);
 	if (unlikely(!cmd)) {
@@ -808,8 +806,7 @@ static void cxlflash_remove(struct pci_dev *pdev)
 
 	dev_dbg(&pdev->dev, "%s: enter cxlflash_remove!\n", __func__);
 
-	while (cxlflash->tmf_active)
-		wait_event(cxlflash->tmf_wait_q, !cxlflash->tmf_active);
+	wait_event(cxlflash->tmf_wait_q, !cxlflash->tmf_active);
 
 	switch (cxlflash->init_state) {
 	case INIT_STATE_SCSI:
