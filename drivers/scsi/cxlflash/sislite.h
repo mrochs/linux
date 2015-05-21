@@ -304,6 +304,21 @@ struct sisl_global_regs {
 	__be64 afu_hb;
 	__be64 afu_scratch_pad;
 	__be64 afu_port_sel;
+#define SISL_AFUCONF_AR_IOARCB         0x4000ull
+#define SISL_AFUCONF_AR_LXT            0x2000ull
+#define SISL_AFUCONF_AR_RHT            0x1000ull
+#define SISL_AFUCONF_AR_DATA           0x0800ull
+#define SISL_AFUCONF_AR_RSRC           0x0400ull
+#define SISL_AFUCONF_AR_IOASA          0x0200ull
+#define SISL_AFUCONF_AR_RRQ            0x0100ull
+/* Aggregate all Auto Retry Bits */
+#define SISL_AFUCONF_AR_ALL            0x7F00ull
+#ifdef __BIG_ENDIAN
+#define SISL_AFUCONF_ENDIAN            0x0000ull
+#else
+#define SISL_AFUCONF_ENDIAN            0x0020ull
+#endif
+#define SISL_AFUCONF_MBOX_CLR_READ     0x0010ull
 	__be64 afu_config;
 	__be64 rsvd[0xf8];
 	__be64 afu_version;

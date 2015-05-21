@@ -1665,7 +1665,8 @@ int init_global(struct cxlflash *cxlflash)
 
 	/* AFU configuration */
 	reg = readq_be(&afu->afu_map->global.regs.afu_config);
-	reg |= 0x7F20;		/* enable all auto retry options and LE */
+	reg |= SISL_AFUCONF_AR_ALL|SISL_AFUCONF_ENDIAN;
+	/* enable all auto retry options and control endianness */
 	/* leave others at default: */
 	/* CTX_CAP write protected, mbox_r does not clear on read and */
 	/* checker on if dual afu */
