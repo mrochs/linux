@@ -2173,6 +2173,7 @@ static int cxlflash_probe(struct pci_dev *pdev,
 	cxlflash->tmf_active = 0;
 	cxlflash->mcctx = NULL;
 	cxlflash->context_reset_active = 0;
+	cxlflash->err_recovery_active = 0;
 	cxlflash->num_user_contexts = 0;
 
 	init_waitqueue_head(&cxlflash->tmf_wait_q);

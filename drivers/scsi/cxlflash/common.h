@@ -96,6 +96,7 @@ struct ctx_info {
 	struct cxl_context *ctx;
 	struct list_head luns;	/* LUNs attached to this context */
 	const struct vm_operations_struct *cxl_mmap_vmops;
+	struct address_space *mapping;
 };
 
 struct cxlflash {
@@ -134,6 +135,7 @@ struct cxlflash {
 	wait_queue_head_t tmf_wait_q;
 	wait_queue_head_t sync_wait_q;
 	u8 context_reset_active:1;
+	u8 err_recovery_active:1;
 	u8 tmf_active:1;
 	u8 sync_active:1;
 };

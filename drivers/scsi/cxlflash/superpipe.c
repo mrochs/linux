@@ -153,6 +153,7 @@ void cxlflash_list_init(void)
 {
 	INIT_LIST_HEAD(&global.luns);
 	spin_lock_init(&global.slock);
+	global.err_page = NULL;
 }
 
 void cxlflash_list_terminate(void)
@@ -165,6 +166,11 @@ void cxlflash_list_terminate(void)
 		list_del(&lun_info->list);
 		ba_terminate(&lun_info->blka.ba_lun);
 		kfree(lun_info);
+	}
+
+	if (global.err_page) {
+		__free_page(global.err_page);
+		global.err_page = NULL;
 	}
 	spin_unlock_irqrestore(&global.slock, flags);
 }
@@ -850,33 +856,40 @@ out:
 	return 0;
 }
 
-#if 0
-static int cxlflash_mmap_page_control(struct cxlflash *cxlflash, struct ctx_info
-				*ctx_info, bool hide_page)
+static void cxlflash_unmap_context(struct ctx_info *ctx_info)
 {
-	int rc = 0;
-	static char *err_page = NULL; /* temporary, will tuck in cxlflash */
+	unmap_mapping_range(ctx_info->mapping, 0, 0, 1);
+}
 
-	if (hide_page) {
-		if (!err_page) {
-			err_page = (char *)__get_free_page(GFP_KERNEL);
-			if (!err_page) {
-				cxlflash_err("Unable to allocate err_page!");
-				rc = -ENOMEM;
-				goto out;
-			}
+static struct page *get_err_page(void)
+{
+	struct page *err_page = global.err_page;
+	unsigned long flags = 0;
 
-			memset(err_page, -1, PAGE_SIZE);
+	if (unlikely(!err_page)) {
+		err_page = alloc_page(GFP_KERNEL);
+		if (unlikely(!err_page)) {
+			pr_err("%s: Unable to allocate err_page!\n", __func__);
+			goto out;
 		}
+
+		memset(page_address(err_page), -1, PAGE_SIZE);
+
+		/* Serialize update w/ other threads to avoid a leak */
+		spin_lock_irqsave(&global.slock, flags);
+		if (likely(!global.err_page))
+			global.err_page = err_page;
+		else {
+			__free_page(err_page);
+			err_page = global.err_page;
+		}
+		spin_unlock_irqrestore(&global.slock, flags);
 	}
 
-	//vm_insert_pfn(vma, address, (area + offset) >> PAGE_SHIFT);
-
 out:
-	cxlflash_dbg("returning rc=%d", rc);
-	return rc;
+	pr_debug("%s: returning err_page=%p\n", __func__, err_page);
+	return err_page;
 }
-#endif
 
 static int cxlflash_mmap_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 {
@@ -885,37 +898,49 @@ static int cxlflash_mmap_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 	struct cxlflash *cxlflash = container_of(file->f_op, struct cxlflash,
 						   cxl_fops);
 	struct ctx_info *ctx_info = NULL;
+	struct page *err_page = NULL;
 	int rc = 0;
 	int ctxid;
-	u64 offset = vmf->pgoff << PAGE_SHIFT;
-	unsigned long address = (unsigned long)vmf->virtual_address;
 
 	ctxid = cxl_process_element(ctx);
 	if (unlikely(ctxid < 0)) {
-		cxlflash_err("Context %p was closed! (%d)", ctx, ctxid);
+		pr_err("%s: Context %p was closed! (%d)\n",
+		       __func__, ctx, ctxid);
 		BUG(); /* XXX - remove me before submission */
 		goto err;
 	}
 
 	ctx_info = cxlflash_get_context(cxlflash, ctxid, NULL, false);
 	if (unlikely(!ctx_info)) {
-		cxlflash_err("Invalid context! (%d)", ctxid);
+		pr_err("%s: Invalid context! (%d)\n", __func__, ctxid);
 		goto err;
 	}
 
-	cxlflash_info("fault(%d) for context %d", ctx_info->lfd, ctxid);
-	cxlflash_info("address = 0x%lX offset = 0x%llX", address, offset);
+	pr_debug("%s: fault(%d) for context %d\n",
+		 __func__, ctx_info->lfd, ctxid);
 
-	rc = ctx_info->cxl_mmap_vmops->fault(vma, vmf);
+	if (likely(!cxlflash->err_recovery_active))
+		rc = ctx_info->cxl_mmap_vmops->fault(vma, vmf);
+	else {
+		pr_debug("%s: err recovery active, use err_page!\n", __func__);
+
+		err_page = get_err_page();
+		if (unlikely(!err_page)) {
+			pr_err("%s: Could not obtain error page!\n", __func__);
+			rc = VM_FAULT_RETRY;
+			goto out;
+		}
+
+		vmf->page = err_page;
+	}
 
 out:
 	if (likely(ctx_info))
 		atomic_dec(&ctx_info->nrefs);
-	cxlflash_dbg("returning rc=%d", rc);
+	pr_debug("%s: returning rc=%d\n", __func__, rc);
 	return rc;
 
 err:
-	cxlflash_err("Faulting...");
 	rc = VM_FAULT_SIGBUS;
 	goto out;
 }
@@ -937,12 +962,14 @@ int cxlflash_cxl_mmap(struct file *file, struct vm_area_struct *vma)
 	if (unlikely(ctxid < 0)) {
 		cxlflash_err("Context %p was closed! (%d)", ctx, ctxid);
 		BUG(); /* XXX - remove me before submission */
+		rc = -EIO;
 		goto out;
 	}
 
 	ctx_info = cxlflash_get_context(cxlflash, ctxid, NULL, false);
 	if (unlikely(!ctx_info)) {
 		cxlflash_err("Invalid context! (%d)", ctxid);
+		rc = -EIO;
 		goto out;
 	}
 
@@ -950,9 +977,14 @@ int cxlflash_cxl_mmap(struct file *file, struct vm_area_struct *vma)
 
 	rc = cxl_fd_mmap(file, vma);
 	if (!rc) {
-		/* Insert ourself in the mmap fault handler path */
+		/*
+		 * Insert ourself in the mmap fault handler path and save off
+		 * the address space for toggling the mapping on error context.
+		 * */
 		ctx_info->cxl_mmap_vmops = vma->vm_ops;
 		vma->vm_ops = &cxlflash_mmap_vmops;
+
+		ctx_info->mapping = file->f_inode->i_mapping;
 	}
 
 out:
@@ -1587,6 +1619,8 @@ int cxlflash_ioctl(struct scsi_device *sdev, int cmd, void __user *arg)
 	int rc = 0;
 	struct Scsi_Host *shost = sdev->host;
 	sioctl do_ioctl = NULL;
+	u64 ctxid;
+	struct ctx_info *ctx_info;
 #define IOCTE(_s, _i) sizeof(struct _s), (sioctl)(_i)
 	static const struct {
 		size_t size;
@@ -1619,6 +1653,11 @@ int cxlflash_ioctl(struct scsi_device *sdev, int cmd, void __user *arg)
 		}
 
 	switch (cmd) {
+	case 0x4711:	/* XXX - remove case and assoc. vars before upstream */
+		ctxid = ((struct dk_cxlflash_detach *)arg)->context_id;
+		ctx_info = cxlflash_get_context(cxlflash, ctxid, NULL, false);
+		cxlflash_unmap_context(ctx_info);
+		goto cxlflash_ioctl_exit;
 	case DK_CXLFLASH_ATTACH:
 	case DK_CXLFLASH_USER_DIRECT:
 	case DK_CXLFLASH_USER_VIRTUAL:

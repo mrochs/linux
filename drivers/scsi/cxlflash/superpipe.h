@@ -176,6 +176,7 @@ struct lun_access {
 struct cxlflash_global {
 	spinlock_t slock;
 	struct list_head luns;  /* list of lun_info structs */
+	struct page *err_page; /* One page of all 0xF for error notification */
 };
 
 
