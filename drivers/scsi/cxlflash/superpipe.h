@@ -196,8 +196,8 @@ void cxlflash_lun_detach(struct lun_info *);
 
 int cxlflash_check_status(struct sisl_ioasa *);
 
-struct ctx_info *cxlflash_get_context(struct cxlflash *, u64, struct lun_info *,
-				      bool);
+struct ctx_info *cxlflash_get_context(struct cxlflash_cfg *, u64,
+				      struct lun_info *, bool);
 
 struct sisl_rht_entry *cxlflash_get_rhte(struct ctx_info *, res_hndl_t,
 					 struct lun_info *);

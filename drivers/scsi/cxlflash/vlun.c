@@ -577,9 +577,9 @@ static int shrink_lxt(struct afu *afu,
 int cxlflash_vlun_resize(struct scsi_device *sdev,
 			 struct dk_cxlflash_resize *resize)
 {
-	struct cxlflash *cxlflash = (struct cxlflash *)sdev->host->hostdata;
+	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)sdev->host->hostdata;
 	struct lun_info *lun_info = sdev->hostdata;
-	struct afu *afu = cxlflash->afu;
+	struct afu *afu = cfg->afu;
 
 	u64 act_new_size = 0;
 	res_hndl_t res_hndl = resize->rsrc_handle;
@@ -611,7 +611,7 @@ int cxlflash_vlun_resize(struct scsi_device *sdev,
 
 	}
 
-	ctx_info = cxlflash_get_context(cxlflash, ctxid, lun_info, false);
+	ctx_info = cxlflash_get_context(cfg, ctxid, lun_info, false);
 	if (unlikely(!ctx_info)) {
 		cxlflash_err("Invalid context! (%llu)", ctxid);
 		rc = -EINVAL;
@@ -678,7 +678,7 @@ out:
  */
 int cxlflash_disk_virtual_open(struct scsi_device *sdev, void *arg)
 {
-	struct cxlflash *cxlflash = (struct cxlflash *)sdev->host->hostdata;
+	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)sdev->host->hostdata;
 	struct lun_info *lun_info = sdev->hostdata;
 
 	struct dk_cxlflash_uvirtual *virt = (struct dk_cxlflash_uvirtual *)arg;
@@ -712,7 +712,7 @@ int cxlflash_disk_virtual_open(struct scsi_device *sdev, void *arg)
 		goto out;
 	}
 
-	ctx_info = cxlflash_get_context(cxlflash, ctxid, lun_info, false);
+	ctx_info = cxlflash_get_context(cfg, ctxid, lun_info, false);
 	if (unlikely(!ctx_info)) {
 		cxlflash_err("Invalid context! (%llu)", ctxid);
 		rc = -EINVAL;

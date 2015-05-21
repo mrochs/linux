@@ -99,7 +99,7 @@ struct ctx_info {
 	struct address_space *mapping;
 };
 
-struct cxlflash {
+struct cxlflash_cfg {
 	struct afu *afu;
 	struct cxl_context *mcctx;
 
@@ -192,7 +192,7 @@ struct afu {
 	char version[8];
 	u64 interface_version;
 
-	struct cxlflash *parent; /* Pointer back to parent cxlflash */
+	struct cxlflash_cfg *parent; /* Pointer back to parent cxlflash_cfg */
 
 };
 
@@ -206,7 +206,7 @@ static inline u64 lun_to_lunid(u64 lun)
 
 int cxlflash_send_cmd(struct afu *, struct afu_cmd *);
 void cxlflash_wait_resp(struct afu *, struct afu_cmd *);
-int cxlflash_afu_reset(struct cxlflash *);
+int cxlflash_afu_reset(struct cxlflash_cfg *);
 struct afu_cmd *cxlflash_cmd_checkout(struct afu *);
 void cxlflash_cmd_checkin(struct afu_cmd *);
 int cxlflash_afu_sync(struct afu *, ctx_hndl_t, res_hndl_t, u8);
