@@ -1339,7 +1339,7 @@ static irqreturn_t cxlflash_rrq_irq(int irq, void *data)
 {
 	struct afu *afu = (struct afu *)data;
 	struct afu_cmd *cmd;
-	u32 toggle = afu->toggle;
+	bool toggle = afu->toggle;
 	u64 entry;
 	u64 *hrrq_start = afu->hrrq_start,
 	    *hrrq_end = afu->hrrq_end;

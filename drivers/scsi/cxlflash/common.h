@@ -183,7 +183,7 @@ struct afu {
 	u64 *hrrq_start;
 	u64 *hrrq_end;
 	volatile u64 *hrrq_curr;
-	unsigned int toggle;
+	bool toggle;
 	u64 room;
 	u64 hb;
 	u32 cmd_couts;		/* Number of command checkouts */
