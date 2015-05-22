@@ -22,7 +22,7 @@
 #include <asm/cputable.h>
 #include <asm/mmu.h>
 #include <asm/reg.h>
-#include <misc/cxl.h>
+#include <misc/cxl-base.h>
 
 #include <uapi/misc/cxl.h>
 
@@ -378,7 +378,7 @@ struct cxl_afu {
 	unsigned int psl_virq;
 
 	/* pointer to the vphb */
-	struct pci_controller *hose;
+	struct pci_controller *phb;
 
 	int pp_irqs;
 	int irqs_max;
@@ -460,6 +460,8 @@ struct cxl_context {
 	bool pending_irq;
 	bool pending_fault;
 	bool pending_afu_err;
+
+	struct rcu_head rcu;
 };
 
 struct cxl {
@@ -637,7 +639,7 @@ int cxl_context_iomap(struct cxl_context *ctx, struct vm_area_struct *vma);
 unsigned int cxl_map_irq(struct cxl *adapter, irq_hw_number_t hwirq,
 			 irq_handler_t handler, void *cookie, const char *name);
 void cxl_unmap_irq(unsigned int virq, void *cookie);
-int ___detach_context(struct cxl_context *ctx);
+int __detach_context(struct cxl_context *ctx);
 
 /* This matches the layout of the H_COLLECT_CA_INT_INFO retbuf */
 struct cxl_irq_info {

@@ -132,7 +132,6 @@ u8 cxl_afu_cr_read8(struct cxl_afu *afu, int cr, u64 off)
 	val = cxl_afu_cr_read32(afu, cr, aligned_off);
 	return (val >> ((off & 0x3) * 8)) & 0xff;
 }
-#define AFUD_CR_READ(afu, off)		AFUD_READ_LE(afu, afu->crs_offset + off)
 
 static DEFINE_PCI_DEVICE_TABLE(cxl_pci_tbl) = {
 	{ PCI_DEVICE(PCI_VENDOR_ID_IBM, 0x0477), },
@@ -311,7 +310,7 @@ static void dump_afu_descriptor(struct cxl_afu *afu)
 	val = AFUD_READ_CR(afu);
 	show_reg("Reserved", (val >> (63-7)) & 0xff);
 	show_reg("AFU_CR_len", AFUD_CR_LEN(val));
-	afu_cr_len = AFUD_CR_LEN(val);
+	afu_cr_len = AFUD_CR_LEN(val) * 256;
 
 	val = AFUD_READ_CR_OFF(afu);
 	afu_cr_off = val;
@@ -332,7 +331,7 @@ static void dump_afu_descriptor(struct cxl_afu *afu)
 	show_reg("AFU_EB_offset", val);
 
 	for (i = 0; i < afu_cr_num; i++) {
-		val = AFUD_READ_LE(afu, afu_cr_off + i*256);
+		val = AFUD_READ_LE(afu, afu_cr_off + i * afu_cr_len);
 		show_reg("CR Vendor", val & 0xffff);
 		show_reg("CR Device", (val >> 16) & 0xffff);
 	}
@@ -604,14 +603,6 @@ static int cxl_read_afu_descriptor(struct cxl_afu *afu)
 	afu->crs_len = AFUD_CR_LEN(val) * 256;
 	afu->crs_offset = AFUD_READ_CR_OFF(afu);
 
-	if ((afu->crs_num > 0) && (AFUD_CR_READ(afu, 0) == 0)) {
-		dev_err(&afu->adapter->dev, "ABORTING: AFU has invalid configuration record\n");
-		return -EINVAL;
-	}
-
-	/* We have a valid configuration record, lets make a virtual PHB */
-	cxl_pci_vphb_add(afu);
-
 	return 0;
 }
 
@@ -749,6 +740,9 @@ static int cxl_init_afu(struct cxl *adapter, int slice, struct pci_dev *dev)
 		goto err_put2;
 
 	adapter->afu[afu->slice] = afu;
+
+	if ((rc = cxl_pci_vphb_add(afu)))
+		dev_info(&afu->dev, "Can't register vPHB\n");
 
 	return 0;
 
@@ -1030,12 +1024,6 @@ static struct cxl *cxl_init_adapter(struct pci_dev *dev)
 		goto err1;
 
 	if ((rc = dev_set_name(&adapter->dev, "card%i", adapter->adapter_num)))
-		goto err2;
-
-	if ((rc = cxl_read_vsec(adapter, dev)))
-		goto err2;
-
-	if ((rc = cxl_vsec_looks_ok(adapter, dev)))
 		goto err2;
 
 	if ((rc = cxl_update_image_control(adapter)))

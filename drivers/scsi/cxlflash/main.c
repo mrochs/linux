@@ -753,8 +753,7 @@ static void term_mc(struct cxlflash_cfg *cfg, enum undo_level level)
 
 	switch (level) {
 	case UNDO_START:
-		cxl_stop_context(cfg->mcctx);
-		//rc = cxl_stop_context(cfg->mcctx); XXX
+		rc = cxl_stop_context(cfg->mcctx);
 		BUG_ON(rc);
 	case UNMAP_THREE:
 		pr_debug("%s: before unmap 3\n", __func__);
@@ -770,8 +769,7 @@ static void term_mc(struct cxlflash_cfg *cfg, enum undo_level level)
 		cxl_free_afu_irqs(cfg->mcctx);
 		pr_debug("%s: before cxl_release_context\n", __func__);
 	case RELEASE_CONTEXT:
-		cxl_release_context(cfg->mcctx);
-		//rc = cxl_release_context(cfg->mcctx); XXX
+		rc = cxl_release_context(cfg->mcctx);
 		BUG_ON(rc);
 		cfg->mcctx = NULL;
 	}
@@ -2188,8 +2186,7 @@ static int cxlflash_probe(struct pci_dev *pdev,
 	}
 	cfg->parent_dev = to_pci_dev(phys_dev);
 
-	cfg->cxl_afu = cxl_pci_to_afu(pdev, NULL);
-	//cfg->cxl_afu = cxl_pci_to_afu(pdev); XXX
+	cfg->cxl_afu = cxl_pci_to_afu(pdev);
 	rc = init_afu(cfg);
 	if (rc) {
 		dev_err(&pdev->dev, "%s: call to init_afu "

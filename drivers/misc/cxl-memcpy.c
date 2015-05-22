@@ -87,7 +87,7 @@ static int cxl_memcpy_probe(struct pci_dev *dev, const struct pci_device_id *id)
 	if (rc)
 		return rc;
 
-	afu = cxl_pci_to_afu(dev, NULL);
+	afu = cxl_pci_to_afu(dev);
 
 	minor = atomic_inc_return(&minor_number);
 	if (minor >= MINOR_MAX) {
@@ -132,15 +132,9 @@ static irqreturn_t cxl_memcpy_copy_error(int irq, void *data)
 	return IRQ_HANDLED;
 }
 
-<<<<<<< HEAD
-static irqreturn_t cxl_memcpy_psl_error(int irq, void *data)
-{
-	printk("%s IRQ %i PSL error!\n", __func__, irq);
-=======
 static irqreturn_t cxl_memcpy_afu_error(int irq, void *data)
 {
 	printk("%s IRQ %i AFU error!\n", __func__, irq);
->>>>>>> cxl/kernelapi
 	return IRQ_HANDLED;
 }
 
@@ -176,18 +170,13 @@ void cxl_memcpy_setup_queue(void)
  * Start the afu context.  This is calling into the generic CXL driver code
  * (except for the contents of the WED).
  */
-void cxl_memcpy_start_context(struct cxl_context *ctx)
+int cxl_memcpy_start_context(struct cxl_context *ctx)
 {
 	u64 wed;
 
 	wed = MEMCPY_WED(cxl_memcpy_queue,
 			 MEMCPY_QUEUE_SIZE/SMP_CACHE_BYTES);
-	cxl_start_context(ctx, wed, NULL);
-}
-
-void cxl_memcpy_stop_context(struct cxl_context *ctx)
-{
-	cxl_stop_context(ctx);
+	return cxl_start_context(ctx, wed, NULL);
 }
 
 /* use memcpy afu to copy write_buf[] to read_buf[] */
@@ -201,7 +190,8 @@ static int memcpy_afu(struct pci_dev *dev)
 
 	info = kzalloc(sizeof(struct cxl_memcpy_info), GFP_KERNEL);
 
-	ctx = cxl_dev_context_init(memcpy_afu_dev);
+	/* Get default context.  Can do this or create a new one */
+	ctx = cxl_get_context(memcpy_afu_dev);
 	if (!ctx)
 		return -ENOMEM;
 
@@ -223,11 +213,7 @@ static int memcpy_afu(struct pci_dev *dev)
 	if (!rc)
 		goto err3;
 	/* Register AFU interrupt 3 for errors. */
-<<<<<<< HEAD
-	rc = cxl_map_afu_irq(ctx, 3, cxl_memcpy_psl_error, ctx, "err2");
-=======
 	rc = cxl_map_afu_irq(ctx, 3, cxl_memcpy_afu_error, ctx, "err2");
->>>>>>> cxl/kernelapi
 	if (!rc)
 		goto err4;
 
@@ -250,7 +236,11 @@ static int memcpy_afu(struct pci_dev *dev)
 	smp_mb();
 
 	/* Start Context on AFU */
-	cxl_memcpy_start_context(ctx);
+	rc = cxl_memcpy_start_context(ctx);
+	if (rc) {
+		dev_err(&dev->dev, "Can't start context");
+		return rc;
+	}
 
 	/*
 	 * Wait for interrupt to complete.  We'd never do it this way in
@@ -258,11 +248,7 @@ static int memcpy_afu(struct pci_dev *dev)
 	 */
 	rc = 0;
 	while(!info->afu_irq_done) {
-<<<<<<< HEAD
-		cpu_relax();
-=======
 		schedule();
->>>>>>> cxl/kernelapi
 		rc++;
 	}
 
@@ -280,7 +266,6 @@ err3:
 err2:
 	cxl_free_afu_irqs(ctx);
 err1:
-	cxl_release_context(ctx);
 	kfree(info);
 
 	return rc;
@@ -299,7 +284,7 @@ static ssize_t device_read(struct file *fp, char __user *buff, size_t length,
 	else {
 		rc = memcpy_afu(memcpy_afu_dev);
 		if (rc)
-			return -EIO;
+			return rc;
 	}
 
 	max_bytes = BUFFER_SIZE - *ppos;
