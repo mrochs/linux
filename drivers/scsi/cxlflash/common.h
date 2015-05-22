@@ -76,29 +76,6 @@ enum cxlflash_init_state {
  * only from that context.
  */
 
-/* Single AFU context can be pointed to by multiple client connections.
- * The client can create multiple endpoints (mc_hndl_t) to the same
- * (context + AFU).
- */
-struct ctx_info {
-	volatile struct sisl_ctrl_map *ctrl_map; /* initialized at startup */
-	struct sisl_rht_entry *rht_start; /* 1 page (req'd for alignment),
-					     alloc/free on attach/detach */
-	u32 rht_out;		/* Number of checked out RHT entries */
-	u32 rht_perms;		/* User-defined permissions for RHT entries */
-	struct lun_info **rht_lun; /* Mapping of RHT entries to LUNs */
-
-	struct cxl_ioctl_start_work work;
-	int ctxid;
-	int lfd;
-	pid_t pid;
-	atomic_t nrefs;	/* Number of active references, must be 0 for removal */
-	struct cxl_context *ctx;
-	struct list_head luns;	/* LUNs attached to this context */
-	const struct vm_operations_struct *cxl_mmap_vmops;
-	struct address_space *mapping;
-};
-
 struct cxlflash_cfg {
 	struct afu *afu;
 	struct cxl_context *mcctx;
