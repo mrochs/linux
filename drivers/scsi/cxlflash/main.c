@@ -1718,10 +1718,10 @@ out:
 }
 
 /**
- * cxlflash_start_afu() - initializes and starts the AFU
+ * start_afu() - initializes and starts the AFU
  * @cxlflash:	Internal structure associated with the host.
  */
-int cxlflash_start_afu(struct cxlflash_cfg *cfg)
+static int start_afu(struct cxlflash_cfg *cfg)
 {
 	struct afu *afu = cfg->afu;
 
@@ -1888,7 +1888,7 @@ static int init_afu(struct cxlflash_cfg *cfg)
 	pr_debug("%s: afu version %s, interface version 0x%llX\n",
 		 __func__, afu->version, afu->interface_version);
 
-	rc = cxlflash_start_afu(cfg);
+	rc = start_afu(cfg);
 	if (rc) {
 		dev_err(dev, "%s: call to start_afu failed, rc=%d!\n",
 			__func__, rc);
