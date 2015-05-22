@@ -967,14 +967,14 @@ out_release_regions:
 }
 
 /**
- * cxlflash_init_scsi() - adds the host to the SCSI stack and kicks off host scan
+ * init_scsi() - adds the host to the SCSI stack and kicks off host scan
  * @cxlflash:	Internal structure associated with the host.
  *
  * Return:
  *	0 on success
  *	A return code from adding the host
  */
-static int cxlflash_init_scsi(struct cxlflash_cfg *cfg)
+static int init_scsi(struct cxlflash_cfg *cfg)
 {
 	struct pci_dev *pdev = cfg->dev;
 	int rc = 0;
@@ -2201,9 +2201,9 @@ static int cxlflash_probe(struct pci_dev *pdev,
 	}
 	cfg->init_state = INIT_STATE_PCI;
 
-	rc = cxlflash_init_scsi(cfg);
+	rc = init_scsi(cfg);
 	if (rc) {
-		dev_err(&pdev->dev, "%s: call to cxlflash_init_scsi "
+		dev_err(&pdev->dev, "%s: call to init_scsi "
 			"failed rc=%d!\n", __func__, rc);
 		goto out_remove;
 	}
