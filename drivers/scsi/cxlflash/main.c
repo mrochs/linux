@@ -731,13 +731,13 @@ static void cxlflash_stop_afu(struct cxlflash_cfg *cfg)
 }
 
 /**
- * cxlflash_term_mc() - terminates the master context
+ * term_mc() - terminates the master context
  * @cxlflash:	Internal structure associated with the host.
  * @level:	Depth of allocation, where to begin waterfall tear down.
  *
  * Safe to call with AFU/MC in partially allocated/initialized state.
  */
-void cxlflash_term_mc(struct cxlflash_cfg *cfg, enum undo_level level)
+static void term_mc(struct cxlflash_cfg *cfg, enum undo_level level)
 {
 	int rc = 0;
 	struct afu *afu = cfg->afu;
@@ -782,7 +782,7 @@ void cxlflash_term_mc(struct cxlflash_cfg *cfg, enum undo_level level)
  */
 static void cxlflash_term_afu(struct cxlflash_cfg *cfg)
 {
-	cxlflash_term_mc(cfg, UNDO_START);
+	term_mc(cfg, UNDO_START);
 
 	/* Need to stop timers before unmapping */
 	if (cfg->afu)
@@ -1838,7 +1838,7 @@ ret:
 	pr_debug("%s: returning rc=%d\n", __func__, rc);
 	return rc;
 out:
-	cxlflash_term_mc(cfg, level);
+	term_mc(cfg, level);
 	goto ret;
 }
 
@@ -1874,7 +1874,7 @@ static int init_afu(struct cxlflash_cfg *cfg)
 	afu->afu_map = cxl_psa_map(cfg->mcctx);
 	if (!afu->afu_map) {
 		rc = -ENOMEM;
-		cxlflash_term_mc(cfg, UNDO_START);
+		term_mc(cfg, UNDO_START);
 		dev_err(dev, "%s: call to cxl_psa_map failed!\n", __func__);
 		goto err1;
 	}
@@ -1892,7 +1892,7 @@ static int init_afu(struct cxlflash_cfg *cfg)
 	if (rc) {
 		dev_err(dev, "%s: call to start_afu failed, rc=%d!\n",
 			__func__, rc);
-		cxlflash_term_mc(cfg, UNDO_START);
+		term_mc(cfg, UNDO_START);
 		cxl_psa_unmap((void *)afu->afu_map);
 		afu->afu_map = NULL;
 	}
