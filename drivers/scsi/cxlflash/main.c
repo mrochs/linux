@@ -1927,9 +1927,6 @@ int cxlflash_send_cmd(struct afu *afu, struct afu_cmd *cmd)
 	cmd->sa.host_use_b[0] = 0;	/* 0 means active */
 	cmd->sa.ioasc = 0;
 
-	/* make memory updates visible to AFU before MMIO */
-	smp_wmb();
-
 	/* Only kick off the timer for internal commands */
 	if (cmd->internal) {
 		cmd->timer.expires = (jiffies +
