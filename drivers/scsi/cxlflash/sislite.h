@@ -20,8 +20,8 @@
 typedef u16 ctx_hndl_t;
 typedef u32 res_hndl_t;
 
-#define PAGE_SIZE_4K	4096
-#define PAGE_SIZE_64K	65536
+#define SIZE_4K		4096
+#define SIZE_64K	65536
 
 /*
  * IOARCB: 64 bytes, min 16 byte alignment required, host native endianness
@@ -345,10 +345,10 @@ struct sisl_global_regs {
 struct sisl_global_map {
 	union {
 		struct sisl_global_regs regs;
-		char page0[PAGE_SIZE_4K];	/* page 0 */
+		char page0[SIZE_4K];	/* page 0 */
 	};
 
-	char page1[PAGE_SIZE_4K];	/* page 1 */
+	char page1[SIZE_4K];	/* page 1 */
 
 	/* pages 2 & 3 */
 	u64 fc_regs[CXLFLASH_NUM_FC_PORTS][CXLFLASH_NUM_VLUNS];
@@ -377,7 +377,7 @@ struct sisl_global_map {
 struct cxlflash_afu_map {
 	union {
 		struct sisl_host_map host;
-		char harea[PAGE_SIZE_64K];	/* 64KB each */
+		char harea[SIZE_64K];	/* 64KB each */
 	} hosts[CXLFLASH_MAX_CONTEXT];
 
 	union {
@@ -387,7 +387,7 @@ struct cxlflash_afu_map {
 
 	union {
 		struct sisl_global_map global;
-		char garea[PAGE_SIZE_64K];	/* 64KB single block */
+		char garea[SIZE_64K];	/* 64KB single block */
 	};
 };
 
