@@ -895,7 +895,8 @@ out:
 static int cxlflash_mmap_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 {
 	struct file *file = vma->vm_file;
-	struct cxl_context *ctx = cxl_fops_get_context(file);
+	//struct cxl_context *ctx = cxl_fops_get_context(file);
+	struct cxl_context *ctx = file->private_data;
 	struct cxlflash_cfg *cfg = container_of(file->f_op, struct cxlflash_cfg,
 						cxl_fops);
 	struct ctx_info *ctx_info = NULL;
@@ -952,7 +953,8 @@ static const struct vm_operations_struct cxlflash_mmap_vmops = {
 
 int cxlflash_cxl_mmap(struct file *file, struct vm_area_struct *vma)
 {
-	struct cxl_context *ctx = cxl_fops_get_context(file);
+	//struct cxl_context *ctx = cxl_fops_get_context(file);
+	struct cxl_context *ctx = file->private_data;
 	struct cxlflash_cfg *cfg = container_of(file->f_op, struct cxlflash_cfg,
 						cxl_fops);
 	struct ctx_info *ctx_info = NULL;
