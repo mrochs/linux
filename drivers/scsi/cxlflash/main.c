@@ -1754,7 +1754,7 @@ int cxlflash_start_afu(struct cxlflash_cfg *cfg)
 }
 
 /**
- * cxlflash_init_mc() - create and register as the master context
+ * init_mc() - create and register as the master context
  * @cxlflash:	Internal structure associated with the host.
  *
  * Return:
@@ -1762,7 +1762,7 @@ int cxlflash_start_afu(struct cxlflash_cfg *cfg)
  *	-ENOMEM when unable to obtain a context from CXL services
  *	A failure value from CXL services.
  */
-int cxlflash_init_mc(struct cxlflash_cfg *cfg)
+static int init_mc(struct cxlflash_cfg *cfg)
 {
 	struct cxl_context *ctx;
 	struct device *dev = &cfg->dev->dev;
@@ -1862,7 +1862,7 @@ static int cxlflash_init_afu(struct cxlflash_cfg *cfg)
 	struct device *dev = &cfg->dev->dev;
 
 
-	rc = cxlflash_init_mc(cfg);
+	rc = init_mc(cfg);
 	if (rc) {
 		dev_err(dev, "%s: call to init_mc failed, rc=%d!\n",
 			__func__, rc);
