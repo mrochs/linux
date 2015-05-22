@@ -678,13 +678,13 @@ static struct pci_device_id cxlflash_pci_table[] = {
 MODULE_DEVICE_TABLE(pci, cxlflash_pci_table);
 
 /**
- * cxlflash_free_mem() - free memory associated with the AFU
+ * free_mem() - free memory associated with the AFU
  * @cxlflash:	Internal structure associated with the host.
  *
  * As part of draining the AFU command pool, the timers of each
  * command are ensured to be stopped.
  */
-static void cxlflash_free_mem(struct cxlflash_cfg *cfg)
+static void free_mem(struct cxlflash_cfg *cfg)
 {
 	int i;
 	char *buf = NULL;
@@ -821,7 +821,7 @@ static void cxlflash_remove(struct pci_dev *pdev)
 			__func__);
 	case INIT_STATE_NONE:
 		flush_work(&cfg->work_q);
-		cxlflash_free_mem(cfg);
+		free_mem(cfg);
 		break;
 	}
 
@@ -866,7 +866,7 @@ static int alloc_mem(struct cxlflash_cfg *cfg)
 				pr_err("%s: Allocate command buffers fail!\n",
 				       __func__);
 				rc = -ENOMEM;
-				cxlflash_free_mem(cfg);
+				free_mem(cfg);
 				goto out;
 			}
 		}
