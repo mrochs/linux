@@ -38,8 +38,11 @@ MODULE_LICENSE("GPL");
  * cxlflash_cmd_checkout() - checks out an AFU command
  * @afu:	AFU to checkout from.
  *
- * Commands are checked out in a round-robin fashion. The buffer and
- * CDB within the command are initialized (zeroed) prior to returning.
+ * Commands are checked out in a round-robin fashion. Note that since
+ * the command pool is larger than the hardware queue, the majority of
+ * times we will only loop once or twice before getting a command. The
+ * buffer and CDB within the command are initialized (zeroed) prior to
+ * returning.
  *
  * Return: The checked out command or NULL when command pool is empty.
  */
@@ -846,8 +849,7 @@ static int alloc_mem(struct cxlflash_cfg *cfg)
 	 * and upto 4 4k pages
 	 */
 	cfg->afu = (void *)__get_free_pages(GFP_KERNEL | __GFP_ZERO,
-						 get_order(sizeof(struct afu)));
-
+					    get_order(sizeof(struct afu)));
 	if (unlikely(!cfg->afu)) {
 		pr_err("%s: cannot get %d free pages\n",
 		       __func__, get_order(sizeof(struct afu)));
@@ -1574,7 +1576,10 @@ void cxlflash_context_reset(struct afu_cmd *cmd)
 
 	if (afu->room == 0) {
 		do {
-			/* Spread out wait time on successive retries */
+			/*
+			 * We really want to send this reset at all costs, so
+			 * spread out wait time on successive retries.
+			 */
 			udelay(nretry);
 			afu->room = readq_be(&afu->host_map->cmd_room);
 		} while ((afu->room == 0) && (nretry++ < MC_ROOM_RETRY_CNT));

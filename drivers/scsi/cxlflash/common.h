@@ -51,7 +51,7 @@
 #endif
 
 /* AFU defines a fixed size of 4K for command buffers (borrow 4K page define) */
-#define CMD_BUFSIZE     PAGE_SIZE_4K
+#define CMD_BUFSIZE     SIZE_4K
 
 /* flags in IOA status area for host use */
 #define B_DONE       0x01
