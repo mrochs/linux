@@ -201,18 +201,31 @@ struct sisl_ioasa {
 
 /* MMIO space is required to support only 64-bit access */
 
+/* 
+ * This AFU has two mechanisms to deal with endian-ness.
+ * One is a global configuration (in the afu_config) register
+ * below that specifies the endian-ness of the host.
+ * The other is a per context (i.e. application) specification
+ * controlled by the endian_ctrl field here. Since the master
+ * context is one such application the master context's
+ * endian-ness is set to be the same as the host.
+ */
+#define SISL_ENDIAN_CTRL_BE           0x8000000000000080ull
+#define SISL_ENDIAN_CTRL_LE           0x0000000000000000ull
+
 #ifdef __BIG_ENDIAN
-#define SISL_ENDIAN_CTRL             0x8000000000000080ull
+#define SISL_ENDIAN_CTRL              SISL_ENDIAN_CTRL_BE
 #else
-#define SISL_ENDIAN_CTRL             0x0000000000000000ull
+#define SISL_ENDIAN_CTRL              SISL_ENDIAN_CTRL_LE
 #endif
 
 /* per context host transport MMIO  */
 struct sisl_host_map {
 	u64 endian_ctrl;     /* Per context Endian Control. The AFU will
-				 * operate on whatever the context is of the
-				 * host application 
-				 */
+			      * operate on whatever the context is of the 
+			      * host application.
+			      */
+
 	u64 intr_status;	/* this sends LISN# programmed in ctx_ctrl.
 				 * Only recovery in a PERM_ERR is a context
 				 * exit since there is no way to tell which
