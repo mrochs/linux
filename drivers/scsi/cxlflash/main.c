@@ -882,7 +882,7 @@ out:
 }
 
 /**
- * cxlflash_init_pci() - initializes the host as a PCI device
+ * init_pci() - initializes the host as a PCI device
  * @cxlflash:	Internal structure associated with the host.
  *
  * Return:
@@ -890,7 +890,7 @@ out:
  *	-EIO on unable to communicate with device
  *	A return code from the PCI sub-routines
  */
-static int cxlflash_init_pci(struct cxlflash_cfg *cfg)
+static int init_pci(struct cxlflash_cfg *cfg)
 {
 	struct pci_dev *pdev = cfg->dev;
 	int rc = 0;
@@ -2193,9 +2193,9 @@ static int cxlflash_probe(struct pci_dev *pdev,
 	}
 	cfg->init_state = INIT_STATE_AFU;
 
-	rc = cxlflash_init_pci(cfg);
+	rc = init_pci(cfg);
 	if (rc) {
-		dev_err(&pdev->dev, "%s: call to cxlflash_init_pci "
+		dev_err(&pdev->dev, "%s: call to init_pci "
 			"failed rc=%d!\n", __func__, rc);
 		goto out_remove;
 	}
