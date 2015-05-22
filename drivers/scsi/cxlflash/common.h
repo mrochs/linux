@@ -96,8 +96,6 @@ struct cxlflash_cfg {
 	int lr_port;
 
 	struct cxl_afu *cxl_afu;
-	timer_t timer_hb;
-	timer_t timer_fc;
 
 	struct pci_pool *cxlflash_cmd_pool;
 	struct pci_dev *parent_dev;
