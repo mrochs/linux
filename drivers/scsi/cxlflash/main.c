@@ -245,7 +245,7 @@ static void cmd_complete(struct afu_cmd *cmd)
 }
 
 /**
- * cxlflash_send_tmf() - sends a Task Management Function (TMF)
+ * send_tmf() - sends a Task Management Function (TMF)
  * @afu:	AFU to checkout from.
  * @scp:	SCSI command from stack.
  * @tmfcmd:	TMF command to send.
@@ -254,7 +254,7 @@ static void cmd_complete(struct afu_cmd *cmd)
  *	0 on success
  *	SCSI_MLQUEUE_HOST_BUSY when host is busy
  */
-int cxlflash_send_tmf(struct afu *afu, struct scsi_cmnd *scp, u64 tmfcmd)
+static int send_tmf(struct afu *afu, struct scsi_cmnd *scp, u64 tmfcmd)
 {
 	struct afu_cmd *cmd;
 
@@ -417,7 +417,7 @@ static int cxlflash_eh_device_reset_handler(struct scsi_cmnd *scp)
 		 get_unaligned_be32(&((u32 *)scp->cmnd)[3]));
 
 	scp->result = (DID_OK << 16);
-	cxlflash_send_tmf(afu, scp, TMF_LUN_RESET);
+	send_tmf(afu, scp, TMF_LUN_RESET);
 
 	pr_debug("%s: returning rc=%d\n", __func__, rc);
 	return rc;
