@@ -1089,7 +1089,7 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 	if (ctx_info) {
 		cxlflash_dbg("Reusing context for LUN! (%d)", ctxid);
 		list_add(&lun_access->list, &ctx_info->luns);
-		goto out;
+		goto out_attach;
 	}
 
 	ctx = cxl_dev_context_init(cfg->dev);
@@ -1146,6 +1146,7 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 	cfg->ctx_tbl[ctxid] = ctx_info;
 	fd_install(fd, file);
 
+out_attach:
 	attach->hdr.return_flags = 0;
 	attach->context_id = ctxid;
 	attach->block_size = lun_info->blk_len;
