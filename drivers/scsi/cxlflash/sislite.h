@@ -201,7 +201,7 @@ struct sisl_ioasa {
 
 /* MMIO space is required to support only 64-bit access */
 
-/* 
+/*
  * This AFU has two mechanisms to deal with endian-ness.
  * One is a global configuration (in the afu_config) register
  * below that specifies the endian-ness of the host.
@@ -222,7 +222,7 @@ struct sisl_ioasa {
 /* per context host transport MMIO  */
 struct sisl_host_map {
 	u64 endian_ctrl;     /* Per context Endian Control. The AFU will
-			      * operate on whatever the context is of the 
+			      * operate on whatever the context is of the
 			      * host application.
 			      */
 

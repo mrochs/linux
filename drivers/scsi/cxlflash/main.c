@@ -79,7 +79,7 @@ void cxlflash_cmd_checkin(struct afu_cmd *cmd)
 {
 	if (unlikely(atomic_inc_return(&cmd->free) != 1)) {
 		pr_err("%s: Freeing cmd (%d) that is not in use!\n",
-		       __func__,cmd->slot);
+		       __func__, cmd->slot);
 		return;
 	}
 
@@ -1410,7 +1410,7 @@ static irqreturn_t cxlflash_async_err_irq(int irq, void *data)
 			continue;
 
 		pr_err("%s: %s, fc_status 0x%08llX\n", __func__, info->desc,
-		       readq_be(&global->fc_regs [info->port][FC_STATUS / 8]));
+		       readq_be(&global->fc_regs[info->port][FC_STATUS / 8]));
 
 		/*
 		 * do link reset first, some OTHER errors will set FC_ERROR
@@ -2192,7 +2192,7 @@ static int cxlflash_probe(struct pci_dev *pdev,
 	//cfg->cxl_afu = cxl_pci_to_afu(pdev); XXX
 	rc = init_afu(cfg);
 	if (rc) {
-		dev_err(&pdev->dev,"%s: call to init_afu "
+		dev_err(&pdev->dev, "%s: call to init_afu "
 			"failed rc=%d!\n", __func__, rc);
 		goto out_remove;
 	}

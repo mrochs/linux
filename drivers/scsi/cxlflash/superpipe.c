@@ -805,7 +805,8 @@ out:
  */
 int cxlflash_cxl_release(struct inode *inode, struct file *file)
 {
-	struct cxl_context *ctx = cxl_fops_get_context(file);
+	//struct cxl_context *ctx = cxl_fops_get_context(file);
+	struct cxl_context *ctx = file->private_data;
 	struct cxlflash_cfg *cfg = container_of(file->f_op, struct cxlflash_cfg,
 						cxl_fops);
 	struct ctx_info *ctx_info = NULL;
