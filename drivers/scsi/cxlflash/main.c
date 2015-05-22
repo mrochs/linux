@@ -1843,7 +1843,7 @@ out:
 }
 
 /**
- * cxlflash_init_afu() - setup as master context and start AFU
+ * init_afu() - setup as master context and start AFU
  * @cxlflash:	Internal structure associated with the host.
  *
  * This routine is a higher level of control for configuring the
@@ -1854,7 +1854,7 @@ out:
  *	-ENOMEM when unable to map the AFU MMIO space
  *	A failure value from internal services.
  */
-static int cxlflash_init_afu(struct cxlflash_cfg *cfg)
+static int init_afu(struct cxlflash_cfg *cfg)
 {
 	u64 reg;
 	int rc = 0;
@@ -2066,7 +2066,7 @@ int cxlflash_afu_reset(struct cxlflash_cfg *cfg)
 
 	cxlflash_term_afu(cfg);
 
-	rc = cxlflash_init_afu(cfg);
+	rc = init_afu(cfg);
 
 	pr_debug("%s: returning rc=%d\n", __func__, rc);
 	return rc;
@@ -2185,9 +2185,9 @@ static int cxlflash_probe(struct pci_dev *pdev,
 
 	cfg->cxl_afu = cxl_pci_to_afu(pdev, NULL);
 	//cfg->cxl_afu = cxl_pci_to_afu(pdev); XXX
-	rc = cxlflash_init_afu(cfg);
+	rc = init_afu(cfg);
 	if (rc) {
-		dev_err(&pdev->dev,"%s: call to cxlflash_init_afu "
+		dev_err(&pdev->dev,"%s: call to init_afu "
 			"failed rc=%d!\n", __func__, rc);
 		goto out_remove;
 	}
