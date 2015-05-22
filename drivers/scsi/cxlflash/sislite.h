@@ -317,15 +317,18 @@ struct sisl_global_regs {
 	u64 afu_hb;
 	u64 afu_scratch_pad;
 	u64 afu_port_sel;
-#define SISL_AFUCONF_AR_IOARCB         0x4000ull
-#define SISL_AFUCONF_AR_LXT            0x2000ull
-#define SISL_AFUCONF_AR_RHT            0x1000ull
-#define SISL_AFUCONF_AR_DATA           0x0800ull
-#define SISL_AFUCONF_AR_RSRC           0x0400ull
-#define SISL_AFUCONF_AR_IOASA          0x0200ull
-#define SISL_AFUCONF_AR_RRQ            0x0100ull
+#define SISL_AFUCONF_AR_IOARCB	0x4000ull
+#define SISL_AFUCONF_AR_LXT	0x2000ull
+#define SISL_AFUCONF_AR_RHT	0x1000ull
+#define SISL_AFUCONF_AR_DATA	0x0800ull
+#define SISL_AFUCONF_AR_RSRC	0x0400ull
+#define SISL_AFUCONF_AR_IOASA	0x0200ull
+#define SISL_AFUCONF_AR_RRQ	0x0100ull
 /* Aggregate all Auto Retry Bits */
-#define SISL_AFUCONF_AR_ALL            0x7F00ull
+#define SISL_AFUCONF_AR_ALL	(SISL_AFUCONF_AR_IOARCB|SISL_AFUCONF_AR_LXT| \
+				 SISL_AFUCONF_AR_RHT|SISL_AFUCONF_AR_DATA|   \
+				 SISL_AFUCONF_AR_RSRC|SISL_AFUCONF_AR_IOASA| \
+				 SISL_AFUCONF_AR_RRQ)
 #ifdef __BIG_ENDIAN
 #define SISL_AFUCONF_ENDIAN            0x0000ull
 #else
