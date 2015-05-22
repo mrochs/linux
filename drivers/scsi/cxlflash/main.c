@@ -703,12 +703,12 @@ static void cxlflash_free_mem(struct cxlflash_cfg *cfg)
 }
 
 /**
- * cxlflash_stop_afu() - stops the AFU command timers and unmaps the MMIO space
+ * stop_afu() - stops the AFU command timers and unmaps the MMIO space
  * @cxlflash:	Internal structure associated with the host.
  *
  * Safe to call with AFU in a partially allocated/initialized state.
  */
-static void cxlflash_stop_afu(struct cxlflash_cfg *cfg)
+static void stop_afu(struct cxlflash_cfg *cfg)
 {
 	int i;
 	struct afu *afu = cfg->afu;
@@ -786,7 +786,7 @@ static void cxlflash_term_afu(struct cxlflash_cfg *cfg)
 
 	/* Need to stop timers before unmapping */
 	if (cfg->afu)
-		cxlflash_stop_afu(cfg);
+		stop_afu(cfg);
 
 	pr_debug("%s: returning\n", __func__);
 }
