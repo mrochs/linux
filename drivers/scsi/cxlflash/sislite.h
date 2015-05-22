@@ -209,6 +209,9 @@ struct sisl_ioasa {
  * controlled by the endian_ctrl field here. Since the master
  * context is one such application the master context's
  * endian-ness is set to be the same as the host.
+ *
+ * As per the SISlite spec, the MMIO registers are always
+ * big endian.
  */
 #define SISL_ENDIAN_CTRL_BE           0x8000000000000080ull
 #define SISL_ENDIAN_CTRL_LE           0x0000000000000000ull
@@ -221,12 +224,12 @@ struct sisl_ioasa {
 
 /* per context host transport MMIO  */
 struct sisl_host_map {
-	u64 endian_ctrl;     /* Per context Endian Control. The AFU will
+	__be64 endian_ctrl;     /* Per context Endian Control. The AFU will
 			      * operate on whatever the context is of the
 			      * host application.
 			      */
 
-	u64 intr_status;	/* this sends LISN# programmed in ctx_ctrl.
+	__be64 intr_status;	/* this sends LISN# programmed in ctx_ctrl.
 				 * Only recovery in a PERM_ERR is a context
 				 * exit since there is no way to tell which
 				 * command caused the error.
@@ -249,24 +252,24 @@ struct sisl_host_map {
 #define SISL_ISTATUS_UNMASK  (0x001Full)	/* 1 means unmasked */
 #define SISL_ISTATUS_MASK    ~(SISL_ISTATUS_UNMASK)	/* 1 means masked */
 
-	u64 intr_clear;
-	u64 intr_mask;
-	u64 ioarrin;		/* only write what cmd_room permits */
-	u64 rrq_start;	/* start & end are both inclusive */
-	u64 rrq_end;		/* write sequence: start followed by end */
-	u64 cmd_room;
-	u64 ctx_ctrl;	/* least signiifcant byte or b56:63 is LISN# */
-	u64 mbox_w;		/* restricted use */
+	__be64 intr_clear;
+	__be64 intr_mask;
+	__be64 ioarrin;		/* only write what cmd_room permits */
+	__be64 rrq_start;	/* start & end are both inclusive */
+	__be64 rrq_end;		/* write sequence: start followed by end */
+	__be64 cmd_room;
+	__be64 ctx_ctrl;	/* least signiifcant byte or b56:63 is LISN# */
+	__be64 mbox_w;		/* restricted use */
 };
 
 /* per context provisioning & control MMIO */
 struct sisl_ctrl_map {
-	u64 rht_start;
-	u64 rht_cnt_id;
+	__be64 rht_start;
+	__be64 rht_cnt_id;
 	/* both cnt & ctx_id args must be ull */
 #define SISL_RHT_CNT_ID(cnt, ctx_id)  (((cnt) << 48) | ((ctx_id) << 32))
 
-	u64 ctx_cap;	/* afu_rc below is when the capability is violated */
+	__be64 ctx_cap;	/* afu_rc below is when the capability is violated */
 #define SISL_CTX_CAP_PROXY_ISSUE       0x8000000000000000ull /* afu_rc 0x21 */
 #define SISL_CTX_CAP_REAL_MODE         0x4000000000000000ull /* afu_rc 0x21 */
 #define SISL_CTX_CAP_HOST_XLATE        0x2000000000000000ull /* afu_rc 0x1a */
@@ -275,12 +278,12 @@ struct sisl_ctrl_map {
 #define SISL_CTX_CAP_GSCSI_CMD         0x0000000000000004ull /* afu_rc 0x21 */
 #define SISL_CTX_CAP_WRITE_CMD         0x0000000000000002ull /* afu_rc 0x21 */
 #define SISL_CTX_CAP_READ_CMD          0x0000000000000001ull /* afu_rc 0x21 */
-	u64 mbox_r;
+	__be64 mbox_r;
 };
 
 /* single copy global regs */
 struct sisl_global_regs {
-	u64 aintr_status;
+	__be64 aintr_status;
 	/* In cxlflash, each FC port/link gets a byte of status */
 #define SISL_ASTATUS_FC0_OTHER	 0x8000ull /* b48, other err,
 					      FC_ERRCAP[31:20] */
@@ -311,12 +314,12 @@ struct sisl_global_regs {
 #define SISL_ASTATUS_UNMASK	0xFFFFull		/* 1 means unmasked */
 #define SISL_ASTATUS_MASK	~(SISL_ASTATUS_UNMASK)	/* 1 means masked */
 
-	u64 aintr_clear;
-	u64 aintr_mask;
-	u64 afu_ctrl;
-	u64 afu_hb;
-	u64 afu_scratch_pad;
-	u64 afu_port_sel;
+	__be64 aintr_clear;
+	__be64 aintr_mask;
+	__be64 afu_ctrl;
+	__be64 afu_hb;
+	__be64 afu_scratch_pad;
+	__be64 afu_port_sel;
 #define SISL_AFUCONF_AR_IOARCB	0x4000ull
 #define SISL_AFUCONF_AR_LXT	0x2000ull
 #define SISL_AFUCONF_AR_RHT	0x1000ull
@@ -335,10 +338,10 @@ struct sisl_global_regs {
 #define SISL_AFUCONF_ENDIAN            0x0020ull
 #endif
 #define SISL_AFUCONF_MBOX_CLR_READ     0x0010ull
-	u64 afu_config;
-	u64 rsvd[0xf8];
-	u64 afu_version;
-	u64 interface_version;
+	__be64 afu_config;
+	__be64 rsvd[0xf8];
+	__be64 afu_version;
+	__be64 interface_version;
 };
 
 #define CXLFLASH_NUM_FC_PORTS   2
@@ -354,10 +357,10 @@ struct sisl_global_map {
 	char page1[SIZE_4K];	/* page 1 */
 
 	/* pages 2 & 3 */
-	u64 fc_regs[CXLFLASH_NUM_FC_PORTS][CXLFLASH_NUM_VLUNS];
+	__be64 fc_regs[CXLFLASH_NUM_FC_PORTS][CXLFLASH_NUM_VLUNS];
 
 	/* pages 4 & 5 (lun tbl) */
-	u64 fc_port[CXLFLASH_NUM_FC_PORTS][CXLFLASH_NUM_VLUNS];
+	__be64 fc_port[CXLFLASH_NUM_FC_PORTS][CXLFLASH_NUM_VLUNS];
 
 };
 
