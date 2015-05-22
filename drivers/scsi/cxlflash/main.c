@@ -1467,7 +1467,7 @@ static int start_context(struct cxlflash_cfg *cfg)
 }
 
 /**
- * cxlflash_read_vpd() - obtains the WWPNs from VPD
+ * read_vpd() - obtains the WWPNs from VPD
  * @cxlflash:	Internal structure associated with the host.
  * @wwpn:	Array of size NUM_FC_PORTS to pass back WWPNs
  *
@@ -1475,7 +1475,7 @@ static int start_context(struct cxlflash_cfg *cfg)
  *	0 on success
  *	-ENODEV when VPD or WWPN keywords not found
  */
-int cxlflash_read_vpd(struct cxlflash_cfg *cfg, u64 wwpn[])
+static int read_vpd(struct cxlflash_cfg *cfg, u64 wwpn[])
 {
 	struct pci_dev *dev = cfg->parent_dev;
 	int rc = 0;
@@ -1645,7 +1645,7 @@ int init_global(struct cxlflash_cfg *cfg)
 	int rc = 0;
 	u64 reg;
 
-	rc = cxlflash_read_vpd(cfg, &wwpn[0]);
+	rc = read_vpd(cfg, &wwpn[0]);
 	if (rc) {
 		pr_err("%s: could not read vpd rc=%d\n", __func__, rc);
 		goto out;
