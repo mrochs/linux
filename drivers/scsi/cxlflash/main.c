@@ -829,7 +829,7 @@ static void cxlflash_remove(struct pci_dev *pdev)
 }
 
 /**
- * cxlflash_alloc_mem() - allocates the AFU and its command pool
+ * alloc_mem() - allocates the AFU and its command pool
  * @cxlflash:	Internal structure associated with the host.
  *
  * A partially allocated state remains on failure.
@@ -838,7 +838,7 @@ static void cxlflash_remove(struct pci_dev *pdev)
  *	0 on success
  *	-ENOMEM on failure to allocate memory
  */
-static int cxlflash_alloc_mem(struct cxlflash_cfg *cfg)
+static int alloc_mem(struct cxlflash_cfg *cfg)
 {
 	int rc = 0;
 	int i;
@@ -2141,7 +2141,7 @@ static int cxlflash_probe(struct pci_dev *pdev,
 
 	cfg = (struct cxlflash_cfg *)host->hostdata;
 	cfg->host = host;
-	rc = cxlflash_alloc_mem(cfg);
+	rc = alloc_mem(cfg);
 	if (rc) {
 		dev_err(&pdev->dev, "%s: call to scsi_host_alloc failed!\n",
 			__func__);
