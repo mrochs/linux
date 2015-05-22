@@ -1449,12 +1449,12 @@ out:
 }
 
 /**
- * cxlflash_start_context() - starts the master context
+ * start_context() - starts the master context
  * @cxlflash:	Internal structure associated with the host.
  *
  * Return: A success or failure value from CXL services.
  */
-int cxlflash_start_context(struct cxlflash_cfg *cfg)
+static int start_context(struct cxlflash_cfg *cfg)
 {
 	int rc = 0;
 
@@ -1828,7 +1828,7 @@ static int init_mc(struct cxlflash_cfg *cfg)
 	 * The CXL_IOCTL_GET_PROCESS_ELEMENT is implicit in the process
 	 * element (pe) that is embedded in the context (ctx)
 	 */
-	rc = cxlflash_start_context(cfg);
+	rc = start_context(cfg);
 	if (rc) {
 		dev_err(dev, "%s: start context failed rc=%d\n", __func__, rc);
 		level = UNMAP_THREE;
