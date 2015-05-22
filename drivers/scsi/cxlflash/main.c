@@ -775,12 +775,12 @@ static void term_mc(struct cxlflash_cfg *cfg, enum undo_level level)
 }
 
 /**
- * cxlflash_term_afu() - terminates the AFU
+ * term_afu() - terminates the AFU
  * @cxlflash:	Internal structure associated with the host.
  *
  * Safe to call with AFU/MC in partially allocated/initialized state.
  */
-static void cxlflash_term_afu(struct cxlflash_cfg *cfg)
+static void term_afu(struct cxlflash_cfg *cfg)
 {
 	term_mc(cfg, UNDO_START);
 
@@ -816,8 +816,8 @@ static void cxlflash_remove(struct pci_dev *pdev)
 		pci_release_regions(cfg->dev);
 		pci_disable_device(pdev);
 	case INIT_STATE_AFU:
-		cxlflash_term_afu(cfg);
-		dev_dbg(&pdev->dev, "%s: after struct cxlflash_term_afu!\n",
+		term_afu(cfg);
+		dev_dbg(&pdev->dev, "%s: after struct term_afu!\n",
 			__func__);
 	case INIT_STATE_NONE:
 		flush_work(&cfg->work_q);
@@ -2064,7 +2064,7 @@ int cxlflash_afu_reset(struct cxlflash_cfg *cfg)
 	 * no longer available restart it after the reset is complete
 	 */
 
-	cxlflash_term_afu(cfg);
+	term_afu(cfg);
 
 	rc = init_afu(cfg);
 
