@@ -129,7 +129,6 @@ int afu_release(struct inode *inode, struct file *file)
 	 */
 	cxl_context_free(ctx);
 
-	cxl_ctx_put();
 	return 0;
 }
 
