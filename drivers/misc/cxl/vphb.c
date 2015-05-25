@@ -60,7 +60,7 @@ static bool cxl_pci_enable_device_hook(struct pci_dev *dev)
 		return false;
 	dev->dev.archdata.cxl_ctx = ctx;
 
-	return (afu_check_and_enable(afu) == 0);
+	return (cxl_afu_check_and_enable(afu) == 0);
 }
 
 static void cxl_pci_release_device(struct pci_dev *dev)
