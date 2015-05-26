@@ -654,7 +654,7 @@ static struct ctx_info *create_context(struct cxlflash_cfg *cfg,
 	ctx_info->ctrl_map = &afu->afu_map->ctrls[ctxid].ctrl;
 	ctx_info->ctxid = ctxid;
 	ctx_info->lfd = adap_fd;
-	ctx_info->pid = current->pid;
+	ctx_info->pid = current->tgid; /* tgid = pid */
 	ctx_info->ctx = ctx;
 	INIT_LIST_HEAD(&ctx_info->luns);
 	atomic_set(&ctx_info->nrefs, 1);
