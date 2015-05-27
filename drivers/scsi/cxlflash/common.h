@@ -117,7 +117,6 @@ struct cxlflash_cfg {
 	u8 context_reset_active:1;
 	u8 err_recovery_active:1;
 	u8 tmf_active:1;
-	u8 sync_active:1;
 };
 
 struct afu_cmd {
@@ -131,7 +130,6 @@ struct afu_cmd {
 	atomic_t free;
 	u8 special:1;
 	u8 internal:1;
-	u8 sync:1;
 
 	/* As per the SISLITE spec the IOARCB EA has to be 16-byte aligned.
 	 * However for performance reasons the IOARCB/IOASA should be

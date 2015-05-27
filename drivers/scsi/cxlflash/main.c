@@ -85,7 +85,6 @@ void cxlflash_cmd_checkin(struct afu_cmd *cmd)
 
 	cmd->special = 0;
 	cmd->internal = false;
-	cmd->sync = false;
 	cmd->rcb.timeout = 0;
 
 	pr_debug("%s: releasing cmd index=%d\n", __func__, cmd->slot);
@@ -237,10 +236,6 @@ static void cmd_complete(struct afu_cmd *cmd)
 			cfg->tmf_active = false;
 			wake_up_all(&cfg->tmf_wait_q);
 		}
-	}
-	if (cmd->sync) {
-		cfg->sync_active = false;
-		wake_up_all(&cfg->sync_wait_q);
 	}
 
 	/* Done with command */
@@ -1981,9 +1976,10 @@ void cxlflash_wait_resp(struct afu *afu, struct afu_cmd *cmd)
  * @res_hndl_u:	Identifies resource requesting sync.
  * @mode:	Type of sync to issue (lightweight, heavyweight, global).
  *
- * The AFU can only take 1 sync command at a time. This routine can be
- * called from both interrupt and process context. The caller is responsible
- * for any serialization.
+ * The AFU can only take 1 sync command at a time. This routine enforces this
+ * limitation by using a mutex to provide exlusive access to the AFU during
+ * the sync. This design point requires calling threads to not be on interrupt
+ * context due to the possibility of sleeping during concurrent sync operations.
  *
  * Return:
  *	0 on success
@@ -1992,16 +1988,12 @@ void cxlflash_wait_resp(struct afu *afu, struct afu_cmd *cmd)
 int cxlflash_afu_sync(struct afu *afu, ctx_hndl_t ctx_hndl_u,
 		      res_hndl_t res_hndl_u, u8 mode)
 {
-	struct cxlflash_cfg *cfg = afu->parent;
 	struct afu_cmd *cmd;
 	int rc = 0;
 	int retry_cnt = 0;
+	static DEFINE_MUTEX(sync_active);
 
-	while (cfg->sync_active) {
-		pr_debug("%s: sync issued while one is active\n", __func__);
-		wait_event(cfg->sync_wait_q, !cfg->sync_active);
-	}
-
+	mutex_lock(&sync_active);
 retry:
 	cmd = cxlflash_cmd_checkout(afu);
 	if (unlikely(!cmd)) {
@@ -2026,13 +2018,10 @@ retry:
 	cmd->rcb.data_len = 0x0;
 	cmd->rcb.data_ea = 0x0;
 	cmd->internal = true;
-	cmd->sync = true;
 	cmd->rcb.timeout = MC_AFU_SYNC_TIMEOUT;
 
 	cmd->rcb.cdb[0] = 0xC0;	/* AFU Sync */
 	cmd->rcb.cdb[1] = mode;
-
-	cfg->sync_active = true;
 
 	/* The cdb is aligned, no unaligned accessors required */
 	*((u16 *)&cmd->rcb.cdb[2]) = swab16(ctx_hndl_u);
@@ -2048,6 +2037,7 @@ retry:
 	}
 
 out:
+	mutex_unlock(&sync_active);
 	pr_debug("%s: returning rc=%d\n", __func__, rc);
 	return rc;
 }
@@ -2096,10 +2086,17 @@ static void cxlflash_worker_thread(struct work_struct *work)
 		port = cfg->lr_port;
 		if (port < 0)
 			pr_err("%s: invalid port index %d\n", __func__, port);
-		else
+		else {
+			spin_unlock_irqrestore(cfg->host->host_lock,
+					       lock_flags);
+
+			/* The reset can block... */
 			afu_link_reset(afu, port,
 				       &afu->afu_map->
 				       global.fc_regs[port][0]);
+			spin_lock_irqsave(cfg->host->host_lock, lock_flags);
+		}
+
 		cfg->lr_state = LINK_RESET_COMPLETE;
 	}
 
