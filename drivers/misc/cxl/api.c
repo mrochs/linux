@@ -33,7 +33,7 @@ struct cxl_context *cxl_dev_context_init(struct pci_dev *dev)
 		kfree(ctx);
 		return ERR_PTR(-ENOMEM);
 	}
-	assign_psn_space(ctx);
+	cxl_assign_psn_space(ctx);
 
 	return ctx;
 }
@@ -62,7 +62,6 @@ int cxl_release_context(struct cxl_context *ctx)
 
 	cxl_context_free(ctx);
 
-	cxl_ctx_put();
 	return 0;
 }
 EXPORT_SYMBOL_GPL(cxl_release_context);
@@ -188,7 +187,7 @@ EXPORT_SYMBOL_GPL(cxl_stop_context);
 void cxl_set_master(struct cxl_context *ctx)
 {
 	ctx->master = true;
-	assign_psn_space(ctx);
+	cxl_assign_psn_space(ctx);
 }
 EXPORT_SYMBOL_GPL(cxl_set_master);
 
@@ -264,6 +263,12 @@ struct file *cxl_get_fd(struct cxl_context *ctx, struct file_operations *fops,
 }
 EXPORT_SYMBOL_GPL(cxl_get_fd);
 
+struct cxl_context *cxl_fops_get_context(struct file *file)
+{
+	return file->private_data;
+}
+EXPORT_SYMBOL_GPL(cxl_fops_get_context);
+
 int cxl_start_work(struct cxl_context *ctx,
 		   struct cxl_ioctl_start_work *work)
 {
@@ -296,7 +301,7 @@ void __iomem *cxl_psa_map(struct cxl_context *ctx)
 	struct cxl_afu *afu = ctx->afu;
 	int rc;
 
-	rc = afu_check_and_enable(afu);
+	rc = cxl_afu_check_and_enable(afu);
 	if (rc)
 		return NULL;
 
@@ -321,6 +326,6 @@ int cxl_afu_reset(struct cxl_context *ctx)
 	if (rc)
 		return rc;
 
-	return afu_check_and_enable(afu);
+	return cxl_afu_check_and_enable(afu);
 }
 EXPORT_SYMBOL_GPL(cxl_afu_reset);

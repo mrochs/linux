@@ -60,16 +60,16 @@ static bool cxl_pci_enable_device_hook(struct pci_dev *dev)
 		return false;
 	dev->dev.archdata.cxl_ctx = ctx;
 
-	return (afu_check_and_enable(afu) == 0);
+	return (cxl_afu_check_and_enable(afu) == 0);
 }
 
-static void cxl_pci_release_device(struct pci_dev *dev)
+static void cxl_pci_disable_device(struct pci_dev *dev)
 {
 	struct cxl_context *ctx = cxl_get_context(dev);
 
 	if (ctx) {
-		if (ctx->status != CLOSED) {
-			dev_err(&dev->dev, "Default context not closed\n");
+		if (ctx->status == STARTED) {
+			dev_err(&dev->dev, "Default context started\n");
 			return;
 		}
 		cxl_release_context(ctx);
@@ -186,7 +186,8 @@ static struct pci_controller_ops cxl_pci_controller_ops =
 {
 	.probe_mode = cxl_pci_probe_mode,
 	.enable_device_hook = cxl_pci_enable_device_hook,
-	.release_device = cxl_pci_release_device,
+	.disable_device = cxl_pci_disable_device,
+	.release_device = cxl_pci_disable_device,
 	.window_alignment = cxl_pci_window_alignment,
 	.reset_secondary_bus = cxl_pci_reset_secondary_bus,
 	.setup_msi_irqs = cxl_setup_msi_irqs,

@@ -1118,6 +1118,7 @@ static int cxl_probe(struct pci_dev *dev, const struct pci_device_id *id)
 	adapter = cxl_init_adapter(dev);
 	if (IS_ERR(adapter)) {
 		dev_err(&dev->dev, "cxl_init_adapter failed: %li\n", PTR_ERR(adapter));
+		pci_disable_device(dev);
 		return PTR_ERR(adapter);
 	}
 
@@ -1134,8 +1135,6 @@ static void cxl_remove(struct pci_dev *dev)
 	struct cxl *adapter = pci_get_drvdata(dev);
 	struct cxl_afu *afu;
 	int i;
-
-	dev_warn(&dev->dev, "pci remove\n");
 
 	/*
 	 * Lock to prevent someone grabbing a ref through the adapter list as

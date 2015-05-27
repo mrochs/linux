@@ -32,6 +32,8 @@ struct pci_controller_ops {
 	 * allow assignment/enabling of the device. */
 	bool		(*enable_device_hook)(struct pci_dev *);
 
+	void		(*disable_device)(struct pci_dev *);
+
 	void		(*release_device)(struct pci_dev *);
 
 	/* Called during PCI resource reassignment */
@@ -45,6 +47,8 @@ struct pci_controller_ops {
 #endif
 
 	int             (*dma_set_mask)(struct pci_dev *dev, u64 dma_mask);
+
+	void		(*shutdown)(struct pci_controller *);
 };
 
 /*
