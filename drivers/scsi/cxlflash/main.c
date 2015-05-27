@@ -767,7 +767,10 @@ static void term_mc(struct cxlflash_cfg *cfg, enum undo_level level)
 	case FREE_IRQ:
 		pr_debug("%s: before cxl_free_afu_irqs\n", __func__);
 		cxl_free_afu_irqs(cfg->mcctx);
+		pr_debug("%s: before cxl_release_context\n", __func__);
 	case RELEASE_CONTEXT:
+		rc = cxl_release_context(cfg->mcctx);
+		BUG_ON(rc);
 		cfg->mcctx = NULL;
 	}
 }
@@ -1770,7 +1773,7 @@ static int init_mc(struct cxlflash_cfg *cfg)
 	int rc = 0;
 	enum undo_level level;
 
-	ctx = cxl_get_context(cfg->dev);
+	ctx =  cxl_dev_context_init(cfg->dev);
 	if (!ctx)
 		return -ENOMEM;
 	cfg->mcctx = ctx;
