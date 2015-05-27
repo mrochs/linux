@@ -181,6 +181,8 @@ int cxl_process_element(struct cxl_context *ctx);
  */
 struct file *cxl_get_fd(struct cxl_context *ctx, struct file_operations *fops,
 			int *fd);
+/* Get the context associated with this file */
+struct cxl_context *cxl_fops_get_context(struct file *file);
 /*
  * Start a context associated a struct cxl_ioctl_start_work used by the
  * standard cxl user API.
