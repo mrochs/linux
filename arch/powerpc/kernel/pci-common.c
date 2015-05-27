@@ -1494,8 +1494,6 @@ void pcibios_disable_device(struct pci_dev *dev)
 {
 	struct pci_controller *phb = pci_bus_to_host(dev->bus);
 
-	dev_info(&dev->dev, "%s\n", __func__);
-
 	if (phb->controller_ops.disable_device)
 		phb->controller_ops.disable_device(dev);
 }
