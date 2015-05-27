@@ -1152,7 +1152,7 @@ out_attach:
 	attach->block_size = lun_info->blk_len;
 	attach->mmio_size = sizeof(afu->afu_map->hosts[0].harea);
 	attach->last_lba = lun_info->max_lba;
-	attach->max_xfer = sdev->host->max_sectors;
+	attach->max_xfer = (sdev->host->max_sectors * 512) / lun_info->blk_len;
 
 out:
 	attach->adap_fd = fd;
