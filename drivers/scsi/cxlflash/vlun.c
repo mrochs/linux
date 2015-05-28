@@ -732,16 +732,16 @@ int cxlflash_disk_virtual_open(struct scsi_device *sdev, void *arg)
 	rht_entry->fp = SISL_RHT_FP(0U, ctx_info->rht_perms);
 	/* format 0 & perms */
 
-	if (lun_size != 0) {
-		marshall_virt_to_resize(virt, &resize);
-		resize.rsrc_handle = rsrc_handle;
-		rc = cxlflash_vlun_resize(sdev, &resize);
-		if (rc) {
-			cxlflash_err("resize failed rc %d", rc);
-			goto err2;
-		}
-		last_lba = resize.last_lba;
+	/* Resize even if requested size is 0 */
+	marshall_virt_to_resize(virt, &resize);
+	resize.rsrc_handle = rsrc_handle;
+	rc = cxlflash_vlun_resize(sdev, &resize);
+	if (rc) {
+		cxlflash_err("resize failed rc %d", rc);
+		goto err2;
 	}
+	last_lba = resize.last_lba;
+
 	virt->hdr.return_flags = 0;
 	virt->last_lba = last_lba;
 	virt->rsrc_handle = rsrc_handle;
