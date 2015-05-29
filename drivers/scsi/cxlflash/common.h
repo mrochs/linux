@@ -71,8 +71,8 @@ enum cxlflash_lr_state {
 
 enum cxlflash_init_state {
 	INIT_STATE_NONE,
-	INIT_STATE_AFU,
 	INIT_STATE_PCI,
+	INIT_STATE_AFU,
 	INIT_STATE_SCSI
 };
 

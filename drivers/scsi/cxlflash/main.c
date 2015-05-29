@@ -762,10 +762,7 @@ static void term_mc(struct cxlflash_cfg *cfg, enum undo_level level)
 	case FREE_IRQ:
 		pr_debug("%s: before cxl_free_afu_irqs\n", __func__);
 		cxl_free_afu_irqs(cfg->mcctx);
-		pr_debug("%s: before cxl_release_context\n", __func__);
 	case RELEASE_CONTEXT:
-		rc = cxl_release_context(cfg->mcctx);
-		BUG_ON(rc);
 		cfg->mcctx = NULL;
 	}
 }
@@ -802,15 +799,15 @@ static void cxlflash_remove(struct pci_dev *pdev)
 	wait_event(cfg->tmf_wait_q, !cfg->tmf_active);
 
 	switch (cfg->init_state) {
+	case INIT_STATE_PCI:
+		pci_release_regions(cfg->dev);
+		pci_disable_device(pdev);
+		/* Fall through */
 	case INIT_STATE_SCSI:
 		scsi_remove_host(cfg->host);
 		dev_dbg(&pdev->dev, "%s: after scsi_remove_host!\n", __func__);
 		scsi_host_put(cfg->host);
 		dev_dbg(&pdev->dev, "%s: after scsi_host_put!\n", __func__);
-		/* Fall through */
-	case INIT_STATE_PCI:
-		pci_release_regions(cfg->dev);
-		pci_disable_device(pdev);
 	case INIT_STATE_AFU:
 		term_afu(cfg);
 		dev_dbg(&pdev->dev, "%s: after struct term_afu!\n",
@@ -1768,7 +1765,7 @@ static int init_mc(struct cxlflash_cfg *cfg)
 	int rc = 0;
 	enum undo_level level;
 
-	ctx =  cxl_dev_context_init(cfg->dev);
+	ctx =  cxl_get_context(cfg->dev);
 	if (!ctx)
 		return -ENOMEM;
 	cfg->mcctx = ctx;
@@ -2184,13 +2181,6 @@ static int cxlflash_probe(struct pci_dev *pdev,
 	cfg->parent_dev = to_pci_dev(phys_dev);
 
 	cfg->cxl_afu = cxl_pci_to_afu(pdev);
-	rc = init_afu(cfg);
-	if (rc) {
-		dev_err(&pdev->dev, "%s: call to init_afu "
-			"failed rc=%d!\n", __func__, rc);
-		goto out_remove;
-	}
-	cfg->init_state = INIT_STATE_AFU;
 
 	rc = init_pci(cfg);
 	if (rc) {
@@ -2199,6 +2189,15 @@ static int cxlflash_probe(struct pci_dev *pdev,
 		goto out_remove;
 	}
 	cfg->init_state = INIT_STATE_PCI;
+
+	rc = init_afu(cfg);
+	if (rc) {
+		dev_err(&pdev->dev, "%s: call to init_afu "
+			"failed rc=%d!\n", __func__, rc);
+		goto out_remove;
+	}
+	cfg->init_state = INIT_STATE_AFU;
+
 
 	rc = init_scsi(cfg);
 	if (rc) {
