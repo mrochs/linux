@@ -49,11 +49,11 @@
 #define CXLFLASH_MAX_CMDS               16
 #define CXLFLASH_MAX_CMDS_PER_LUN       CXLFLASH_MAX_CMDS
 
-/* Check for power of 2 at compile time */
-#define NOT_POW2(_x) ((_x) && ((_x) & ((_x) - 1)))
-#if NOT_POW2(CXLFLASH_NUM_CMDS)
-#error "CXLFLASH_NUM_CMDS is not a power of 2!"
-#endif
+
+static inline void check_sizes(void)
+{
+	BUILD_BUG_ON_NOT_POWER_OF_2(CXLFLASH_NUM_CMDS);
+}
 
 /* AFU defines a fixed size of 4K for command buffers (borrow 4K page define) */
 #define CMD_BUFSIZE     SIZE_4K
