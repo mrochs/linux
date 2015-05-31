@@ -73,7 +73,7 @@ struct sisl_ioarcb {
 	u32 rsvd1;
 	u8 cdb[16];		/* must be in big endian */
 	struct scsi_cmnd *scp;
-};
+} __attribute__((packed));
 
 struct sisl_rc {
 	u8 flags;
@@ -195,7 +195,7 @@ struct sisl_ioasa {
 		u64 host_use[4];
 		u8 host_use_b[32];
 	};
-};
+} __attribute__((packed));
 
 #define SISL_RESP_HANDLE_T_BIT        0x1ull	/* Toggle bit */
 
@@ -418,7 +418,7 @@ struct sisl_rht_entry {
 				 * (if no perm, afu_rc=0x05)
 				 */
 	u8 nmask;
-} __aligned(16);
+} __attribute__((packed, aligned(16)));
 
 struct sisl_rht_entry_f1 {
 	u64 lun_id;
@@ -432,7 +432,7 @@ struct sisl_rht_entry_f1 {
 
 		u64 dw;
 	};
-} __aligned(16);
+} __attribute__((packed, aligned(16)));
 
 /* make the fp byte */
 #define SISL_RHT_FP(fmt, perm) (((fmt) << 4) | (perm))
