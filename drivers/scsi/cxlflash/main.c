@@ -73,21 +73,24 @@ struct afu_cmd *cxlflash_cmd_checkout(struct afu *afu)
  * @cmd:	AFU command to checkin.
  *
  * Safe to pass commands that have already been checked in. Several
- * internal tracking fields are reset as part of the checkin.
+ * internal tracking fields are reset as part of the checkin. Note
+ * that these are intentionally reset prior to toggling the free bit
+ * to avoid clobbering values in the event that the command is checked
+ * out right away.
  */
 void cxlflash_cmd_checkin(struct afu_cmd *cmd)
 {
+	cmd->special = 0;
+	cmd->internal = false;
+	cmd->rcb.timeout = 0;
+
 	if (unlikely(atomic_inc_return(&cmd->free) != 1)) {
 		pr_err("%s: Freeing cmd (%d) that is not in use!\n",
 		       __func__, cmd->slot);
 		return;
 	}
 
-	cmd->special = 0;
-	cmd->internal = false;
-	cmd->rcb.timeout = 0;
-
-	pr_debug("%s: releasing cmd index=%d\n", __func__, cmd->slot);
+	pr_debug("%s: released cmd %p index=%d\n", __func__, cmd, cmd->slot);
 }
 
 /**
