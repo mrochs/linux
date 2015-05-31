@@ -713,7 +713,6 @@ static void stop_afu(struct cxlflash_cfg *cfg)
 	struct afu *afu = cfg->afu;
 
 	if (!afu) {
-		pr_debug("%s: returning because afu is NULL\n", __func__);
 		return;
 	}
 
@@ -752,16 +751,12 @@ static void term_mc(struct cxlflash_cfg *cfg, enum undo_level level)
 		rc = cxl_stop_context(cfg->mcctx);
 		BUG_ON(rc);
 	case UNMAP_THREE:
-		pr_debug("%s: before unmap 3\n", __func__);
 		cxl_unmap_afu_irq(cfg->mcctx, 3, afu);
 	case UNMAP_TWO:
-		pr_debug("%s: before unmap 2\n", __func__);
 		cxl_unmap_afu_irq(cfg->mcctx, 2, afu);
 	case UNMAP_ONE:
-		pr_debug("%s: before unmap 1\n", __func__);
 		cxl_unmap_afu_irq(cfg->mcctx, 1, afu);
 	case FREE_IRQ:
-		pr_debug("%s: before cxl_free_afu_irqs\n", __func__);
 		cxl_free_afu_irqs(cfg->mcctx);
 	case RELEASE_CONTEXT:
 		cfg->mcctx = NULL;
@@ -795,8 +790,6 @@ static void cxlflash_remove(struct pci_dev *pdev)
 {
 	struct cxlflash_cfg *cfg = pci_get_drvdata(pdev);
 
-	dev_dbg(&pdev->dev, "%s: enter cxlflash_remove!\n", __func__);
-
 	wait_event(cfg->tmf_wait_q, !cfg->tmf_active);
 
 	switch (cfg->init_state) {
@@ -806,13 +799,9 @@ static void cxlflash_remove(struct pci_dev *pdev)
 		/* Fall through */
 	case INIT_STATE_SCSI:
 		scsi_remove_host(cfg->host);
-		dev_dbg(&pdev->dev, "%s: after scsi_remove_host!\n", __func__);
 		scsi_host_put(cfg->host);
-		dev_dbg(&pdev->dev, "%s: after scsi_host_put!\n", __func__);
 	case INIT_STATE_AFU:
 		term_afu(cfg);
-		dev_dbg(&pdev->dev, "%s: after struct term_afu!\n",
-			__func__);
 	case INIT_STATE_NONE:
 		flush_work(&cfg->work_q);
 		free_mem(cfg);
@@ -972,7 +961,6 @@ static int init_scsi(struct cxlflash_cfg *cfg)
 	struct pci_dev *pdev = cfg->dev;
 	int rc = 0;
 
-	dev_dbg(&pdev->dev, "%s: before scsi_add_host\n", __func__);
 	rc = scsi_add_host(cfg->host, &pdev->dev);
 	if (rc) {
 		dev_err(&pdev->dev, "%s: scsi_add_host failed (rc=%d)\n",
@@ -980,7 +968,6 @@ static int init_scsi(struct cxlflash_cfg *cfg)
 		goto out;
 	}
 
-	dev_dbg(&pdev->dev, "%s: before scsi_scan_host\n", __func__);
 	scsi_scan_host(cfg->host);
 
 out:
@@ -1278,11 +1265,9 @@ static void afu_err_intr_init(struct afu *afu)
 
 	/* Clear/Set internal lun bits */
 	reg = readq_be(&afu->afu_map->global.fc_regs[0][FC_CONFIG2 / 8]);
-	pr_debug("%s: ilun p0 = %016llX\n", __func__, reg);
 	reg &= SISL_FC_INTERNAL_MASK;
 	if (afu->internal_lun)
 		reg |= ((u64)(afu->internal_lun - 1) << SISL_FC_INTERNAL_SHIFT);
-	pr_debug("%s: ilun p0 = %016llX\n", __func__, reg);
 	writeq_be(reg, &afu->afu_map->global.fc_regs[0][FC_CONFIG2 / 8]);
 
 	/* now clear FC errors */
@@ -1699,8 +1684,8 @@ int init_global(struct cxlflash_cfg *cfg)
 		    afu_set_wwpn(afu, i,
 				 &afu->afu_map->global.fc_regs[i][0],
 				 wwpn[i])) {
-			pr_debug("%s: failed to set WWPN on port %d\n",
-				 __func__, i);
+			pr_err("%s: failed to set WWPN on port %d\n",
+			       __func__, i);
 			rc = -EIO;
 			goto out;
 		}
@@ -2009,8 +1994,6 @@ retry:
 	cmd = cxlflash_cmd_checkout(afu);
 	if (unlikely(!cmd)) {
 		retry_cnt++;
-		pr_debug("%s: could not get command on attempt %d\n",
-			 __func__, retry_cnt);
 		udelay(1000*retry_cnt);
 		if (retry_cnt < MC_RETRY_CNT)
 			goto retry;
