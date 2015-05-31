@@ -590,11 +590,9 @@ static ssize_t cxlflash_show_dev_mode(struct device *dev,
 				      struct device_attribute *attr, char *buf)
 {
 	struct scsi_device *sdev = to_scsi_device(dev);
-	void *lun_info = (void *)sdev->hostdata;
-	char *legacy = "legacy",
-	     *superpipe = "superpipe";
 
-	return snprintf(buf, PAGE_SIZE, "%s\n", lun_info ? superpipe : legacy);
+	return snprintf(buf, PAGE_SIZE, "%s\n",
+			sdev->hostdata ? "superpipe" : "legacy");
 }
 
 /**
