@@ -498,7 +498,7 @@ static ssize_t cxlflash_show_port_status(struct device *dev,
 	int rc;
 	u32 port;
 	u64 status;
-	volatile u64 *fc_regs;
+	u64 *fc_regs;
 
 	rc = kstrtouint((attr->attr.name + 4), 10, &port);
 	if (rc || (port > NUM_FC_PORTS))
@@ -983,7 +983,7 @@ out:
  * that the FC link layer has synced, completed the handshaking process, and
  * is ready for login to start.
  */
-static void set_port_online(volatile u64 *fc_regs)
+static void set_port_online(u64 *fc_regs)
 {
 	u64 cmdcfg;
 
@@ -999,7 +999,7 @@ static void set_port_online(volatile u64 *fc_regs)
  *
  * The provided MMIO region must be mapped prior to call.
  */
-static void set_port_offline(volatile u64 *fc_regs)
+static void set_port_offline(u64 *fc_regs)
 {
 	u64 cmdcfg;
 
@@ -1023,8 +1023,8 @@ static void set_port_offline(volatile u64 *fc_regs)
  *	FALSE (0) when the specified port fails to come online after timeout
  *	-EINVAL when @delay_us is less than 1000
  */
-static int wait_port_online(volatile u64 *fc_regs,
-			    useconds_t delay_us, unsigned int nretry)
+static int wait_port_online(u64 *fc_regs, useconds_t delay_us,
+			    unsigned int nretry)
 {
 	u64 status;
 
@@ -1055,8 +1055,8 @@ static int wait_port_online(volatile u64 *fc_regs,
  *	FALSE (0) when the specified port fails to go offline after timeout
  *	-EINVAL when @delay_us is less than 1000
  */
-static int wait_port_offline(volatile u64 *fc_regs,
-			     useconds_t delay_us, unsigned int nretry)
+static int wait_port_offline(u64 *fc_regs, useconds_t delay_us,
+			     unsigned int nretry)
 {
 	u64 status;
 
@@ -1091,8 +1091,7 @@ static int wait_port_offline(volatile u64 *fc_regs,
  *	0 when the WWPN is successfully written and the port comes back online
  *	-1 when the port fails to go offline or come back up online
  */
-static int afu_set_wwpn(struct afu *afu, int port,
-			volatile u64 *fc_regs, u64 wwpn)
+static int afu_set_wwpn(struct afu *afu, int port, u64 *fc_regs, u64 wwpn)
 {
 	int ret = 0;
 
@@ -1144,7 +1143,7 @@ static int afu_set_wwpn(struct afu *afu, int port,
  * the alternate port exclusively while the reset takes place.
  * failure to come online is overridden.
  */
-static void afu_link_reset(struct afu *afu, int port, volatile u64 *fc_regs)
+static void afu_link_reset(struct afu *afu, int port, u64 *fc_regs)
 {
 	u64 port_sel;
 
@@ -1237,7 +1236,7 @@ static const struct asyc_intr_info *find_ainfo(u64 status)
 static void afu_err_intr_init(struct afu *afu)
 {
 	int i;
-	volatile u64 reg;
+	u64 reg;
 
 	/* global async interrupts: AFU clears afu_ctrl on context exit
 	 * if async interrupts were sent to that context. This prevents
@@ -1374,7 +1373,7 @@ static irqreturn_t cxlflash_async_err_irq(int irq, void *data)
 	struct cxlflash_cfg *cfg;
 	u64 reg_unmasked;
 	const struct asyc_intr_info *info;
-	volatile struct sisl_global_map *global = &afu->afu_map->global;
+	struct sisl_global_map *global = &afu->afu_map->global;
 	u64 reg;
 	int i;
 
@@ -1597,7 +1596,7 @@ void cxlflash_context_reset(struct afu_cmd *cmd)
 void init_pcr(struct cxlflash_cfg *cfg)
 {
 	struct afu *afu = cfg->afu;
-	volatile struct sisl_ctrl_map *ctrl_map;
+	struct sisl_ctrl_map *ctrl_map;
 	int i;
 
 	for (i = 0; i < MAX_CONTEXT; i++) {
