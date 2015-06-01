@@ -134,7 +134,7 @@ static void process_cmd_err(struct afu_cmd *cmd, struct scsi_cmnd *scp)
 		if (ioasa->rc.flags & SISL_RC_FLAGS_SENSE_VALID)
 			memcpy(scp->sense_buffer, ioasa->sense_data,
 			       SISL_SENSE_DATA_LEN);
-		scp->result = ioasa->rc.scsi_rc;
+		scp->result = ioasa->rc.scsi_rc | (DID_ERROR << 16);
 	}
 
 	/*
@@ -378,8 +378,8 @@ static int cxlflash_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *scp)
 
 	ncount = scsi_sg_count(scp);
 	scsi_for_each_sg(scp, sg, ncount, i) {
-		cmd->rcb.data_len = (sg_dma_len(sg));
-		cmd->rcb.data_ea = (sg_dma_address(sg));
+		cmd->rcb.data_len = sg_dma_len(sg);
+		cmd->rcb.data_ea = sg_dma_address(sg);
 	}
 
 	/* Copy the CDB from the scsi_cmnd passed in */
