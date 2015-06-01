@@ -144,15 +144,8 @@ static void process_cmd_err(struct afu_cmd *cmd, struct scsi_cmnd *scp)
 	if (ioasa->rc.fc_rc) {
 		/* We have an FC status */
 		switch (ioasa->rc.fc_rc) {
-		case SISL_FC_RC_RESIDERR:
-			/* Resid mismatch between adapter and device */
-		case SISL_FC_RC_TGTABORT:
-		case SISL_FC_RC_ABORTOK:
-		case SISL_FC_RC_ABORTFAIL:
 		case SISL_FC_RC_LINKDOWN:
-		case SISL_FC_RC_NOLOGI:
-		case SISL_FC_RC_ABORTPEND:
-			scp->result = (DID_IMM_RETRY << 16);
+			scp->result = (DID_REQUEUE << 16);
 			break;
 		case SISL_FC_RC_RESID:
 			/* This indicates an FCP resid underrun */
@@ -166,6 +159,13 @@ static void process_cmd_err(struct afu_cmd *cmd, struct scsi_cmnd *scp)
 				scp->result = (DID_ERROR << 16);
 			}
 			break;
+		case SISL_FC_RC_RESIDERR:
+			/* Resid mismatch between adapter and device */
+		case SISL_FC_RC_TGTABORT:
+		case SISL_FC_RC_ABORTOK:
+		case SISL_FC_RC_ABORTFAIL:
+		case SISL_FC_RC_NOLOGI:
+		case SISL_FC_RC_ABORTPEND:
 		case SISL_FC_RC_WRABORTPEND:
 		case SISL_FC_RC_NOEXP:
 		case SISL_FC_RC_INUSE:
