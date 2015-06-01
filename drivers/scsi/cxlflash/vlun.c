@@ -340,9 +340,10 @@ cxlflash_init_ba_exit:
 	return rc;
 }
 
-static int write_same16(struct afu *afu, struct lun_info *lun_info, u64 lba, u32 nblks)
+static int write_same16(struct afu *afu, struct lun_info *lun_info, u64 lba,
+			u32 nblks)
 {
-	struct afu_cmd *cmd;
+	struct afu_cmd *cmd = NULL;
 	int rc = 0;
 
 	cmd = cxlflash_cmd_checkout(afu);
@@ -361,7 +362,6 @@ static int write_same16(struct afu *afu, struct lun_info *lun_info, u64 lba, u32
 	cmd->rcb.data_len = CMD_BUFSIZE;
 	cmd->rcb.data_ea = (u64) cmd->buf; /* Filled w/ zeros on checkout */
 	cmd->rcb.timeout = MC_DISCOVERY_TIMEOUT;
-	cmd->internal = true;
 
 	cmd->rcb.cdb[0] = WRITE_SAME_16;
 	put_unaligned_be64(lba, &cmd->rcb.cdb[2]);
@@ -387,6 +387,8 @@ static int write_same16(struct afu *afu, struct lun_info *lun_info, u64 lba, u32
 	}
 
 out:
+	if (cmd)
+		cxlflash_cmd_checkin(cmd);
 	cxlflash_info("returning rc=%d", rc);
 	return rc;
 }

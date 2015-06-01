@@ -319,7 +319,7 @@ int cxlflash_check_status(struct sisl_ioasa *ioasa)
 
 static int read_cap16(struct afu *afu, struct lun_info *lun_info, u32 port_sel)
 {
-	struct afu_cmd *cmd;
+	struct afu_cmd *cmd = NULL;
 	int rc = 0;
 
 	cmd = cxlflash_cmd_checkout(afu);
@@ -337,7 +337,6 @@ static int read_cap16(struct afu *afu, struct lun_info *lun_info, u32 port_sel)
 	cmd->rcb.data_len = CMD_BUFSIZE;
 	cmd->rcb.data_ea = (u64) cmd->buf;
 	cmd->rcb.timeout = MC_DISCOVERY_TIMEOUT;
-	cmd->internal = true;
 
 	cmd->rcb.cdb[0] = 0x9E;	/* read cap(16) */
 	cmd->rcb.cdb[1] = 0x10;	/* service action */
@@ -373,6 +372,8 @@ static int read_cap16(struct afu *afu, struct lun_info *lun_info, u32 port_sel)
 	spin_unlock(&lun_info->slock);
 
 out:
+	if (cmd)
+		cxlflash_cmd_checkin(cmd);
 	cxlflash_info("maxlba=%lld blklen=%d pcmd %p",
 		      lun_info->max_lba, lun_info->blk_len, cmd);
 	return rc;

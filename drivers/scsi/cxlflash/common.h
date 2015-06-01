@@ -129,7 +129,6 @@ struct afu_cmd {
 	int slot;
 	atomic_t free;
 	u8 special:1;
-	u8 internal:1;
 
 	/* As per the SISLITE spec the IOARCB EA has to be 16-byte aligned.
 	 * However for performance reasons the IOARCB/IOASA should be

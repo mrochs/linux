@@ -81,7 +81,6 @@ struct afu_cmd *cxlflash_cmd_checkout(struct afu *afu)
 void cxlflash_cmd_checkin(struct afu_cmd *cmd)
 {
 	cmd->special = 0;
-	cmd->internal = false;
 	cmd->rcb.timeout = 0;
 
 	if (unlikely(atomic_inc_return(&cmd->free) != 1)) {
@@ -206,7 +205,8 @@ static void process_cmd_err(struct afu_cmd *cmd, struct scsi_cmnd *scp)
  * @cmd:	AFU command that has completed.
  *
  * Prepares and submits command that has either completed or timed out to
- * the SCSI stack. Checks AFU command back into command pool.
+ * the SCSI stack. Checks AFU command back into command pool for non-internal
+ * (rcb.scp populated) commands.
  */
 static void cmd_complete(struct afu_cmd *cmd)
 {
@@ -235,14 +235,14 @@ static void cmd_complete(struct afu_cmd *cmd)
 		scsi_dma_unmap(scp);
 		scp->scsi_done(scp);
 		cmd->rcb.scp = NULL;
+
 		if (cmd->special) {
 			cfg->tmf_active = false;
 			wake_up_all(&cfg->tmf_wait_q);
 		}
-	}
 
-	/* Done with command */
-	cxlflash_cmd_checkin(cmd);
+		cxlflash_cmd_checkin(cmd);
+	}
 }
 
 /**
@@ -1919,9 +1919,8 @@ int cxlflash_send_cmd(struct afu *afu, struct afu_cmd *cmd)
 	cmd->sa.ioasc = 0;
 
 	/* Only kick off the timer for internal commands */
-	if (cmd->internal) {
-		cmd->timer.expires = (jiffies +
-					(cmd->rcb.timeout * 2 * HZ));
+	if (!cmd->rcb.scp) {
+		cmd->timer.expires = (jiffies + (cmd->rcb.timeout * 2 * HZ));
 		add_timer(&cmd->timer);
 	} else if (cmd->rcb.timeout)
 		pr_err("%s: timer not started %d\n",
@@ -1981,7 +1980,7 @@ void cxlflash_wait_resp(struct afu *afu, struct afu_cmd *cmd)
 int cxlflash_afu_sync(struct afu *afu, ctx_hndl_t ctx_hndl_u,
 		      res_hndl_t res_hndl_u, u8 mode)
 {
-	struct afu_cmd *cmd;
+	struct afu_cmd *cmd = NULL;
 	int rc = 0;
 	int retry_cnt = 0;
 	static DEFINE_MUTEX(sync_active);
@@ -2008,7 +2007,6 @@ retry:
 	cmd->rcb.lun_id = 0x0;	/* NA */
 	cmd->rcb.data_len = 0x0;
 	cmd->rcb.data_ea = 0x0;
-	cmd->internal = true;
 	cmd->rcb.timeout = MC_AFU_SYNC_TIMEOUT;
 
 	cmd->rcb.cdb[0] = 0xC0;	/* AFU Sync */
@@ -2029,6 +2027,8 @@ retry:
 
 out:
 	mutex_unlock(&sync_active);
+	if (cmd)
+		cxlflash_cmd_checkin(cmd);
 	pr_debug("%s: returning rc=%d\n", __func__, rc);
 	return rc;
 }
