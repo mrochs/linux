@@ -320,7 +320,7 @@ static const char *cxlflash_driver_info(struct Scsi_Host *host)
  *
  * Return:
  *	0 on success
- *	SCSI_MLQUEUE_HOST_BUSY when device is busy
+ *	SCSI_MLQUEUE_HOST_BUSY when host is busy
  */
 static int cxlflash_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *scp)
 {
@@ -1561,16 +1561,14 @@ void cxlflash_context_reset(struct afu_cmd *cmd)
 	/* First process completion of the command that timed out */
 	cmd_complete(cmd);
 
-	if (afu->room == 0) {
-		do {
-			/*
-			 * We really want to send this reset at all costs, so
-			 * spread out wait time on successive retries.
-			 */
-			udelay(nretry);
-			afu->room = readq_be(&afu->host_map->cmd_room);
-		} while ((afu->room == 0) && (nretry++ < MC_ROOM_RETRY_CNT));
-	}
+	do {
+		/*
+		 * We really want to send this reset at all costs, so
+		 * spread out wait time on successive retries.
+		 */
+		udelay(nretry);
+		afu->room = readq_be(&afu->host_map->cmd_room);
+	} while ((afu->room == 0) && (nretry++ < MC_ROOM_RETRY_CNT));
 
 	if (afu->room) {
 		writeq_be((u64) rrin, &afu->host_map->ioarrin);
@@ -1908,11 +1906,14 @@ int cxlflash_send_cmd(struct afu *afu, struct afu_cmd *cmd)
 	int nretry = 0;
 	int rc = 0;
 
-	if (afu->room == 0)
-		do {
-			afu->room = readq_be(&afu->host_map->cmd_room);
-			udelay(nretry);
-		} while ((afu->room == 0) && (nretry++ < MC_ROOM_RETRY_CNT));
+	/* send_cmd is used by critical users such an AFU sync and to
+	 * send a task management function (TMF). So we do want to retry
+	 * a bit before returning an error.
+	 */
+	do {
+		afu->room = readq_be(&afu->host_map->cmd_room);
+		udelay(nretry);
+	} while ((afu->room == 0) && (nretry++ < MC_ROOM_RETRY_CNT));
 
 	cmd->sa.host_use_b[0] = 0;	/* 0 means active */
 	cmd->sa.ioasc = 0;
@@ -1932,7 +1933,7 @@ int cxlflash_send_cmd(struct afu *afu, struct afu_cmd *cmd)
 	else {
 		pr_err("%s: no cmd_room to send 0x%X\n",
 		       __func__, cmd->rcb.cdb[0]);
-		rc = -1;
+		rc = SCSI_MLQUEUE_HOST_BUSY;
 	}
 
 	pr_debug("%s: cmd=%p len=%d ea=%p rc=%d\n", __func__, cmd,
