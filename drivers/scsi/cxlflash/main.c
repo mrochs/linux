@@ -134,7 +134,7 @@ static void process_cmd_err(struct afu_cmd *cmd, struct scsi_cmnd *scp)
 		if (ioasa->rc.flags & SISL_RC_FLAGS_SENSE_VALID)
 			memcpy(scp->sense_buffer, ioasa->sense_data,
 			       SISL_SENSE_DATA_LEN);
-		scp->result = ioasa->rc.scsi_rc | (DRIVER_SENSE << 24);
+		scp->result = ioasa->rc.scsi_rc;
 	}
 
 	/*
@@ -320,8 +320,7 @@ static const char *cxlflash_driver_info(struct Scsi_Host *host)
  *
  * Return:
  *	0 on success
- *	SCSI_MLQUEUE_DEVICE_BUSY when device is busy
- *	SCSI_MLQUEUE_HOST_BUSY when host is busy
+ *	SCSI_MLQUEUE_HOST_BUSY when device is busy
  */
 static int cxlflash_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *scp)
 {
