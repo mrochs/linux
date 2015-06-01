@@ -373,7 +373,7 @@ static int cxlflash_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *scp)
 	if (unlikely(nseg < 0)) {
 		dev_err(&pdev->dev, "%s: Fail DMA map! nseg=%d\n",
 			__func__, nseg);
-		rc = SCSI_MLQUEUE_DEVICE_BUSY;
+		rc = SCSI_MLQUEUE_HOST_BUSY;
 		goto out;
 	}
 
