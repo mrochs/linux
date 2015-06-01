@@ -285,8 +285,11 @@ out:
  *	TRUE (1) when the IOASA contains an error
  *	FALSE (0) when the IOASA does not contain an error
  */
-int cxlflash_check_status(struct sisl_ioasa *ioasa)
+int cxlflash_check_status(struct afu_cmd *cmd)
 {
+	struct sisl_ioasa *ioasa = &cmd->sa;
+	unsigned long lock_flags;
+
 	/* do we need to retry AFU_CMDs (sync) on afu_rc = 0x30 ? */
 	/* can we not avoid that ? */
 	/* not retrying afu timeouts (B_TIMEOUT) */
@@ -296,7 +299,9 @@ int cxlflash_check_status(struct sisl_ioasa *ioasa)
 	if (ioasa->ioasc == 0)
 		return 0;
 
+	spin_lock_irqsave(&cmd->slock, lock_flags);
 	ioasa->host_use_b[0] |= B_ERROR;
+	spin_unlock_irqrestore(&cmd->slock, lock_flags);
 
 	if (!(ioasa->host_use_b[1]++ < MC_RETRY_CNT))
 		return 0;
@@ -342,20 +347,17 @@ static int read_cap16(struct afu *afu, struct lun_info *lun_info, u32 port_sel)
 	cmd->rcb.cdb[1] = 0x10;	/* service action */
 	put_unaligned_be32(CMD_BUFSIZE, &cmd->rcb.cdb[10]);
 
-	cmd->sa.host_use_b[1] = 0;	/* reset retry cnt */
-
 	cxlflash_info("sending cmd(0x%x) with RCB EA=%p data EA=0x%llx",
 		      cmd->rcb.cdb[0], &cmd->rcb, cmd->rcb.data_ea);
 
 	do {
 		rc = cxlflash_send_cmd(afu, cmd);
-		if (!rc)
-			cxlflash_wait_resp(afu, cmd);
-		else
+		if (unlikely(rc))
 			break;
-	} while (cxlflash_check_status(&cmd->sa));
+		cxlflash_wait_resp(afu, cmd);
+	} while (cxlflash_check_status(cmd));
 
-	if (cmd->sa.host_use_b[0] & B_ERROR) {
+	if (unlikely(cmd->sa.host_use_b[0] & B_ERROR)) {
 		cxlflash_err("command failed");
 		rc = -1;
 		goto out;

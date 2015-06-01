@@ -83,6 +83,8 @@ void cxlflash_cmd_checkin(struct afu_cmd *cmd)
 	cmd->special = 0;
 	cmd->rcb.scp = NULL;
 	cmd->rcb.timeout = 0;
+	cmd->sa.ioasc = 0;
+	cmd->sa.host_use[0] = 0; /* clears both completion and retry bytes */
 
 	if (unlikely(atomic_inc_return(&cmd->free) != 1)) {
 		pr_err("%s: Freeing cmd (%d) that is not in use!\n",
@@ -216,8 +218,11 @@ static void cmd_complete(struct afu_cmd *cmd)
 	struct cxlflash_cfg *cfg = afu->parent;
 	u32 resid;
 	bool special = cmd->special;
+	unsigned long lock_flags;
 
+	spin_lock_irqsave(&cmd->slock, lock_flags);
 	cmd->sa.host_use_b[0] |= B_DONE;
+	spin_unlock_irqrestore(&cmd->slock, lock_flags);
 
 	/* already stopped if timer fired */
 	del_timer(&cmd->timer);
@@ -291,8 +296,6 @@ static int send_tmf(struct afu *afu, struct scsi_cmnd *scp, u64 tmfcmd)
 	cmd->rcb.scp = scp;
 	cmd->special = 0x1;
 	cfg->tmf_active = true;
-
-	cmd->sa.host_use_b[1] = 0;	/* reset retry cnt */
 
 	/* Copy the CDB from the cmd passed in */
 	memcpy(cmd->rcb.cdb, &tmfcmd, sizeof(tmfcmd));
@@ -369,8 +372,6 @@ static int cxlflash_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *scp)
 
 	/* Stash the scp in the reserved field, for reuse during interrupt */
 	cmd->rcb.scp = scp;
-
-	cmd->sa.host_use_b[1] = 0;	/* reset retry cnt */
 
 	nseg = scsi_dma_map(scp);
 	if (unlikely(nseg < 0)) {
@@ -1559,11 +1560,20 @@ void cxlflash_context_reset(struct afu_cmd *cmd)
 	int nretry = 0;
 	u64 rrin = 0x1;
 	struct afu *afu = cmd->parent;
+	unsigned long lock_flags;
 
 	pr_debug("%s: cmd=%p\n", __func__, cmd);
 
-	/* First process completion of the command that timed out */
-	cmd_complete(cmd);
+	spin_lock_irqsave(&cmd->slock, lock_flags);
+
+	/* Already completed? */
+	if (cmd->sa.host_use_b[0] & B_DONE) {
+		spin_unlock_irqrestore(&cmd->slock, lock_flags);
+		return;
+	}
+
+	cmd->sa.host_use_b[0] |= (B_DONE | B_ERROR | B_TIMEOUT);
+	spin_unlock_irqrestore(&cmd->slock, lock_flags);
 
 	do {
 		/*
@@ -1919,9 +1929,6 @@ int cxlflash_send_cmd(struct afu *afu, struct afu_cmd *cmd)
 		udelay(nretry);
 	} while ((afu->room == 0) && (nretry++ < MC_ROOM_RETRY_CNT));
 
-	cmd->sa.host_use_b[0] = 0;	/* 0 means active */
-	cmd->sa.ioasc = 0;
-
 	/* Only kick off the timer for internal commands */
 	if (!cmd->rcb.scp) {
 		cmd->timer.expires = (jiffies + (cmd->rcb.timeout * 2 * HZ));
@@ -1958,7 +1965,7 @@ void cxlflash_wait_resp(struct afu *afu, struct afu_cmd *cmd)
 
 	del_timer(&cmd->timer);	/* already stopped if timer fired */
 
-	if (cmd->sa.ioasc != 0)
+	if (unlikely(cmd->sa.ioasc != 0))
 		pr_err("%s: CMD 0x%X failed, IOASC: flags 0x%X, afu_rc 0x%X, "
 		       "scsi_rc 0x%X, fc_rc 0x%X\n", __func__, cmd->rcb.cdb[0],
 		       cmd->sa.rc.flags, cmd->sa.rc.afu_rc, cmd->sa.rc.scsi_rc,
@@ -1994,7 +2001,7 @@ retry:
 	cmd = cxlflash_cmd_checkout(afu);
 	if (unlikely(!cmd)) {
 		retry_cnt++;
-		udelay(1000*retry_cnt);
+		udelay(1000 * retry_cnt);
 		if (retry_cnt < MC_RETRY_CNT)
 			goto retry;
 		pr_err("%s: could not get a free command\n", __func__);
@@ -2021,13 +2028,12 @@ retry:
 	*((u32 *)&cmd->rcb.cdb[4]) = swab32(res_hndl_u);
 
 	rc = cxlflash_send_cmd(afu, cmd);
-	if (!rc)
+	if (likely(!rc))
 		cxlflash_wait_resp(afu, cmd);
 
-	if ((cmd->sa.ioasc != 0) || (cmd->sa.host_use_b[0] & B_ERROR)) {
+	if (unlikely((cmd->sa.ioasc != 0) ||
+		     (cmd->sa.host_use_b[0] & B_ERROR))) /* set on timeout */
 		rc = -1;
-		/* B_ERROR is set on timeout */
-	}
 
 out:
 	mutex_unlock(&sync_active);

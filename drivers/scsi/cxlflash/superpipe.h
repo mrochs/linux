@@ -217,7 +217,7 @@ int cxlflash_disk_virtual_open(struct scsi_device *, void *);
 int cxlflash_lun_attach(struct lun_info *, enum lun_mode);
 void cxlflash_lun_detach(struct lun_info *);
 
-int cxlflash_check_status(struct sisl_ioasa *);
+int cxlflash_check_status(struct afu_cmd *);
 
 struct ctx_info *cxlflash_get_context(struct cxlflash_cfg *, u64,
 				      struct lun_info *, bool);
