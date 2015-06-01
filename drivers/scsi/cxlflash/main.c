@@ -81,6 +81,7 @@ struct afu_cmd *cxlflash_cmd_checkout(struct afu *afu)
 void cxlflash_cmd_checkin(struct afu_cmd *cmd)
 {
 	cmd->special = 0;
+	cmd->rcb.scp = NULL;
 	cmd->rcb.timeout = 0;
 
 	if (unlikely(atomic_inc_return(&cmd->free) != 1)) {
@@ -213,6 +214,8 @@ static void cmd_complete(struct afu_cmd *cmd)
 	struct scsi_cmnd *scp;
 	struct afu *afu = cmd->parent;
 	struct cxlflash_cfg *cfg = afu->parent;
+	u32 resid;
+	bool special = cmd->special;
 
 	cmd->sa.host_use_b[0] |= B_DONE;
 
@@ -221,27 +224,28 @@ static void cmd_complete(struct afu_cmd *cmd)
 
 	if (cmd->rcb.scp) {
 		scp = cmd->rcb.scp;
-		if (cmd->sa.rc.afu_rc || cmd->sa.rc.scsi_rc ||
-		    cmd->sa.rc.fc_rc)
+		if (unlikely(cmd->sa.rc.afu_rc ||
+			     cmd->sa.rc.scsi_rc ||
+			     cmd->sa.rc.fc_rc))
 			process_cmd_err(cmd, scp);
 		else
 			scp->result = (DID_OK << 16);
 
+		resid = cmd->sa.resid;
+		cxlflash_cmd_checkin(cmd); /* Don't use cmd after here */
+
 		pr_debug("%s: calling scsi_set_resid, scp=%p "
 			 "result=%X resid=%d\n", __func__,
-			 cmd->rcb.scp, scp->result, cmd->sa.resid);
+			 scp, scp->result, resid);
 
-		scsi_set_resid(scp, cmd->sa.resid);
+		scsi_set_resid(scp, resid);
 		scsi_dma_unmap(scp);
 		scp->scsi_done(scp);
-		cmd->rcb.scp = NULL;
 
-		if (cmd->special) {
+		if (special) {
 			cfg->tmf_active = false;
 			wake_up_all(&cfg->tmf_wait_q);
 		}
-
-		cxlflash_cmd_checkin(cmd);
 	}
 }
 
