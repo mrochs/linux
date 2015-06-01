@@ -1089,6 +1089,7 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 	if (ctx_info) {
 		cxlflash_dbg("Reusing context for LUN! (%d)", ctxid);
 		list_add(&lun_access->list, &ctx_info->luns);
+		fd = ctx_info->lfd;
 		goto out_attach;
 	}
 
