@@ -417,7 +417,6 @@ static int cxlflash_eh_device_reset_handler(struct scsi_cmnd *scp)
 		 get_unaligned_be32(&((u32 *)scp->cmnd)[2]),
 		 get_unaligned_be32(&((u32 *)scp->cmnd)[3]));
 
-	scp->result = (DID_OK << 16);
 	send_tmf(afu, scp, TMF_LUN_RESET);
 
 	pr_debug("%s: returning rc=%d\n", __func__, rc);
@@ -448,7 +447,6 @@ static int cxlflash_eh_host_reset_handler(struct scsi_cmnd *scp)
 		 get_unaligned_be32(&((u32 *)scp->cmnd)[2]),
 		 get_unaligned_be32(&((u32 *)scp->cmnd)[3]));
 
-	scp->result = (DID_OK << 16);
 	rcr = cxlflash_afu_reset(cfg);
 	if (rcr == 0)
 		rc = SUCCESS;
