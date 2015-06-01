@@ -163,7 +163,7 @@ static void process_cmd_err(struct afu_cmd *cmd, struct scsi_cmnd *scp)
 				 * This is probably an AFU bug. We will
 				 * attempt a retry to see if that resolves it.
 				 */
-				scp->result = (DID_IMM_RETRY << 16);
+				scp->result = (DID_ERROR << 16);
 			}
 			break;
 		case SISL_FC_RC_WRABORTPEND:
