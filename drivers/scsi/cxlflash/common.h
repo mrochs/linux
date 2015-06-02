@@ -91,8 +91,6 @@ struct cxlflash_cfg {
 
 	unsigned long cxlflash_regs_pci;
 
-	wait_queue_head_t reset_wait_q;
-	wait_queue_head_t msi_wait_q;
 	wait_queue_head_t eeh_wait_q;
 
 	struct work_struct work_q;
@@ -113,7 +111,6 @@ struct cxlflash_cfg {
 	int last_lun_index[CXLFLASH_NUM_FC_PORTS];
 
 	rwlock_t tmf_lock;
-	wait_queue_head_t sync_wait_q;
 	u8 context_reset_active:1;
 	u8 err_recovery_active:1;
 };

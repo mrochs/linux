@@ -2156,7 +2156,6 @@ static int cxlflash_probe(struct pci_dev *pdev,
 	rwlock_init(&cfg->tmf_lock);
 
 	init_waitqueue_head(&cfg->eeh_wait_q);
-	init_waitqueue_head(&cfg->sync_wait_q);
 
 	INIT_WORK(&cfg->work_q, cxlflash_worker_thread);
 	cfg->lr_state = LINK_RESET_INVALID;
