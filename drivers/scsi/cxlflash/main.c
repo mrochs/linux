@@ -1564,7 +1564,7 @@ void cxlflash_context_reset(struct afu_cmd *cmd)
 
 	if (afu->room) {
 		nretry = 0;
-		writeq_be((u64)rrin, &afu->host_map->ioarrin);
+		writeq_be(rrin, &afu->host_map->ioarrin);
 		do {
 			rrin = readq_be(&afu->host_map->ioarrin);
 			if (rrin != 0x1)
@@ -1605,7 +1605,7 @@ void init_pcr(struct cxlflash_cfg *cfg)
 	afu->ctrl_map = &afu->afu_map->ctrls[afu->ctx_hndl].ctrl;
 
 	/* Program the Endian Control for the master context */
-	writeq_be((u64) SISL_ENDIAN_CTRL, &afu->host_map->endian_ctrl);
+	writeq_be(SISL_ENDIAN_CTRL, &afu->host_map->endian_ctrl);
 
 	/* initialize cmd fields that never change */
 	for (i = 0; i < CXLFLASH_NUM_CMDS; i++) {
