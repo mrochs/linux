@@ -1635,7 +1635,6 @@ void init_pcr(struct cxlflash_cfg *cfg)
 		afu->cmd[i].rcb.msi = SISL_MSI_RRQ_UPDATED;
 		afu->cmd[i].rcb.rrq = 0x0;
 	}
-
 }
 
 /**
@@ -1729,23 +1728,26 @@ out:
 static int start_afu(struct cxlflash_cfg *cfg)
 {
 	struct afu *afu = cfg->afu;
+	struct afu_cmd *cmd;
+	struct timer_list *t;
 
 	int i = 0;
 	int rc = 0;
 
 	for (i = 0; i < CXLFLASH_NUM_CMDS; i++) {
-		struct timer_list *timer = &afu->cmd[i].timer;
+		cmd = &afu->cmd[i];
+		t = &cmd->timer;
 
-		init_timer(timer);
-		timer->data = (unsigned long)&afu->cmd[i];
-		timer->function = (void (*)(unsigned long))
-		    cxlflash_context_reset;
+		init_timer(t);
+		t->data = (unsigned long)cmd;
+		t->function = (void (*)(unsigned long))cxlflash_context_reset;
 
-		init_completion(&afu->cmd[i].cevent);
+		init_completion(&cmd->cevent);
 
-		spin_lock_init(&afu->cmd[i].slock);
-		afu->cmd[i].parent = afu;
+		spin_lock_init(&cmd->slock);
+		cmd->parent = afu;
 	}
+
 	init_pcr(cfg);
 
 	/* initialize RRQ pointers */
@@ -1777,8 +1779,8 @@ static int init_mc(struct cxlflash_cfg *cfg)
 	int rc = 0;
 	enum undo_level level;
 
-	ctx =  cxl_get_context(cfg->dev);
-	if (!ctx)
+	ctx = cxl_get_context(cfg->dev);
+	if (unlikely(!ctx))
 		return -ENOMEM;
 	cfg->mcctx = ctx;
 
@@ -1787,7 +1789,7 @@ static int init_mc(struct cxlflash_cfg *cfg)
 
 	/* During initialization reset the AFU to start from a clean slate */
 	rc = cxl_afu_reset(cfg->mcctx);
-	if (rc) {
+	if (unlikely(rc)) {
 		dev_err(dev, "%s: initial AFU reset failed rc=%d\n",
 			__func__, rc);
 		level = RELEASE_CONTEXT;
@@ -1795,7 +1797,7 @@ static int init_mc(struct cxlflash_cfg *cfg)
 	}
 
 	rc = cxl_allocate_afu_irqs(ctx, 3);
-	if (rc) {
+	if (unlikely(rc)) {
 		dev_err(dev, "%s: call to allocate_afu_irqs failed rc=%d!\n",
 			__func__, rc);
 		level = RELEASE_CONTEXT;
@@ -1804,7 +1806,7 @@ static int init_mc(struct cxlflash_cfg *cfg)
 
 	rc = cxl_map_afu_irq(ctx, 1, cxlflash_sync_err_irq, afu,
 			     "SISL_MSI_SYNC_ERROR");
-	if (!rc) {
+	if (unlikely(rc <= 0)) {
 		dev_err(dev, "%s: IRQ 1 (SISL_MSI_SYNC_ERROR) map failed!\n",
 			__func__);
 		level = FREE_IRQ;
@@ -1813,7 +1815,7 @@ static int init_mc(struct cxlflash_cfg *cfg)
 
 	rc = cxl_map_afu_irq(ctx, 2, cxlflash_rrq_irq, afu,
 			     "SISL_MSI_RRQ_UPDATED");
-	if (!rc) {
+	if (unlikely(rc <= 0)) {
 		dev_err(dev, "%s: IRQ 2 (SISL_MSI_RRQ_UPDATED) map failed!\n",
 			__func__);
 		level = UNMAP_ONE;
@@ -1822,7 +1824,7 @@ static int init_mc(struct cxlflash_cfg *cfg)
 
 	rc = cxl_map_afu_irq(ctx, 3, cxlflash_async_err_irq, afu,
 			     "SISL_MSI_ASYNC_ERROR");
-	if (!rc) {
+	if (unlikely(rc <= 0)) {
 		dev_err(dev, "%s: IRQ 3 (SISL_MSI_ASYNC_ERROR) map failed!\n",
 			__func__);
 		level = UNMAP_TWO;
@@ -1836,7 +1838,7 @@ static int init_mc(struct cxlflash_cfg *cfg)
 	 * element (pe) that is embedded in the context (ctx)
 	 */
 	rc = start_context(cfg);
-	if (rc) {
+	if (unlikely(rc)) {
 		dev_err(dev, "%s: start context failed rc=%d\n", __func__, rc);
 		level = UNMAP_THREE;
 		goto out;
