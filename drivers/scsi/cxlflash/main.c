@@ -220,9 +220,6 @@ static void cmd_complete(struct afu_cmd *cmd)
 	cmd->sa.host_use_b[0] |= B_DONE;
 	spin_unlock_irqrestore(&cmd->slock, lock_flags);
 
-	/* already stopped if timer fired */
-	del_timer(&cmd->timer);
-
 	if (cmd->rcb.scp) {
 		scp = cmd->rcb.scp;
 		if (unlikely(cmd->sa.rc.afu_rc ||
@@ -672,9 +669,6 @@ MODULE_DEVICE_TABLE(pci, cxlflash_pci_table);
 /**
  * free_mem() - free memory associated with the AFU
  * @cxlflash:	Internal structure associated with the host.
- *
- * As part of draining the AFU command pool, the timers of each
- * command are ensured to be stopped.
  */
 static void free_mem(struct cxlflash_cfg *cfg)
 {
@@ -705,19 +699,14 @@ static void stop_afu(struct cxlflash_cfg *cfg)
 	int i;
 	struct afu *afu = cfg->afu;
 
-	if (!afu) {
-		return;
-	}
+	if (likely(afu)) {
+		for (i = 0; i < CXLFLASH_NUM_CMDS; i++)
+			complete(&afu->cmd[i].cevent);
 
-	/* Need to stop timers before unmapping */
-	for (i = 0; i < CXLFLASH_NUM_CMDS; i++) {
-		if (afu->cmd[i].timer.function)
-			del_timer_sync(&afu->cmd[i].timer);
-	}
-
-	if (afu->afu_map) {
-		cxl_psa_unmap((void *)afu->afu_map);
-		afu->afu_map = NULL;
+		if (likely(afu->afu_map)) {
+			cxl_psa_unmap((void *)afu->afu_map);
+			afu->afu_map = NULL;
+		}
 	}
 }
 
@@ -766,7 +755,6 @@ static void term_afu(struct cxlflash_cfg *cfg)
 {
 	term_mc(cfg, UNDO_START);
 
-	/* Need to stop timers before unmapping */
 	if (cfg->afu)
 		stop_afu(cfg);
 
@@ -1563,8 +1551,6 @@ void cxlflash_context_reset(struct afu_cmd *cmd)
 	cmd->sa.host_use_b[0] |= (B_DONE | B_ERROR | B_TIMEOUT);
 	spin_unlock_irqrestore(&cmd->slock, lock_flags);
 
-	complete(&cmd->cevent);
-
 	do {
 		/*
 		 * We really want to send this reset at all costs, so
@@ -1716,21 +1702,14 @@ static int start_afu(struct cxlflash_cfg *cfg)
 {
 	struct afu *afu = cfg->afu;
 	struct afu_cmd *cmd;
-	struct timer_list *t;
 
 	int i = 0;
 	int rc = 0;
 
 	for (i = 0; i < CXLFLASH_NUM_CMDS; i++) {
 		cmd = &afu->cmd[i];
-		t = &cmd->timer;
-
-		init_timer(t);
-		t->data = (unsigned long)cmd;
-		t->function = (void (*)(unsigned long))cxlflash_context_reset;
 
 		init_completion(&cmd->cevent);
-
 		spin_lock_init(&cmd->slock);
 		cmd->parent = afu;
 	}
@@ -1923,14 +1902,6 @@ int cxlflash_send_cmd(struct afu *afu, struct afu_cmd *cmd)
 		udelay(nretry);
 	} while ((afu->room == 0) && (nretry++ < MC_ROOM_RETRY_CNT));
 
-	/* Only kick off the timer for internal commands */
-	if (!cmd->rcb.scp) {
-		cmd->timer.expires = (jiffies + (cmd->rcb.timeout * 2 * HZ));
-		add_timer(&cmd->timer);
-	} else if (cmd->rcb.timeout)
-		pr_err("%s: timer not started %d\n",
-		       __func__, cmd->rcb.timeout);
-
 	/* Write IOARRIN */
 	if (afu->room)
 		writeq_be((u64)&cmd->rcb, &afu->host_map->ioarrin);
@@ -1943,7 +1914,6 @@ int cxlflash_send_cmd(struct afu *afu, struct afu_cmd *cmd)
 	pr_debug("%s: cmd=%p len=%d ea=%p rc=%d\n", __func__, cmd,
 		 cmd->rcb.data_len, (void *)cmd->rcb.data_ea, rc);
 
-	/* Let timer fire to complete the response... */
 	return rc;
 }
 
@@ -1954,9 +1924,11 @@ int cxlflash_send_cmd(struct afu *afu, struct afu_cmd *cmd)
  */
 void cxlflash_wait_resp(struct afu *afu, struct afu_cmd *cmd)
 {
-	wait_for_completion(&cmd->cevent);
+	unsigned long timeout = jiffies + (cmd->rcb.timeout * 2 * HZ);
 
-	del_timer(&cmd->timer);	/* already stopped if timer fired */
+	timeout = wait_for_completion_timeout(&cmd->cevent, timeout);
+	if (!timeout)
+		cxlflash_context_reset(cmd);
 
 	if (unlikely(cmd->sa.ioasc != 0))
 		pr_err("%s: CMD 0x%X failed, IOASC: flags 0x%X, afu_rc 0x%X, "
@@ -2149,7 +2121,6 @@ static int cxlflash_probe(struct pci_dev *pdev,
 	cfg->last_lun_index[1] = 0;
 	cfg->dev_id = (struct pci_device_id *)dev_id;
 	cfg->mcctx = NULL;
-	cfg->context_reset_active = 0;
 	cfg->err_recovery_active = 0;
 	cfg->num_user_contexts = 0;
 
