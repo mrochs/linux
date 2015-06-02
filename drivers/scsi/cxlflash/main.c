@@ -1306,10 +1306,10 @@ static irqreturn_t cxlflash_rrq_irq(int irq, void *data)
 	struct afu *afu = (struct afu *)data;
 	struct afu_cmd *cmd;
 	bool toggle = afu->toggle;
-	u64 entry;
-	u64 *hrrq_start = afu->hrrq_start,
-	    *hrrq_end = afu->hrrq_end;
-	volatile u64 *hrrq_curr = afu->hrrq_curr;
+	u64 entry,
+	    *hrrq_start = afu->hrrq_start,
+	    *hrrq_end = afu->hrrq_end,
+	    *hrrq_curr = afu->hrrq_curr;
 
 	/* Process however many RRQ entries that are ready */
 	while (true) {

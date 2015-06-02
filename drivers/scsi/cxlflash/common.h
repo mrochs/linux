@@ -153,7 +153,7 @@ struct afu {
 	ctx_hndl_t ctx_hndl;	/* master's context handle */
 	u64 *hrrq_start;
 	u64 *hrrq_end;
-	volatile u64 *hrrq_curr;
+	u64 *hrrq_curr;
 	bool toggle;
 	u64 room;
 	u64 hb;
