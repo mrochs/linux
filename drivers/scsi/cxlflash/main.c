@@ -251,7 +251,8 @@ static void cmd_complete(struct afu_cmd *cmd)
 			cfg->tmf_active = false;
 			wake_up_all(&cfg->tmf_wait_q);
 		}
-	}
+	} else
+		complete(&cmd->cevent);
 }
 
 /**
@@ -1575,6 +1576,8 @@ void cxlflash_context_reset(struct afu_cmd *cmd)
 	cmd->sa.host_use_b[0] |= (B_DONE | B_ERROR | B_TIMEOUT);
 	spin_unlock_irqrestore(&cmd->slock, lock_flags);
 
+	complete(&cmd->cevent);
+
 	do {
 		/*
 		 * We really want to send this reset at all costs, so
@@ -1737,6 +1740,8 @@ static int start_afu(struct cxlflash_cfg *cfg)
 		timer->data = (unsigned long)&afu->cmd[i];
 		timer->function = (void (*)(unsigned long))
 		    cxlflash_context_reset;
+
+		init_completion(&afu->cmd[i].cevent);
 
 		spin_lock_init(&afu->cmd[i].slock);
 		afu->cmd[i].parent = afu;
@@ -1960,8 +1965,7 @@ int cxlflash_send_cmd(struct afu *afu, struct afu_cmd *cmd)
  */
 void cxlflash_wait_resp(struct afu *afu, struct afu_cmd *cmd)
 {
-	while (!(cmd->sa.host_use_b[0] & B_DONE))
-		cpu_relax();
+	wait_for_completion(&cmd->cevent);
 
 	del_timer(&cmd->timer);	/* already stopped if timer fired */
 

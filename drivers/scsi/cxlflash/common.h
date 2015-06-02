@@ -124,6 +124,7 @@ struct afu_cmd {
 	struct sisl_ioasa sa;	/* IOASA must follow IOARCB */
 	spinlock_t slock;
 	struct timer_list timer;
+	struct completion cevent;
 	char *buf;		/* per command buffer */
 	struct afu *parent;
 	int slot;
