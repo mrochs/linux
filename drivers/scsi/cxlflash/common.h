@@ -144,7 +144,6 @@ struct afu {
 	 */
 
 	/* AFU HW */
-	int afu_fd;
 	struct cxl_ioctl_start_work work;
 	struct cxlflash_afu_map *afu_map;	/* entire MMIO map */
 	struct sisl_host_map *host_map;		/* MC host map */
