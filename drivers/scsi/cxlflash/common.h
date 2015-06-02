@@ -89,7 +89,7 @@ struct cxlflash_cfg {
 	struct pci_device_id *dev_id;
 	struct Scsi_Host *host;
 
-	unsigned long cxlflash_regs_pci;
+	ulong cxlflash_regs_pci;
 
 	wait_queue_head_t eeh_wait_q;
 
@@ -111,7 +111,6 @@ struct cxlflash_cfg {
 	int last_lun_index[CXLFLASH_NUM_FC_PORTS];
 
 	rwlock_t tmf_lock;
-	u8 context_reset_active:1;
 	u8 err_recovery_active:1;
 };
 

@@ -139,7 +139,7 @@ struct ba_lun_info {
 	u32 free_curr_idx;
 	u32 free_high_idx;
 
-	unsigned char *aun_clone_map;
+	u8 *aun_clone_map;
 };
 
 /* Block Alocator */

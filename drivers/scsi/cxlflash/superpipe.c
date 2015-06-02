@@ -63,7 +63,7 @@ create_lun_info_exit:
 static struct lun_info *lookup_lun(struct scsi_device *sdev, __u8 *wwid)
 {
 	struct lun_info *lun_info, *temp;
-	unsigned long flags = 0UL;
+	ulong flags = 0UL;
 
 	if (wwid)
 		list_for_each_entry_safe(lun_info, temp, &global.luns, list) {
@@ -159,7 +159,7 @@ void cxlflash_list_init(void)
 void cxlflash_list_terminate(void)
 {
 	struct lun_info *lun_info, *temp;
-	unsigned long flags = 0;
+	ulong flags = 0;
 
 	spin_lock_irqsave(&global.slock, flags);
 	list_for_each_entry_safe(lun_info, temp, &global.luns, list) {
@@ -191,7 +191,7 @@ struct ctx_info *cxlflash_get_context(struct cxlflash_cfg *cfg,
 	struct lun_access *lun_access = NULL;
 	bool found = false;
 	pid_t pid = current->tgid, ctxpid = 0;
-	unsigned long flags = 0;
+	ulong flags = 0;
 
 	if (unlikely(clone_path))
 		pid = current->parent->tgid;
@@ -288,7 +288,7 @@ out:
 int cxlflash_check_status(struct afu_cmd *cmd)
 {
 	struct sisl_ioasa *ioasa = &cmd->sa;
-	unsigned long lock_flags;
+	ulong lock_flags;
 
 	/* do we need to retry AFU_CMDs (sync) on afu_rc = 0x30 ? */
 	/* can we not avoid that ? */
@@ -617,7 +617,7 @@ static void destroy_context(struct cxlflash_cfg *cfg,
 	writeq_be(0, &ctx_info->ctrl_map->ctx_cap);
 
 	/* Free the RHT memory */
-	free_page((unsigned long)ctx_info->rht_start);
+	free_page((ulong)ctx_info->rht_start);
 
 	/* Free the context; note that rht_lun was allocated at same time */
 	kfree(ctx_info);
@@ -708,7 +708,7 @@ static int cxlflash_disk_detach(struct scsi_device *sdev,
 	int rc = 0;
 	int lfd;
 	u64 ctxid = detach->context_id;
-	unsigned long flags = 0;
+	ulong flags = 0;
 
 	cxlflash_info("ctxid=%llu", ctxid);
 
@@ -867,7 +867,7 @@ static void cxlflash_unmap_context(struct ctx_info *ctx_info)
 static struct page *get_err_page(void)
 {
 	struct page *err_page = global.err_page;
-	unsigned long flags = 0;
+	ulong flags = 0;
 
 	if (unlikely(!err_page)) {
 		err_page = alloc_page(GFP_KERNEL);

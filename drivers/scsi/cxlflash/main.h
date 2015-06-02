@@ -20,26 +20,24 @@
 #include <scsi/scsi.h>
 #include <scsi/scsi_device.h>
 
-typedef unsigned int useconds_t;        /* time in microseconds */
+#define CXLFLASH_NAME		"cxlflash"
+#define CXLFLASH_ADAPTER_NAME	"IBM POWER CXL Flash Adapter"
+#define CXLFLASH_DRIVER_DATE	"(June 2, 2015)"
 
-#define CXLFLASH_NAME                      "cxlflash"
-#define CXLFLASH_ADAPTER_NAME              "IBM POWER CXL Flash Adapter"
-#define CXLFLASH_DRIVER_DATE              "(May 15, 2015)"
-
-#define PCI_DEVICE_ID_IBM_CORSA		0x04F0
-#define CXLFLASH_SUBS_DEV_ID		0x04F0
+#define PCI_DEVICE_ID_IBM_CORSA	0x04F0
+#define CXLFLASH_SUBS_DEV_ID	0x04F0
 
 /* Since there is only one target, make it 0 */
-#define CXLFLASH_TARGET                   0x0
-#define CXLFLASH_MAX_CDB_LEN		16
+#define CXLFLASH_TARGET		0
+#define CXLFLASH_MAX_CDB_LEN	16
 
 /* Really only one target per bus since the Texan is directly attached */
-#define CXLFLASH_MAX_NUM_TARGETS_PER_BUS                     1
-#define CXLFLASH_MAX_NUM_LUNS_PER_TARGET                     65536
+#define CXLFLASH_MAX_NUM_TARGETS_PER_BUS	1
+#define CXLFLASH_MAX_NUM_LUNS_PER_TARGET	65536
 
-#define CXLFLASH_PCI_ERROR_RECOVERY_TIMEOUT  (120 * HZ)
+#define CXLFLASH_PCI_ERROR_RECOVERY_TIMEOUT	(120 * HZ)
 
-#define NUM_FC_PORTS     CXLFLASH_NUM_FC_PORTS  /* ports per AFU */
+#define NUM_FC_PORTS	CXLFLASH_NUM_FC_PORTS	/* ports per AFU */
 
 /* FC defines */
 #define FC_MTIP_CMDCONFIG 0x010
@@ -55,20 +53,20 @@ typedef unsigned int useconds_t;        /* time in microseconds */
 #define FC_CNT_CRCERR 0x538
 #define FC_CRC_THRESH 0x580
 
-#define FC_MTIP_CMDCONFIG_ONLINE    0x20ull
-#define FC_MTIP_CMDCONFIG_OFFLINE   0x40ull
+#define FC_MTIP_CMDCONFIG_ONLINE	0x20ULL
+#define FC_MTIP_CMDCONFIG_OFFLINE	0x40ULL
 
-#define FC_MTIP_STATUS_MASK         0x30ull
-#define FC_MTIP_STATUS_ONLINE       0x20ull
-#define FC_MTIP_STATUS_OFFLINE      0x10ull
+#define FC_MTIP_STATUS_MASK		0x30ULL
+#define FC_MTIP_STATUS_ONLINE		0x20ULL
+#define FC_MTIP_STATUS_OFFLINE		0x10ULL
 
 /* TIMEOUT and RETRY definitions */
 
 /* AFU command timeout values */
-#define MC_AFU_SYNC_TIMEOUT  5	/* 5 secs */
+#define MC_AFU_SYNC_TIMEOUT	5	/* 5 secs */
 
 /* AFU command room retry limit */
-#define MC_ROOM_RETRY_CNT    10
+#define MC_ROOM_RETRY_CNT	10
 
 /* FC CRC clear periodic timer */
 #define MC_CRC_THRESH 100	/* threshold in 5 mins */
@@ -99,8 +97,8 @@ struct asyc_intr_info {
 	char *desc;
 	u8 port;
 	u8 action;
-#define CLR_FC_ERROR   0x01
-#define LINK_RESET     0x02
+#define CLR_FC_ERROR	0x01
+#define LINK_RESET	0x02
 };
 
 /*

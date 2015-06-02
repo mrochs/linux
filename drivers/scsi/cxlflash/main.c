@@ -214,7 +214,7 @@ static void cmd_complete(struct afu_cmd *cmd)
 {
 	struct scsi_cmnd *scp;
 	u32 resid;
-	unsigned long lock_flags;
+	ulong lock_flags;
 
 	spin_lock_irqsave(&cmd->slock, lock_flags);
 	cmd->sa.host_use_b[0] |= B_DONE;
@@ -680,10 +680,10 @@ static void free_mem(struct cxlflash_cfg *cfg)
 		for (i = 0; i < CXLFLASH_NUM_CMDS; i++) {
 			buf = afu->cmd[i].buf;
 			if (!((u64)buf & (PAGE_SIZE - 1)))
-				free_page((unsigned long)buf);
+				free_page((ulong)buf);
 		}
 
-		free_pages((unsigned long)afu, get_order(sizeof(struct afu)));
+		free_pages((ulong)afu, get_order(sizeof(struct afu)));
 		cfg->afu = NULL;
 	}
 }
@@ -1001,8 +1001,7 @@ static void set_port_offline(u64 *fc_regs)
  *	FALSE (0) when the specified port fails to come online after timeout
  *	-EINVAL when @delay_us is less than 1000
  */
-static int wait_port_online(u64 *fc_regs, useconds_t delay_us,
-			    unsigned int nretry)
+static int wait_port_online(u64 *fc_regs, u32 delay_us, u32 nretry)
 {
 	u64 status;
 
@@ -1033,8 +1032,7 @@ static int wait_port_online(u64 *fc_regs, useconds_t delay_us,
  *	FALSE (0) when the specified port fails to go offline after timeout
  *	-EINVAL when @delay_us is less than 1000
  */
-static int wait_port_offline(u64 *fc_regs, useconds_t delay_us,
-			     unsigned int nretry)
+static int wait_port_offline(u64 *fc_regs, u32 delay_us, u32 nretry)
 {
 	u64 status;
 
@@ -1511,7 +1509,7 @@ static int read_vpd(struct cxlflash_cfg *cfg, u64 wwpn[])
 		}
 
 		memcpy(tmp_buf, &vpd_data[i], WWPN_LEN);
-		rc = kstrtoul(tmp_buf, WWPN_LEN, (unsigned long *)&wwpn[k]);
+		rc = kstrtoul(tmp_buf, WWPN_LEN, (ulong *)&wwpn[k]);
 		if (unlikely(rc)) {
 			pr_err("%s: Fail to convert port %d WWPN to integer\n",
 			       __func__, k);
@@ -1536,7 +1534,7 @@ void cxlflash_context_reset(struct afu_cmd *cmd)
 	int nretry = 0;
 	u64 rrin = 0x1;
 	struct afu *afu = cmd->parent;
-	unsigned long lock_flags;
+	ulong lock_flags;
 
 	pr_debug("%s: cmd=%p\n", __func__, cmd);
 
@@ -1931,7 +1929,7 @@ int cxlflash_send_cmd(struct afu *afu, struct afu_cmd *cmd)
  */
 void cxlflash_wait_resp(struct afu *afu, struct afu_cmd *cmd)
 {
-	unsigned long timeout = jiffies + (cmd->rcb.timeout * 2 * HZ);
+	ulong timeout = jiffies + (cmd->rcb.timeout * 2 * HZ);
 
 	timeout = wait_for_completion_timeout(&cmd->cevent, timeout);
 	if (!timeout)
@@ -2051,7 +2049,7 @@ static void cxlflash_worker_thread(struct work_struct *work)
 	    container_of(work, struct cxlflash_cfg, work_q);
 	struct afu *afu = cfg->afu;
 	int port;
-	unsigned long lock_flags;
+	ulong lock_flags;
 
 	spin_lock_irqsave(cfg->host->host_lock, lock_flags);
 

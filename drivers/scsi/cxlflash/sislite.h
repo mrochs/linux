@@ -30,22 +30,22 @@ typedef u32 res_hndl_t;
 struct sisl_ioarcb {
 	u16 ctx_id;		/* ctx_hndl_t */
 	u16 req_flags;
-#define SISL_REQ_FLAGS_RES_HNDL       0x8000u	/* bit 0 (MSB) */
-#define SISL_REQ_FLAGS_PORT_LUN_ID    0x0000u
+#define SISL_REQ_FLAGS_RES_HNDL       0x8000U	/* bit 0 (MSB) */
+#define SISL_REQ_FLAGS_PORT_LUN_ID    0x0000U
 
-#define SISL_REQ_FLAGS_SUP_UNDERRUN   0x4000u	/* bit 1 */
+#define SISL_REQ_FLAGS_SUP_UNDERRUN   0x4000U	/* bit 1 */
 
-#define SISL_REQ_FLAGS_TIMEOUT_SECS   0x0000u	/* bits 8,9 */
-#define SISL_REQ_FLAGS_TIMEOUT_MSECS  0x0040u
-#define SISL_REQ_FLAGS_TIMEOUT_USECS  0x0080u
-#define SISL_REQ_FLAGS_TIMEOUT_CYCLES 0x00C0u
+#define SISL_REQ_FLAGS_TIMEOUT_SECS   0x0000U	/* bits 8,9 */
+#define SISL_REQ_FLAGS_TIMEOUT_MSECS  0x0040U
+#define SISL_REQ_FLAGS_TIMEOUT_USECS  0x0080U
+#define SISL_REQ_FLAGS_TIMEOUT_CYCLES 0x00C0U
 
 #define SISL_REQ_FLAGS_TMF_CMD        0x0004u	/* bit 13 */
 
-#define SISL_REQ_FLAGS_AFU_CMD        0x0002u	/* bit 14 */
+#define SISL_REQ_FLAGS_AFU_CMD        0x0002U	/* bit 14 */
 
-#define SISL_REQ_FLAGS_HOST_WRITE     0x0001u	/* bit 15 (LSB) */
-#define SISL_REQ_FLAGS_HOST_READ      0x0000u
+#define SISL_REQ_FLAGS_HOST_WRITE     0x0001U	/* bit 15 (LSB) */
+#define SISL_REQ_FLAGS_HOST_READ      0x0000U
 
 	union {
 		u32 res_hndl;	/* res_hndl_t */
@@ -73,25 +73,25 @@ struct sisl_ioarcb {
 	u32 rsvd1;
 	u8 cdb[16];		/* must be in big endian */
 	struct scsi_cmnd *scp;
-} __attribute__((packed));
+} __packed;
 
 struct sisl_rc {
 	u8 flags;
-#define SISL_RC_FLAGS_SENSE_VALID         0x80u
-#define SISL_RC_FLAGS_FCP_RSP_CODE_VALID  0x40u
-#define SISL_RC_FLAGS_OVERRUN             0x20u
-#define SISL_RC_FLAGS_UNDERRUN            0x10u
+#define SISL_RC_FLAGS_SENSE_VALID         0x80U
+#define SISL_RC_FLAGS_FCP_RSP_CODE_VALID  0x40U
+#define SISL_RC_FLAGS_OVERRUN             0x20U
+#define SISL_RC_FLAGS_UNDERRUN            0x10U
 
 	u8 afu_rc;
-#define SISL_AFU_RC_RHT_INVALID           0x01u	/* user error */
-#define SISL_AFU_RC_RHT_UNALIGNED         0x02u	/* should never happen */
+#define SISL_AFU_RC_RHT_INVALID           0x01U	/* user error */
+#define SISL_AFU_RC_RHT_UNALIGNED         0x02U	/* should never happen */
 #define SISL_AFU_RC_RHT_OUT_OF_BOUNDS     0x03u	/* user error */
 #define SISL_AFU_RC_RHT_DMA_ERR           0x04u	/* see afu_extra
 						   may retry if afu_retry is off
 						   possible on master exit
 						 */
 #define SISL_AFU_RC_RHT_RW_PERM           0x05u	/* no RW perms, user error */
-#define SISL_AFU_RC_LXT_UNALIGNED         0x12u	/* should never happen */
+#define SISL_AFU_RC_LXT_UNALIGNED         0x12U	/* should never happen */
 #define SISL_AFU_RC_LXT_OUT_OF_BOUNDS     0x13u	/* user error */
 #define SISL_AFU_RC_LXT_DMA_ERR           0x14u	/* see afu_extra
 						   may retry if afu_retry is off
@@ -106,17 +106,17 @@ struct sisl_rc {
 	 * a FC port. If the port went down on an active IO, it will set
 	 * fc_rc to =0x54(NOLOGI) or 0x57(LINKDOWN) instead.
 	 */
-#define SISL_AFU_RC_NO_CHANNELS           0x20u	/* see afu_extra, may retry */
-#define SISL_AFU_RC_CAP_VIOLATION         0x21u	/* either user error or
+#define SISL_AFU_RC_NO_CHANNELS           0x20U	/* see afu_extra, may retry */
+#define SISL_AFU_RC_CAP_VIOLATION         0x21U	/* either user error or
 						   afu reset/master restart
 						 */
-#define SISL_AFU_RC_OUT_OF_DATA_BUFS      0x30u	/* always retry */
-#define SISL_AFU_RC_DATA_DMA_ERR          0x31u	/* see afu_extra
+#define SISL_AFU_RC_OUT_OF_DATA_BUFS      0x30U	/* always retry */
+#define SISL_AFU_RC_DATA_DMA_ERR          0x31U	/* see afu_extra
 						   may retry if afu_retry is off
 						 */
 
 	u8 scsi_rc;		/* SCSI status byte, retry as appropriate */
-#define SISL_SCSI_RC_CHECK                0x02u
+#define SISL_SCSI_RC_CHECK                0x02U
 #define SISL_SCSI_RC_BUSY                 0x08u
 
 	u8 fc_rc;		/* retry */
@@ -161,7 +161,7 @@ struct sisl_ioasa {
 	union {
 		struct sisl_rc rc;
 		u32 ioasc;
-#define SISL_IOASC_GOOD_COMPLETION        0x00000000u
+#define SISL_IOASC_GOOD_COMPLETION        0x00000000U
 	};
 	u32 resid;
 	u8 port;
@@ -195,9 +195,9 @@ struct sisl_ioasa {
 		u64 host_use[4];
 		u8 host_use_b[32];
 	};
-} __attribute__((packed));
+} __packed;
 
-#define SISL_RESP_HANDLE_T_BIT        0x1ull	/* Toggle bit */
+#define SISL_RESP_HANDLE_T_BIT        0x1ULL	/* Toggle bit */
 
 /* MMIO space is required to support only 64-bit access */
 
@@ -213,8 +213,8 @@ struct sisl_ioasa {
  * As per the SISlite spec, the MMIO registers are always
  * big endian.
  */
-#define SISL_ENDIAN_CTRL_BE           0x8000000000000080ull
-#define SISL_ENDIAN_CTRL_LE           0x0000000000000000ull
+#define SISL_ENDIAN_CTRL_BE           0x8000000000000080ULL
+#define SISL_ENDIAN_CTRL_LE           0x0000000000000000ULL
 
 #ifdef __BIG_ENDIAN
 #define SISL_ENDIAN_CTRL              SISL_ENDIAN_CTRL_BE
@@ -234,14 +234,14 @@ struct sisl_host_map {
 				 * exit since there is no way to tell which
 				 * command caused the error.
 				 */
-#define SISL_ISTATUS_PERM_ERR_CMDROOM    0x0010ull	/* b59, user error */
-#define SISL_ISTATUS_PERM_ERR_RCB_READ   0x0008ull	/* b60, user error */
-#define SISL_ISTATUS_PERM_ERR_SA_WRITE   0x0004ull	/* b61, user error */
-#define SISL_ISTATUS_PERM_ERR_RRQ_WRITE  0x0002ull	/* b62, user error */
+#define SISL_ISTATUS_PERM_ERR_CMDROOM    0x0010ULL	/* b59, user error */
+#define SISL_ISTATUS_PERM_ERR_RCB_READ   0x0008ULL	/* b60, user error */
+#define SISL_ISTATUS_PERM_ERR_SA_WRITE   0x0004ULL	/* b61, user error */
+#define SISL_ISTATUS_PERM_ERR_RRQ_WRITE  0x0002ULL	/* b62, user error */
 	/* Page in wait accessing RCB/IOASA/RRQ is reported in b63.
 	 * Same error in data/LXT/RHT access is reported via IOASA.
 	 */
-#define SISL_ISTATUS_TEMP_ERR_PAGEIN     0x0001ull	/* b63, can be generated
+#define SISL_ISTATUS_TEMP_ERR_PAGEIN     0x0001ULL	/* b63, can be generated
 							 * only when AFU auto
 							 * retry is disabled.
 							 * If user can determine
@@ -249,7 +249,7 @@ struct sisl_host_map {
 							 * caused the error, it
 							 * can be retried.
 							 */
-#define SISL_ISTATUS_UNMASK  (0x001Full)	/* 1 means unmasked */
+#define SISL_ISTATUS_UNMASK  (0x001FULL)	/* 1 means unmasked */
 #define SISL_ISTATUS_MASK    ~(SISL_ISTATUS_UNMASK)	/* 1 means masked */
 
 	__be64 intr_clear;
@@ -266,18 +266,18 @@ struct sisl_host_map {
 struct sisl_ctrl_map {
 	__be64 rht_start;
 	__be64 rht_cnt_id;
-	/* both cnt & ctx_id args must be ull */
+	/* both cnt & ctx_id args must be ULL */
 #define SISL_RHT_CNT_ID(cnt, ctx_id)  (((cnt) << 48) | ((ctx_id) << 32))
 
 	__be64 ctx_cap;	/* afu_rc below is when the capability is violated */
-#define SISL_CTX_CAP_PROXY_ISSUE       0x8000000000000000ull /* afu_rc 0x21 */
-#define SISL_CTX_CAP_REAL_MODE         0x4000000000000000ull /* afu_rc 0x21 */
-#define SISL_CTX_CAP_HOST_XLATE        0x2000000000000000ull /* afu_rc 0x1a */
-#define SISL_CTX_CAP_PROXY_TARGET      0x1000000000000000ull /* afu_rc 0x21 */
-#define SISL_CTX_CAP_AFU_CMD           0x0000000000000008ull /* afu_rc 0x21 */
-#define SISL_CTX_CAP_GSCSI_CMD         0x0000000000000004ull /* afu_rc 0x21 */
-#define SISL_CTX_CAP_WRITE_CMD         0x0000000000000002ull /* afu_rc 0x21 */
-#define SISL_CTX_CAP_READ_CMD          0x0000000000000001ull /* afu_rc 0x21 */
+#define SISL_CTX_CAP_PROXY_ISSUE       0x8000000000000000ULL /* afu_rc 0x21 */
+#define SISL_CTX_CAP_REAL_MODE         0x4000000000000000ULL /* afu_rc 0x21 */
+#define SISL_CTX_CAP_HOST_XLATE        0x2000000000000000ULL /* afu_rc 0x1a */
+#define SISL_CTX_CAP_PROXY_TARGET      0x1000000000000000ULL /* afu_rc 0x21 */
+#define SISL_CTX_CAP_AFU_CMD           0x0000000000000008ULL /* afu_rc 0x21 */
+#define SISL_CTX_CAP_GSCSI_CMD         0x0000000000000004ULL /* afu_rc 0x21 */
+#define SISL_CTX_CAP_WRITE_CMD         0x0000000000000002ULL /* afu_rc 0x21 */
+#define SISL_CTX_CAP_READ_CMD          0x0000000000000001ULL /* afu_rc 0x21 */
 	__be64 mbox_r;
 };
 
@@ -285,33 +285,33 @@ struct sisl_ctrl_map {
 struct sisl_global_regs {
 	__be64 aintr_status;
 	/* In cxlflash, each FC port/link gets a byte of status */
-#define SISL_ASTATUS_FC0_OTHER	 0x8000ull /* b48, other err,
+#define SISL_ASTATUS_FC0_OTHER	 0x8000ULL /* b48, other err,
 					      FC_ERRCAP[31:20] */
-#define SISL_ASTATUS_FC0_LOGO    0x4000ull /* b49, target sent FLOGI/PLOGI/LOGO
+#define SISL_ASTATUS_FC0_LOGO    0x4000ULL /* b49, target sent FLOGI/PLOGI/LOGO
 						   while logged in */
-#define SISL_ASTATUS_FC0_CRC_T   0x2000ull /* b50, CRC threshold exceeded */
-#define SISL_ASTATUS_FC0_LOGI_R  0x1000ull /* b51, login state mechine timed out
+#define SISL_ASTATUS_FC0_CRC_T   0x2000ULL /* b50, CRC threshold exceeded */
+#define SISL_ASTATUS_FC0_LOGI_R  0x1000ULL /* b51, login state mechine timed out
 						   and retrying */
-#define SISL_ASTATUS_FC0_LOGI_F  0x0800ull /* b52, login failed,
+#define SISL_ASTATUS_FC0_LOGI_F  0x0800ULL /* b52, login failed,
 					      FC_ERROR[19:0] */
-#define SISL_ASTATUS_FC0_LOGI_S  0x0400ull /* b53, login succeeded */
-#define SISL_ASTATUS_FC0_LINK_DN 0x0200ull /* b54, link online to offline */
-#define SISL_ASTATUS_FC0_LINK_UP 0x0100ull /* b55, link offline to online */
+#define SISL_ASTATUS_FC0_LOGI_S  0x0400ULL /* b53, login succeeded */
+#define SISL_ASTATUS_FC0_LINK_DN 0x0200ULL /* b54, link online to offline */
+#define SISL_ASTATUS_FC0_LINK_UP 0x0100ULL /* b55, link offline to online */
 
-#define SISL_ASTATUS_FC1_OTHER   0x0080ull /* b56 */
-#define SISL_ASTATUS_FC1_LOGO    0x0040ull /* b57 */
-#define SISL_ASTATUS_FC1_CRC_T   0x0020ull /* b58 */
-#define SISL_ASTATUS_FC1_LOGI_R  0x0010ull /* b59 */
-#define SISL_ASTATUS_FC1_LOGI_F  0x0008ull /* b60 */
-#define SISL_ASTATUS_FC1_LOGI_S  0x0004ull /* b61 */
-#define SISL_ASTATUS_FC1_LINK_DN 0x0002ull /* b62 */
-#define SISL_ASTATUS_FC1_LINK_UP 0x0001ull /* b63 */
+#define SISL_ASTATUS_FC1_OTHER   0x0080ULL /* b56 */
+#define SISL_ASTATUS_FC1_LOGO    0x0040ULL /* b57 */
+#define SISL_ASTATUS_FC1_CRC_T   0x0020ULL /* b58 */
+#define SISL_ASTATUS_FC1_LOGI_R  0x0010ULL /* b59 */
+#define SISL_ASTATUS_FC1_LOGI_F  0x0008ULL /* b60 */
+#define SISL_ASTATUS_FC1_LOGI_S  0x0004ULL /* b61 */
+#define SISL_ASTATUS_FC1_LINK_DN 0x0002ULL /* b62 */
+#define SISL_ASTATUS_FC1_LINK_UP 0x0001ULL /* b63 */
 
-#define SISL_FC_INTERNAL_UNMASK	0x0000000300000000ull	/* 1 means unmasked */
+#define SISL_FC_INTERNAL_UNMASK	0x0000000300000000ULL	/* 1 means unmasked */
 #define SISL_FC_INTERNAL_MASK	~(SISL_FC_INTERNAL_UNMASK)
 #define SISL_FC_INTERNAL_SHIFT	32
 
-#define SISL_ASTATUS_UNMASK	0xFFFFull		/* 1 means unmasked */
+#define SISL_ASTATUS_UNMASK	0xFFFFULL		/* 1 means unmasked */
 #define SISL_ASTATUS_MASK	~(SISL_ASTATUS_UNMASK)	/* 1 means masked */
 
 	__be64 aintr_clear;
@@ -320,24 +320,24 @@ struct sisl_global_regs {
 	__be64 afu_hb;
 	__be64 afu_scratch_pad;
 	__be64 afu_port_sel;
-#define SISL_AFUCONF_AR_IOARCB	0x4000ull
-#define SISL_AFUCONF_AR_LXT	0x2000ull
-#define SISL_AFUCONF_AR_RHT	0x1000ull
-#define SISL_AFUCONF_AR_DATA	0x0800ull
-#define SISL_AFUCONF_AR_RSRC	0x0400ull
-#define SISL_AFUCONF_AR_IOASA	0x0200ull
-#define SISL_AFUCONF_AR_RRQ	0x0100ull
+#define SISL_AFUCONF_AR_IOARCB	0x4000ULL
+#define SISL_AFUCONF_AR_LXT	0x2000ULL
+#define SISL_AFUCONF_AR_RHT	0x1000ULL
+#define SISL_AFUCONF_AR_DATA	0x0800ULL
+#define SISL_AFUCONF_AR_RSRC	0x0400ULL
+#define SISL_AFUCONF_AR_IOASA	0x0200ULL
+#define SISL_AFUCONF_AR_RRQ	0x0100ULL
 /* Aggregate all Auto Retry Bits */
 #define SISL_AFUCONF_AR_ALL	(SISL_AFUCONF_AR_IOARCB|SISL_AFUCONF_AR_LXT| \
 				 SISL_AFUCONF_AR_RHT|SISL_AFUCONF_AR_DATA|   \
 				 SISL_AFUCONF_AR_RSRC|SISL_AFUCONF_AR_IOASA| \
 				 SISL_AFUCONF_AR_RRQ)
 #ifdef __BIG_ENDIAN
-#define SISL_AFUCONF_ENDIAN            0x0000ull
+#define SISL_AFUCONF_ENDIAN            0x0000ULL
 #else
-#define SISL_AFUCONF_ENDIAN            0x0020ull
+#define SISL_AFUCONF_ENDIAN            0x0020ULL
 #endif
-#define SISL_AFUCONF_MBOX_CLR_READ     0x0010ull
+#define SISL_AFUCONF_MBOX_CLR_READ     0x0010ULL
 	__be64 afu_config;
 	__be64 rsvd[0xf8];
 	__be64 afu_version;
@@ -418,7 +418,7 @@ struct sisl_rht_entry {
 				 * (if no perm, afu_rc=0x05)
 				 */
 	u8 nmask;
-} __attribute__((packed, aligned(16)));
+} __packed __aligned(16);
 
 struct sisl_rht_entry_f1 {
 	u64 lun_id;
@@ -432,7 +432,7 @@ struct sisl_rht_entry_f1 {
 
 		u64 dw;
 	};
-} __attribute__((packed, aligned(16)));
+} __packed __aligned(16);
 
 /* make the fp byte */
 #define SISL_RHT_FP(fmt, perm) (((fmt) << 4) | (perm))
@@ -442,24 +442,24 @@ struct sisl_rht_entry_f1 {
  */
 #define SISL_RHT_FP_CLONE(src_fp, cln_flags) ((src_fp) & (0xFC | (cln_flags)))
 
-#define RHT_PERM_READ  0x01u
-#define RHT_PERM_WRITE 0x02u
+#define RHT_PERM_READ  0x01U
+#define RHT_PERM_WRITE 0x02U
 #define RHT_PERM_RW    (RHT_PERM_READ | RHT_PERM_WRITE)
 
 /* extract the perm bits from a fp */
 #define SISL_RHT_PERM(fp) ((fp) & RHT_PERM_RW)
 
-#define PORT0  0x01u
-#define PORT1  0x02u
+#define PORT0  0x01U
+#define PORT1  0x02U
 #define BOTH_PORTS    (PORT0 | PORT1)
 
 /* AFU Sync Mode byte */
-#define AFU_LW_SYNC 0x0u
-#define AFU_HW_SYNC 0x1u
-#define AFU_GSYNC   0x2u
+#define AFU_LW_SYNC 0x0U
+#define AFU_HW_SYNC 0x1U
+#define AFU_GSYNC   0x2U
 
 /* Special Task Management Function CDB */
-#define TMF_LUN_RESET  0x1u
-#define TMF_CLEAR_ACA  0x2u
+#define TMF_LUN_RESET  0x1U
+#define TMF_CLEAR_ACA  0x2U
 
 #endif /* _SISLITE_H */

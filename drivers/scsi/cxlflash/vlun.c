@@ -399,8 +399,8 @@ static int grow_lxt(struct afu *afu,
 		    u64 * act_new_size)
 {
 	struct sisl_lxt_entry *lxt = NULL, *lxt_old = NULL;
-	unsigned int av_size;
-	unsigned int ngrps, ngrps_old;
+	u32 av_size;
+	u32 ngrps, ngrps_old;
 	u64 aun;		/* chunk# allocated by block allocator */
 	int i;
 	struct blka *blka = &lun_info->blka;
@@ -492,7 +492,7 @@ static int shrink_lxt(struct afu *afu,
 		      u64 delta, u64 * act_new_size)
 {
 	struct sisl_lxt_entry *lxt, *lxt_old;
-	unsigned int ngrps, ngrps_old;
+	u32 ngrps, ngrps_old;
 	u64 aun;		/* chunk# allocated by block allocator */
 	int i;
 	struct blka *blka = &lun_info->blka;
@@ -787,7 +787,7 @@ int cxlflash_clone_lxt(struct afu *afu,
 		       struct sisl_rht_entry *rht_entry_src)
 {
 	struct sisl_lxt_entry *lxt;
-	unsigned int ngrps;
+	u32 ngrps;
 	u64 aun;		/* chunk# allocated by block allocator */
 	int i, j;
 
