@@ -1552,21 +1552,26 @@ void cxlflash_context_reset(struct afu_cmd *cmd)
 	spin_unlock_irqrestore(&cmd->slock, lock_flags);
 
 	do {
+		afu->room = readq_be(&afu->host_map->cmd_room);
+		if (afu->room)
+			break;
 		/*
 		 * We really want to send this reset at all costs, so
 		 * spread out wait time on successive retries.
 		 */
 		udelay(nretry);
-		afu->room = readq_be(&afu->host_map->cmd_room);
-	} while ((afu->room == 0) && (nretry++ < MC_ROOM_RETRY_CNT));
+	} while (nretry++ < MC_ROOM_RETRY_CNT);
 
 	if (afu->room) {
-		writeq_be((u64) rrin, &afu->host_map->ioarrin);
+		nretry = 0;
+		writeq_be((u64)rrin, &afu->host_map->ioarrin);
 		do {
 			rrin = readq_be(&afu->host_map->ioarrin);
+			if (rrin != 0x1)
+				break;
 			/* Double delay each time */
 			udelay(2 ^ nretry);
-		} while ((rrin == 0x1) && (nretry++ < MC_ROOM_RETRY_CNT));
+		} while (nretry++ < MC_ROOM_RETRY_CNT);
 	} else
 		pr_err("%s: no cmd_room to send reset\n", __func__);
 }
@@ -1899,8 +1904,10 @@ int cxlflash_send_cmd(struct afu *afu, struct afu_cmd *cmd)
 	 */
 	do {
 		afu->room = readq_be(&afu->host_map->cmd_room);
+		if (afu->room)
+			break;
 		udelay(nretry);
-	} while ((afu->room == 0) && (nretry++ < MC_ROOM_RETRY_CNT));
+	} while (nretry++ < MC_ROOM_RETRY_CNT);
 
 	/* Write IOARRIN */
 	if (afu->room)
