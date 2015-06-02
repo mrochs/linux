@@ -80,7 +80,6 @@ struct afu_cmd *cxlflash_cmd_checkout(struct afu *afu)
  */
 void cxlflash_cmd_checkin(struct afu_cmd *cmd)
 {
-	cmd->special = 0;
 	cmd->rcb.scp = NULL;
 	cmd->rcb.timeout = 0;
 	cmd->sa.ioasc = 0;
@@ -214,10 +213,7 @@ static void process_cmd_err(struct afu_cmd *cmd, struct scsi_cmnd *scp)
 static void cmd_complete(struct afu_cmd *cmd)
 {
 	struct scsi_cmnd *scp;
-	struct afu *afu = cmd->parent;
-	struct cxlflash_cfg *cfg = afu->parent;
 	u32 resid;
-	bool special = cmd->special;
 	unsigned long lock_flags;
 
 	spin_lock_irqsave(&cmd->slock, lock_flags);
@@ -247,10 +243,6 @@ static void cmd_complete(struct afu_cmd *cmd)
 		scsi_dma_unmap(scp);
 		scp->scsi_done(scp);
 
-		if (special) {
-			cfg->tmf_active = false;
-			wake_up_all(&cfg->tmf_wait_q);
-		}
 	} else
 		complete(&cmd->cevent);
 }
@@ -275,7 +267,7 @@ static int send_tmf(struct afu *afu, struct scsi_cmnd *scp, u64 tmfcmd)
 	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)host->hostdata;
 	int rc = 0;
 
-	wait_event(cfg->tmf_wait_q, !cfg->tmf_active);
+	write_lock(&cfg->tmf_lock);
 
 	cmd = cxlflash_cmd_checkout(afu);
 	if (unlikely(!cmd)) {
@@ -295,17 +287,14 @@ static int send_tmf(struct afu *afu, struct scsi_cmnd *scp, u64 tmfcmd)
 
 	/* Stash the scp in the reserved field, for reuse during interrupt */
 	cmd->rcb.scp = scp;
-	cmd->special = 0x1;
-	cfg->tmf_active = true;
 
 	/* Copy the CDB from the cmd passed in */
 	memcpy(cmd->rcb.cdb, &tmfcmd, sizeof(tmfcmd));
 
 	/* Send the command */
 	rc = cxlflash_send_cmd(afu, cmd);
-	if (!rc)
-		wait_event(cfg->tmf_wait_q, !cfg->tmf_active);
 out:
+	write_unlock(&cfg->tmf_lock);
 	return rc;
 
 }
@@ -350,7 +339,7 @@ static int cxlflash_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *scp)
 		 get_unaligned_be32(&((u32 *)scp->cmnd)[2]),
 		 get_unaligned_be32(&((u32 *)scp->cmnd)[3]));
 
-	wait_event(cfg->tmf_wait_q, !cfg->tmf_active);
+	read_lock(&cfg->tmf_lock);
 
 	cmd = cxlflash_cmd_checkout(afu);
 	if (unlikely(!cmd)) {
@@ -395,6 +384,7 @@ static int cxlflash_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *scp)
 	rc = cxlflash_send_cmd(afu, cmd);
 
 out:
+	read_unlock(&cfg->tmf_lock);
 	return rc;
 }
 
@@ -793,8 +783,6 @@ static void cxlflash_remove(struct pci_dev *pdev)
 {
 	struct cxlflash_cfg *cfg = pci_get_drvdata(pdev);
 
-	wait_event(cfg->tmf_wait_q, !cfg->tmf_active);
-
 	switch (cfg->init_state) {
 	case INIT_STATE_PCI:
 		pci_release_regions(cfg->dev);
@@ -859,7 +847,6 @@ static int alloc_mem(struct cxlflash_cfg *cfg)
 		cfg->afu->cmd[i].buf = buf;
 		atomic_set(&cfg->afu->cmd[i].free, 1);
 		cfg->afu->cmd[i].slot = i;
-		cfg->afu->cmd[i].special = 0;
 	}
 
 out:
@@ -2161,13 +2148,13 @@ static int cxlflash_probe(struct pci_dev *pdev,
 	cfg->last_lun_index[0] = 0;
 	cfg->last_lun_index[1] = 0;
 	cfg->dev_id = (struct pci_device_id *)dev_id;
-	cfg->tmf_active = 0;
 	cfg->mcctx = NULL;
 	cfg->context_reset_active = 0;
 	cfg->err_recovery_active = 0;
 	cfg->num_user_contexts = 0;
 
-	init_waitqueue_head(&cfg->tmf_wait_q);
+	rwlock_init(&cfg->tmf_lock);
+
 	init_waitqueue_head(&cfg->eeh_wait_q);
 	init_waitqueue_head(&cfg->sync_wait_q);
 

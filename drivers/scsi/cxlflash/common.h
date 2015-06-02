@@ -112,11 +112,10 @@ struct cxlflash_cfg {
 	int num_user_contexts;
 	int last_lun_index[CXLFLASH_NUM_FC_PORTS];
 
-	wait_queue_head_t tmf_wait_q;
+	rwlock_t tmf_lock;
 	wait_queue_head_t sync_wait_q;
 	u8 context_reset_active:1;
 	u8 err_recovery_active:1;
-	u8 tmf_active:1;
 };
 
 struct afu_cmd {
@@ -129,7 +128,6 @@ struct afu_cmd {
 	struct afu *parent;
 	int slot;
 	atomic_t free;
-	u8 special:1;
 
 	/* As per the SISLITE spec the IOARCB EA has to be 16-byte aligned.
 	 * However for performance reasons the IOARCB/IOASA should be
