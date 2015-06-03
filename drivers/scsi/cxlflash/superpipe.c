@@ -309,13 +309,13 @@ int cxlflash_check_status(struct afu_cmd *cmd)
 	switch (ioasa->rc.afu_rc) {
 	case SISL_AFU_RC_NO_CHANNELS:
 	case SISL_AFU_RC_OUT_OF_DATA_BUFS:
-		msleep(1);	/* 1 msec */
+		msleep(20);
 		return 1;
 
 	case 0:
 		/* no afu_rc, but either scsi_rc and/or fc_rc is set */
 		/* retry all scsi_rc and fc_rc after a small delay */
-		msleep(1);	/* 1 msec */
+		msleep(20);
 		return 1;
 	}
 
@@ -456,10 +456,10 @@ static void rht_format1(struct sisl_rht_entry *rht_entry, u64 lun_id, u32 perm)
 	    (struct sisl_rht_entry_f1 *)rht_entry;
 	memset(rht_entry_f1, 0, sizeof(struct sisl_rht_entry_f1));
 	rht_entry_f1->fp = SISL_RHT_FP(1U, 0);
-	smp_wmb();
+	smp_wmb(); /* Make setting of format bit visible */
 
 	rht_entry_f1->lun_id = lun_id;
-	smp_wmb();
+	smp_wmb(); /* Make setting of LUN id visible */
 
 	/*
 	 * Use a dummy RHT Format 1 entry to build the second dword
@@ -471,7 +471,7 @@ static void rht_format1(struct sisl_rht_entry *rht_entry, u64 lun_id, u32 perm)
 	dummy.port_sel = BOTH_PORTS;
 	rht_entry_f1->dw = dummy.dw;
 
-	smp_wmb();
+	smp_wmb(); /* Make remaining RHT entry fields visible */
 }
 
 int cxlflash_lun_attach(struct lun_info *lun_info, enum lun_mode mode)
@@ -586,13 +586,14 @@ static int cxlflash_disk_release(struct scsi_device *sdev,
 			    (struct sisl_rht_entry_f1 *)rht_entry;
 
 		rht_entry_f1->valid = 0;
-		smp_wmb();
+		smp_wmb(); /* Make revoccation of RHT entry visible */
 
 		rht_entry_f1->lun_id = 0;
-		smp_wmb();
+		smp_wmb(); /* Make clearing of LUN id visible */
 
 		rht_entry_f1->dw = 0;
-		smp_wmb();
+		smp_wmb(); /* Make RHT entry bottom-half clearing visible */
+
 		cxlflash_afu_sync(afu, ctxid, res_hndl, AFU_HW_SYNC);
 		rhte_checkin(ctx_info, rht_entry);
 	}
@@ -1501,17 +1502,27 @@ out:
 
 static char *decode_ioctl(int cmd)
 {
-#define _CASE2STR(_x) case _x: return #_x
-
 	switch (cmd) {
-		_CASE2STR(DK_CXLFLASH_ATTACH);
-		_CASE2STR(DK_CXLFLASH_USER_DIRECT);
-		_CASE2STR(DK_CXLFLASH_USER_VIRTUAL);
-		_CASE2STR(DK_CXLFLASH_DETACH);
-		_CASE2STR(DK_CXLFLASH_VLUN_RESIZE);
-		_CASE2STR(DK_CXLFLASH_RELEASE);
-		_CASE2STR(DK_CXLFLASH_CLONE);
-		_CASE2STR(DK_CXLFLASH_VERIFY);
+	case DK_CXLFLASH_ATTACH:
+		return __stringify_1(DK_CXLFLASH_ATTACH);
+	case DK_CXLFLASH_USER_DIRECT:
+		return __stringify_1(DK_CXLFLASH_USER_DIRECT);
+	case DK_CXLFLASH_USER_VIRTUAL:
+		return __stringify_1(DK_CXLFLASH_USER_VIRTUAL);
+	case DK_CXLFLASH_VLUN_RESIZE:
+		return __stringify_1(DK_CXLFLASH_VLUN_RESIZE);
+	case DK_CXLFLASH_RELEASE:
+		return __stringify_1(DK_CXLFLASH_RELEASE);
+	case DK_CXLFLASH_DETACH:
+		return __stringify_1(DK_CXLFLASH_DETACH);
+	case DK_CXLFLASH_VERIFY:
+		return __stringify_1(DK_CXLFLASH_VERIFY);
+	case DK_CXLFLASH_CLONE:
+		return __stringify_1(DK_CXLFLASH_CLONE);
+	case DK_CXLFLASH_RECOVER_AFU:
+		return __stringify_1(DK_CXLFLASH_RECOVER_AFU);
+	case DK_CXLFLASH_MANAGE_LUN:
+		return __stringify_1(DK_CXLFLASH_MANAGE_LUN);
 	}
 
 	return "UNKNOWN";
@@ -1618,28 +1629,28 @@ int cxlflash_ioctl(struct scsi_device *sdev, int cmd, void __user *arg)
 	struct dk_cxlflash_hdr *hdr;
 	char buf[MAX_CXLFLASH_IOCTL_SZ];
 	size_t size = 0;
+	bool known_ioctl = false;
 	int idx;
 	int rc = 0;
 	struct Scsi_Host *shost = sdev->host;
 	sioctl do_ioctl = NULL;
 	u64 ctxid;
 	struct ctx_info *ctx_info;
-#define IOCTE(_s, _i) sizeof(struct _s), (sioctl)(_i)
+
 	static const struct {
 		size_t size;
 		sioctl ioctl;
 	} ioctl_tbl[] = {	/* NOTE: order matters here */
-		{
-		IOCTE(dk_cxlflash_attach, cxlflash_disk_attach)}, {
-		IOCTE(dk_cxlflash_udirect, cxlflash_disk_direct_open)}, {
-		IOCTE(dk_cxlflash_uvirtual, cxlflash_disk_virtual_open)}, {
-		IOCTE(dk_cxlflash_resize, cxlflash_vlun_resize)}, {
-		IOCTE(dk_cxlflash_release, cxlflash_disk_release)}, {
-		IOCTE(dk_cxlflash_detach, cxlflash_disk_detach)}, {
-		IOCTE(dk_cxlflash_verify, cxlflash_disk_verify)}, {
-		IOCTE(dk_cxlflash_clone, cxlflash_disk_clone)}, {
-		IOCTE(dk_cxlflash_recover_afu, cxlflash_afu_recover)}, {
-		IOCTE(dk_cxlflash_manage_lun, cxlflash_manage_lun)}
+	{sizeof(struct dk_cxlflash_attach), (sioctl)cxlflash_disk_attach},
+	{sizeof(struct dk_cxlflash_udirect), cxlflash_disk_direct_open},
+	{sizeof(struct dk_cxlflash_uvirtual), cxlflash_disk_virtual_open},
+	{sizeof(struct dk_cxlflash_resize), (sioctl)cxlflash_vlun_resize},
+	{sizeof(struct dk_cxlflash_release), (sioctl)cxlflash_disk_release},
+	{sizeof(struct dk_cxlflash_detach), (sioctl)cxlflash_disk_detach},
+	{sizeof(struct dk_cxlflash_verify), (sioctl)cxlflash_disk_verify},
+	{sizeof(struct dk_cxlflash_clone), (sioctl)cxlflash_disk_clone},
+	{sizeof(struct dk_cxlflash_recover_afu), (sioctl)cxlflash_afu_recover},
+	{sizeof(struct dk_cxlflash_manage_lun), (sioctl)cxlflash_manage_lun},
 	};
 
 	/* Restrict command set to physical support only for internal LUN */
@@ -1671,6 +1682,7 @@ int cxlflash_ioctl(struct scsi_device *sdev, int cmd, void __user *arg)
 	case DK_CXLFLASH_CLONE:
 	case DK_CXLFLASH_RECOVER_AFU:
 	case DK_CXLFLASH_MANAGE_LUN:
+		known_ioctl = true;
 		idx = _IOC_NR(cmd) - _IOC_NR(DK_CXLFLASH_ATTACH);
 		size = ioctl_tbl[idx].size;
 		do_ioctl = ioctl_tbl[idx].ioctl;
@@ -1712,7 +1724,7 @@ int cxlflash_ioctl(struct scsi_device *sdev, int cmd, void __user *arg)
 	/* fall thru to exit */
 
 cxlflash_ioctl_exit:
-	if (rc)
+	if (unlikely(rc && known_ioctl))
 		cxlflash_err("ioctl %s (%08X) on dev(%d/%d/%d/%llu) "
 			     "returned rc %d",
 			     decode_ioctl(cmd), cmd, shost->host_no,

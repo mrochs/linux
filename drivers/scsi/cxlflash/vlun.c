@@ -26,9 +26,7 @@
 #include "common.h"
 #include "superpipe.h"
 
-extern struct cxlflash_global global;
-
-static u32 ws = 0;
+static u32 ws;
 
 /*
  * This is a temporary module parameter
@@ -100,7 +98,7 @@ int ba_init(struct ba_lun *ba_lun)
 	lun_info->free_aun_cnt = lun_size_au;
 
 	for (i = 0; i < lun_info->lun_bmap_size; i++)
-		lun_info->lun_alloc_map[i] = (u64) ~ 0;
+		lun_info->lun_alloc_map[i] = 0xFFFFFFFFFFFFFFFFULL;
 
 	/* If the last word not fully utilized, mark extra bits as allocated */
 	last_word_underflow = (lun_info->lun_bmap_size * 64) -
@@ -305,10 +303,8 @@ void ba_terminate(struct ba_lun *ba_lun)
 	    (struct ba_lun_info *)ba_lun->ba_lun_handle;
 
 	if (lun_info) {
-		if (lun_info->aun_clone_map)
-			kfree(lun_info->aun_clone_map);
-		if (lun_info->lun_alloc_map)
-			kfree(lun_info->lun_alloc_map);
+		kfree(lun_info->aun_clone_map);
+		kfree(lun_info->lun_alloc_map);
 		kfree(lun_info);
 		ba_lun->ba_lun_handle = NULL;
 	}
@@ -396,7 +392,7 @@ static int grow_lxt(struct afu *afu,
 		    res_hndl_t res_hndl_u,
 		    struct sisl_rht_entry *rht_entry,
 		    u64 delta,
-		    u64 * act_new_size)
+		    u64 *act_new_size)
 {
 	struct sisl_lxt_entry *lxt = NULL, *lxt_old = NULL;
 	u32 av_size;
@@ -412,8 +408,7 @@ static int grow_lxt(struct afu *afu,
 	 */
 	mutex_lock(&blka->mutex);
 	av_size = ba_space(&blka->ba_lun);
-	if (av_size <= 0)
-	{
+	if (unlikely(av_size <= 0)) {
 		cxlflash_err("ba_space error: av_size %d", av_size);
 		mutex_unlock(&blka->mutex);
 		return -ENOSPC;
@@ -460,20 +455,23 @@ static int grow_lxt(struct afu *afu,
 		/* select both ports, use r/w perms from RHT */
 		lxt[i].rlba_base = ((aun << MC_CHUNK_SHIFT) |
 				    (lun_info->lun_index << LXT_LUNIDX_SHIFT) |
-				    (RHT_PERM_RW << LXT_PERM_SHIFT | 
+				    (RHT_PERM_RW << LXT_PERM_SHIFT |
 				     BOTH_PORTS));
 	}
 
 	mutex_unlock(&blka->mutex);
 
-	smp_wmb();		/* make lxt updates visible */
+	/*
+	 * The following sequence is prescribed in the SISlite spec
+	 * for syncing up with the AFU when adding LXT entries.
+	 */
+	smp_wmb(); /* Make LXT updates are visible */
 
-	/* Now sync up AFU - this can take a while */
-	rht_entry->lxt_start = lxt;	/* even if lxt didn't change */
-	smp_wmb();
+	rht_entry->lxt_start = lxt;
+	smp_wmb(); /* Make RHT entry's LXT table update visible */
 
 	rht_entry->lxt_cnt = *act_new_size;
-	smp_wmb();
+	smp_wmb(); /* Make RHT entry's LXT table size update visible */
 
 	cxlflash_afu_sync(afu, ctx_hndl_u, res_hndl_u, AFU_LW_SYNC);
 
@@ -489,7 +487,7 @@ static int shrink_lxt(struct afu *afu,
 		      ctx_hndl_t ctx_hndl_u,
 		      res_hndl_t res_hndl_u,
 		      struct sisl_rht_entry *rht_entry,
-		      u64 delta, u64 * act_new_size)
+		      u64 delta, u64 *act_new_size)
 {
 	struct sisl_lxt_entry *lxt, *lxt_old;
 	u32 ngrps, ngrps_old;
@@ -521,12 +519,15 @@ static int shrink_lxt(struct afu *afu,
 	/* nothing can fail from now on */
 	*act_new_size = rht_entry->lxt_cnt - delta;
 
-	/* Now sync up AFU - this can take a while */
+	/*
+	 * The following sequence is prescribed in the SISlite spec
+	 * for syncing up with the AFU when removing LXT entries.
+	 */
 	rht_entry->lxt_cnt = *act_new_size;
-	smp_wmb();		/* also makes lxt updates visible */
+	smp_wmb(); /* Make RHT entry's LXT table size update visible */
 
-	rht_entry->lxt_start = lxt;	/* even if lxt didn't change */
-	smp_wmb();
+	rht_entry->lxt_start = lxt;
+	smp_wmb(); /* Make RHT entry's LXT table update visible */
 
 	cxlflash_afu_sync(afu, ctx_hndl_u, res_hndl_u, AFU_HW_SYNC);
 
@@ -655,25 +656,25 @@ out:
 }
 
 /* NAME:	cxlflash_disk_virtual_open
- *	
- * FUNCTION:	open a virtual lun of specified size	
- *	
- * INPUTS:	
+ *
+ * FUNCTION:	open a virtual lun of specified size
+ *
+ * INPUTS:
  *              sdev       - Pointer to scsi device structure
  *              arg        - Pointer to ioctl specific structure
- *	
- * OUTPUTS:	
+ *
+ * OUTPUTS:
  *              none
- *	
- * RETURNS:	
+ *
+ * RETURNS:
  *              0           - Success
  *              errno       - Failure
- *	
- * NOTES:	
- *		When successful:	
- *		a. find a free RHT entry	
+ *
+ * NOTES:
+ *		When successful:
+ *		a. find a free RHT entry
  *		b. Resize to requested size
- *	
+ *
  */
 int cxlflash_disk_virtual_open(struct scsi_device *sdev, void *arg)
 {
@@ -826,18 +827,20 @@ int cxlflash_clone_lxt(struct afu *afu,
 		lxt = NULL;
 	}
 
-	smp_wmb();		/* make lxt updates visible */
+	/*
+	 * The following sequence is prescribed in the SISlite spec
+	 * for syncing up with the AFU when adding LXT entries.
+	 */
+	smp_wmb(); /* Make LXT updates are visible */
 
-	/* Now sync up AFU - this can take a while */
-	rht_entry->lxt_start = lxt;	/* even if lxt is NULL */
-	smp_wmb();
+	rht_entry->lxt_start = lxt;
+	smp_wmb(); /* Make RHT entry's LXT table update visible */
 
 	rht_entry->lxt_cnt = rht_entry_src->lxt_cnt;
-	smp_wmb();
+	smp_wmb(); /* Make RHT entry's LXT table size update visible */
 
 	cxlflash_afu_sync(afu, ctx_hndl_u, res_hndl_u, AFU_LW_SYNC);
 
 	cxlflash_dbg("returning");
 	return 0;
 }
-
