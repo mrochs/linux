@@ -1153,38 +1153,22 @@ static void afu_link_reset(struct afu *afu, int port, u64 *fc_regs)
  * Asynchronous interrupt information table
  */
 static const struct asyc_intr_info ainfo[] = {
-	{SISL_ASTATUS_FC0_OTHER, "FC Port 0: other error",
-		0, CLR_FC_ERROR | LINK_RESET},
-	{SISL_ASTATUS_FC0_LOGO, "FC Port 0: target initiated LOGO",
-		0, 0},
-	{SISL_ASTATUS_FC0_CRC_T, "FC Port 0: CRC threshold exceeded",
-		0, LINK_RESET},
-	{SISL_ASTATUS_FC0_LOGI_R, "FC Port 0: login timed out, retrying",
-		0, 0},
-	{SISL_ASTATUS_FC0_LOGI_F, "FC Port 0: login failed",
-		0, CLR_FC_ERROR},
-	{SISL_ASTATUS_FC0_LOGI_S, "FC Port 0: login succeeded",
-		0, 0},
-	{SISL_ASTATUS_FC0_LINK_DN, "FC Port 0: link down",
-		0, 0},
-	{SISL_ASTATUS_FC0_LINK_UP, "FC Port 0: link up",
-		0, 0},
-	{SISL_ASTATUS_FC1_OTHER, "FC Port 1: other error",
-		1, CLR_FC_ERROR | LINK_RESET},
-	{SISL_ASTATUS_FC1_LOGO, "FC Port 1: target initiated LOGO",
-		1, 0},
-	{SISL_ASTATUS_FC1_CRC_T, "FC Port 1: CRC threshold exceeded",
-		1, LINK_RESET},
-	{SISL_ASTATUS_FC1_LOGI_R, "FC Port 1: login timed out, retrying",
-		1, 0},
-	{SISL_ASTATUS_FC1_LOGI_F, "FC Port 1: login failed",
-		1, CLR_FC_ERROR},
-	{SISL_ASTATUS_FC1_LOGI_S, "FC Port 1: login succeeded",
-		1, 0},
-	{SISL_ASTATUS_FC1_LINK_DN, "FC Port 1: link down",
-		1, 0},
-	{SISL_ASTATUS_FC1_LINK_UP, "FC Port 1: link up",
-		1, 0},
+	{SISL_ASTATUS_FC0_OTHER, "other error", 0, CLR_FC_ERROR | LINK_RESET},
+	{SISL_ASTATUS_FC0_LOGO, "target initiated LOGO", 0, 0},
+	{SISL_ASTATUS_FC0_CRC_T, "CRC threshold exceeded", 0, LINK_RESET},
+	{SISL_ASTATUS_FC0_LOGI_R, "login timed out, retrying", 0, 0},
+	{SISL_ASTATUS_FC0_LOGI_F, "login failed", 0, CLR_FC_ERROR},
+	{SISL_ASTATUS_FC0_LOGI_S, "login succeeded", 0, 0},
+	{SISL_ASTATUS_FC0_LINK_DN, "link down", 0, 0},
+	{SISL_ASTATUS_FC0_LINK_UP, "link up", 0, 0},
+	{SISL_ASTATUS_FC1_OTHER, "other error", 1, CLR_FC_ERROR | LINK_RESET},
+	{SISL_ASTATUS_FC1_LOGO, "target initiated LOGO", 1, 0},
+	{SISL_ASTATUS_FC1_CRC_T, "CRC threshold exceeded", 1, LINK_RESET},
+	{SISL_ASTATUS_FC1_LOGI_R, "login timed out, retrying", 1, 0},
+	{SISL_ASTATUS_FC1_LOGI_F, "login failed", 1, CLR_FC_ERROR},
+	{SISL_ASTATUS_FC1_LOGI_S, "login succeeded", 1, 0},
+	{SISL_ASTATUS_FC1_LINK_DN, "link down", 1, 0},
+	{SISL_ASTATUS_FC1_LINK_UP, "link up", 1, 0},
 	{0x0, "", 0, 0}		/* terminator */
 };
 
@@ -1351,6 +1335,7 @@ static irqreturn_t cxlflash_async_err_irq(int irq, void *data)
 	const struct asyc_intr_info *info;
 	struct sisl_global_map *global = &afu->afu_map->global;
 	u64 reg;
+	u8 port;
 	int i;
 
 	cfg = afu->parent;
@@ -1373,24 +1358,26 @@ static irqreturn_t cxlflash_async_err_irq(int irq, void *data)
 		if ((reg_unmasked & 0x1) || !info)
 			continue;
 
-		pr_err("%s: %s, fc_status 0x%08llX\n", __func__, info->desc,
-		       readq_be(&global->fc_regs[info->port][FC_STATUS / 8]));
+		port = info->port;
+
+		pr_err("%s: FC Port %d -> %s, fc_status 0x%08llX\n",
+		       __func__, port, info->desc,
+		       readq_be(&global->fc_regs[port][FC_STATUS / 8]));
 
 		/*
 		 * do link reset first, some OTHER errors will set FC_ERROR
 		 * again if cleared before or w/o a reset
 		 */
 		if (info->action & LINK_RESET) {
-			pr_err("%s: fc %d: resetting link\n",
-			       __func__, info->port);
+			pr_err("%s: FC Port %d: resetting link\n",
+			       __func__, port);
 			cfg->lr_state = LINK_RESET_REQUIRED;
-			cfg->lr_port = info->port;
+			cfg->lr_port = port;
 			schedule_work(&cfg->work_q);
 		}
 
 		if (info->action & CLR_FC_ERROR) {
-			reg = readq_be(&global->fc_regs[info->port]
-				       [FC_ERROR / 8]);
+			reg = readq_be(&global->fc_regs[port][FC_ERROR / 8]);
 
 			/*
 			 * since all errors are unmasked, FC_ERROR and FC_ERRCAP
@@ -1398,14 +1385,10 @@ static irqreturn_t cxlflash_async_err_irq(int irq, void *data)
 			 */
 
 			pr_err("%s: fc %d: clearing fc_error 0x%08llX\n",
-			       __func__, info->port, reg);
+			       __func__, port, reg);
 
-			writeq_be(reg,
-				  &global->fc_regs[info->port][FC_ERROR /
-								   8]);
-			writeq_be(0,
-				  &global->fc_regs[info->port][FC_ERRCAP /
-								   8]);
+			writeq_be(reg, &global->fc_regs[port][FC_ERROR / 8]);
+			writeq_be(0, &global->fc_regs[port][FC_ERRCAP / 8]);
 		}
 	}
 
