@@ -1873,6 +1873,7 @@ static int init_afu(struct cxlflash_cfg *cfg)
 		term_mc(cfg, UNDO_START);
 		cxl_psa_unmap((void *)afu->afu_map);
 		afu->afu_map = NULL;
+		goto err1;
 	}
 
 	afu_err_intr_init(cfg->afu);
