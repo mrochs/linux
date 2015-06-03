@@ -59,22 +59,22 @@ int ba_init(struct ba_lun *ba_lun)
 	int last_word_underflow = 0;
 	u64 *lam;
 
-	cxlflash_info("Initializing LUN: lun_id = %llX, "
-		      "ba_lun->lsize = %lX, ba_lun->au_size = %lX",
-		      ba_lun->lun_id, ba_lun->lsize, ba_lun->au_size);
+	pr_info("%s: Initializing LUN: lun_id = %llX, "
+		"ba_lun->lsize = %lX, ba_lun->au_size = %lX\n",
+		__func__, ba_lun->lun_id, ba_lun->lsize, ba_lun->au_size);
 
 	/* Calculate bit map size */
 	lun_size_au = ba_lun->lsize / ba_lun->au_size;
 	if (lun_size_au == 0) {
-		cxlflash_err("Requested LUN size of 0!");
+		pr_err("%s: Requested LUN size of 0!\n", __func__);
 		return -EINVAL;
 	}
 
 	/* Allocate lun information container */
 	lun_info = kzalloc(sizeof(struct ba_lun_info), GFP_KERNEL);
 	if (unlikely(!lun_info)) {
-		cxlflash_err("Failed to allocate lun_info for lun_id %llX",
-			     ba_lun->lun_id);
+		pr_err("%s: Failed to allocate lun_info for lun_id %llX\n",
+		       __func__, ba_lun->lun_id);
 		return -ENOMEM;
 	}
 
@@ -88,8 +88,8 @@ int ba_init(struct ba_lun *ba_lun)
 	lun_info->lun_alloc_map = kzalloc((lun_info->lun_bmap_size *
 					   sizeof(u64)), GFP_KERNEL);
 	if (unlikely(!lun_info->lun_alloc_map)) {
-		cxlflash_err("Failed to allocate lun allocation map: "
-			     "lun_id = %llX", ba_lun->lun_id);
+		pr_err("%s: Failed to allocate lun allocation map: "
+		       "lun_id = %llX\n", __func__, ba_lun->lun_id);
 		kfree(lun_info);
 		return -ENOMEM;
 	}
@@ -116,8 +116,8 @@ int ba_init(struct ba_lun *ba_lun)
 	lun_info->aun_clone_map = kzalloc((lun_info->total_aus *
 					   sizeof(u8)), GFP_KERNEL);
 	if (unlikely(!lun_info->aun_clone_map)) {
-		cxlflash_err("Failed to allocate clone map: lun_id = %llX",
-			     ba_lun->lun_id);
+		pr_err("%s: Failed to allocate clone map: lun_id = %llX\n",
+		       __func__, ba_lun->lun_id);
 		kfree(lun_info->lun_alloc_map);
 		kfree(lun_info);
 		return -ENOMEM;
@@ -126,10 +126,10 @@ int ba_init(struct ba_lun *ba_lun)
 	/* Pass the allocated lun info as a handle to the user */
 	ba_lun->ba_lun_handle = (void *)lun_info;
 
-	cxlflash_info("Successfully initialized the LUN: "
-		      "lun_id = %llX, bitmap size = %X, free_aun_cnt = %llX",
-		      ba_lun->lun_id, lun_info->lun_bmap_size,
-		      lun_info->free_aun_cnt);
+	pr_info("%s: Successfully initialized the LUN: "
+		"lun_id = %llX, bitmap size = %X, free_aun_cnt = %llX\n",
+		__func__, ba_lun->lun_id, lun_info->lun_bmap_size,
+		lun_info->free_aun_cnt);
 	return 0;
 }
 
@@ -147,9 +147,10 @@ static int find_free_range(u32 low,
 			num_bits = (sizeof(*lam) * BITS_PER_BYTE);
 			bit_pos = find_first_bit(lam, num_bits);
 
-			cxlflash_dbg("Found free bit %llX in lun "
-				     "map entry %llX at bitmap index = %X",
-				     bit_pos, lun_info->lun_alloc_map[i], i);
+			pr_debug("%s: Found free bit %llX in lun "
+				 "map entry %llX at bitmap index = %X\n",
+				 __func__, bit_pos, lun_info->lun_alloc_map[i],
+				 i);
 
 			*bit_word = i;
 			lun_info->free_aun_cnt--;
@@ -168,13 +169,13 @@ static u64 ba_alloc(struct ba_lun *ba_lun)
 
 	lun_info = (struct ba_lun_info *)ba_lun->ba_lun_handle;
 
-	cxlflash_dbg("Received block allocation request: "
-		     "lun_id = %llX, free_aun_cnt = %llX",
-		     ba_lun->lun_id, lun_info->free_aun_cnt);
+	pr_debug("%s: Received block allocation request: "
+		 "lun_id = %llX, free_aun_cnt = %llX\n",
+		 __func__, ba_lun->lun_id, lun_info->free_aun_cnt);
 
 	if (lun_info->free_aun_cnt == 0) {
-		cxlflash_err("No space left on LUN: lun_id = %llX",
-			     ba_lun->lun_id);
+		pr_err("%s: No space left on LUN: lun_id = %llX\n",
+		       __func__, ba_lun->lun_id);
 		return -1ULL;
 	}
 
@@ -186,9 +187,8 @@ static u64 ba_alloc(struct ba_lun *ba_lun)
 					  lun_info->free_curr_idx,
 					  lun_info, &bit_word);
 		if (bit_pos == -1) {
-			cxlflash_err
-			    ("Could not find an allocation unit on LUN: "
-			     "lun_id = %llX", ba_lun->lun_id);
+			pr_err("%s: Could not find an allocation unit on LUN: "
+			       "lun_id = %llX\n", __func__, ba_lun->lun_id);
 			return -1ULL;
 		}
 	}
@@ -199,9 +199,10 @@ static u64 ba_alloc(struct ba_lun *ba_lun)
 	else
 		lun_info->free_curr_idx = bit_word;
 
-	cxlflash_dbg("Allocating AU number %llX, on lun_id %llX, "
-		     "free_aun_cnt = %llX", ((bit_word * 64) + bit_pos),
-		     ba_lun->lun_id, lun_info->free_aun_cnt);
+	pr_debug("%s: Allocating AU number %llX, on lun_id %llX, "
+		 "free_aun_cnt = %llX\n", __func__,
+		 ((bit_word * 64) + bit_pos), ba_lun->lun_id,
+		 lun_info->free_aun_cnt);
 
 	return (u64) ((bit_word * 64) + bit_pos);
 }
@@ -227,20 +228,19 @@ static int ba_free(struct ba_lun *ba_lun, u64 to_free)
 	lun_info = (struct ba_lun_info *)ba_lun->ba_lun_handle;
 
 	if (validate_alloc(lun_info, to_free)) {
-		cxlflash_err("The AUN %llX is not allocated on lun_id %llX",
-			     to_free, ba_lun->lun_id);
+		pr_err("%s: The AUN %llX is not allocated on lun_id %llX\n",
+		       __func__, to_free, ba_lun->lun_id);
 		return -1;
 	}
 
-	cxlflash_dbg("Received a request to free AU %llX on lun_id %llX, "
-		     "free_aun_cnt = %llX", to_free, ba_lun->lun_id,
-		     lun_info->free_aun_cnt);
+	pr_debug("%s: Received a request to free AU %llX on lun_id %llX, "
+		 "free_aun_cnt = %llX\n", __func__, to_free, ba_lun->lun_id,
+		 lun_info->free_aun_cnt);
 
 	if (lun_info->aun_clone_map[to_free] > 0) {
-		cxlflash_info("AUN %llX on lun_id %llX has been cloned. Clone "
-			      "count = %X",
-			      to_free, ba_lun->lun_id,
-			      lun_info->aun_clone_map[to_free]);
+		pr_info("%s: AUN %llX on lun_id %llX has been cloned. Clone "
+			"count = %X\n", __func__, to_free, ba_lun->lun_id,
+			lun_info->aun_clone_map[to_free]);
 		lun_info->aun_clone_map[to_free]--;
 		return 0;
 	}
@@ -256,9 +256,9 @@ static int ba_free(struct ba_lun *ba_lun, u64 to_free)
 	else if (idx > lun_info->free_high_idx)
 		lun_info->free_high_idx = idx;
 
-	cxlflash_dbg("Successfully freed AU at bit_pos %X, bit map index %X on "
-		     "lun_id %llX, free_aun_cnt = %llX", bit_pos, idx,
-		     ba_lun->lun_id, lun_info->free_aun_cnt);
+	pr_debug("%s: Successfully freed AU at bit_pos %X, bit map index %X on "
+		 "lun_id %llX, free_aun_cnt = %llX\n", __func__, bit_pos, idx,
+		 ba_lun->lun_id, lun_info->free_aun_cnt);
 
 	return 0;
 }
@@ -269,18 +269,17 @@ static int ba_clone(struct ba_lun *ba_lun, u64 to_clone)
 	    (struct ba_lun_info *)ba_lun->ba_lun_handle;
 
 	if (validate_alloc(lun_info, to_clone)) {
-		cxlflash_err("AUN %llX is not allocated on lun_id %llX",
-			     to_clone, ba_lun->lun_id);
+		pr_err("%s: AUN %llX is not allocated on lun_id %llX\n",
+		       __func__, to_clone, ba_lun->lun_id);
 		return -1;
 	}
 
-	cxlflash_info("Received a request to clone AUN %llX on lun_id %llX",
-		      to_clone, ba_lun->lun_id);
+	pr_info("%s: Received a request to clone AUN %llX on lun_id %llX\n",
+		__func__, to_clone, ba_lun->lun_id);
 
 	if (lun_info->aun_clone_map[to_clone] == MAX_AUN_CLONE_CNT) {
-		cxlflash_err
-		    ("AUN %llX on lun_id %llX has hit max clones already",
-		     to_clone, ba_lun->lun_id);
+		pr_err("%s: AUN %llX on lun_id %llX hit max clones already\n",
+		       __func__, to_clone, ba_lun->lun_id);
 		return -1;
 	}
 
@@ -327,12 +326,12 @@ static int cxlflash_init_ba(struct lun_info *lun_info)
 
 	rc = ba_init(&blka->ba_lun);
 	if (rc) {
-		cxlflash_err("cannot init block_alloc, rc=%d", rc);
+		pr_err("%s: cannot init block_alloc, rc=%d\n", __func__, rc);
 		goto cxlflash_init_ba_exit;
 	}
 
 cxlflash_init_ba_exit:
-	cxlflash_info("returning rc=%d lun_info=%p", rc, lun_info);
+	pr_info("%s: returning rc=%d lun_info=%p\n", __func__, rc, lun_info);
 	return rc;
 }
 
@@ -344,7 +343,7 @@ static int write_same16(struct afu *afu, struct lun_info *lun_info, u64 lba,
 
 	cmd = cxlflash_cmd_checkout(afu);
 	if (unlikely(!cmd)) {
-		cxlflash_err("could not get a free command");
+		pr_err("%s: could not get a free command\n", __func__);
 		rc = -1;
 		goto out;
 	}
@@ -363,8 +362,8 @@ static int write_same16(struct afu *afu, struct lun_info *lun_info, u64 lba,
 	put_unaligned_be64(lba, &cmd->rcb.cdb[2]);
 	put_unaligned_be32(nblks, &cmd->rcb.cdb[10]);
 
-	cxlflash_info("sending cmd(0x%x) with RCB EA=%p data EA=0x%llx",
-		      cmd->rcb.cdb[0], &cmd->rcb, cmd->rcb.data_ea);
+	pr_info("%s: sending cmd(0x%x) with RCB EA=%p data EA=0x%llx\n",
+		__func__, cmd->rcb.cdb[0], &cmd->rcb, cmd->rcb.data_ea);
 
 	do {
 		rc = cxlflash_send_cmd(afu, cmd);
@@ -374,7 +373,7 @@ static int write_same16(struct afu *afu, struct lun_info *lun_info, u64 lba,
 	} while (cxlflash_check_status(cmd));
 
 	if (unlikely(cmd->sa.host_use_b[0] & B_ERROR)) {
-		cxlflash_err("command failed");
+		pr_err("%s: command failed\n", __func__);
 		rc = -1;
 		goto out;
 	}
@@ -382,7 +381,7 @@ static int write_same16(struct afu *afu, struct lun_info *lun_info, u64 lba,
 out:
 	if (cmd)
 		cxlflash_cmd_checkin(cmd);
-	cxlflash_info("returning rc=%d", rc);
+	pr_info("%s: returning rc=%d\n", __func__, rc);
 	return rc;
 }
 
@@ -409,7 +408,7 @@ static int grow_lxt(struct afu *afu,
 	mutex_lock(&blka->mutex);
 	av_size = ba_space(&blka->ba_lun);
 	if (unlikely(av_size <= 0)) {
-		cxlflash_err("ba_space error: av_size %d", av_size);
+		pr_err("%s: ba_space error: av_size %d\n", __func__, av_size);
 		mutex_unlock(&blka->mutex);
 		return -ENOSPC;
 	}
@@ -449,8 +448,8 @@ static int grow_lxt(struct afu *afu,
 		 */
 		aun = ba_alloc(&blka->ba_lun);
 		if ((aun == -1ULL) || (aun >= blka->nchunk))
-			cxlflash_err("ba_alloc error: allocated chunk# %llX, "
-				     "max %llX", aun, blka->nchunk - 1);
+			pr_err("%s: ba_alloc error: allocated chunk# %llX, "
+			       "max %llX\n", __func__, aun, blka->nchunk - 1);
 
 		/* select both ports, use r/w perms from RHT */
 		lxt[i].rlba_base = ((aun << MC_CHUNK_SHIFT) |
@@ -478,7 +477,7 @@ static int grow_lxt(struct afu *afu,
 	/* free old lxt if reallocated */
 	if (lxt != lxt_old)
 		kfree(lxt_old);
-	cxlflash_dbg("returning");
+	pr_debug("%s: returning\n", __func__);
 	return 0;
 }
 
@@ -548,7 +547,7 @@ static int shrink_lxt(struct afu *afu,
 	/* free old lxt if reallocated */
 	if (lxt != lxt_old)
 		kfree(lxt_old);
-	cxlflash_dbg("returning");
+	pr_debug("%s: returning\n", __func__);
 	return 0;
 }
 
@@ -599,13 +598,13 @@ int cxlflash_vlun_resize(struct scsi_device *sdev,
 	    (lun_info->blk_len);
 	new_size = (nsectors + MC_CHUNK_SIZE - 1) / MC_CHUNK_SIZE;
 
-	cxlflash_info("ctxid=%llu res_hndl=0x%llx, req_size=0x%llx,"
-		      "new_size=%llx", ctxid, resize->rsrc_handle,
-		      resize->req_size, new_size);
+	pr_info("%s: ctxid=%llu res_hndl=0x%llx, req_size=0x%llx,"
+		"new_size=%llx\n", __func__, ctxid, resize->rsrc_handle,
+		resize->req_size, new_size);
 
 	if (unlikely(lun_info->mode != MODE_VIRTUAL)) {
-		cxlflash_err("LUN mode does not support resize! (%d)",
-			     lun_info->mode);
+		pr_err("%s: LUN mode does not support resize! (%d)\n",
+		       __func__, lun_info->mode);
 		rc = -EINVAL;
 		goto out;
 
@@ -613,14 +612,16 @@ int cxlflash_vlun_resize(struct scsi_device *sdev,
 
 	ctx_info = cxlflash_get_context(cfg, ctxid, lun_info, false);
 	if (unlikely(!ctx_info)) {
-		cxlflash_err("Invalid context! (%llu)", ctxid);
+		pr_err("%s: Invalid context! (%llu)\n",
+		       __func__, ctxid);
 		rc = -EINVAL;
 		goto out;
 	}
 
 	rht_entry = cxlflash_get_rhte(ctx_info, res_hndl, lun_info);
 	if (unlikely(!rht_entry)) {
-		cxlflash_err("Invalid resource handle! (%u)", res_hndl);
+		pr_err("%s: Invalid resource handle! (%u)\n",
+		       __func__, res_hndl);
 		rc = -EINVAL;
 		goto out;
 	}
@@ -651,7 +652,8 @@ int cxlflash_vlun_resize(struct scsi_device *sdev,
 out:
 	if (likely(ctx_info))
 		atomic_dec(&ctx_info->nrefs);
-	cxlflash_info("resized to %lld returning rc=%d", resize->last_lba, rc);
+	pr_info("%s: resized to %lld returning rc=%d\n",
+		__func__, resize->last_lba, rc);
 	return rc;
 }
 
@@ -694,13 +696,13 @@ int cxlflash_disk_virtual_open(struct scsi_device *sdev, void *arg)
 	struct ctx_info *ctx_info = NULL;
 	struct sisl_rht_entry *rht_entry = NULL;
 
-	cxlflash_info("ctxid=%llu ls=0x%llx", ctxid, lun_size);
+	pr_info("%s: ctxid=%llu ls=0x%llx\n", __func__, ctxid, lun_size);
 
 	if (lun_info->mode == MODE_NONE) {
 		rc = cxlflash_init_ba(lun_info);
 		if (rc) {
-			cxlflash_err("call to cxlflash_init_ba failed "
-				     "rc=%d!", rc);
+			pr_err("%s: call to cxlflash_init_ba failed rc=%d!\n",
+			       __func__, rc);
 			rc = -ENOMEM;
 			goto out;
 		}
@@ -708,20 +710,22 @@ int cxlflash_disk_virtual_open(struct scsi_device *sdev, void *arg)
 
 	rc = cxlflash_lun_attach(lun_info, MODE_VIRTUAL);
 	if (unlikely(rc)) {
-		cxlflash_err("Failed to attach to LUN! mode=%u", MODE_VIRTUAL);
+		pr_err("%s: Failed to attach to LUN! mode=%u\n",
+		       __func__, MODE_VIRTUAL);
 		goto out;
 	}
 
 	ctx_info = cxlflash_get_context(cfg, ctxid, lun_info, false);
 	if (unlikely(!ctx_info)) {
-		cxlflash_err("Invalid context! (%llu)", ctxid);
+		pr_err("%s: Invalid context! (%llu)\n",
+		       __func__, ctxid);
 		rc = -EINVAL;
 		goto err1;
 	}
 
 	rht_entry = rhte_checkout(ctx_info, lun_info);
 	if (unlikely(!rht_entry)) {
-		cxlflash_err("too many opens for this context");
+		pr_err("%s: too many opens for this context\n", __func__);
 		rc = -EMFILE;	/* too many opens  */
 		goto err1;
 	}
@@ -737,7 +741,7 @@ int cxlflash_disk_virtual_open(struct scsi_device *sdev, void *arg)
 	resize.rsrc_handle = rsrc_handle;
 	rc = cxlflash_vlun_resize(sdev, &resize);
 	if (rc) {
-		cxlflash_err("resize failed rc %d", rc);
+		pr_err("%s: resize failed rc %d\n", __func__, rc);
 		goto err2;
 	}
 	last_lba = resize.last_lba;
@@ -749,8 +753,8 @@ int cxlflash_disk_virtual_open(struct scsi_device *sdev, void *arg)
 out:
 	if (likely(ctx_info))
 		atomic_dec(&ctx_info->nrefs);
-	cxlflash_info("returning handle 0x%llx rc=%d llba %lld",
-		      rsrc_handle, rc, last_lba);
+	pr_info("%s: returning handle 0x%llx rc=%d llba %lld\n",
+		__func__, rsrc_handle, rc, last_lba);
 	return rc;
 
 err2:
@@ -841,6 +845,6 @@ int cxlflash_clone_lxt(struct afu *afu,
 
 	cxlflash_afu_sync(afu, ctx_hndl_u, res_hndl_u, AFU_LW_SYNC);
 
-	cxlflash_dbg("returning");
+	pr_debug("%s: returning\n", __func__);
 	return 0;
 }

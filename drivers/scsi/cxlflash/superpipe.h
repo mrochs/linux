@@ -17,36 +17,6 @@
 
 extern struct cxlflash_global global;
 
-/*
- * Error logging macros
- *
- * These wrappers around pr|dev_* add the function name and newline character
- * automatically, avoiding the need to include them inline with each trace
- * statement and saving line width.
- *
- * The parameters must be split into the format string and variable list of
- * parameters in order to support concatenation of the function format
- * specifier and newline character. The CONFN macro is a helper to simplify
- * the contactenation and make it easier to change the desired format. Lastly,
- * the variable list is passed with a dummy concatenation. This trick is used
- * to support the case where no parameters are passed and the user simply
- * desires a single string trace.
- */
-#define CONFN(_s) "%s: "_s"\n"
-#define cxlflash_err(_s,   ...)	pr_err(CONFN(_s),   __func__, ##__VA_ARGS__)
-#define cxlflash_warn(_s,  ...)	pr_warn(CONFN(_s),  __func__, ##__VA_ARGS__)
-#define cxlflash_info(_s,  ...)	pr_info(CONFN(_s),  __func__, ##__VA_ARGS__)
-#define cxlflash_dbg(_s, ...)	pr_debug(CONFN(_s), __func__, ##__VA_ARGS__)
-
-#define cxlflash_dev_err(_d, _s, ...)	\
-	dev_err(_d, CONFN(_s), __func__, ##__VA_ARGS__)
-#define cxlflash_dev_warn(_d, _s, ...)	\
-	dev_warn(_d, CONFN(_s), __func__, ##__VA_ARGS__)
-#define cxlflash_dev_info(_d, _s, ...)	\
-	dev_info(_d, CONFN(_s), __func__, ##__VA_ARGS__)
-#define cxlflash_dev_dbg(_d, _s, ...)	\
-	dev_dbg(_d, CONFN(_s), __func__, ##__VA_ARGS__)
-
 /*----------------------------------------------------------------------------*/
 /* Constants                                                                  */
 /*----------------------------------------------------------------------------*/
