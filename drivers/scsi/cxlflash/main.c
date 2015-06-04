@@ -1533,8 +1533,8 @@ void cxlflash_context_reset(struct afu_cmd *cmd)
 	spin_unlock_irqrestore(&cmd->slock, lock_flags);
 
 	do {
-		afu->room = readq_be(&afu->host_map->cmd_room);
-		if (afu->room)
+		afu->room.counter = readq_be(&afu->host_map->cmd_room);
+		if (afu->room.counter)
 			break;
 		/*
 		 * We really want to send this reset at all costs, so
@@ -1543,7 +1543,7 @@ void cxlflash_context_reset(struct afu_cmd *cmd)
 		udelay(nretry);
 	} while (nretry++ < MC_ROOM_RETRY_CNT);
 
-	if (afu->room) {
+	if (afu->room.counter) {
 		nretry = 0;
 		writeq_be(rrin, &afu->host_map->ioarrin);
 		do {
@@ -1883,16 +1883,18 @@ int cxlflash_send_cmd(struct afu *afu, struct afu_cmd *cmd)
 	/* send_cmd is used by critical users such an AFU sync and to
 	 * send a task management function (TMF). So we do want to retry
 	 * a bit before returning an error.
+	 * Also, try and avoid an MMIO for every command.
 	 */
-	do {
-		afu->room = readq_be(&afu->host_map->cmd_room);
-		if (afu->room)
-			break;
-		udelay(nretry);
-	} while (nretry++ < MC_ROOM_RETRY_CNT);
+	if (atomic64_dec_and_test(&afu->room))
+		do {
+			afu->room.counter = readq_be(&afu->host_map->cmd_room);
+			if (afu->room.counter)
+				break;
+			udelay(nretry);
+		} while (nretry++ < MC_ROOM_RETRY_CNT);
 
 	/* Write IOARRIN */
-	if (afu->room)
+	if (afu->room.counter)
 		writeq_be((u64)&cmd->rcb, &afu->host_map->ioarrin);
 	else {
 		pr_err("%s: no cmd_room to send 0x%X\n",
