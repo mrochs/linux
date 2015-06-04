@@ -1533,8 +1533,8 @@ void cxlflash_context_reset(struct afu_cmd *cmd)
 	spin_unlock_irqrestore(&cmd->slock, lock_flags);
 
 	do {
-		afu->room.counter = readq_be(&afu->host_map->cmd_room);
-		if (afu->room.counter)
+		atomic64_set(&afu->room, readq_be(&afu->host_map->cmd_room));
+		if (atomic64_read(&afu->room))
 			break;
 		/*
 		 * We really want to send this reset at all costs, so
@@ -1543,7 +1543,7 @@ void cxlflash_context_reset(struct afu_cmd *cmd)
 		udelay(nretry);
 	} while (nretry++ < MC_ROOM_RETRY_CNT);
 
-	if (afu->room.counter) {
+	if (atomic64_read(&afu->room)) {
 		nretry = 0;
 		writeq_be(rrin, &afu->host_map->ioarrin);
 		do {
@@ -1822,7 +1822,6 @@ static int init_afu(struct cxlflash_cfg *cfg)
 	struct afu *afu = cfg->afu;
 	struct device *dev = &cfg->dev->dev;
 
-
 	rc = init_mc(cfg);
 	if (rc) {
 		dev_err(dev, "%s: call to init_mc failed, rc=%d!\n",
@@ -1860,6 +1859,7 @@ static int init_afu(struct cxlflash_cfg *cfg)
 	}
 
 	afu_err_intr_init(cfg->afu);
+	atomic64_set(&afu->room, readq_be(&afu->host_map->cmd_room));
 
 err1:
 	pr_debug("%s: returning rc=%d\n", __func__, rc);
@@ -1887,14 +1887,15 @@ int cxlflash_send_cmd(struct afu *afu, struct afu_cmd *cmd)
 	 */
 	if (atomic64_dec_and_test(&afu->room))
 		do {
-			afu->room.counter = readq_be(&afu->host_map->cmd_room);
-			if (afu->room.counter)
+			atomic64_set(&afu->room,
+				     readq_be(&afu->host_map->cmd_room));
+			if (atomic64_read(&afu->room))
 				break;
 			udelay(nretry);
 		} while (nretry++ < MC_ROOM_RETRY_CNT);
 
 	/* Write IOARRIN */
-	if (afu->room.counter)
+	if (atomic64_read(&afu->room))
 		writeq_be((u64)&cmd->rcb, &afu->host_map->ioarrin);
 	else {
 		pr_err("%s: no cmd_room to send 0x%X\n",
