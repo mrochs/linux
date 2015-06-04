@@ -772,15 +772,15 @@ static void cxlflash_remove(struct pci_dev *pdev)
 	struct cxlflash_cfg *cfg = pci_get_drvdata(pdev);
 
 	switch (cfg->init_state) {
-	case INIT_STATE_PCI:
-		pci_release_regions(cfg->dev);
-		pci_disable_device(pdev);
-		/* Fall through */
 	case INIT_STATE_SCSI:
 		scsi_remove_host(cfg->host);
 		scsi_host_put(cfg->host);
+		/* Fall through */
 	case INIT_STATE_AFU:
 		term_afu(cfg);
+	case INIT_STATE_PCI:
+		pci_release_regions(cfg->dev);
+		pci_disable_device(pdev);
 	case INIT_STATE_NONE:
 		flush_work(&cfg->work_q);
 		free_mem(cfg);
