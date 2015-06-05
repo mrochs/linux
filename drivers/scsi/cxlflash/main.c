@@ -221,6 +221,7 @@ static void cmd_complete(struct afu_cmd *cmd)
 	unsigned long flags = 0UL;
 	struct afu *afu = cmd->parent;
 	struct cxlflash_cfg *cfg = afu->parent;
+	bool cmd_is_tmf;
 
 	spin_lock_irqsave(&cmd->slock, lock_flags);
 	cmd->sa.host_use_b[0] |= B_DONE;
@@ -236,12 +237,7 @@ static void cmd_complete(struct afu_cmd *cmd)
 			scp->result = (DID_OK << 16);
 
 		resid = cmd->sa.resid;
-		if (cmd->cmd_tmf) {
-			spin_lock_irqsave(&cfg->tmf_waitq.lock, flags);
-			cfg->tmf_active = false;
-			wake_up_all_locked(&cfg->tmf_waitq);
-			spin_unlock_irqrestore(&cfg->tmf_waitq.lock, flags);
-		}
+		cmd_is_tmf = cmd->cmd_tmf;
 		cxlflash_cmd_checkin(cmd); /* Don't use cmd after here */
 
 		pr_debug("%s: calling scsi_set_resid, scp=%p "
@@ -251,6 +247,12 @@ static void cmd_complete(struct afu_cmd *cmd)
 		scsi_set_resid(scp, resid);
 		scsi_dma_unmap(scp);
 		scp->scsi_done(scp);
+		if (cmd_is_tmf) {
+			spin_lock_irqsave(&cfg->tmf_waitq.lock, flags);
+			cfg->tmf_active = false;
+			wake_up_all_locked(&cfg->tmf_waitq);
+			spin_unlock_irqrestore(&cfg->tmf_waitq.lock, flags);
+		}
 
 	} else
 		complete(&cmd->cevent);
@@ -292,7 +294,6 @@ static int send_tmf(struct afu *afu, struct scsi_cmnd *scp, u64 tmfcmd)
 						    !cfg->tmf_active);
 	cfg->tmf_active = true;
 	cmd->cmd_tmf = true;
-	pr_info("sending TMF command\n");
 	spin_unlock_irqrestore(&cfg->tmf_waitq.lock, flags);
 
 	cmd->rcb.ctx_id = afu->ctx_hndl;
@@ -317,6 +318,11 @@ static int send_tmf(struct afu *afu, struct scsi_cmnd *scp, u64 tmfcmd)
 		wait_event_interruptible_locked_irq(cfg->tmf_waitq,
 						    !cfg->tmf_active);
 		spin_unlock_irqrestore(&cfg->tmf_waitq.lock, flags);
+	} else {
+		spin_lock_irqsave(&cfg->tmf_waitq.lock, flags);
+		cfg->tmf_active = false;
+		spin_unlock_irqrestore(&cfg->tmf_waitq.lock, flags);
+		cxlflash_cmd_checkin(cmd); 
 	}
 out:
 	return rc;
@@ -414,6 +420,8 @@ static int cxlflash_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *scp)
 
 	/* Send the command */
 	rc = cxlflash_send_cmd(afu, cmd);
+	if (rc)
+		cxlflash_cmd_checkin(cmd); 
 
 out:
 	return rc;
@@ -433,6 +441,7 @@ static int cxlflash_eh_device_reset_handler(struct scsi_cmnd *scp)
 	struct Scsi_Host *host = scp->device->host;
 	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)host->hostdata;
 	struct afu *afu = cfg->afu;
+	int rcr = 0;
 
 	pr_debug("%s: (scp=%p) %d/%d/%d/%llu "
 		 "cdb=(%08X-%08X-%08X-%08X)\n", __func__, scp,
@@ -443,7 +452,11 @@ static int cxlflash_eh_device_reset_handler(struct scsi_cmnd *scp)
 		 get_unaligned_be32(&((u32 *)scp->cmnd)[2]),
 		 get_unaligned_be32(&((u32 *)scp->cmnd)[3]));
 
-	send_tmf(afu, scp, TMF_LUN_RESET);
+	rcr = send_tmf(afu, scp, TMF_LUN_RESET);
+	if (rcr == 0)
+		rc = SUCCESS;
+	else
+		rc = FAILED;
 
 	pr_debug("%s: returning rc=%d\n", __func__, rc);
 	return rc;
@@ -2032,10 +2045,14 @@ retry:
 	rc = cxlflash_send_cmd(afu, cmd);
 	if (likely(!rc))
 		cxlflash_wait_resp(afu, cmd);
-
-	if (unlikely((cmd->sa.ioasc != 0) ||
-		     (cmd->sa.host_use_b[0] & B_ERROR))) /* set on timeout */
-		rc = -1;
+	if (rc)
+		cxlflash_cmd_checkin(cmd); 
+	else {
+		/* set on timeout */
+		if (unlikely((cmd->sa.ioasc != 0) ||
+		             (cmd->sa.host_use_b[0] & B_ERROR))) 
+			rc = -1;
+	}
 
 out:
 	mutex_unlock(&sync_active);
