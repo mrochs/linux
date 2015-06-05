@@ -133,10 +133,12 @@ static void process_cmd_err(struct afu_cmd *cmd, struct scsi_cmnd *scp)
 
 	if (ioasa->rc.scsi_rc) {
 		/* We have a SCSI status */
-		if (ioasa->rc.flags & SISL_RC_FLAGS_SENSE_VALID)
+		if (ioasa->rc.flags & SISL_RC_FLAGS_SENSE_VALID) {
 			memcpy(scp->sense_buffer, ioasa->sense_data,
 			       SISL_SENSE_DATA_LEN);
-		scp->result = ioasa->rc.scsi_rc | (DID_ERROR << 16);
+			scp->result = ioasa->rc.scsi_rc;
+		} else
+			scp->result = ioasa->rc.scsi_rc | (DID_ERROR << 16);
 	}
 
 	/*
