@@ -1935,33 +1935,34 @@ int cxlflash_send_cmd(struct afu *afu, struct afu_cmd *cmd)
 {
 	int nretry = 0;
 	int rc = 0;
+	u64 room;
 
-	/* send_cmd is used by critical users such an AFU sync and to
-	 * send a task management function (TMF). So we do want to retry
-	 * a bit before returning an error.
-	 * Also, try and avoid an MMIO for every command.
+	/*
+	 * This routine is used by critical users such an AFU sync and to
+	 * send a task management function (TMF). Thus we want to retry a
+	 * bit before returning an error. To avoid the performance penalty
+	 * of MMIO, we spread the update of 'room' over multiple commands.
 	 */
-	if (atomic64_dec_and_test(&afu->room))
+	if (atomic64_dec_and_test(&afu->room)) {
 		do {
-			atomic64_set(&afu->room,
-				     readq_be(&afu->host_map->cmd_room));
-			if (atomic64_read(&afu->room))
-				break;
+			room = readq_be(&afu->host_map->cmd_room);
+			atomic64_set(&afu->room, room);
+			if (room)
+				goto write_ioarrin;
 			udelay(nretry);
 		} while (nretry++ < MC_ROOM_RETRY_CNT);
 
-	/* Write IOARRIN */
-	if (atomic64_read(&afu->room))
-		writeq_be((u64)&cmd->rcb, &afu->host_map->ioarrin);
-	else {
 		pr_err("%s: no cmd_room to send 0x%X\n",
 		       __func__, cmd->rcb.cdb[0]);
 		rc = SCSI_MLQUEUE_HOST_BUSY;
+		goto out;
 	}
 
+write_ioarrin:
+	writeq_be((u64)&cmd->rcb, &afu->host_map->ioarrin);
+out:
 	pr_debug("%s: cmd=%p len=%d ea=%p rc=%d\n", __func__, cmd,
 		 cmd->rcb.data_len, (void *)cmd->rcb.data_ea, rc);
-
 	return rc;
 }
 
