@@ -91,7 +91,7 @@ struct cxlflash_cfg {
 
 	ulong cxlflash_regs_pci;
 
-	wait_queue_head_t eeh_wait_q;
+	wait_queue_head_t eeh_waitq;
 
 	struct work_struct work_q;
 	enum cxlflash_init_state init_state;

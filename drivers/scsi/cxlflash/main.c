@@ -626,7 +626,7 @@ static void cxlflash_wait_for_pci_err_recovery(struct cxlflash_cfg *cfg)
 	struct pci_dev *pdev = cfg->dev;
 
 	if (pci_channel_offline(pdev))
-		wait_event_timeout(cfg->eeh_wait_q,
+		wait_event_timeout(cfg->eeh_waitq,
 				   !pci_channel_offline(pdev),
 				   CXLFLASH_PCI_ERROR_RECOVERY_TIMEOUT);
 }
@@ -2160,7 +2160,7 @@ static int cxlflash_probe(struct pci_dev *pdev,
 	cfg->num_user_contexts = 0;
 
 	init_waitqueue_head(&cfg->tmf_waitq);
-	init_waitqueue_head(&cfg->eeh_wait_q);
+	init_waitqueue_head(&cfg->eeh_waitq);
 
 	INIT_WORK(&cfg->work_q, cxlflash_worker_thread);
 	cfg->lr_state = LINK_RESET_INVALID;
