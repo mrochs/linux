@@ -912,6 +912,14 @@ int cxl_reset(struct cxl *adapter)
 	int i;
 	u32 val;
 
+#ifdef CONFIG_CXL_EEH
+	if (adapter->perst_same_image) {
+		dev_warn(&dev->dev,
+			 "cxl: refusing to reset/reflash when perst_reloads_same_image is set.\n");
+		return -EINVAL;
+	}
+#endif
+
 	dev_info(&dev->dev, "CXL reset\n");
 
 	/* pcie_warm_reset requests a fundamental pci reset which includes a
@@ -1185,6 +1193,9 @@ static struct cxl *cxl_init_adapter(struct pci_dev *dev)
 	 * configure/reconfigure
 	 */
 	adapter->perst_loads_image = true;
+#ifdef CONFIG_CXL_EEH
+	adapter->perst_same_image = false;
+#endif
 
 	if ((rc = cxl_configure_adapter(adapter, dev))) {
 		pci_disable_device(dev);
