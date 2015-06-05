@@ -218,7 +218,6 @@ static void cmd_complete(struct afu_cmd *cmd)
 	struct scsi_cmnd *scp;
 	u32 resid;
 	ulong lock_flags;
-	unsigned long flags = 0UL;
 	struct afu *afu = cmd->parent;
 	struct cxlflash_cfg *cfg = afu->parent;
 	bool cmd_is_tmf;
@@ -247,13 +246,14 @@ static void cmd_complete(struct afu_cmd *cmd)
 		scsi_set_resid(scp, resid);
 		scsi_dma_unmap(scp);
 		scp->scsi_done(scp);
+
 		if (cmd_is_tmf) {
-			spin_lock_irqsave(&cfg->tmf_waitq.lock, flags);
+			spin_lock_irqsave(&cfg->tmf_waitq.lock, lock_flags);
 			cfg->tmf_active = false;
 			wake_up_all_locked(&cfg->tmf_waitq);
-			spin_unlock_irqrestore(&cfg->tmf_waitq.lock, flags);
+			spin_unlock_irqrestore(&cfg->tmf_waitq.lock,
+					       lock_flags);
 		}
-
 	} else
 		complete(&cmd->cevent);
 }
@@ -276,7 +276,7 @@ static int send_tmf(struct afu *afu, struct scsi_cmnd *scp, u64 tmfcmd)
 	short lflag = 0;
 	struct Scsi_Host *host = scp->device->host;
 	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)host->hostdata;
-	unsigned long flags = 0UL;
+	ulong lock_flags;
 	int rc = 0;
 
 	cmd = cxlflash_cmd_checkout(afu);
@@ -288,13 +288,13 @@ static int send_tmf(struct afu *afu, struct scsi_cmnd *scp, u64 tmfcmd)
 
 	/* If a Task Management Function is active, do not send one more.
 	 */
-	spin_lock_irqsave(&cfg->tmf_waitq.lock, flags);
+	spin_lock_irqsave(&cfg->tmf_waitq.lock, lock_flags);
 	if (cfg->tmf_active)
 		wait_event_interruptible_locked_irq(cfg->tmf_waitq,
 						    !cfg->tmf_active);
 	cfg->tmf_active = true;
 	cmd->cmd_tmf = true;
-	spin_unlock_irqrestore(&cfg->tmf_waitq.lock, flags);
+	spin_unlock_irqrestore(&cfg->tmf_waitq.lock, lock_flags);
 
 	cmd->rcb.ctx_id = afu->ctx_hndl;
 	cmd->rcb.port_sel = port_sel;
@@ -303,7 +303,7 @@ static int send_tmf(struct afu *afu, struct scsi_cmnd *scp, u64 tmfcmd)
 	lflag = SISL_REQ_FLAGS_TMF_CMD;
 
 	cmd->rcb.req_flags = (SISL_REQ_FLAGS_PORT_LUN_ID |
-				SISL_REQ_FLAGS_SUP_UNDERRUN | lflag);
+			      SISL_REQ_FLAGS_SUP_UNDERRUN | lflag);
 
 	/* Stash the scp in the reserved field, for reuse during interrupt */
 	cmd->rcb.scp = scp;
@@ -313,20 +313,19 @@ static int send_tmf(struct afu *afu, struct scsi_cmnd *scp, u64 tmfcmd)
 
 	/* Send the command */
 	rc = cxlflash_send_cmd(afu, cmd);
-	if (!rc) {
-		spin_lock_irqsave(&cfg->tmf_waitq.lock, flags);
-		wait_event_interruptible_locked_irq(cfg->tmf_waitq,
-						    !cfg->tmf_active);
-		spin_unlock_irqrestore(&cfg->tmf_waitq.lock, flags);
-	} else {
-		spin_lock_irqsave(&cfg->tmf_waitq.lock, flags);
+	if (unlikely(rc)) {
+		cxlflash_cmd_checkin(cmd);
+		spin_lock_irqsave(&cfg->tmf_waitq.lock, lock_flags);
 		cfg->tmf_active = false;
-		spin_unlock_irqrestore(&cfg->tmf_waitq.lock, flags);
-		cxlflash_cmd_checkin(cmd); 
+		spin_unlock_irqrestore(&cfg->tmf_waitq.lock, lock_flags);
+		goto out;
 	}
+
+	spin_lock_irqsave(&cfg->tmf_waitq.lock, lock_flags);
+	wait_event_interruptible_locked_irq(cfg->tmf_waitq, !cfg->tmf_active);
+	spin_unlock_irqrestore(&cfg->tmf_waitq.lock, lock_flags);
 out:
 	return rc;
-
 }
 
 /**
@@ -358,7 +357,7 @@ static int cxlflash_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *scp)
 	u32 port_sel = scp->device->channel + 1;
 	int nseg, i, ncount;
 	struct scatterlist *sg;
-	unsigned long flags = 0UL;
+	ulong lock_flags;
 	short lflag = 0;
 	int rc = 0;
 
@@ -373,11 +372,11 @@ static int cxlflash_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *scp)
 	/* If a Task Management Function is active, wait for it to complete
 	 * before continuing with regular commands.
 	 */
-	spin_lock_irqsave(&cfg->tmf_waitq.lock, flags);
+	spin_lock_irqsave(&cfg->tmf_waitq.lock, lock_flags);
 	if (cfg->tmf_active)
 		wait_event_interruptible_locked_irq(cfg->tmf_waitq,
 						    !cfg->tmf_active);
-	spin_unlock_irqrestore(&cfg->tmf_waitq.lock, flags);
+	spin_unlock_irqrestore(&cfg->tmf_waitq.lock, lock_flags);
 
 	cmd = cxlflash_cmd_checkout(afu);
 	if (unlikely(!cmd)) {
@@ -396,7 +395,7 @@ static int cxlflash_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *scp)
 		lflag = SISL_REQ_FLAGS_HOST_READ;
 
 	cmd->rcb.req_flags = (SISL_REQ_FLAGS_PORT_LUN_ID |
-				SISL_REQ_FLAGS_SUP_UNDERRUN | lflag);
+			      SISL_REQ_FLAGS_SUP_UNDERRUN | lflag);
 
 	/* Stash the scp in the reserved field, for reuse during interrupt */
 	cmd->rcb.scp = scp;
@@ -420,8 +419,10 @@ static int cxlflash_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *scp)
 
 	/* Send the command */
 	rc = cxlflash_send_cmd(afu, cmd);
-	if (rc)
-		cxlflash_cmd_checkin(cmd); 
+	if (unlikely(rc)) {
+		cxlflash_cmd_checkin(cmd);
+		scsi_dma_unmap(scp);
+	}
 
 out:
 	return rc;
@@ -453,9 +454,7 @@ static int cxlflash_eh_device_reset_handler(struct scsi_cmnd *scp)
 		 get_unaligned_be32(&((u32 *)scp->cmnd)[3]));
 
 	rcr = send_tmf(afu, scp, TMF_LUN_RESET);
-	if (rcr == 0)
-		rc = SUCCESS;
-	else
+	if (unlikely(rcr))
 		rc = FAILED;
 
 	pr_debug("%s: returning rc=%d\n", __func__, rc);
@@ -817,17 +816,16 @@ static void term_afu(struct cxlflash_cfg *cfg)
 static void cxlflash_remove(struct pci_dev *pdev)
 {
 	struct cxlflash_cfg *cfg = pci_get_drvdata(pdev);
-	unsigned long flags = 0UL;
+	ulong lock_flags;
 
 	/* If a Task Management Function is active, wait for it to complete
 	 * before continuing with remove.
 	 */
-	spin_lock_irqsave(&cfg->tmf_waitq.lock, flags);
+	spin_lock_irqsave(&cfg->tmf_waitq.lock, lock_flags);
 	if (cfg->tmf_active)
 		wait_event_interruptible_locked_irq(cfg->tmf_waitq,
 						    !cfg->tmf_active);
-
-	spin_unlock_irqrestore(&cfg->tmf_waitq.lock, flags);
+	spin_unlock_irqrestore(&cfg->tmf_waitq.lock, lock_flags);
 
 	switch (cfg->init_state) {
 	case INIT_STATE_SCSI:
@@ -2043,17 +2041,15 @@ retry:
 	*((u32 *)&cmd->rcb.cdb[4]) = swab32(res_hndl_u);
 
 	rc = cxlflash_send_cmd(afu, cmd);
-	if (likely(!rc))
-		cxlflash_wait_resp(afu, cmd);
-	if (rc)
-		cxlflash_cmd_checkin(cmd); 
-	else {
-		/* set on timeout */
-		if (unlikely((cmd->sa.ioasc != 0) ||
-		             (cmd->sa.host_use_b[0] & B_ERROR))) 
-			rc = -1;
-	}
+	if (unlikely(rc))
+		goto out;
 
+	cxlflash_wait_resp(afu, cmd);
+
+	/* set on timeout */
+	if (unlikely((cmd->sa.ioasc != 0) ||
+		     (cmd->sa.host_use_b[0] & B_ERROR)))
+		rc = -1;
 out:
 	mutex_unlock(&sync_active);
 	if (cmd)

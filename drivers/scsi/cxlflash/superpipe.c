@@ -353,10 +353,8 @@ static int read_cap16(struct afu *afu, struct lun_info *lun_info, u32 port_sel)
 
 	do {
 		rc = cxlflash_send_cmd(afu, cmd);
-		if (unlikely(rc)) {
-			cxlflash_cmd_checkin(cmd);
-			break;
-		}
+		if (unlikely(rc))
+			goto out;
 		cxlflash_wait_resp(afu, cmd);
 	} while (cxlflash_check_status(cmd));
 
