@@ -83,6 +83,7 @@ void cxlflash_cmd_checkin(struct afu_cmd *cmd)
 	cmd->rcb.scp = NULL;
 	cmd->rcb.timeout = 0;
 	cmd->sa.ioasc = 0;
+	cmd->cmd_tmf = false;
 	cmd->sa.host_use[0] = 0; /* clears both completion and retry bytes */
 
 	if (unlikely(atomic_inc_return(&cmd->free) != 1)) {
@@ -215,6 +216,9 @@ static void cmd_complete(struct afu_cmd *cmd)
 	struct scsi_cmnd *scp;
 	u32 resid;
 	ulong lock_flags;
+	unsigned long flags = 0UL;
+	struct afu *afu = cmd->parent;
+	struct cxlflash_cfg *cfg = afu->parent;
 
 	spin_lock_irqsave(&cmd->slock, lock_flags);
 	cmd->sa.host_use_b[0] |= B_DONE;
@@ -230,6 +234,12 @@ static void cmd_complete(struct afu_cmd *cmd)
 			scp->result = (DID_OK << 16);
 
 		resid = cmd->sa.resid;
+		if (cmd->cmd_tmf) {
+			spin_lock_irqsave(&cfg->tmf_waitq.lock, flags);
+			cfg->tmf_active = false;
+			wake_up_all_locked(&cfg->tmf_waitq);
+			spin_unlock_irqrestore(&cfg->tmf_waitq.lock, flags);
+		}
 		cxlflash_cmd_checkin(cmd); /* Don't use cmd after here */
 
 		pr_debug("%s: calling scsi_set_resid, scp=%p "
@@ -262,9 +272,8 @@ static int send_tmf(struct afu *afu, struct scsi_cmnd *scp, u64 tmfcmd)
 	short lflag = 0;
 	struct Scsi_Host *host = scp->device->host;
 	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)host->hostdata;
+	unsigned long flags = 0UL;
 	int rc = 0;
-
-	write_lock(&cfg->tmf_lock);
 
 	cmd = cxlflash_cmd_checkout(afu);
 	if (unlikely(!cmd)) {
@@ -272,6 +281,17 @@ static int send_tmf(struct afu *afu, struct scsi_cmnd *scp, u64 tmfcmd)
 		rc = SCSI_MLQUEUE_HOST_BUSY;
 		goto out;
 	}
+
+	/* If a Task Management Function is active, do not send one more.
+	 */
+	spin_lock_irqsave(&cfg->tmf_waitq.lock, flags);
+	if (cfg->tmf_active)
+		wait_event_interruptible_locked_irq(cfg->tmf_waitq,
+						    !cfg->tmf_active);
+	cfg->tmf_active = true;
+	cmd->cmd_tmf = true;
+	pr_info("sending TMF command\n");
+	spin_unlock_irqrestore(&cfg->tmf_waitq.lock, flags);
 
 	cmd->rcb.ctx_id = afu->ctx_hndl;
 	cmd->rcb.port_sel = port_sel;
@@ -290,8 +310,13 @@ static int send_tmf(struct afu *afu, struct scsi_cmnd *scp, u64 tmfcmd)
 
 	/* Send the command */
 	rc = cxlflash_send_cmd(afu, cmd);
+	if (!rc) {
+		spin_lock_irqsave(&cfg->tmf_waitq.lock, flags);
+		wait_event_interruptible_locked_irq(cfg->tmf_waitq,
+						    !cfg->tmf_active);
+		spin_unlock_irqrestore(&cfg->tmf_waitq.lock, flags);
+	}
 out:
-	write_unlock(&cfg->tmf_lock);
 	return rc;
 
 }
@@ -325,6 +350,7 @@ static int cxlflash_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *scp)
 	u32 port_sel = scp->device->channel + 1;
 	int nseg, i, ncount;
 	struct scatterlist *sg;
+	unsigned long flags = 0UL;
 	short lflag = 0;
 	int rc = 0;
 
@@ -336,7 +362,14 @@ static int cxlflash_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *scp)
 		 get_unaligned_be32(&((u32 *)scp->cmnd)[2]),
 		 get_unaligned_be32(&((u32 *)scp->cmnd)[3]));
 
-	read_lock(&cfg->tmf_lock);
+	/* If a Task Management Function is active, wait for it to complete
+	 * before continuing with regular commands.
+	 */
+	spin_lock_irqsave(&cfg->tmf_waitq.lock, flags);
+	if (cfg->tmf_active)
+		wait_event_interruptible_locked_irq(cfg->tmf_waitq,
+						    !cfg->tmf_active);
+	spin_unlock_irqrestore(&cfg->tmf_waitq.lock, flags);
 
 	cmd = cxlflash_cmd_checkout(afu);
 	if (unlikely(!cmd)) {
@@ -381,7 +414,6 @@ static int cxlflash_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *scp)
 	rc = cxlflash_send_cmd(afu, cmd);
 
 out:
-	read_unlock(&cfg->tmf_lock);
 	return rc;
 }
 
@@ -770,6 +802,17 @@ static void term_afu(struct cxlflash_cfg *cfg)
 static void cxlflash_remove(struct pci_dev *pdev)
 {
 	struct cxlflash_cfg *cfg = pci_get_drvdata(pdev);
+	unsigned long flags = 0UL;
+
+	/* If a Task Management Function is active, wait for it to complete
+	 * before continuing with remove.
+	 */
+	spin_lock_irqsave(&cfg->tmf_waitq.lock, flags);
+	if (cfg->tmf_active)
+		wait_event_interruptible_locked_irq(cfg->tmf_waitq,
+						    !cfg->tmf_active);
+
+	spin_unlock_irqrestore(&cfg->tmf_waitq.lock, flags);
 
 	switch (cfg->init_state) {
 	case INIT_STATE_SCSI:
@@ -2116,8 +2159,7 @@ static int cxlflash_probe(struct pci_dev *pdev,
 	cfg->err_recovery_active = 0;
 	cfg->num_user_contexts = 0;
 
-	rwlock_init(&cfg->tmf_lock);
-
+	init_waitqueue_head(&cfg->tmf_waitq);
 	init_waitqueue_head(&cfg->eeh_wait_q);
 
 	INIT_WORK(&cfg->work_q, cxlflash_worker_thread);
