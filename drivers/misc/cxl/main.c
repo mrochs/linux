@@ -41,6 +41,10 @@ int cxl_def_perst_image = -1;
 module_param_named(load_image_on_perst, cxl_def_perst_image, int, 0600);
 MODULE_PARM_DESC(load_image_on_perst, "Default image to reload in the event that the adapter is reset via PERST (NOT the initial image!). -1=loaded (default), 0=none, 1=user, 2=factory");
 
+int cxl_perst_same_image = 0;
+module_param_named(perst_reloads_same_image, cxl_perst_same_image, int, 0600);
+MODULE_PARM_DESC(perst_reloads_same_image, "Trust that when an image is reloaded via PERST, it will not have changed. 0=don't trust, the image may be different (default) 1=trust that the image will not change.");
+
 static inline void _cxl_slbia(struct cxl_context *ctx, struct mm_struct *mm)
 {
 	struct task_struct *task;

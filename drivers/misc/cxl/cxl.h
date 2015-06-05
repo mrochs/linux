@@ -28,6 +28,7 @@
 
 extern uint cxl_verbose;
 extern int cxl_def_perst_image;
+extern int cxl_perst_same_image;
 
 #define CXL_TIMEOUT 5
 
@@ -492,6 +493,7 @@ struct cxl {
 	bool user_image_loaded;
 	bool perst_loads_image;
 	bool perst_select_user;
+	bool perst_same_image;
 };
 
 int cxl_alloc_one_irq(struct cxl *adapter);
