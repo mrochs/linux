@@ -373,9 +373,11 @@ static int cxlflash_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *scp)
 	 * before continuing with regular commands.
 	 */
 	spin_lock_irqsave(&cfg->tmf_waitq.lock, lock_flags);
-	if (cfg->tmf_active)
-		wait_event_interruptible_locked_irq(cfg->tmf_waitq,
-						    !cfg->tmf_active);
+	if (cfg->tmf_active) {
+		spin_unlock_irqrestore(&cfg->tmf_waitq.lock, lock_flags);
+		rc = SCSI_MLQUEUE_HOST_BUSY;
+		goto out;
+	}
 	spin_unlock_irqrestore(&cfg->tmf_waitq.lock, lock_flags);
 
 	cmd = cxlflash_cmd_checkout(afu);
