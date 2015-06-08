@@ -2195,7 +2195,7 @@ static int cxlflash_probe(struct pci_dev *pdev,
 	phys_dev = cxl_get_phys_dev(pdev);
 	if (!dev_is_pci(phys_dev)) {
 		pr_err("%s: not a pci dev\n", __func__);
-		rc = ENODEV;
+		rc = -ENODEV;
 		goto out_remove;
 	}
 	cfg->parent_dev = to_pci_dev(phys_dev);
