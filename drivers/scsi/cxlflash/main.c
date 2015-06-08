@@ -1938,7 +1938,7 @@ err1:
  */
 int cxlflash_send_cmd(struct afu *afu, struct afu_cmd *cmd)
 {
-	int nretry = 1;
+	int nretry = 0;
 	int rc = 0;
 	u64 room;
 	long newval;
@@ -1957,7 +1957,6 @@ retry:
 			atomic64_set(&afu->room, room);
 			if (room)
 				goto write_ioarrin;
-			udelay(nretry);
 		} while (nretry++ < MC_ROOM_RETRY_CNT);
 
 		pr_err("%s: no cmd_room to send 0x%X\n",
@@ -1970,8 +1969,12 @@ retry:
 		 * just benefit from the other thread having updated 
 		 * afu->room.
 		 */
-		udelay(nretry);
-		goto retry;
+		if (nretry++ < MC_ROOM_RETRY_CNT)
+			goto retry;
+		else {
+			rc = SCSI_MLQUEUE_HOST_BUSY;
+			goto out;
+		}
 	}
 
 write_ioarrin:
