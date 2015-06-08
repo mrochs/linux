@@ -4,7 +4,7 @@
 
 config CXLFLASH
 	tristate "Support for IBM CAPI Flash"
-	depends on CXL
+	depends on PCI && SCSI && CXL
 	default m
 	help
 	  Allows CAPI Accelerated IO to Flash
