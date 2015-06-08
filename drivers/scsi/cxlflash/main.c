@@ -1938,9 +1938,10 @@ err1:
  */
 int cxlflash_send_cmd(struct afu *afu, struct afu_cmd *cmd)
 {
-	int nretry = 0;
+	int nretry = 1;
 	int rc = 0;
 	u64 room;
+	long newval;
 
 	/*
 	 * This routine is used by critical users such an AFU sync and to
@@ -1948,7 +1949,9 @@ int cxlflash_send_cmd(struct afu *afu, struct afu_cmd *cmd)
 	 * bit before returning an error. To avoid the performance penalty
 	 * of MMIO, we spread the update of 'room' over multiple commands.
 	 */
-	if (atomic64_dec_and_test(&afu->room)) {
+retry:
+	newval = atomic64_dec_if_positive(&afu->room);
+	if (!newval) {
 		do {
 			room = readq_be(&afu->host_map->cmd_room);
 			atomic64_set(&afu->room, room);
@@ -1961,6 +1964,14 @@ int cxlflash_send_cmd(struct afu *afu, struct afu_cmd *cmd)
 		       __func__, cmd->rcb.cdb[0]);
 		rc = SCSI_MLQUEUE_HOST_BUSY;
 		goto out;
+	} else if (newval < 0) {
+		/* This should be rare. i.e. Only if two threads race and
+		 * decrement before the MMIO read is done. In this case
+		 * just benefit from the other thread having updated 
+		 * afu->room.
+		 */
+		udelay(nretry);
+		goto retry;
 	}
 
 write_ioarrin:
