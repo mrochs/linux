@@ -1964,7 +1964,7 @@ retry:
 		       __func__, cmd->rcb.cdb[0]);
 		rc = SCSI_MLQUEUE_HOST_BUSY;
 		goto out;
-	} else if (newval < 0) {
+	} else if (unlikely(newval < 0)) {
 		/* This should be rare. i.e. Only if two threads race and
 		 * decrement before the MMIO read is done. In this case
 		 * just benefit from the other thread having updated 
