@@ -1962,9 +1962,8 @@ retry:
 
 		pr_err("%s: no cmd_room to send 0x%X\n",
 		       __func__, cmd->rcb.cdb[0]);
-		atomic64_set(&afu->room, 1);
-		rc = SCSI_MLQUEUE_HOST_BUSY;
-		goto out;
+
+		goto host_busy;
 	} else if (unlikely(newval < 0)) {
 		/* This should be rare. i.e. Only if two threads race and
 		 * decrement before the MMIO read is done. In this case
@@ -1975,11 +1974,8 @@ retry:
 			udelay(nretry);
 			goto retry;
 		}
-		else {
-			rc = SCSI_MLQUEUE_HOST_BUSY;
-			atomic64_set(&afu->room, 1);
-			goto out;
-		}
+
+		goto host_busy;
 	}
 
 write_ioarrin:
@@ -1988,6 +1984,11 @@ out:
 	pr_debug("%s: cmd=%p len=%d ea=%p rc=%d\n", __func__, cmd,
 		 cmd->rcb.data_len, (void *)cmd->rcb.data_ea, rc);
 	return rc;
+
+host_busy:
+	atomic64_set(&afu->room, 1);
+	rc = SCSI_MLQUEUE_HOST_BUSY;
+	goto out;
 }
 
 /**
