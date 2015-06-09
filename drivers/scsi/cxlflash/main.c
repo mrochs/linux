@@ -1957,10 +1957,12 @@ retry:
 			atomic64_set(&afu->room, room);
 			if (room)
 				goto write_ioarrin;
+			udelay(nretry);
 		} while (nretry++ < MC_ROOM_RETRY_CNT);
 
 		pr_err("%s: no cmd_room to send 0x%X\n",
 		       __func__, cmd->rcb.cdb[0]);
+		atomic64_set(&afu->room, 1);
 		rc = SCSI_MLQUEUE_HOST_BUSY;
 		goto out;
 	} else if (unlikely(newval < 0)) {
@@ -1969,10 +1971,13 @@ retry:
 		 * just benefit from the other thread having updated 
 		 * afu->room.
 		 */
-		if (nretry++ < MC_ROOM_RETRY_CNT)
+		if (nretry++ < MC_ROOM_RETRY_CNT) {
+			udelay(nretry);
 			goto retry;
+		}
 		else {
 			rc = SCSI_MLQUEUE_HOST_BUSY;
+			atomic64_set(&afu->room, 1);
 			goto out;
 		}
 	}
