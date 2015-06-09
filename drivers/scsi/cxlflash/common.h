@@ -157,6 +157,7 @@ struct afu {
 	u64 *hrrq_end;
 	u64 *hrrq_curr;
 	bool toggle;
+	bool read_room;
 	atomic64_t room;
 	u64 hb;
 	u32 cmd_couts;		/* Number of command checkouts */

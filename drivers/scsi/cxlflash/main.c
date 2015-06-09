@@ -1938,6 +1938,7 @@ err1:
  */
 int cxlflash_send_cmd(struct afu *afu, struct afu_cmd *cmd)
 {
+	struct cxlflash_cfg *cfg = afu->parent;
 	int nretry = 0;
 	int rc = 0;
 	u64 room;
@@ -1963,7 +1964,7 @@ retry:
 		pr_err("%s: no cmd_room to send 0x%X\n",
 		       __func__, cmd->rcb.cdb[0]);
 
-		goto host_busy;
+		goto no_room;
 	} else if (unlikely(newval < 0)) {
 		/* This should be rare. i.e. Only if two threads race and
 		 * decrement before the MMIO read is done. In this case
@@ -1975,7 +1976,7 @@ retry:
 			goto retry;
 		}
 
-		goto host_busy;
+		goto no_room;
 	}
 
 write_ioarrin:
@@ -1985,8 +1986,9 @@ out:
 		 cmd->rcb.data_len, (void *)cmd->rcb.data_ea, rc);
 	return rc;
 
-host_busy:
-	atomic64_set(&afu->room, 1);
+no_room:
+	afu->read_room = true;
+	schedule_work(&cfg->work_q);
 	rc = SCSI_MLQUEUE_HOST_BUSY;
 	goto out;
 }
@@ -2111,8 +2113,10 @@ int cxlflash_afu_reset(struct cxlflash_cfg *cfg)
  * cxlflash_worker_thread() - work thread handler for the AFU
  * @work:	Work structure contained within cxlflash associated with host.
  *
- * Handles link reset which cannot be performed on interrupt context due to
- * blocking up to a few seconds.
+ * Handles the following events:
+ * - Link reset which cannot be performed on interrupt context due to
+ * blocking up to a few seconds
+ * - Read AFU command room
  */
 static void cxlflash_worker_thread(struct work_struct *work)
 {
@@ -2140,6 +2144,11 @@ static void cxlflash_worker_thread(struct work_struct *work)
 		}
 
 		cfg->lr_state = LINK_RESET_COMPLETE;
+	}
+
+	if (afu->read_room) {
+		atomic64_set(&afu->room, readq_be(&afu->host_map->cmd_room));
+		afu->read_room = false;
 	}
 
 	spin_unlock_irqrestore(cfg->host->host_lock, lock_flags);
