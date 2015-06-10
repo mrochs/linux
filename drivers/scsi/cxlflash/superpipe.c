@@ -41,6 +41,11 @@ static void marshall_rele_to_resize(struct dk_cxlflash_release *release,
 	resize->rsrc_handle = release->rsrc_handle;
 }
 
+/**
+ * marshall_det_to_rele() - translate detach to release structure
+ * @detach:	Destination structure for the translate/copy.
+ * @rele:	Source structure from which to translate/copy.
+ */
 static void marshall_det_to_rele(struct dk_cxlflash_detach *detach,
 				 struct dk_cxlflash_release *release)
 {
@@ -48,6 +53,14 @@ static void marshall_det_to_rele(struct dk_cxlflash_detach *detach,
 	release->context_id = detach->context_id;
 }
 
+/**
+ * create_lun_info() - allocate and initialize a LUN information structure
+ * @sdev:	SCSI device associated with LUN.
+ *
+ * Return:
+ *	Allocated lun_info structure on success
+ *	NULL on failure
+ */
 static struct lun_info *create_lun_info(struct scsi_device *sdev)
 {
 	struct lun_info *lun_info = NULL;
@@ -66,6 +79,15 @@ create_lun_info_exit:
 	return lun_info;
 }
 
+/**
+ * lookup_lun() - find or create a LUN information structure
+ * @sdev:	SCSI device associated with LUN.
+ * @wwid:	WWID associated with LUN.
+ *
+ * Return:
+ *	Found/Allocated lun_info structure on success
+ *	NULL on failure
+ */
 static struct lun_info *lookup_lun(struct scsi_device *sdev, __u8 *wwid)
 {
 	struct lun_info *lun_info, *temp;
@@ -94,12 +116,13 @@ out:
 }
 
 /**
- * cxlflash_slave_alloc - Allocate a per LUN structure
- * @sdev:       struct scsi_device device to configure
+ * cxlflash_slave_alloc() - allocate and associate LUN information structure
+ * @sdev:	SCSI device associated with LUN.
  *
- * Returns:
- *      0 on success / -ENOMEM when memory allocation fails
- **/
+ * Return:
+ *	0 on success
+ *	-ENOMEM when unable to allocate memory
+ */
 int cxlflash_slave_alloc(struct scsi_device *sdev)
 {
 	int rc = 0;
@@ -119,14 +142,14 @@ out:
 }
 
 /**
- * cxlflash_slave_configure - Configure the device
- * @sdev:       struct scsi_device device to configure
+ * cxlflash_slave_configure() - configure and make device aware of LUN
+ * @sdev:	SCSI device associated with LUN.
  *
- * Store the lun_id field, and program the LUN mapping table on the AFU.
+ * Stores the LUN id and lun_index and programs the AFU's LUN mapping table.
  *
- * Returns:
- *      0
- **/
+ * Return:
+ *	0 on success
+ */
 int cxlflash_slave_configure(struct scsi_device *sdev)
 {
 	struct Scsi_Host *shost = sdev->host;
@@ -148,6 +171,10 @@ int cxlflash_slave_configure(struct scsi_device *sdev)
 	return 0;
 }
 
+/**
+ * cxlflash_slave_destroy() - removes a LUN from list and frees resources
+ * @sdev:	SCSI device associated with LUN.
+ */
 void cxlflash_slave_destroy(struct scsi_device *sdev)
 {
 	void *lun_info = (void *)sdev->hostdata;
@@ -155,6 +182,9 @@ void cxlflash_slave_destroy(struct scsi_device *sdev)
 	pr_debug("%s: lun_info=%p\n", __func__, lun_info);
 }
 
+/**
+ * cxlflash_list_init() - initializes the global LUN list
+ */
 void cxlflash_list_init(void)
 {
 	INIT_LIST_HEAD(&global.luns);
@@ -162,6 +192,9 @@ void cxlflash_list_init(void)
 	global.err_page = NULL;
 }
 
+/**
+ * cxlflash_list_terminate() - frees resources associated with global LUN list
+ */
 void cxlflash_list_terminate(void)
 {
 	struct lun_info *lun_info, *temp;
@@ -181,12 +214,22 @@ void cxlflash_list_terminate(void)
 	spin_unlock_irqrestore(&global.slock, flags);
 }
 
-/*
+/**
+ * cxlflash_get_context() - obtains a validated context reference
+ * @cfg:	Internal structure associated with the host.
+ * @ctxid:	Desired context.
+ * @lun_info:	LUN associated with request.
+ * @clone_path:	Clone path requires parent PID.
+ *
  * NOTE: despite the name pid, in linux, current->pid actually refers
  * to the lightweight process id (tid) and can change if the process is
  * multithreaded. The tgid remains constant for the process and only changes
  * when the process of fork. For all intents and purposes, think of tgid
  * as a pid in the traditional sense.
+ *
+ * Return:
+ *	Validated context on success
+ *	NULL on failure
  */
 struct ctx_info *cxlflash_get_context(struct cxlflash_cfg *cfg,
 				      u64 ctxid,
@@ -246,6 +289,15 @@ denied:
 	goto out;
 }
 
+/**
+ * cxlflash_afu_attach() - attach a context to the AFU
+ * @cfg:	Internal structure associated with the host.
+ * @ctx_info:	Context to attach.
+ *
+ * Return:
+ *	0 on success
+ *	-EAGAIN when unable to to set capabilities on AFU
+ */
 static int cxlflash_afu_attach(struct cxlflash_cfg *cfg,
 			       struct ctx_info *ctx_info)
 {
@@ -329,6 +381,16 @@ int cxlflash_check_status(struct afu_cmd *cmd)
 	return 0;
 }
 
+/**
+ * read_cap16() - issues a SCSI READ_CAP16 command
+ * @afu:	AFU associated with the host.
+ * @lun_info:	LUN to destined for capacity request.
+ * @port_sel:	Port to send request.
+ *
+ * Return:
+ *	0 on success
+ *	-1 on failure
+ */
 static int read_cap16(struct afu *afu, struct lun_info *lun_info, u32 port_sel)
 {
 	struct afu_cmd *cmd = NULL;
@@ -388,6 +450,16 @@ out:
 	return rc;
 }
 
+/**
+ * cxlflash_get_rhte() - obtains validated resource handle table entry reference
+ * @ctx_info:	Context owning the resource handle.
+ * @res_hndl:	Resource handle associated with entry.
+ * @lun_info:	LUN associated with request.
+ *
+ * Return:
+ *	Validated RHTE on success
+ *	NULL on failure
+ */
 struct sisl_rht_entry *cxlflash_get_rhte(struct ctx_info *ctx_info,
 					 res_hndl_t res_hndl,
 					 struct lun_info *lun_info)
@@ -424,7 +496,15 @@ out:
 	return rhte;
 }
 
-/* Checkout a free/empty RHT entry */
+/**
+ * rhte_checkout() - obtains free/empty resource handle table entry
+ * @ctx_info:	Context owning the resource handle.
+ * @lun_info:	LUN associated with request.
+ *
+ * Return:
+ *	Free RHTE on success
+ *	NULL on failure
+ */
 struct sisl_rht_entry *rhte_checkout(struct ctx_info *ctx_info,
 				     struct lun_info *lun_info)
 {
@@ -446,6 +526,11 @@ struct sisl_rht_entry *rhte_checkout(struct ctx_info *ctx_info,
 	return rht_entry;
 }
 
+/**
+ * rhte_checkin() - releases a resource handle table entry
+ * @ctx_info:	Context owning the resource handle.
+ * @rht_entry:	RHTE to release.
+ */
 void rhte_checkin(struct ctx_info *ctx_info,
 		  struct sisl_rht_entry *rht_entry)
 {
@@ -455,6 +540,12 @@ void rhte_checkin(struct ctx_info *ctx_info,
 	ctx_info->rht_lun[rht_entry - ctx_info->rht_start] = NULL;
 }
 
+/**
+ * rhte_format1() - populates a RHTE for format 1
+ * @rht_entry:	RHTE to populate.
+ * @lun_id:	LUN ID of LUN associated with RHTE.
+ * @perm:	Desired permissions for RHTE.
+ */
 static void rht_format1(struct sisl_rht_entry *rht_entry, u64 lun_id, u32 perm)
 {
 	/*
@@ -485,6 +576,15 @@ static void rht_format1(struct sisl_rht_entry *rht_entry, u64 lun_id, u32 perm)
 	smp_wmb(); /* Make remaining RHT entry fields visible */
 }
 
+/**
+ * cxlflash_lun_attach() - attaches a user to a LUN and manages the LUN's mode
+ * @lun_info:	LUN to attach.
+ * @mode:	Desired mode of the LUN.
+ *
+ * Return:
+ *	0 on success
+ *	-EINVAL when the LUN is already operating in a different mode
+ */
 int cxlflash_lun_attach(struct lun_info *lun_info, enum lun_mode mode)
 {
 	int rc = 0;
@@ -508,6 +608,10 @@ out:
 	return rc;
 }
 
+/**
+ * cxlflash_lun_detach() - detaches a user from a LUN and resets the LUN's mode
+ * @lun_info:	LUN to detach.
+ */
 void cxlflash_lun_detach(struct lun_info *lun_info)
 {
 	spin_lock(&lun_info->slock);
@@ -519,25 +623,15 @@ void cxlflash_lun_detach(struct lun_info *lun_info)
 	spin_unlock(&lun_info->slock);
 }
 
-/*
- * NAME:        cxlflash_disk_release
+/**
+ * cxlflash_disk_release() - releases the specified resource entry
+ * @sdev:	SCSI device associated with LUN.
+ * @release:	Release ioctl data structure.
  *
- * FUNCTION:    Close a virtual LBA space setting it to 0 size and
- *              marking the res_hndl as free/closed.
+ * For LUN's in virtual mode, the virtual lun associated with the specified
+ * resource handle is resized to 0 prior to releasing the RHTE.
  *
- * INPUTS:
- *              sdev       - Pointer to scsi device structure
- *              arg        - Pointer to ioctl specific structure
- *
- * OUTPUTS:
- *              none
- *
- * RETURNS:
- *              0           - Success
- *              errno       - Failure
- *
- * NOTES:
- *              When successful, the RHT entry is cleared.
+ * Return: 0 on success, -Errno on failure
  */
 int cxlflash_disk_release(struct scsi_device *sdev,
 			  struct dk_cxlflash_release *release)
@@ -626,6 +720,15 @@ out:
 	return rc;
 }
 
+/**
+ * destroy_context() - releases a context
+ * @cfg:	Internal structure associated with the host.
+ * @ctx_info:	Context to release.
+ *
+ * Note that the rht_lun member of the context was cut from a single
+ * allocation when the context was created and therefore does not need
+ * to be explicitly freed.
+ */
 static void destroy_context(struct cxlflash_cfg *cfg,
 			    struct ctx_info *ctx_info)
 {
@@ -644,6 +747,16 @@ static void destroy_context(struct cxlflash_cfg *cfg,
 	cfg->num_user_contexts--;
 }
 
+/**
+ * create_context() - allocates and initializes a context
+ * @cfg:	Internal structure associated with the host.
+ * @ctx:	Previously obtained CXL context reference.
+ * @ctxid:	Previously obtained process element associated with CXL context.
+ * @adap_fd:	Previously obtained adapter fd associated with CXL context.
+ * @perms:	User-specified permissions.
+ *
+ * Return: Allocated context on success, NULL on failure
+ */
 static struct ctx_info *create_context(struct cxlflash_cfg *cfg,
 				       struct cxl_context *ctx, int ctxid,
 				       int adap_fd, u32 perms)
@@ -693,28 +806,16 @@ err:
 	goto out;
 }
 
-/*
- * NAME:        cxlflash_disk_detach
+/**
+ * cxlflash_disk_detach() - detaches a LUN from a context
+ * @sdev:	SCSI device associated with LUN.
+ * @detach:	Detach ioctl data structure.
  *
- * FUNCTION:    Unregister a user AFU context with master.
+ * As part of the detach, all per-context esources associated with the LUN
+ * are cleaned up. When detaching the last LUN for a context, the context
+ * itself is cleaned up and released.
  *
- * INPUTS:
- *              sdev       - Pointer to scsi device structure
- *              arg        - Pointer to ioctl specific structure
- *
- * OUTPUTS:
- *              none
- *
- * RETURNS:
- *              0           - Success
- *              errno       - Failure
- *
- * NOTES:
- *              When successful:
- *               a. RHT_START, RHT_CNT & CTX_CAP registers for the
- *                  context are cleared
- *               b. There is no need to clear RHT entries since
- *                  RHT_CNT=0.
+ * Return: 0 on success, -Errno on failure
  */
 static int cxlflash_disk_detach(struct scsi_device *sdev,
 				struct dk_cxlflash_detach *detach)
@@ -799,7 +900,11 @@ out:
 	return rc;
 }
 
-/*
+/**
+ * cxlflash_cxl_release() - release handler for adapter file descriptor
+ * @inode:	Filesystem inode associated with fd.
+ * @file:	File installed with adapter file descriptor.
+ *
  * This routine is the release handler for the fops registered with
  * the CXL services on an initial attach for a context. It is called
  * when a close is performed on the adapter file descriptor returned
@@ -826,6 +931,12 @@ out:
  * Thus, with exception to when the CXL process element (context id)
  * lookup fails (a case that should theoretically never occur), every
  * call into this routine results in a complete freeing of a context.
+ *
+ * As part of the detach, all per-context esources associated with the LUN
+ * are cleaned up. When detaching the last LUN for a context, the context
+ * itself is cleaned up and released.
+ *
+ * Return: 0 on success
  */
 static int cxlflash_cxl_release(struct inode *inode, struct file *file)
 {
@@ -884,11 +995,24 @@ out:
 	return 0;
 }
 
+/**
+ * cxlflash_unmap_context() - clears a previously established mapping
+ * @ctx_info:	Context owning the mapping.
+ *
+ * This routine is used to switch between the error notification page
+ * (dummy page of all 1's) and the real mapping (established by the CXL
+ * fault handler).
+ */
 static void cxlflash_unmap_context(struct ctx_info *ctx_info)
 {
 	unmap_mapping_range(ctx_info->mapping, 0, 0, 1);
 }
 
+/**
+ * get_err_page() - obtains and allocates the error notification page
+ *
+ * Return: error notification page on success, NULL on failure
+ */
 static struct page *get_err_page(void)
 {
 	struct page *err_page = global.err_page;
