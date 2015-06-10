@@ -101,9 +101,4 @@ struct asyc_intr_info {
 #define LINK_RESET	0x02
 };
 
-/*
- * Externs and Prototypes
- */
-int cxlflash_ioctl(struct scsi_device *, int, void __user *);
-
 #endif /* _CXLFLASH_MAIN_H */

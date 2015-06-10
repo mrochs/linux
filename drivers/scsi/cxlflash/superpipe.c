@@ -814,7 +814,7 @@ out:
  * lookup fails (a case that should theoretically never occur), every
  * call into this routine results in a complete freeing of a context.
  */
-int cxlflash_cxl_release(struct inode *inode, struct file *file)
+static int cxlflash_cxl_release(struct inode *inode, struct file *file)
 {
 	struct cxl_context *ctx = cxl_fops_get_context(file);
 	struct cxlflash_cfg *cfg = container_of(file->f_op, struct cxlflash_cfg,
@@ -964,7 +964,7 @@ static const struct vm_operations_struct cxlflash_mmap_vmops = {
 	.fault = cxlflash_mmap_fault,
 };
 
-int cxlflash_cxl_mmap(struct file *file, struct vm_area_struct *vma)
+static int cxlflash_cxl_mmap(struct file *file, struct vm_area_struct *vma)
 {
 	struct cxl_context *ctx = cxl_fops_get_context(file);
 	struct cxlflash_cfg *cfg = container_of(file->f_op, struct cxlflash_cfg,
@@ -1010,7 +1010,7 @@ out:
 	return rc;
 }
 
-const struct file_operations cxlflash_cxl_fops = {
+static const struct file_operations cxlflash_cxl_fops = {
 	.owner = THIS_MODULE,
 	.mmap = cxlflash_cxl_mmap,
 	.release = cxlflash_cxl_release,

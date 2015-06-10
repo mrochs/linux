@@ -1570,7 +1570,7 @@ out:
  *
  * Sends a reset to the AFU.
  */
-void cxlflash_context_reset(struct afu_cmd *cmd)
+static void cxlflash_context_reset(struct afu_cmd *cmd)
 {
 	int nretry = 0;
 	u64 rrin = 0x1;
@@ -1625,7 +1625,7 @@ write_rrin:
  * Also sets up fast access to the mapped registers and initializes AFU
  * command fields that never change.
  */
-void init_pcr(struct cxlflash_cfg *cfg)
+static void init_pcr(struct cxlflash_cfg *cfg)
 {
 	struct afu *afu = cfg->afu;
 	struct sisl_ctrl_map *ctrl_map;
@@ -1661,7 +1661,7 @@ void init_pcr(struct cxlflash_cfg *cfg)
  * init_global() - initialize AFU global registers
  * @cxlflash:	Internal structure associated with the host.
  */
-int init_global(struct cxlflash_cfg *cfg)
+static int init_global(struct cxlflash_cfg *cfg)
 {
 	struct afu *afu = cfg->afu;
 	u64 wwpn[NUM_FC_PORTS];	/* wwpn of AFU ports */
