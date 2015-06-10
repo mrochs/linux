@@ -134,8 +134,8 @@ int cxlflash_slave_configure(struct scsi_device *sdev)
 	struct cxlflash_cfg *cfg = shost_priv(shost);
 	struct afu *afu = cfg->afu;
 
-	pr_info("%s: id = %d/%d/%d/%llu\n", __func__, shost->host_no,
-		sdev->channel, sdev->id, sdev->lun);
+	pr_debug("%s: id = %d/%d/%d/%llu\n", __func__, shost->host_no,
+		 sdev->channel, sdev->id, sdev->lun);
 
 	/* Store off lun in unpacked, AFU-friendly format */
 	lun_info->lun_id = lun_to_lunid(sdev->lun);
@@ -279,7 +279,7 @@ static int cxlflash_afu_attach(struct cxlflash_cfg *cfg,
 				  (u64)(afu->ctx_hndl)),
 		  &ctx_info->ctrl_map->rht_cnt_id);
 out:
-	pr_info("%s: returning rc=%d\n", __func__, rc);
+	pr_debug("%s: returning rc=%d\n", __func__, rc);
 	return rc;
 
 }
@@ -354,8 +354,8 @@ static int read_cap16(struct afu *afu, struct lun_info *lun_info, u32 port_sel)
 	cmd->rcb.cdb[1] = 0x10;	/* service action */
 	put_unaligned_be32(CMD_BUFSIZE, &cmd->rcb.cdb[10]);
 
-	pr_info("%s: sending cmd(0x%x) with RCB EA=%p data EA=0x%llx\n",
-		__func__, cmd->rcb.cdb[0], &cmd->rcb, cmd->rcb.data_ea);
+	pr_debug("%s: sending cmd(0x%x) with RCB EA=%p data EA=0x%llx\n",
+		 __func__, cmd->rcb.cdb[0], &cmd->rcb, cmd->rcb.data_ea);
 
 	do {
 		rc = cxlflash_send_cmd(afu, cmd);
@@ -383,8 +383,8 @@ static int read_cap16(struct afu *afu, struct lun_info *lun_info, u32 port_sel)
 out:
 	if (cmd)
 		cxlflash_cmd_checkin(cmd);
-	pr_info("%s: maxlba=%lld blklen=%d pcmd %p\n",
-		__func__, lun_info->max_lba, lun_info->blk_len, cmd);
+	pr_debug("%s: maxlba=%lld blklen=%d pcmd %p\n",
+		 __func__, lun_info->max_lba, lun_info->blk_len, cmd);
 	return rc;
 }
 
@@ -556,9 +556,9 @@ int cxlflash_disk_release(struct scsi_device *sdev,
 	struct sisl_rht_entry *rht_entry;
 	struct sisl_rht_entry_f1 *rht_entry_f1;
 
-	pr_info("%s: ctxid=%llu res_hndl=0x%llx li->mode=%u li->users=%u\n",
-		__func__, ctxid, release->rsrc_handle, lun_info->mode,
-		lun_info->users);
+	pr_debug("%s: ctxid=%llu res_hndl=0x%llx li->mode=%u li->users=%u\n",
+		 __func__, ctxid, release->rsrc_handle, lun_info->mode,
+		 lun_info->users);
 
 	ctx_info = cxlflash_get_context(cfg, ctxid, lun_info, false);
 	if (unlikely(!ctx_info)) {
@@ -622,7 +622,7 @@ int cxlflash_disk_release(struct scsi_device *sdev,
 out:
 	if (likely(ctx_info))
 		atomic_dec(&ctx_info->nrefs);
-	pr_info("%s: returning rc=%d\n", __func__, rc);
+	pr_debug("%s: returning rc=%d\n", __func__, rc);
 	return rc;
 }
 
@@ -731,7 +731,7 @@ static int cxlflash_disk_detach(struct scsi_device *sdev,
 	u64 ctxid = detach->context_id;
 	ulong flags = 0;
 
-	pr_info("%s: ctxid=%llu\n", __func__, ctxid);
+	pr_debug("%s: ctxid=%llu\n", __func__, ctxid);
 
 	ctx_info = cxlflash_get_context(cfg, ctxid, lun_info, false);
 	if (unlikely(!ctx_info)) {
@@ -795,7 +795,7 @@ static int cxlflash_disk_detach(struct scsi_device *sdev,
 out:
 	if (likely(ctx_info))
 		atomic_dec(&ctx_info->nrefs);
-	pr_info("%s: returning rc=%d\n", __func__, rc);
+	pr_debug("%s: returning rc=%d\n", __func__, rc);
 	return rc;
 }
 
@@ -859,8 +859,8 @@ static int cxlflash_cxl_release(struct inode *inode, struct file *file)
 		goto out;
 	}
 
-	pr_info("%s: close(%d) for context %d\n",
-		__func__, ctx_info->lfd, ctxid);
+	pr_debug("%s: close(%d) for context %d\n",
+		 __func__, ctx_info->lfd, ctxid);
 
 	/* Reset the file descriptor to indicate we're on a close() thread */
 	ctx_info->lfd = -1;
@@ -1002,8 +1002,8 @@ static int cxlflash_cxl_mmap(struct file *file, struct vm_area_struct *vma)
 		goto out;
 	}
 
-	pr_info("%s: mmap(%d) for context %d\n",
-		__func__, ctx_info->lfd, ctxid);
+	pr_debug("%s: mmap(%d) for context %d\n",
+		 __func__, ctx_info->lfd, ctxid);
 
 	rc = cxl_fd_mmap(file, vma);
 	if (!rc) {
@@ -1081,11 +1081,11 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 	}
 
 	if (lun_info->max_lba == 0) {
-		pr_info("%s: No capacity info yet for this LUN "
+		pr_debug("%s: No capacity info yet for this LUN "
 			"(%016llX)\n", __func__, lun_info->lun_id);
 		read_cap16(afu, lun_info, sdev->channel + 1);
-		pr_info("%s: LBA = %016llX\n", __func__, lun_info->max_lba);
-		pr_info("%s: BLK_LEN = %08X\n", __func__, lun_info->blk_len);
+		pr_debug("%s: LBA = %016llX\n", __func__, lun_info->max_lba);
+		pr_debug("%s: BLK_LEN = %08X\n", __func__, lun_info->blk_len);
 	}
 
 	if (attach->hdr.flags & DK_CXLFLASH_ATTACH_REUSE_CONTEXT) {
@@ -1193,8 +1193,8 @@ out:
 	if (likely(ctx_info))
 		atomic_dec(&ctx_info->nrefs);
 
-	pr_info("%s: returning ctxid=%d fd=%d bs=%lld rc=%d llba=%lld\n",
-		__func__, ctxid, fd, attach->block_size, rc, attach->last_lba);
+	pr_debug("%s: returning ctxid=%d fd=%d bs=%lld rc=%d llba=%lld\n",
+		 __func__, ctxid, fd, attach->block_size, rc, attach->last_lba);
 	return rc;
 
 err4:
@@ -1218,10 +1218,10 @@ static int cxlflash_manage_lun(struct scsi_device *sdev,
 	struct lun_info *lun_info = NULL;
 
 	lun_info = lookup_lun(sdev, manage->wwid);
-	pr_info("%s: ENTER: WWID = %016llX%016llX, flags = %016llX li = %p\n",
-		__func__, get_unaligned_le64(&manage->wwid[0]),
-		get_unaligned_le64(&manage->wwid[8]),
-		manage->hdr.flags, lun_info);
+	pr_debug("%s: ENTER: WWID = %016llX%016llX, flags = %016llX li = %p\n",
+		 __func__, get_unaligned_le64(&manage->wwid[0]),
+		 get_unaligned_le64(&manage->wwid[8]),
+		 manage->hdr.flags, lun_info);
 	return 0;
 }
 
@@ -1252,8 +1252,8 @@ static int cxlflash_afu_recover(struct scsi_device *sdev,
 		cxlflash_afu_reset(cfg);
 
 	} else {
-		pr_info("%s: reason 0x%llx MMIO working, no reset performed\n",
-			__func__, recover->reason);
+		pr_debug("%s: reason 0x%llx MMIO working, no reset performed\n",
+			 __func__, recover->reason);
 		rc = -EINVAL;
 	}
 
@@ -1337,8 +1337,8 @@ static int cxlflash_disk_verify(struct scsi_device *sdev,
 	struct lun_info *lun_info = sdev->hostdata;
 	u64 ctxid = verify->context_id;
 
-	pr_info("%s: ctxid=%llu res_hndl=0x%llx, hint=0x%llx\n",
-		__func__, ctxid, verify->rsrc_handle, verify->hint);
+	pr_debug("%s: ctxid=%llu res_hndl=0x%llx, hint=0x%llx\n",
+		 __func__, ctxid, verify->rsrc_handle, verify->hint);
 
 	ctx_info = cxlflash_get_context(cfg, ctxid, lun_info, false);
 	if (unlikely(!ctx_info)) {
@@ -1358,8 +1358,8 @@ static int cxlflash_disk_verify(struct scsi_device *sdev,
 out:
 	if (likely(ctx_info))
 		atomic_dec(&ctx_info->nrefs);
-	pr_info("%s: returning rc=%d llba=%lld\n",
-		__func__, rc, verify->last_lba);
+	pr_debug("%s: returning rc=%d llba=%lld\n",
+		 __func__, rc, verify->last_lba);
 	return rc;
 }
 
@@ -1430,7 +1430,7 @@ static int cxlflash_disk_direct_open(struct scsi_device *sdev, void *arg)
 	struct ctx_info *ctx_info = NULL;
 	struct sisl_rht_entry *rht_entry = NULL;
 
-	pr_info("%s: ctxid=%llu ls=0x%llx\n", __func__, ctxid, lun_size);
+	pr_debug("%s: ctxid=%llu ls=0x%llx\n", __func__, ctxid, lun_size);
 
 	rc = cxlflash_lun_attach(lun_info, MODE_PHYSICAL);
 	if (unlikely(rc)) {
@@ -1466,8 +1466,8 @@ static int cxlflash_disk_direct_open(struct scsi_device *sdev, void *arg)
 out:
 	if (likely(ctx_info))
 		atomic_dec(&ctx_info->nrefs);
-	pr_info("%s: returning handle 0x%llx rc=%d llba %lld\n",
-		__func__, rsrc_handle, rc, last_lba);
+	pr_debug("%s: returning handle 0x%llx rc=%d llba %lld\n",
+		 __func__, rsrc_handle, rc, last_lba);
 	return rc;
 
 err1:

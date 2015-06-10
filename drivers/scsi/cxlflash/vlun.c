@@ -77,8 +77,8 @@ int ba_init(struct ba_lun *ba_lun)
 	int last_word_underflow = 0;
 	u64 *lam;
 
-	pr_info("%s: Initializing LUN: lun_id = %llX, "
-		"ba_lun->lsize = %lX, ba_lun->au_size = %lX\n",
+	pr_debug("%s: Initializing LUN: lun_id = %llX, "
+		 "ba_lun->lsize = %lX, ba_lun->au_size = %lX\n",
 		__func__, ba_lun->lun_id, ba_lun->lsize, ba_lun->au_size);
 
 	/* Calculate bit map size */
@@ -144,8 +144,8 @@ int ba_init(struct ba_lun *ba_lun)
 	/* Pass the allocated lun info as a handle to the user */
 	ba_lun->ba_lun_handle = (void *)lun_info;
 
-	pr_info("%s: Successfully initialized the LUN: "
-		"lun_id = %llX, bitmap size = %X, free_aun_cnt = %llX\n",
+	pr_debug("%s: Successfully initialized the LUN: "
+		 "lun_id = %llX, bitmap size = %X, free_aun_cnt = %llX\n",
 		__func__, ba_lun->lun_id, lun_info->lun_bmap_size,
 		lun_info->free_aun_cnt);
 	return 0;
@@ -176,7 +176,7 @@ static int find_free_range(u32 low,
 			num_bits = (sizeof(*lam) * BITS_PER_BYTE);
 			bit_pos = find_first_bit(lam, num_bits);
 
-			pr_debug("%s: Found free bit %llX in lun "
+			pr_devel("%s: Found free bit %llX in lun "
 				 "map entry %llX at bitmap index = %X\n",
 				 __func__, bit_pos, lun_info->lun_alloc_map[i],
 				 i);
@@ -293,9 +293,9 @@ static int ba_free(struct ba_lun *ba_lun, u64 to_free)
 		 lun_info->free_aun_cnt);
 
 	if (lun_info->aun_clone_map[to_free] > 0) {
-		pr_info("%s: AUN %llX on lun_id %llX has been cloned. Clone "
-			"count = %X\n", __func__, to_free, ba_lun->lun_id,
-			lun_info->aun_clone_map[to_free]);
+		pr_debug("%s: AUN %llX on lun_id %llX has been cloned. Clone "
+			 "count = %X\n", __func__, to_free, ba_lun->lun_id,
+			 lun_info->aun_clone_map[to_free]);
 		lun_info->aun_clone_map[to_free]--;
 		return 0;
 	}
@@ -338,8 +338,8 @@ static int ba_clone(struct ba_lun *ba_lun, u64 to_clone)
 		return -1;
 	}
 
-	pr_info("%s: Received a request to clone AUN %llX on lun_id %llX\n",
-		__func__, to_clone, ba_lun->lun_id);
+	pr_debug("%s: Received a request to clone AUN %llX on lun_id %llX\n",
+		 __func__, to_clone, ba_lun->lun_id);
 
 	if (lun_info->aun_clone_map[to_clone] == MAX_AUN_CLONE_CNT) {
 		pr_err("%s: AUN %llX on lun_id %llX hit max clones already\n",
@@ -416,7 +416,7 @@ static int cxlflash_init_ba(struct lun_info *lun_info)
 	}
 
 cxlflash_init_ba_exit:
-	pr_info("%s: returning rc=%d lun_info=%p\n", __func__, rc, lun_info);
+	pr_debug("%s: returning rc=%d lun_info=%p\n", __func__, rc, lun_info);
 	return rc;
 }
 
@@ -458,8 +458,8 @@ static int write_same16(struct afu *afu, struct lun_info *lun_info, u64 lba,
 	put_unaligned_be64(lba, &cmd->rcb.cdb[2]);
 	put_unaligned_be32(nblks, &cmd->rcb.cdb[10]);
 
-	pr_info("%s: sending cmd(0x%x) with RCB EA=%p data EA=0x%llx\n",
-		__func__, cmd->rcb.cdb[0], &cmd->rcb, cmd->rcb.data_ea);
+	pr_debug("%s: sending cmd(0x%x) with RCB EA=%p data EA=0x%llx\n",
+		 __func__, cmd->rcb.cdb[0], &cmd->rcb, cmd->rcb.data_ea);
 
 	do {
 		rc = cxlflash_send_cmd(afu, cmd);
@@ -477,7 +477,7 @@ static int write_same16(struct afu *afu, struct lun_info *lun_info, u64 lba,
 out:
 	if (cmd)
 		cxlflash_cmd_checkin(cmd);
-	pr_info("%s: returning rc=%d\n", __func__, rc);
+	pr_debug("%s: returning rc=%d\n", __func__, rc);
 	return rc;
 }
 
@@ -722,9 +722,9 @@ int cxlflash_vlun_resize(struct scsi_device *sdev,
 	    (lun_info->blk_len);
 	new_size = (nsectors + MC_CHUNK_SIZE - 1) / MC_CHUNK_SIZE;
 
-	pr_info("%s: ctxid=%llu res_hndl=0x%llx, req_size=0x%llx,"
-		"new_size=%llx\n", __func__, ctxid, resize->rsrc_handle,
-		resize->req_size, new_size);
+	pr_debug("%s: ctxid=%llu res_hndl=0x%llx, req_size=0x%llx,"
+		 "new_size=%llx\n", __func__, ctxid, resize->rsrc_handle,
+		 resize->req_size, new_size);
 
 	if (unlikely(lun_info->mode != MODE_VIRTUAL)) {
 		pr_err("%s: LUN mode does not support resize! (%d)\n",
@@ -776,8 +776,8 @@ int cxlflash_vlun_resize(struct scsi_device *sdev,
 out:
 	if (likely(ctx_info))
 		atomic_dec(&ctx_info->nrefs);
-	pr_info("%s: resized to %lld returning rc=%d\n",
-		__func__, resize->last_lba, rc);
+	pr_debug("%s: resized to %lld returning rc=%d\n",
+		 __func__, resize->last_lba, rc);
 	return rc;
 }
 
@@ -815,7 +815,7 @@ int cxlflash_disk_virtual_open(struct scsi_device *sdev, void *arg)
 	struct ctx_info *ctx_info = NULL;
 	struct sisl_rht_entry *rht_entry = NULL;
 
-	pr_info("%s: ctxid=%llu ls=0x%llx\n", __func__, ctxid, lun_size);
+	pr_debug("%s: ctxid=%llu ls=0x%llx\n", __func__, ctxid, lun_size);
 
 	if (lun_info->mode == MODE_NONE) {
 		rc = cxlflash_init_ba(lun_info);
@@ -872,8 +872,8 @@ int cxlflash_disk_virtual_open(struct scsi_device *sdev, void *arg)
 out:
 	if (likely(ctx_info))
 		atomic_dec(&ctx_info->nrefs);
-	pr_info("%s: returning handle 0x%llx rc=%d llba %lld\n",
-		__func__, rsrc_handle, rc, last_lba);
+	pr_debug("%s: returning handle 0x%llx rc=%d llba %lld\n",
+		 __func__, rsrc_handle, rc, last_lba);
 	return rc;
 
 err2:
@@ -998,8 +998,8 @@ int cxlflash_disk_clone(struct scsi_device *sdev,
 	bool found;
 	LIST_HEAD(sidecar);
 
-	pr_info("%s: ctxid_src=%llu ctxid_dst=%llu adap_fd_src=%d\n",
-		__func__, ctxid_src, ctxid_dst, adap_fd_src);
+	pr_debug("%s: ctxid_src=%llu ctxid_dst=%llu adap_fd_src=%d\n",
+		 __func__, ctxid_src, ctxid_dst, adap_fd_src);
 
 	/* Do not clone yourself */
 	if (unlikely(ctxid_src == ctxid_dst)) {
@@ -1062,7 +1062,7 @@ int cxlflash_disk_clone(struct scsi_device *sdev,
 	}
 
 	if (unlikely(!ctx_info_src->rht_out)) {
-		pr_info("%s: Nothing to clone!\n", __func__);
+		pr_err("%s: Nothing to clone!\n", __func__);
 		goto out_success;
 	}
 
@@ -1122,7 +1122,7 @@ out:
 		atomic_dec(&ctx_info_src->nrefs);
 	if (likely(ctx_info_dst))
 		atomic_dec(&ctx_info_dst->nrefs);
-	pr_info("%s: returning rc=%d\n", __func__, rc);
+	pr_debug("%s: returning rc=%d\n", __func__, rc);
 	return rc;
 
 err:
