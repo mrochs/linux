@@ -28,6 +28,11 @@
 
 struct cxlflash_global global;
 
+/**
+ * marshall_rele_to_resize() - translate release to resize structure
+ * @rele:	Source structure from which to translate/copy.
+ * @resize:	Destination structure for the translate/copy.
+ */
 static void marshall_rele_to_resize(struct dk_cxlflash_release *release,
 				    struct dk_cxlflash_resize *resize)
 {

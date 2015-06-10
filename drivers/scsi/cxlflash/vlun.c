@@ -34,6 +34,11 @@ static u32 ws;
 module_param_named(ws, ws, uint, 0);
 MODULE_PARM_DESC(ws, " 1 = Perform WRITE_SAME16 per chunk on VLUN shrink");
 
+/**
+ * marshall_virt_to_resize() - translate uvirtual to resize structure
+ * @virt:	Source structure from which to translate/copy.
+ * @resize:	Destination structure for the translate/copy.
+ */
 static void marshall_virt_to_resize(struct dk_cxlflash_uvirtual *virt,
 				    struct dk_cxlflash_resize *resize)
 {
@@ -44,6 +49,11 @@ static void marshall_virt_to_resize(struct dk_cxlflash_uvirtual *virt,
 	resize->last_lba = virt->last_lba;
 }
 
+/**
+ * marshall_clone_to_rele() - translate clone to release structure
+ * @clone:	Source structure from which to translate/copy.
+ * @rele:	Destination structure for the translate/copy.
+ */
 static void marshall_clone_to_rele(struct dk_cxlflash_clone *clone,
 				   struct dk_cxlflash_release *release)
 {
@@ -51,7 +61,15 @@ static void marshall_clone_to_rele(struct dk_cxlflash_clone *clone,
 	release->context_id = clone->context_id_dst;
 }
 
-
+/**
+ * ba_init() - initializes a block allocator
+ * @ba_lun:	Block allocator to initialize.
+ *
+ * Return:
+ *	0 on success
+ *	-EINVAL when the calculated bitmap size is 0
+ *	-ENOMEM on failure to allocate memory
+ */
 int ba_init(struct ba_lun *ba_lun)
 {
 	struct ba_lun_info *lun_info = NULL;
@@ -133,6 +151,17 @@ int ba_init(struct ba_lun *ba_lun)
 	return 0;
 }
 
+/**
+ * find_free_range() - locates a free bit within the block allocator
+ * @low:	First word in block allocator to start search.
+ * @high:	Last word in block allocator to search.
+ * @lun_info:	LUN information structure owning the block allocator to search.
+ * @bit_word:	Passes back the word in the block allocator owning the free bit.
+ *
+ * Return:
+ *	The bit position within the passed back word
+ *	-1 on failure
+ */
 static int find_free_range(u32 low,
 			   u32 high,
 			   struct ba_lun_info *lun_info, int *bit_word)
@@ -161,6 +190,14 @@ static int find_free_range(u32 low,
 	return bit_pos;
 }
 
+/**
+ * ba_alloc() - allocates a block from the block allocator
+ * @ba_lun:	Block allocator from which to allocate a block.
+ *
+ * Return:
+ *	The allocated block
+ *	-1 on failure
+ */
 static u64 ba_alloc(struct ba_lun *ba_lun)
 {
 	u64 bit_pos = -1;
@@ -207,6 +244,15 @@ static u64 ba_alloc(struct ba_lun *ba_lun)
 	return (u64) ((bit_word * 64) + bit_pos);
 }
 
+/**
+ * validate_alloc() - validates the specified block has been allocated
+ * @ba_lun_info:	LUN info owning the block allocator.
+ * @aun:		Block to validate.
+ *
+ * Return:
+ *	0 on success (block was allocated)
+ *	-1 on failure
+ */
 static int validate_alloc(struct ba_lun_info *lun_info, u64 aun)
 {
 	int idx = 0, bit_pos = 0;
@@ -220,6 +266,15 @@ static int validate_alloc(struct ba_lun_info *lun_info, u64 aun)
 	return 0;
 }
 
+/**
+ * ba_free() - frees a block from the block allocator
+ * @ba_lun:	Block allocator from which to allocate a block.
+ * @to_free:	Block to free.
+ *
+ * Return:
+ *	0 on success
+ *	-1 on failure
+ */
 static int ba_free(struct ba_lun *ba_lun, u64 to_free)
 {
 	int idx = 0, bit_pos = 0;
@@ -263,6 +318,15 @@ static int ba_free(struct ba_lun *ba_lun, u64 to_free)
 	return 0;
 }
 
+/**
+ * ba_clone() - frees a block from the block allocator
+ * @ba_lun:	Block allocator from which to allocate a block.
+ * @to_free:	Block to free.
+ *
+ * Return:
+ *	0 on success
+ *	-1 on failure
+ */
 static int ba_clone(struct ba_lun *ba_lun, u64 to_clone)
 {
 	struct ba_lun_info *lun_info =
@@ -288,6 +352,12 @@ static int ba_clone(struct ba_lun *ba_lun, u64 to_clone)
 	return 0;
 }
 
+/**
+ * ba_space() - returns the amount of free space left in the block allocator
+ * @ba_lun:	Block allocator.
+ *
+ * Return: Amount of free space in block allocator.
+ */
 static u64 ba_space(struct ba_lun *ba_lun)
 {
 	struct ba_lun_info *lun_info =
@@ -296,6 +366,12 @@ static u64 ba_space(struct ba_lun *ba_lun)
 	return lun_info->free_aun_cnt;
 }
 
+/**
+ * ba_terminate() - frees resources associated with the block allocator
+ * @ba_lun:	Block allocator.
+ *
+ * Safe to call in a partially allocated state.
+ */
 void ba_terminate(struct ba_lun *ba_lun)
 {
 	struct ba_lun_info *lun_info =
@@ -309,6 +385,15 @@ void ba_terminate(struct ba_lun *ba_lun)
 	}
 }
 
+/**
+ * cxlflash_init_ba() - initializes and allocates a block allocator
+ * @lun_info:	LUN information structure that owns the block allocator.
+ *
+ * Return:
+ *	0 on success
+ *	-EINVAL when the calculated bitmap size is 0
+ *	-ENOMEM on failure to allocate memory
+ */
 static int cxlflash_init_ba(struct lun_info *lun_info)
 {
 	int rc = 0;
@@ -335,6 +420,17 @@ cxlflash_init_ba_exit:
 	return rc;
 }
 
+/**
+ * write_same16() - sends a SCSI WRITE_SAME16 (0) command to specified LUN
+ * @afu:	AFU associated with the host.
+ * @lun_info:	Information structure associated with LUN.
+ * @lba:	Logical block address to start write same.
+ * @nblks:	Number of logical blocks to write same.
+ *
+ * Return:
+ *	0 on success
+ *	-1 on failure
+ */
 static int write_same16(struct afu *afu, struct lun_info *lun_info, u64 lba,
 			u32 nblks)
 {
@@ -385,6 +481,27 @@ out:
 	return rc;
 }
 
+/**
+ * grow_lxt() - expands the translation table assciated with the specified RHTE
+ * @afu:		AFU associated with the host.
+ * @lun_info:		Information structure associated with LUN.
+ * @ctx_hndl_u:		Context ID of context owning the RHTE.
+ * @res_hndl_u:		Resource handle associated with the RHTE.
+ * @rht_entry:		Resource handle entry (RHTE).
+ * @delta:		Number of additional translation entries needed.
+ * @act_new_size:	Number of translation entries associated with RHTE.
+ *
+ * By design, this routine employs a 'best attempt' allocation and will
+ * truncate the requested size down if there is not sufficient space in
+ * the block allocator to satisfy the request but there does exist some
+ * amount of space. The user is made aware of this by returning the size
+ * allocated.
+ *
+ * Return:
+ *	0 on success
+ *	-ENOSPC when no space left
+ *	-ENOMEM when unable to allocate memory
+ */
 static int grow_lxt(struct afu *afu,
 		    struct lun_info *lun_info,
 		    ctx_hndl_t ctx_hndl_u,
@@ -481,6 +598,20 @@ static int grow_lxt(struct afu *afu,
 	return 0;
 }
 
+/**
+ * shrink_lxt() - reduces translation table assciated with the specified RHTE
+ * @afu:		AFU associated with the host.
+ * @lun_info:		Information structure associated with LUN.
+ * @ctx_hndl_u:		Context ID of context owning the RHTE.
+ * @res_hndl_u:		Resource handle associated with the RHTE.
+ * @rht_entry:		Resource handle entry (RHTE).
+ * @delta:		Number of translation entries that can be removed.
+ * @act_new_size:	Number of translation entries associated with RHTE.
+ *
+ * Return:
+ *	0 on success
+ *	-ENOMEM when unable to allocate memory
+ */
 static int shrink_lxt(struct afu *afu,
 		      struct lun_info *lun_info,
 		      ctx_hndl_t ctx_hndl_u,
@@ -551,27 +682,20 @@ static int shrink_lxt(struct afu *afu,
 	return 0;
 }
 
-/*
- * NAME:	cxlflash_vlun_resize()
+/**
+ * cxlflash_vlun_resize() - changes the size of a virtual lun
+ * @sdev:	SCSI device associated with LUN owning virtual LUN.
+ * @resize:	Resize ioctl data structure.
  *
- * FUNCTION:	Resize a resource handle by changing the RHT entry and LXT
- *		Tbl it points to. Synchronize all contexts that refer to
- *		the RHT.
+ * On successful return, the user is informed of the new size (in blocks)
+ * of the virtual lun in last LBA format. When the size of the virtual
+ * lun is zero, the last LBA is reflected as -1.
  *
- * INPUTS:
- *              sdev       - Pointer to scsi device structure
- *              arg        - Pointer to ioctl specific structure
- *
- * OUTPUTS:
- *		act_new_size	- pointer to actual new size in chunks
- *
- * RETURNS:
- *		0	- Success
- *		errno	- Failure
- *
- * NOTES:
- *		Setting new_size=0 will clear LXT_START and LXT_CNT fields
- *		in the RHT entry.
+ * Return:
+ *	0 on success
+ *	-EINVAL when parameters/conditions are invalid
+ *	-ENOSPC when no space left
+ *	-ENOMEM when unable to allocate memory
  */
 int cxlflash_vlun_resize(struct scsi_device *sdev,
 			 struct dk_cxlflash_resize *resize)
@@ -657,26 +781,21 @@ out:
 	return rc;
 }
 
-/* NAME:	cxlflash_disk_virtual_open
+/**
+ * cxlflash_disk_virtual_open() - open a virtual disk of specified size
+ * @sdev:	SCSI device associated with LUN owning virtual LUN.
+ * @arg:	UVirtual ioctl data structure.
  *
- * FUNCTION:	open a virtual lun of specified size
+ * On successful return, the user is informed of the resource handle
+ * to be used to identify the virtual lun and the size (in blocks) of
+ * the virtual lun in last LBA format. When the size of the virtual lun
+ * is zero, the last LBA is reflected as -1.
  *
- * INPUTS:
- *              sdev       - Pointer to scsi device structure
- *              arg        - Pointer to ioctl specific structure
- *
- * OUTPUTS:
- *              none
- *
- * RETURNS:
- *              0           - Success
- *              errno       - Failure
- *
- * NOTES:
- *		When successful:
- *		a. find a free RHT entry
- *		b. Resize to requested size
- *
+ * Return:
+ *	0 on success
+ *	-EINVAL when parameters/conditions are invalid
+ *	-EMFILE when there have been too many opens for the LUN
+ *	-ENOMEM when unable to allocate memory
  */
 int cxlflash_disk_virtual_open(struct scsi_device *sdev, void *arg)
 {
@@ -764,25 +883,19 @@ err1:
 	goto out;
 }
 
-/*
- * NAME:	clone_lxt()
+/**
+ * shrink_lxt() - copies translation tables from source to destination RHTE
+ * @afu:		AFU associated with the host.
+ * @blka:		Block allocator associated with LUN.
+ * @ctx_hndl_u:		Context ID of context owning the RHTE.
+ * @res_hndl_u:		Resource handle associated with the RHTE.
+ * @rht_entry:		Destination resource handle entry (RHTE).
+ * @rht_entry_src:	Source resource handle entry (RHTE).
  *
- * FUNCTION:	clone a LXT table
- *
- * INPUTS:
- *		afu		- Pointer to afu struct
- *		ctx_hndl_u	- context that owns the destination LXT
- *		res_hndl_u	- res_hndl of the destination LXT
- *		rht_entry	- destination RHT to clone into
- *		rht_entry_src	- source RHT to clone from
- *
- * OUTPUTS:
- *
- * RETURNS:
- *		0	- Success
- *		errno	- Failure
- *
- * NOTES:
+ * Return:
+ *	0 on success
+ *	-ENOMEM when unable to allocate memory
+ *	-EIO when unable to clone the LBAs
  */
 static int clone_lxt(struct afu *afu,
 		     struct blka *blka,
@@ -790,7 +903,7 @@ static int clone_lxt(struct afu *afu,
 		     res_hndl_t res_hndl_u,
 		     struct sisl_rht_entry *rht_entry,
 		     struct sisl_rht_entry *rht_entry_src)
-{ 
+{
 	struct sisl_lxt_entry *lxt;
 	u32 ngrps;
 	u64 aun;		/* chunk# allocated by block allocator */
@@ -849,26 +962,20 @@ static int clone_lxt(struct afu *afu,
 	return 0;
 }
 
-/*
- * NAME:        cxlflash_disk_clone
+/**
+ * cxlflash_disk_clone() - clone a context by making snapshot of another
+ * @sdev:	SCSI device associated with LUN owning virtual LUN.
+ * @clone:	Clone ioctl data structure.
  *
- * FUNCTION:    Clone a context by making a snapshot copy of another, specified
- *		context. This routine effectively performs cxlflash_disk_open
- *		operations for each in-use virtual resource in the source
- *		context. Note that the destination context must be in pristine
- *		state and cannot have any resource handles open at the time
- *		of the clone.
+ * This routine effectively performs cxlflash_disk_open operation for each
+ * in-use virtual resource in the source context. Note that the destination
+ * context must be in pristine state and cannot have any resource handles
+ * open at the time of the clone.
  *
- * INPUTS:
- *              sdev       - Pointer to scsi device structure
- *              arg        - Pointer to ioctl specific structure
- *
- * OUTPUTS:
- *              None
- *
- * RETURNS:
- *              0           - Success
- *              errno       - Failure
+ * Return:
+ *	0 on success
+ *	-EINVAL when parameters/conditions are invalid
+ *	-ENOMEM when unable to allocate memory
  */
 int cxlflash_disk_clone(struct scsi_device *sdev,
 			struct dk_cxlflash_clone *clone)
@@ -1023,3 +1130,4 @@ err:
 		kfree(lun_access_src);
 	goto out;
 }
+
