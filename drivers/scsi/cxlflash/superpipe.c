@@ -581,7 +581,7 @@ int cxlflash_disk_release(struct scsi_device *sdev,
 	 * in the RHT entry and properly sync with the AFU.
 	 * Afterwards we clear the remaining fields.
 	 */
-	switch(lun_info->mode) {
+	switch (lun_info->mode) {
 	case MODE_VIRTUAL:
 		marshall_rele_to_resize(release, &size);
 		size.req_size = 0;

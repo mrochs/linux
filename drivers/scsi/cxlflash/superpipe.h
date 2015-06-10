@@ -179,7 +179,7 @@ int ba_init(struct ba_lun *);
 
 int cxlflash_vlun_resize(struct scsi_device *, struct dk_cxlflash_resize *);
 
-int cxlflash_disk_release(struct scsi_device *,struct dk_cxlflash_release *);
+int cxlflash_disk_release(struct scsi_device *, struct dk_cxlflash_release *);
 
 int cxlflash_disk_clone(struct scsi_device *, struct dk_cxlflash_clone *);
 

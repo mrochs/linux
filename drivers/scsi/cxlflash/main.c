@@ -1968,7 +1968,7 @@ retry:
 	} else if (unlikely(newval < 0)) {
 		/* This should be rare. i.e. Only if two threads race and
 		 * decrement before the MMIO read is done. In this case
-		 * just benefit from the other thread having updated 
+		 * just benefit from the other thread having updated
 		 * afu->room.
 		 */
 		if (nretry++ < MC_ROOM_RETRY_CNT) {
