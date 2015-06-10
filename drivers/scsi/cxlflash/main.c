@@ -57,7 +57,7 @@ struct afu_cmd *cxlflash_cmd_checkout(struct afu *afu)
 		cmd = &afu->cmd[k];
 
 		if (!atomic_dec_if_positive(&cmd->free)) {
-			pr_debug("%s: returning found index=%d\n",
+			pr_devel("%s: returning found index=%d\n",
 				 __func__, cmd->slot);
 			memset(cmd->buf, 0, CMD_BUFSIZE);
 			memset(cmd->rcb.cdb, 0, sizeof(cmd->rcb.cdb));
@@ -92,7 +92,7 @@ void cxlflash_cmd_checkin(struct afu_cmd *cmd)
 		return;
 	}
 
-	pr_debug("%s: released cmd %p index=%d\n", __func__, cmd, cmd->slot);
+	pr_devel("%s: released cmd %p index=%d\n", __func__, cmd, cmd->slot);
 }
 
 /**
@@ -239,7 +239,7 @@ static void cmd_complete(struct afu_cmd *cmd)
 		cmd_is_tmf = cmd->cmd_tmf;
 		cxlflash_cmd_checkin(cmd); /* Don't use cmd after here */
 
-		pr_debug("%s: calling scsi_set_resid, scp=%p "
+		pr_devel("%s: calling scsi_set_resid, scp=%p "
 			 "result=%X resid=%d\n", __func__,
 			 scp, scp->result, resid);
 
@@ -361,7 +361,7 @@ static int cxlflash_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *scp)
 	short lflag = 0;
 	int rc = 0;
 
-	pr_debug("%s: (scp=%p) %d/%d/%d/%llu cdb=(%08X-%08X-%08X-%08X)\n",
+	pr_devel("%s: (scp=%p) %d/%d/%d/%llu cdb=(%08X-%08X-%08X-%08X)\n",
 		 __func__, scp, host->host_no, scp->device->channel,
 		 scp->device->id, scp->device->lun,
 		 get_unaligned_be32(&((u32 *)scp->cmnd)[0]),
@@ -1982,7 +1982,7 @@ retry:
 write_ioarrin:
 	writeq_be((u64)&cmd->rcb, &afu->host_map->ioarrin);
 out:
-	pr_debug("%s: cmd=%p len=%d ea=%p rc=%d\n", __func__, cmd,
+	pr_devel("%s: cmd=%p len=%d ea=%p rc=%d\n", __func__, cmd,
 		 cmd->rcb.data_len, (void *)cmd->rcb.data_ea, rc);
 	return rc;
 
