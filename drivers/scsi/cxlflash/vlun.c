@@ -44,14 +44,6 @@ static void marshall_virt_to_resize(struct dk_cxlflash_uvirtual *virt,
 	resize->last_lba = virt->last_lba;
 }
 
-void marshall_rele_to_resize(struct dk_cxlflash_release *release,
-				    struct dk_cxlflash_resize *resize)
-{
-	resize->hdr = release->hdr;
-	resize->context_id = release->context_id;
-	resize->rsrc_handle = release->rsrc_handle;
-}
-
 static void marshall_clone_to_rele(struct dk_cxlflash_clone *clone,
 				   struct dk_cxlflash_release *release)
 {

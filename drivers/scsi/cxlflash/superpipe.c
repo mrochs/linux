@@ -28,6 +28,14 @@
 
 struct cxlflash_global global;
 
+static void marshall_rele_to_resize(struct dk_cxlflash_release *release,
+				    struct dk_cxlflash_resize *resize)
+{
+	resize->hdr = release->hdr;
+	resize->context_id = release->context_id;
+	resize->rsrc_handle = release->rsrc_handle;
+}
+
 static void marshall_det_to_rele(struct dk_cxlflash_detach *detach,
 				 struct dk_cxlflash_release *release)
 {
