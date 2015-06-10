@@ -505,6 +505,7 @@ out:
 void cxlflash_lun_detach(struct lun_info *lun_info)
 {
 	spin_lock(&lun_info->slock);
+	BUG_ON(lun_info->mode == MODE_NONE); /* XXX - remove me before submit */
 	if (--lun_info->users == 0)
 		lun_info->mode = MODE_NONE;
 	pr_debug("%s: li_users=%u\n", __func__, lun_info->users);
@@ -547,6 +548,7 @@ static int cxlflash_disk_release(struct scsi_device *sdev,
 
 	struct ctx_info *ctx_info = NULL;
 	struct sisl_rht_entry *rht_entry;
+	struct sisl_rht_entry_f1 *rht_entry_f1;
 
 	pr_info("%s: ctxid=%llu res_hndl=0x%llx li->mode=%u li->users=%u\n",
 		__func__, ctxid, release->rsrc_handle, lun_info->mode,
@@ -573,7 +575,8 @@ static int cxlflash_disk_release(struct scsi_device *sdev,
 	 * in the RHT entry and properly sync with the AFU.
 	 * Afterwards we clear the remaining fields.
 	 */
-	if (lun_info->mode == MODE_VIRTUAL) {
+	switch(lun_info->mode) {
+	case MODE_VIRTUAL:
 		marshall_rele_to_resize(release, &size);
 		size.req_size = 0;
 		rc = cxlflash_vlun_resize(sdev, &size);
@@ -581,15 +584,15 @@ static int cxlflash_disk_release(struct scsi_device *sdev,
 			pr_err("%s: resize failed rc %d\n", __func__, rc);
 			goto out;
 		}
-		rhte_checkin(ctx_info, rht_entry);
-	} else if (lun_info->mode == MODE_PHYSICAL) {
+
+		break;
+	case MODE_PHYSICAL:
 		/*
 		 * Clear the Format 1 RHT entry for direct access
 		 * (physical LUN) using the synchronization sequence
 		 * defined in the SISLite specification.
 		 */
-		struct sisl_rht_entry_f1 *rht_entry_f1 =
-			    (struct sisl_rht_entry_f1 *)rht_entry;
+		rht_entry_f1 = (struct sisl_rht_entry_f1 *)rht_entry;
 
 		rht_entry_f1->valid = 0;
 		smp_wmb(); /* Make revoccation of RHT entry visible */
@@ -601,9 +604,13 @@ static int cxlflash_disk_release(struct scsi_device *sdev,
 		smp_wmb(); /* Make RHT entry bottom-half clearing visible */
 
 		cxlflash_afu_sync(afu, ctxid, res_hndl, AFU_HW_SYNC);
-		rhte_checkin(ctx_info, rht_entry);
+		break;
+	default:
+		BUG();
+		goto out;
 	}
 
+	rhte_checkin(ctx_info, rht_entry);
 	cxlflash_lun_detach(lun_info);
 
 out:
