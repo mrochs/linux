@@ -1301,6 +1301,13 @@ static int cxlflash_disk_clone(struct scsi_device *sdev,
 		goto out;
 	}
 
+	if (unlikely(lun_info->mode != MODE_VIRTUAL)) {
+		rc = -EINVAL;
+		pr_err("%s: Clone not supported on physical LUNs! (%d)\n",
+		       __func__, lun_info->mode);
+		goto out;
+	}
+
 	ctx_info_src = cxlflash_get_context(cfg, ctxid_src, lun_info, true);
 	ctx_info_dst = cxlflash_get_context(cfg, ctxid_dst, lun_info, false);
 	if (unlikely(!ctx_info_src || !ctx_info_dst)) {
