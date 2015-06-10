@@ -181,8 +181,9 @@ void marshall_rele_to_resize(struct dk_cxlflash_release *,
 			     struct dk_cxlflash_resize *);
 int cxlflash_vlun_resize(struct scsi_device *, struct dk_cxlflash_resize *);
 
-int cxlflash_clone_lxt(struct afu *, struct blka *, ctx_hndl_t, res_hndl_t,
-		       struct sisl_rht_entry *, struct sisl_rht_entry *);
+int cxlflash_disk_release(struct scsi_device *,struct dk_cxlflash_release *);
+
+int cxlflash_disk_clone(struct scsi_device *, struct dk_cxlflash_clone *);
 
 int cxlflash_disk_virtual_open(struct scsi_device *, void *);
 

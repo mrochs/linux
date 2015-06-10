@@ -35,13 +35,6 @@ static void marshall_det_to_rele(struct dk_cxlflash_detach *detach,
 	release->context_id = detach->context_id;
 }
 
-static void marshall_clone_to_rele(struct dk_cxlflash_clone *clone,
-				   struct dk_cxlflash_release *release)
-{
-	release->hdr = clone->hdr;
-	release->context_id = clone->context_id_dst;
-}
-
 static struct lun_info *create_lun_info(struct scsi_device *sdev)
 {
 	struct lun_info *lun_info = NULL;
@@ -532,8 +525,8 @@ void cxlflash_lun_detach(struct lun_info *lun_info)
  * NOTES:
  *              When successful, the RHT entry is cleared.
  */
-static int cxlflash_disk_release(struct scsi_device *sdev,
-				 struct dk_cxlflash_release *release)
+int cxlflash_disk_release(struct scsi_device *sdev,
+			  struct dk_cxlflash_release *release)
 {
 	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)sdev->host->hostdata;
 	struct lun_info *lun_info = sdev->hostdata;
@@ -1248,181 +1241,6 @@ out:
 	if (likely(ctx_info))
 		atomic_dec(&ctx_info->nrefs);
 	return rc;
-}
-
-/*
- * NAME:        cxlflash_disk_clone
- *
- * FUNCTION:    Clone a context by making a snapshot copy of another, specified
- *		context. This routine effectively performs cxlflash_disk_open
- *		operations for each in-use virtual resource in the source
- *		context. Note that the destination context must be in pristine
- *		state and cannot have any resource handles open at the time
- *		of the clone.
- *
- * INPUTS:
- *              sdev       - Pointer to scsi device structure
- *              arg        - Pointer to ioctl specific structure
- *
- * OUTPUTS:
- *              None
- *
- * RETURNS:
- *              0           - Success
- *              errno       - Failure
- */
-static int cxlflash_disk_clone(struct scsi_device *sdev,
-			       struct dk_cxlflash_clone *clone)
-{
-	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)sdev->host->hostdata;
-	struct lun_info *lun_info = sdev->hostdata;
-	struct blka *blka = &lun_info->blka;
-	struct afu *afu = cfg->afu;
-	struct dk_cxlflash_release release = { { 0 }, 0 };
-
-	struct ctx_info *ctx_info_src = NULL,
-			*ctx_info_dst = NULL;
-	struct lun_access *lun_access_src, *lun_access_dst;
-	u32 perms;
-	u64 ctxid_src = clone->context_id_src,
-	    ctxid_dst = clone->context_id_dst;
-	int adap_fd_src = clone->adap_fd_src;
-	int i, j;
-	int rc = 0;
-	bool found;
-	LIST_HEAD(sidecar);
-
-	pr_info("%s: ctxid_src=%llu ctxid_dst=%llu adap_fd_src=%d\n",
-		__func__, ctxid_src, ctxid_dst, adap_fd_src);
-
-	/* Do not clone yourself */
-	if (unlikely(ctxid_src == ctxid_dst)) {
-		rc = -EINVAL;
-		goto out;
-	}
-
-	if (unlikely(lun_info->mode != MODE_VIRTUAL)) {
-		rc = -EINVAL;
-		pr_err("%s: Clone not supported on physical LUNs! (%d)\n",
-		       __func__, lun_info->mode);
-		goto out;
-	}
-
-	ctx_info_src = cxlflash_get_context(cfg, ctxid_src, lun_info, true);
-	ctx_info_dst = cxlflash_get_context(cfg, ctxid_dst, lun_info, false);
-	if (unlikely(!ctx_info_src || !ctx_info_dst)) {
-		pr_err("%s: Invalid context! (%llu,%llu)\n",
-		       __func__, ctxid_src, ctxid_dst);
-		rc = -EINVAL;
-		goto out;
-	}
-
-	if (unlikely(adap_fd_src != ctx_info_src->lfd)) {
-		pr_err("%s: Invalid source adapter fd! (%d)\n",
-		       __func__, adap_fd_src);
-		rc = -EINVAL;
-		goto out;
-	}
-
-	/* Verify there is no open resource handle in the destination context */
-	for (i = 0; i < MAX_RHT_PER_CONTEXT; i++)
-		if (ctx_info_dst->rht_start[i].nmask != 0) {
-			rc = -EINVAL;
-			goto out;
-		}
-
-	/* Clone LUN access list */
-	list_for_each_entry(lun_access_src, &ctx_info_src->luns, list) {
-		found = false;
-		list_for_each_entry(lun_access_dst, &ctx_info_dst->luns, list)
-			if (lun_access_dst->sdev == lun_access_src->sdev) {
-				found = true;
-				break;
-			}
-
-		if (!found) {
-			lun_access_dst = kzalloc(sizeof(*lun_access_dst),
-						 GFP_KERNEL);
-			if (unlikely(!lun_access_dst)) {
-				pr_err("%s: Unable to allocate lun_access!\n",
-				       __func__);
-				rc = -ENOMEM;
-				goto out;
-			}
-
-			*lun_access_dst = *lun_access_src;
-			list_add(&lun_access_dst->list, &sidecar);
-		}
-	}
-
-	if (unlikely(!ctx_info_src->rht_out)) {
-		pr_info("%s: Nothing to clone!\n", __func__);
-		goto out_success;
-	}
-
-	/* User specified permission on attach */
-	perms = ctx_info_dst->rht_perms;
-
-	/*
-	 * Copy over checked-out RHT (and their associated LXT) entries by
-	 * hand, stopping after we've copied all outstanding entries and
-	 * cleaning up if the clone fails.
-	 *
-	 * Note: This loop is equivalent to performing cxlflash_disk_open and
-	 * cxlflash_vlun_resize. As such, LUN accounting needs to be taken into
-	 * account by attaching after each successful RHT entry clone. In the
-	 * event that a clone failure is experienced, the LUN detach is handled
-	 * via the cleanup performed by cxlflash_disk_release.
-	 */
-	for (i = 0; i < MAX_RHT_PER_CONTEXT; i++) {
-		if (ctx_info_src->rht_out == ctx_info_dst->rht_out)
-			break;
-		if (ctx_info_src->rht_start[i].nmask == 0)
-			continue;
-
-		/* Consume a destination RHT entry */
-		ctx_info_dst->rht_out++;
-		ctx_info_dst->rht_start[i].nmask =
-		    ctx_info_src->rht_start[i].nmask;
-		ctx_info_dst->rht_start[i].fp =
-		    SISL_RHT_FP_CLONE(ctx_info_src->rht_start[i].fp, perms);
-		ctx_info_dst->rht_lun[i] = ctx_info_src->rht_lun[i];
-
-		rc = cxlflash_clone_lxt(afu, blka, ctxid_dst, i,
-					&ctx_info_dst->rht_start[i],
-					&ctx_info_src->rht_start[i]);
-		if (rc) {
-			marshall_clone_to_rele(clone, &release);
-			for (j = 0; j < i; j++) {
-				release.rsrc_handle = j;
-				cxlflash_disk_release(sdev, &release);
-			}
-
-			/* Put back the one we failed on */
-			rhte_checkin(ctx_info_dst, &ctx_info_dst->rht_start[i]);
-			goto err;
-		}
-
-		cxlflash_lun_attach(lun_info, lun_info->mode);
-	}
-
-out_success:
-	list_splice(&sidecar, &ctx_info_dst->luns);
-	sys_close(adap_fd_src);
-
-	/* fall thru */
-out:
-	if (likely(ctx_info_src))
-		atomic_dec(&ctx_info_src->nrefs);
-	if (likely(ctx_info_dst))
-		atomic_dec(&ctx_info_dst->nrefs);
-	pr_info("%s: returning rc=%d\n", __func__, rc);
-	return rc;
-
-err:
-	list_for_each_entry_safe(lun_access_src, lun_access_dst, &sidecar, list)
-		kfree(lun_access_src);
-	goto out;
 }
 
 static int process_sense(struct scsi_device *sdev,
