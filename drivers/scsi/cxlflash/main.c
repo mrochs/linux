@@ -228,9 +228,7 @@ static void cmd_complete(struct afu_cmd *cmd)
 
 	if (cmd->rcb.scp) {
 		scp = cmd->rcb.scp;
-		if (unlikely(cmd->sa.rc.afu_rc ||
-			     cmd->sa.rc.scsi_rc ||
-			     cmd->sa.rc.fc_rc))
+		if (unlikely(cmd->sa.ioasc))
 			process_cmd_err(cmd, scp);
 		else
 			scp->result = (DID_OK << 16);
@@ -238,8 +236,8 @@ static void cmd_complete(struct afu_cmd *cmd)
 		cmd_is_tmf = cmd->cmd_tmf;
 		cxlflash_cmd_checkin(cmd); /* Don't use cmd after here */
 
-		pr_debug("%s: calling scsi)done scp=%p result=%X \n",
-			 __func__, scp, scp->result);
+		pr_debug("%s: calling scsi_done scp=%p result=%X ioasc=%d\n",
+			 __func__, scp, scp->result, cmd->sa.ioasc);
 
 		scsi_dma_unmap(scp);
 		scp->scsi_done(scp);
