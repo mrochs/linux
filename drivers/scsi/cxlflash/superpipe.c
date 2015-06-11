@@ -115,7 +115,7 @@ out:
  * cxlflash_slave_alloc() - allocate and associate LUN information structure
  * @sdev:	SCSI device associated with LUN.
  *
- * Return: 0 on success, -Errno on failure
+ * Return: 0 on success, -errno on failure
  */
 int cxlflash_slave_alloc(struct scsi_device *sdev)
 {
@@ -141,7 +141,7 @@ out:
  *
  * Stores the LUN id and lun_index and programs the AFU's LUN mapping table.
  *
- * Return: 0 on success, -Errno on failure
+ * Return: 0 on success, -errno on failure
  */
 int cxlflash_slave_configure(struct scsi_device *sdev)
 {
@@ -274,7 +274,7 @@ denied:
  * @cfg:	Internal structure associated with the host.
  * @ctx_info:	Context to attach.
  *
- * Return: 0 on success, -Errno on failure
+ * Return: 0 on success, -errno on failure
  */
 static int cxlflash_afu_attach(struct cxlflash_cfg *cfg,
 			       struct ctx_info *ctx_info)
@@ -283,9 +283,7 @@ static int cxlflash_afu_attach(struct cxlflash_cfg *cfg,
 	int rc = 0;
 	u64 reg;
 
-	/* restrict user to read/write cmds in translated
-	 * mode. 
-	 */
+	/* Restrict user to read/write cmds in translated mode */
 	(void)readq_be(&ctx_info->ctrl_map->mbox_r);	/* unlock ctx_cap */
 	writeq_be((SISL_CTX_CAP_READ_CMD | SISL_CTX_CAP_WRITE_CMD),
 		  &ctx_info->ctrl_map->ctx_cap);
@@ -294,7 +292,7 @@ static int cxlflash_afu_attach(struct cxlflash_cfg *cfg,
 
 	/* if the write failed, the ctx must have been
 	 * closed since the mbox read and the ctx_cap
-	 * register locked up.  Fail the registration
+	 * register locked up. Fail the registration.
 	 */
 	if (reg != (SISL_CTX_CAP_READ_CMD | SISL_CTX_CAP_WRITE_CMD)) {
 		pr_err("%s: ctx may be closed reg=%llx\n", __func__, reg);
@@ -548,7 +546,7 @@ static void rht_format1(struct sisl_rht_entry *rht_entry, u64 lun_id, u32 perm)
  * @lun_info:	LUN to attach.
  * @mode:	Desired mode of the LUN.
  *
- * Return: 0 on success, -Errno on failure
+ * Return: 0 on success, -errno on failure
  */
 int cxlflash_lun_attach(struct lun_info *lun_info, enum lun_mode mode)
 {
@@ -638,7 +636,7 @@ int cxlflash_disk_release(struct scsi_device *sdev,
 	 * Resize to 0 for virtual LUNS by setting the size
 	 * to 0. This will clear LXT_START and LXT_CNT fields
 	 * in the RHT entry and properly sync with the AFU.
-	 * 
+	 *
 	 * Afterwards we clear the remaining fields.
 	 */
 	switch (lun_info->mode) {
@@ -1092,7 +1090,7 @@ static const struct vm_operations_struct cxlflash_mmap_vmops = {
  *
  * Installs local mmap vmops to 'catch' faults for error notification support.
  *
- * Return: 0 on success, -Errno on failure
+ * Return: 0 on success, -errno on failure
  */
 static int cxlflash_cxl_mmap(struct file *file, struct vm_area_struct *vma)
 {
@@ -1159,7 +1157,7 @@ static const struct file_operations cxlflash_cxl_fops = {
  * are not supported). Additional LUNs can be attached to a context by
  * specifying the 'reuse' flag defined in the cxlflash_ioctl.h header.
  *
- * Return: 0 on success, -Errno on failure
+ * Return: 0 on success, -errno on failure
  */
 static int cxlflash_disk_attach(struct scsi_device *sdev,
 				struct dk_cxlflash_attach *attach)
@@ -1331,7 +1329,7 @@ err0:
  * SCSI devices (sdev) with a global LUN instance. Additionally it serves to
  * change a LUN's operating mode: legacy or superpipe.
  *
- * Return: 0 on success, -Errno on failure
+ * Return: 0 on success, -errno on failure
  */
 static int cxlflash_manage_lun(struct scsi_device *sdev,
 			       struct dk_cxlflash_manage_lun *manage)
@@ -1351,7 +1349,7 @@ static int cxlflash_manage_lun(struct scsi_device *sdev,
  * @sdev:	SCSI device associated with LUN.
  * @recover:	Recover ioctl data structure.
  *
- * Return: 0 on success, -Errno on failure
+ * Return: 0 on success, -errno on failure
  */
 static int cxlflash_afu_recover(struct scsi_device *sdev,
 				struct dk_cxlflash_recover_afu *recover)
@@ -1396,7 +1394,7 @@ out:
  * @sdev:	SCSI device associated with LUN.
  * @verify:	Verify ioctl data structure.
  *
- * Return: 0 on success, -Errno on failure
+ * Return: 0 on success, -errno on failure
  */
 static int process_sense(struct scsi_device *sdev,
 			 struct dk_cxlflash_verify *verify)
@@ -1412,13 +1410,13 @@ static int process_sense(struct scsi_device *sdev,
 	switch (sense_data->sense_key) {
 	case NO_SENSE:
 	case RECOVERED_ERROR:
-		/* Fall through */
+		/* fall through */
 	case NOT_READY:
 		break;
 	case UNIT_ATTENTION:
 		switch (sense_data->add_sense_key) {
 		case 0x29: /* Power on Reset or Device Reset */
-			/* Fall through */
+			/* fall through */
 		case 0x2A: /* Device settings/capacity changed */
 			read_cap16(afu, lun_info, sdev->channel + 1);
 			verify->last_lba = lun_info->max_lba;
@@ -1449,7 +1447,7 @@ static int process_sense(struct scsi_device *sdev,
  * @sdev:	SCSI device associated with LUN.
  * @verify:	Verify ioctl data structure.
  *
- * Return: 0 on success, -Errno on failure
+ * Return: 0 on success, -errno on failure
  */
 static int cxlflash_disk_verify(struct scsi_device *sdev,
 				struct dk_cxlflash_verify *verify)
@@ -1529,7 +1527,7 @@ static char *decode_ioctl(int cmd)
  * to be used to identify the direct lun and the size (in blocks) of
  * the direct lun in last LBA format.
  *
- * Return: 0 on success, -Errno on failure
+ * Return: 0 on success, -errno on failure
  */
 static int cxlflash_disk_direct_open(struct scsi_device *sdev, void *arg)
 {
@@ -1599,7 +1597,7 @@ err1:
  * @sdev:	SCSI device associated with LUN.
  * @arg:	Userspace ioctl data structure.
  *
- * Return: 0 on success, -Errno on failure
+ * Return: 0 on success, -errno on failure
  */
 int cxlflash_ioctl(struct scsi_device *sdev, int cmd, void __user *arg)
 {
@@ -1671,7 +1669,7 @@ int cxlflash_ioctl(struct scsi_device *sdev, int cmd, void __user *arg)
 		if (likely(do_ioctl))
 			break;
 
-		/* fall throuugh */
+		/* fall through */
 	default:
 		rc = -EINVAL;
 		goto cxlflash_ioctl_exit;

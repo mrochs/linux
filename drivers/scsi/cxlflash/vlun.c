@@ -65,7 +65,7 @@ static void marshall_clone_to_rele(struct dk_cxlflash_clone *clone,
  * ba_init() - initializes a block allocator
  * @ba_lun:	Block allocator to initialize.
  *
- * Return: 0 on success, -Errno on failure
+ * Return: 0 on success, -errno on failure
  */
 int ba_init(struct ba_lun *ba_lun)
 {
@@ -376,7 +376,7 @@ void ba_terminate(struct ba_lun *ba_lun)
  * cxlflash_init_ba() - initializes and allocates a block allocator
  * @lun_info:	LUN information structure that owns the block allocator.
  *
- * Return: 0 on success, -Errno on failure
+ * Return: 0 on success, -errno on failure
  */
 static int cxlflash_init_ba(struct lun_info *lun_info)
 {
@@ -479,7 +479,7 @@ out:
  * amount of space. The user is made aware of this by returning the size
  * allocated.
  *
- * Return: 0 on success, -Errno on failure
+ * Return: 0 on success, -errno on failure
  */
 static int grow_lxt(struct afu *afu,
 		    struct lun_info *lun_info,
@@ -587,7 +587,7 @@ static int grow_lxt(struct afu *afu,
  * @delta:		Number of translation entries that can be removed.
  * @act_new_size:	Number of translation entries associated with RHTE.
  *
- * Return: 0 on success, -Errno on failure
+ * Return: 0 on success, -errno on failure
  */
 static int shrink_lxt(struct afu *afu,
 		      struct lun_info *lun_info,
@@ -668,7 +668,7 @@ static int shrink_lxt(struct afu *afu,
  * of the virtual lun in last LBA format. When the size of the virtual
  * lun is zero, the last LBA is reflected as -1.
  *
- * Return: 0 on success, -Errno on failure
+ * Return: 0 on success, -errno on failure
  */
 int cxlflash_vlun_resize(struct scsi_device *sdev,
 			 struct dk_cxlflash_resize *resize)
@@ -764,7 +764,7 @@ out:
  * the virtual lun in last LBA format. When the size of the virtual lun
  * is zero, the last LBA is reflected as -1.
  *
- * Return: 0 on success, -Errno on failure
+ * Return: 0 on success, -errno on failure
  */
 int cxlflash_disk_virtual_open(struct scsi_device *sdev, void *arg)
 {
@@ -861,7 +861,7 @@ err1:
  * @rht_entry:		Destination resource handle entry (RHTE).
  * @rht_entry_src:	Source resource handle entry (RHTE).
  *
- * Return: 0 on success, -Errno on failure
+ * Return: 0 on success, -errno on failure
  */
 static int clone_lxt(struct afu *afu,
 		     struct blka *blka,
@@ -938,7 +938,7 @@ static int clone_lxt(struct afu *afu,
  * context must be in pristine state and cannot have any resource handles
  * open at the time of the clone.
  *
- * Return: 0 on success, -Errno on failure
+ * Return: 0 on success, -errno on failure
  */
 int cxlflash_disk_clone(struct scsi_device *sdev,
 			struct dk_cxlflash_clone *clone)
@@ -1079,7 +1079,7 @@ out_success:
 	list_splice(&sidecar, &ctx_info_dst->luns);
 	sys_close(adap_fd_src);
 
-	/* fall thru */
+	/* fall through */
 out:
 	if (likely(ctx_info_src))
 		atomic_dec(&ctx_info_src->nrefs);
