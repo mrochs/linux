@@ -284,8 +284,7 @@ static int cxlflash_afu_attach(struct cxlflash_cfg *cfg,
 	u64 reg;
 
 	/* restrict user to read/write cmds in translated
-	 * mode. User has option to choose read and/or write
-	 * permissions again in mc_open.
+	 * mode. 
 	 */
 	(void)readq_be(&ctx_info->ctrl_map->mbox_r);	/* unlock ctx_cap */
 	writeq_be((SISL_CTX_CAP_READ_CMD | SISL_CTX_CAP_WRITE_CMD),
@@ -375,8 +374,8 @@ static int read_cap16(struct afu *afu, struct lun_info *lun_info, u32 port_sel)
 	}
 
 	cmd->rcb.req_flags = (SISL_REQ_FLAGS_PORT_LUN_ID |
-				SISL_REQ_FLAGS_SUP_UNDERRUN |
-				SISL_REQ_FLAGS_HOST_READ);
+			      SISL_REQ_FLAGS_SUP_UNDERRUN |
+			      SISL_REQ_FLAGS_HOST_READ);
 
 	cmd->rcb.port_sel = port_sel;
 	cmd->rcb.lun_id = lun_info->lun_id;
@@ -597,7 +596,7 @@ void cxlflash_lun_detach(struct lun_info *lun_info)
  * For LUN's in virtual mode, the virtual lun associated with the specified
  * resource handle is resized to 0 prior to releasing the RHTE.
  *
- * Return: 0 on success, -Errno on failure
+ * Return: 0 on success, -errno on failure
  */
 int cxlflash_disk_release(struct scsi_device *sdev,
 			  struct dk_cxlflash_release *release)
@@ -781,7 +780,7 @@ err:
  * are cleaned up. When detaching the last LUN for a context, the context
  * itself is cleaned up and released.
  *
- * Return: 0 on success, -Errno on failure
+ * Return: 0 on success, -errno on failure
  */
 static int cxlflash_disk_detach(struct scsi_device *sdev,
 				struct dk_cxlflash_detach *detach)
