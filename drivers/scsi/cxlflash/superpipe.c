@@ -338,8 +338,6 @@ int cxlflash_check_status(struct afu_cmd *cmd)
 	struct sisl_ioasa *ioasa = &cmd->sa;
 	ulong lock_flags;
 
-	/* do we need to retry AFU_CMDs (sync) on afu_rc = 0x30 ? */
-	/* can we not avoid that ? */
 	/* not retrying afu timeouts (B_TIMEOUT) */
 	/* returns 1 if the cmd should be retried, 0 otherwise */
 	/* sets B_ERROR flag based on IOASA */
