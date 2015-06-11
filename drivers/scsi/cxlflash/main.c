@@ -684,7 +684,6 @@ static struct scsi_host_template driver_template = {
 	.eh_host_reset_handler = cxlflash_eh_host_reset_handler,
 	.slave_alloc = cxlflash_slave_alloc,
 	.slave_configure = cxlflash_slave_configure,
-	.slave_destroy = cxlflash_slave_destroy,
 	.change_queue_depth = cxlflash_change_queue_depth,
 	.cmd_per_lun = 16,
 	.can_queue = CXLFLASH_MAX_CMDS,

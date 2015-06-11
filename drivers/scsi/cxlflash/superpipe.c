@@ -172,17 +172,6 @@ int cxlflash_slave_configure(struct scsi_device *sdev)
 }
 
 /**
- * cxlflash_slave_destroy() - removes a LUN from list and frees resources
- * @sdev:	SCSI device associated with LUN.
- */
-void cxlflash_slave_destroy(struct scsi_device *sdev)
-{
-	void *lun_info = (void *)sdev->hostdata;
-
-	pr_debug("%s: lun_info=%p\n", __func__, lun_info);
-}
-
-/**
  * cxlflash_list_init() - initializes the global LUN list
  */
 void cxlflash_list_init(void)
