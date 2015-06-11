@@ -205,7 +205,7 @@ void cxlflash_list_terminate(void)
  *
  * NOTE: despite the name pid, in linux, current->pid actually refers
  * to the lightweight process id (tid) and can change if the process is
- * multithreaded. The tgid remains constant for the process and only changes
+ * multi threaded. The tgid remains constant for the process and only changes
  * when the process of fork. For all intents and purposes, think of tgid
  * as a pid in the traditional sense.
  *
@@ -294,7 +294,7 @@ static int cxlflash_afu_attach(struct cxlflash_cfg *cfg,
 
 	/* if the write failed, the ctx must have been
 	 * closed since the mbox read and the ctx_cap
-	 * register locked up.  fail the registration
+	 * register locked up.  Fail the registration
 	 */
 	if (reg != (SISL_CTX_CAP_READ_CMD | SISL_CTX_CAP_WRITE_CMD)) {
 		pr_err("%s: ctx may be closed reg=%llx\n", __func__, reg);
@@ -638,6 +638,7 @@ int cxlflash_disk_release(struct scsi_device *sdev,
 	 * Resize to 0 for virtual LUNS by setting the size
 	 * to 0. This will clear LXT_START and LXT_CNT fields
 	 * in the RHT entry and properly sync with the AFU.
+	 * 
 	 * Afterwards we clear the remaining fields.
 	 */
 	switch (lun_info->mode) {
@@ -660,7 +661,7 @@ int cxlflash_disk_release(struct scsi_device *sdev,
 		rht_entry_f1 = (struct sisl_rht_entry_f1 *)rht_entry;
 
 		rht_entry_f1->valid = 0;
-		smp_wmb(); /* Make revoccation of RHT entry visible */
+		smp_wmb(); /* Make revocation of RHT entry visible */
 
 		rht_entry_f1->lun_id = 0;
 		smp_wmb(); /* Make clearing of LUN id visible */
@@ -776,7 +777,7 @@ err:
  * @sdev:	SCSI device associated with LUN.
  * @detach:	Detach ioctl data structure.
  *
- * As part of the detach, all per-context esources associated with the LUN
+ * As part of the detach, all per-context resources associated with the LUN
  * are cleaned up. When detaching the last LUN for a context, the context
  * itself is cleaned up and released.
  *
@@ -897,7 +898,7 @@ out:
  * lookup fails (a case that should theoretically never occur), every
  * call into this routine results in a complete freeing of a context.
  *
- * As part of the detach, all per-context esources associated with the LUN
+ * As part of the detach, all per-context resources associated with the LUN
  * are cleaned up. When detaching the last LUN for a context, the context
  * itself is cleaned up and released.
  *
@@ -1255,7 +1256,7 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 		goto err1;
 	}
 
-	/* Translate read/write O_* flags from fnctl.h to AFU permission bits */
+	/* Translate read/write O_* flags from fcntl.h to AFU permission bits */
 	perms = SISL_RHT_PERM(attach->hdr.flags + 1);
 
 	ctx_info = create_context(cfg, ctx, ctxid, fd, perms);
@@ -1282,7 +1283,7 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 
 	/*
 	 * No error paths after this point. Once the fd is installed it's
-	 * visible to userspace and can't be undone safely on this thread.
+	 * visible to user space and can't be undone safely on this thread.
 	 */
 	list_add(&lun_access->list, &ctx_info->luns);
 	cfg->ctx_tbl[ctxid] = ctx_info;
@@ -1670,7 +1671,7 @@ int cxlflash_ioctl(struct scsi_device *sdev, int cmd, void __user *arg)
 		if (likely(do_ioctl))
 			break;
 
-		/* fall thru */
+		/* fall throuugh */
 	default:
 		rc = -EINVAL;
 		goto cxlflash_ioctl_exit;
@@ -1701,7 +1702,7 @@ int cxlflash_ioctl(struct scsi_device *sdev, int cmd, void __user *arg)
 			rc = -EFAULT;
 		}
 
-	/* fall thru to exit */
+	/* fall through to exit */
 
 cxlflash_ioctl_exit:
 	if (unlikely(rc && known_ioctl))

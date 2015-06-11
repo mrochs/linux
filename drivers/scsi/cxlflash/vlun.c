@@ -427,8 +427,8 @@ static int write_same16(struct afu *afu, struct lun_info *lun_info, u64 lba,
 	}
 
 	cmd->rcb.req_flags = (SISL_REQ_FLAGS_PORT_LUN_ID |
-				SISL_REQ_FLAGS_SUP_UNDERRUN |
-				SISL_REQ_FLAGS_HOST_READ);
+			      SISL_REQ_FLAGS_SUP_UNDERRUN |
+			      SISL_REQ_FLAGS_HOST_READ);
 
 	cmd->rcb.port_sel = BOTH_PORTS;
 	cmd->rcb.lun_id = lun_info->lun_id;
