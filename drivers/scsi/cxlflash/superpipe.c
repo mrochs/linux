@@ -57,9 +57,7 @@ static void marshall_det_to_rele(struct dk_cxlflash_detach *detach,
  * create_lun_info() - allocate and initialize a LUN information structure
  * @sdev:	SCSI device associated with LUN.
  *
- * Return:
- *	Allocated lun_info structure on success
- *	NULL on failure
+ * Return: Allocated lun_info structure on success, NULL on failure
  */
 static struct lun_info *create_lun_info(struct scsi_device *sdev)
 {
@@ -84,9 +82,7 @@ create_lun_info_exit:
  * @sdev:	SCSI device associated with LUN.
  * @wwid:	WWID associated with LUN.
  *
- * Return:
- *	Found/Allocated lun_info structure on success
- *	NULL on failure
+ * Return: Found/Allocated lun_info structure on success, NULL on failure
  */
 static struct lun_info *lookup_lun(struct scsi_device *sdev, __u8 *wwid)
 {
@@ -119,9 +115,7 @@ out:
  * cxlflash_slave_alloc() - allocate and associate LUN information structure
  * @sdev:	SCSI device associated with LUN.
  *
- * Return:
- *	0 on success
- *	-ENOMEM when unable to allocate memory
+ * Return: 0 on success, -Errno on failure
  */
 int cxlflash_slave_alloc(struct scsi_device *sdev)
 {
@@ -147,8 +141,7 @@ out:
  *
  * Stores the LUN id and lun_index and programs the AFU's LUN mapping table.
  *
- * Return:
- *	0 on success
+ * Return: 0 on success, -Errno on failure
  */
 int cxlflash_slave_configure(struct scsi_device *sdev)
 {
@@ -216,9 +209,7 @@ void cxlflash_list_terminate(void)
  * when the process of fork. For all intents and purposes, think of tgid
  * as a pid in the traditional sense.
  *
- * Return:
- *	Validated context on success
- *	NULL on failure
+ * Return: Validated context on success, NULL on failure
  */
 struct ctx_info *cxlflash_get_context(struct cxlflash_cfg *cfg,
 				      u64 ctxid,
@@ -283,9 +274,7 @@ denied:
  * @cfg:	Internal structure associated with the host.
  * @ctx_info:	Context to attach.
  *
- * Return:
- *	0 on success
- *	-EAGAIN when unable to to set capabilities on AFU
+ * Return: 0 on success, -Errno on failure
  */
 static int cxlflash_afu_attach(struct cxlflash_cfg *cfg,
 			       struct ctx_info *ctx_info)
@@ -329,9 +318,7 @@ out:
  * cxlflash_check_status() - evaluates the status of an AFU command
  * @ioasa:	The IOASA of an AFU command.
  *
- * Return:
- *	TRUE (1) when the IOASA contains an error
- *	FALSE (0) when the IOASA does not contain an error
+ * Return: 1 when IOASA has error, 0 when IOASA does not have an error
  */
 int cxlflash_check_status(struct afu_cmd *cmd)
 {
@@ -374,9 +361,7 @@ int cxlflash_check_status(struct afu_cmd *cmd)
  * @lun_info:	LUN to destined for capacity request.
  * @port_sel:	Port to send request.
  *
- * Return:
- *	0 on success
- *	-1 on failure
+ * Return: 0 on success, -1 on failure
  */
 static int read_cap16(struct afu *afu, struct lun_info *lun_info, u32 port_sel)
 {
@@ -443,9 +428,7 @@ out:
  * @res_hndl:	Resource handle associated with entry.
  * @lun_info:	LUN associated with request.
  *
- * Return:
- *	Validated RHTE on success
- *	NULL on failure
+ * Return: Validated RHTE on success, NULL on failure
  */
 struct sisl_rht_entry *cxlflash_get_rhte(struct ctx_info *ctx_info,
 					 res_hndl_t res_hndl,
@@ -488,9 +471,7 @@ out:
  * @ctx_info:	Context owning the resource handle.
  * @lun_info:	LUN associated with request.
  *
- * Return:
- *	Free RHTE on success
- *	NULL on failure
+ * Return: Free RHTE on success, NULL on failure
  */
 struct sisl_rht_entry *rhte_checkout(struct ctx_info *ctx_info,
 				     struct lun_info *lun_info)
@@ -568,9 +549,7 @@ static void rht_format1(struct sisl_rht_entry *rht_entry, u64 lun_id, u32 perm)
  * @lun_info:	LUN to attach.
  * @mode:	Desired mode of the LUN.
  *
- * Return:
- *	0 on success
- *	-EINVAL when the LUN is already operating in a different mode
+ * Return: 0 on success, -Errno on failure
  */
 int cxlflash_lun_attach(struct lun_info *lun_info, enum lun_mode mode)
 {
@@ -1030,6 +1009,21 @@ out:
 	return err_page;
 }
 
+/**
+ * cxlflash_mmap_fault() - mmap fault handler for adapter file descriptor
+ * @vma:	VM area associated with mapping.
+ * @vmf:	VM fault associated with current fault.
+ *
+ * To support error notification via MMIO, faults are 'caught' by this routine
+ * that was inserted before passing back the adapter file descriptor on attach.
+ * When a fault occurs, this routine evaluates if error recovery is active and
+ * if so, installs the error page to 'notify' the user about the error state.
+ * During normal operation, the fault is simply handled by the original fault
+ * handler that was installed by CXL services as part of initializing the
+ * adapter file descriptor.
+ *
+ * Return: 0 on success, VM_FAULT_SIGBUS on failure
+ */
 static int cxlflash_mmap_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 {
 	struct file *file = vma->vm_file;
@@ -1084,10 +1078,22 @@ err:
 	goto out;
 }
 
+/*
+ * Local MMAP vmops to 'catch' faults
+ */
 static const struct vm_operations_struct cxlflash_mmap_vmops = {
 	.fault = cxlflash_mmap_fault,
 };
 
+/**
+ * cxlflash_cxl_mmap() - mmap handler for adapter file descriptor
+ * @file:	File installed with adapter file descriptor.
+ * @vma:	VM area associated with mapping.
+ *
+ * Installs local mmap vmops to 'catch' faults for error notification support.
+ *
+ * Return: 0 on success, -Errno on failure
+ */
 static int cxlflash_cxl_mmap(struct file *file, struct vm_area_struct *vma)
 {
 	struct cxl_context *ctx = cxl_fops_get_context(file);
@@ -1117,11 +1123,11 @@ static int cxlflash_cxl_mmap(struct file *file, struct vm_area_struct *vma)
 		 __func__, ctx_info->lfd, ctxid);
 
 	rc = cxl_fd_mmap(file, vma);
-	if (!rc) {
+	if (likely(!rc)) {
 		/*
 		 * Insert ourself in the mmap fault handler path and save off
 		 * the address space for toggling the mapping on error context.
-		 * */
+		 */
 		ctx_info->cxl_mmap_vmops = vma->vm_ops;
 		vma->vm_ops = &cxlflash_mmap_vmops;
 
@@ -1134,33 +1140,26 @@ out:
 	return rc;
 }
 
+/*
+ * Local fops for adapter file descriptor
+ */
 static const struct file_operations cxlflash_cxl_fops = {
 	.owner = THIS_MODULE,
 	.mmap = cxlflash_cxl_mmap,
 	.release = cxlflash_cxl_release,
 };
 
-/*
- * NAME:        cxlflash_disk_attach
+/**
+ * cxlflash_disk_attach() - attach a LUN to a context
+ * @sdev:	SCSI device associated with LUN.
+ * @attach:	Attach ioctl data structure.
  *
- * FUNCTION:    attach a LUN to context
+ * Creates a context and attaches LUN to it. A LUN can only be attached
+ * one time to a context (subsequent attaches for the same context/LUN pair
+ * are not supported). Additional LUNs can be attached to a context by
+ * specifying the 'reuse' flag defined in the cxlflash_ioctl.h header.
  *
- * INPUTS:
- *              sdev       - Pointer to scsi device structure
- *              arg        - Pointer to ioctl specific structure
- *
- * OUTPUTS:
- *              context_id - Unique context index
- *              adap_fd    - New file descriptor for user
- *
- * RETURNS:
- *              0           - Success
- *              errno       - Failure
- *
- * NOTES:
- *              When successful:
- *               a. initialize AFU for this context
- *
+ * Return: 0 on success, -Errno on failure
  */
 static int cxlflash_disk_attach(struct scsi_device *sdev,
 				struct dk_cxlflash_attach *attach)
@@ -1323,6 +1322,17 @@ err0:
 	goto out;
 }
 
+/**
+ * cxlflash_manage_lun() - handles lun management activities
+ * @sdev:	SCSI device associated with LUN.
+ * @manage:	Manage ioctl data structure.
+ *
+ * This routine is used to notify the driver about a LUN's WWID and associate
+ * SCSI devices (sdev) with a global LUN instance. Additionally it serves to
+ * change a LUN's operating mode: legacy or superpipe.
+ *
+ * Return: 0 on success, -Errno on failure
+ */
 static int cxlflash_manage_lun(struct scsi_device *sdev,
 			       struct dk_cxlflash_manage_lun *manage)
 {
@@ -1336,6 +1346,13 @@ static int cxlflash_manage_lun(struct scsi_device *sdev,
 	return 0;
 }
 
+/**
+ * cxlflash_afu_recover() - initiates AFU recovery
+ * @sdev:	SCSI device associated with LUN.
+ * @recover:	Recover ioctl data structure.
+ *
+ * Return: 0 on success, -Errno on failure
+ */
 static int cxlflash_afu_recover(struct scsi_device *sdev,
 				struct dk_cxlflash_recover_afu *recover)
 {
@@ -1374,6 +1391,13 @@ out:
 	return rc;
 }
 
+/**
+ * process_sense() - evaluates and processes sense data
+ * @sdev:	SCSI device associated with LUN.
+ * @verify:	Verify ioctl data structure.
+ *
+ * Return: 0 on success, -Errno on failure
+ */
 static int process_sense(struct scsi_device *sdev,
 			 struct dk_cxlflash_verify *verify)
 {
@@ -1420,24 +1444,12 @@ static int process_sense(struct scsi_device *sdev,
 	return rc;
 }
 
-/*
- * NAME:        cxlflash_disk_verify
+/**
+ * cxlflash_disk_verify() - verifies a LUN is the same and handle size changes
+ * @sdev:	SCSI device associated with LUN.
+ * @verify:	Verify ioctl data structure.
  *
- * FUNCTION:    Verify that the LUN is the same, whether its size has changed
- *
- * INPUTS:
- *              sdev       - Pointer to scsi device structure
- *              arg        - Pointer to ioctl specific structure
- *
- * OUTPUTS:
- *              none
- *
- * RETURNS:
- *              0           - Success
- *              errno       - Failure
- *
- * NOTES:
- *              When successful, the RHT entry is cleared.
+ * Return: 0 on success, -Errno on failure
  */
 static int cxlflash_disk_verify(struct scsi_device *sdev,
 				struct dk_cxlflash_verify *verify)
@@ -1459,9 +1471,9 @@ static int cxlflash_disk_verify(struct scsi_device *sdev,
 		goto out;
 	}
 
-	/* XXX: We would have to look at the hint/sense to see if it
-	 * requires us to redrive inquiry (i.e. the Unit attention is
-	 * due to the WWN changing).
+	/*
+	 * Look at the hint/sense to see if it requires us to redrive
+	 * inquiry (i.e. the Unit attention is due to the WWN changing).
 	 */
 	if (verify->hint & DK_CXLFLASH_VERIFY_HINT_SENSE)
 		rc = process_sense(sdev, verify);
@@ -1474,6 +1486,12 @@ out:
 	return rc;
 }
 
+/**
+ * decode_ioctl() - translates an encoded ioctl to an easily identifiable string
+ * @cmd:	The ioctl command to decode.
+ *
+ * Return: A string identifying the decoded ioctl.
+ */
 static char *decode_ioctl(int cmd)
 {
 	switch (cmd) {
@@ -1502,26 +1520,16 @@ static char *decode_ioctl(int cmd)
 	return "UNKNOWN";
 }
 
-/* NAME:	cxlflash_disk_direct_open
+/**
+ * cxlflash_disk_direct_open() - opens a direct (physical) disk
+ * @sdev:	SCSI device associated with LUN.
+ * @arg:	UDirect ioctl data structure.
  *
- * FUNCTION:	open a virtual lun of specified size
+ * On successful return, the user is informed of the resource handle
+ * to be used to identify the direct lun and the size (in blocks) of
+ * the direct lun in last LBA format.
  *
- * INPUTS:
- *              sdev       - Pointer to scsi device structure
- *              arg        - Pointer to ioctl specific structure
- *
- * OUTPUTS:
- *              none
- *
- * RETURNS:
- *              0           - Success
- *              errno       - Failure
- *
- * NOTES:
- *		When successful:
- *		a. find a free RHT entry
- *		b. Program it with FORMAT1
- *
+ * Return: 0 on success, -Errno on failure
  */
 static int cxlflash_disk_direct_open(struct scsi_device *sdev, void *arg)
 {
@@ -1587,14 +1595,12 @@ err1:
 }
 
 /**
- * cxlflash_ioctl - IOCTL handler
- * @sdev:       scsi device struct
- * @cmd:        IOCTL cmd
- * @arg:        IOCTL arg
+ * cxlflash_ioctl() - IOCTL handler for driver
+ * @sdev:	SCSI device associated with LUN.
+ * @arg:	Userspace ioctl data structure.
  *
- * Return value:
- *      0 on success / other on failure
- **/
+ * Return: 0 on success, -Errno on failure
+ */
 int cxlflash_ioctl(struct scsi_device *sdev, int cmd, void __user *arg)
 {
 	typedef int (*sioctl) (struct scsi_device *, void *);
@@ -1711,3 +1717,4 @@ cxlflash_ioctl_exit:
 			 sdev->lun, rc);
 	return rc;
 }
+

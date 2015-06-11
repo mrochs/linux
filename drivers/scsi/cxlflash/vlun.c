@@ -65,10 +65,7 @@ static void marshall_clone_to_rele(struct dk_cxlflash_clone *clone,
  * ba_init() - initializes a block allocator
  * @ba_lun:	Block allocator to initialize.
  *
- * Return:
- *	0 on success
- *	-EINVAL when the calculated bitmap size is 0
- *	-ENOMEM on failure to allocate memory
+ * Return: 0 on success, -Errno on failure
  */
 int ba_init(struct ba_lun *ba_lun)
 {
@@ -158,9 +155,7 @@ int ba_init(struct ba_lun *ba_lun)
  * @lun_info:	LUN information structure owning the block allocator to search.
  * @bit_word:	Passes back the word in the block allocator owning the free bit.
  *
- * Return:
- *	The bit position within the passed back word
- *	-1 on failure
+ * Return: The bit position within the passed back word, -1 on failure
  */
 static int find_free_range(u32 low,
 			   u32 high,
@@ -194,9 +189,7 @@ static int find_free_range(u32 low,
  * ba_alloc() - allocates a block from the block allocator
  * @ba_lun:	Block allocator from which to allocate a block.
  *
- * Return:
- *	The allocated block
- *	-1 on failure
+ * Return: The allocated block, -1 on failure
  */
 static u64 ba_alloc(struct ba_lun *ba_lun)
 {
@@ -249,9 +242,7 @@ static u64 ba_alloc(struct ba_lun *ba_lun)
  * @ba_lun_info:	LUN info owning the block allocator.
  * @aun:		Block to validate.
  *
- * Return:
- *	0 on success (block was allocated)
- *	-1 on failure
+ * Return: 0 on success, -1 on failure
  */
 static int validate_alloc(struct ba_lun_info *lun_info, u64 aun)
 {
@@ -271,9 +262,7 @@ static int validate_alloc(struct ba_lun_info *lun_info, u64 aun)
  * @ba_lun:	Block allocator from which to allocate a block.
  * @to_free:	Block to free.
  *
- * Return:
- *	0 on success
- *	-1 on failure
+ * Return: 0 on success, -1 on failure
  */
 static int ba_free(struct ba_lun *ba_lun, u64 to_free)
 {
@@ -323,9 +312,7 @@ static int ba_free(struct ba_lun *ba_lun, u64 to_free)
  * @ba_lun:	Block allocator from which to allocate a block.
  * @to_free:	Block to free.
  *
- * Return:
- *	0 on success
- *	-1 on failure
+ * Return: 0 on success, -1 on failure
  */
 static int ba_clone(struct ba_lun *ba_lun, u64 to_clone)
 {
@@ -356,7 +343,7 @@ static int ba_clone(struct ba_lun *ba_lun, u64 to_clone)
  * ba_space() - returns the amount of free space left in the block allocator
  * @ba_lun:	Block allocator.
  *
- * Return: Amount of free space in block allocator.
+ * Return: Amount of free space in block allocator
  */
 static u64 ba_space(struct ba_lun *ba_lun)
 {
@@ -389,10 +376,7 @@ void ba_terminate(struct ba_lun *ba_lun)
  * cxlflash_init_ba() - initializes and allocates a block allocator
  * @lun_info:	LUN information structure that owns the block allocator.
  *
- * Return:
- *	0 on success
- *	-EINVAL when the calculated bitmap size is 0
- *	-ENOMEM on failure to allocate memory
+ * Return: 0 on success, -Errno on failure
  */
 static int cxlflash_init_ba(struct lun_info *lun_info)
 {
@@ -427,9 +411,7 @@ cxlflash_init_ba_exit:
  * @lba:	Logical block address to start write same.
  * @nblks:	Number of logical blocks to write same.
  *
- * Return:
- *	0 on success
- *	-1 on failure
+ * Return: 0 on success, -1 on failure
  */
 static int write_same16(struct afu *afu, struct lun_info *lun_info, u64 lba,
 			u32 nblks)
@@ -497,10 +479,7 @@ out:
  * amount of space. The user is made aware of this by returning the size
  * allocated.
  *
- * Return:
- *	0 on success
- *	-ENOSPC when no space left
- *	-ENOMEM when unable to allocate memory
+ * Return: 0 on success, -Errno on failure
  */
 static int grow_lxt(struct afu *afu,
 		    struct lun_info *lun_info,
@@ -608,9 +587,7 @@ static int grow_lxt(struct afu *afu,
  * @delta:		Number of translation entries that can be removed.
  * @act_new_size:	Number of translation entries associated with RHTE.
  *
- * Return:
- *	0 on success
- *	-ENOMEM when unable to allocate memory
+ * Return: 0 on success, -Errno on failure
  */
 static int shrink_lxt(struct afu *afu,
 		      struct lun_info *lun_info,
@@ -691,11 +668,7 @@ static int shrink_lxt(struct afu *afu,
  * of the virtual lun in last LBA format. When the size of the virtual
  * lun is zero, the last LBA is reflected as -1.
  *
- * Return:
- *	0 on success
- *	-EINVAL when parameters/conditions are invalid
- *	-ENOSPC when no space left
- *	-ENOMEM when unable to allocate memory
+ * Return: 0 on success, -Errno on failure
  */
 int cxlflash_vlun_resize(struct scsi_device *sdev,
 			 struct dk_cxlflash_resize *resize)
@@ -791,11 +764,7 @@ out:
  * the virtual lun in last LBA format. When the size of the virtual lun
  * is zero, the last LBA is reflected as -1.
  *
- * Return:
- *	0 on success
- *	-EINVAL when parameters/conditions are invalid
- *	-EMFILE when there have been too many opens for the LUN
- *	-ENOMEM when unable to allocate memory
+ * Return: 0 on success, -Errno on failure
  */
 int cxlflash_disk_virtual_open(struct scsi_device *sdev, void *arg)
 {
@@ -892,10 +861,7 @@ err1:
  * @rht_entry:		Destination resource handle entry (RHTE).
  * @rht_entry_src:	Source resource handle entry (RHTE).
  *
- * Return:
- *	0 on success
- *	-ENOMEM when unable to allocate memory
- *	-EIO when unable to clone the LBAs
+ * Return: 0 on success, -Errno on failure
  */
 static int clone_lxt(struct afu *afu,
 		     struct blka *blka,
@@ -972,10 +938,7 @@ static int clone_lxt(struct afu *afu,
  * context must be in pristine state and cannot have any resource handles
  * open at the time of the clone.
  *
- * Return:
- *	0 on success
- *	-EINVAL when parameters/conditions are invalid
- *	-ENOMEM when unable to allocate memory
+ * Return: 0 on success, -Errno on failure
  */
 int cxlflash_disk_clone(struct scsi_device *sdev,
 			struct dk_cxlflash_clone *clone)
