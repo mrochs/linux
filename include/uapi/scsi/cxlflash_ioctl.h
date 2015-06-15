@@ -38,7 +38,7 @@ struct dk_cxlflash_hdr {
 struct dk_cxlflash_attach {
 	struct dk_cxlflash_hdr hdr;	/* Common fields */
 	__u64 num_interrupts;		/* Requested number of interrupts */
-	__u64 context_id;		/* Returned context ID */
+	__u64 context_id;		/* Returned context */
 	__u64 mmio_size;		/* Returned size of MMIO area */
 	__u64 block_size;		/* Returned block size, in bytes */
 	__u64 adap_fd;			/* Returned adapter file descriptor */
@@ -48,19 +48,19 @@ struct dk_cxlflash_attach {
 
 struct dk_cxlflash_detach {
 	struct dk_cxlflash_hdr hdr;	/* Common fields */
-	__u64 context_id;		/* Context ID to detach */
+	__u64 context_id;		/* Context to detach */
 };
 
 struct dk_cxlflash_udirect {
 	struct dk_cxlflash_hdr hdr;	/* Common fields */
-	__u64 context_id;		/* Context ID for the attach */
+	__u64 context_id;		/* Context to own physical resources */
 	__u64 rsrc_handle;		/* Returned resource handle */
 	__u64 last_lba;			/* Returned last LBA on the device */
 };
 
 struct dk_cxlflash_uvirtual {
 	struct dk_cxlflash_hdr hdr;	/* Common fields */
-	__u64 context_id;		/* Context ID for the attach */
+	__u64 context_id;		/* Context to own virtual resources */
 	__u64 lun_size;			/* Requested size, in 4K blocks */
 	__u64 rsrc_handle;		/* Returned resource handle */
 	__u64 last_lba;			/* Returned last LBA of LUN */
@@ -68,13 +68,13 @@ struct dk_cxlflash_uvirtual {
 
 struct dk_cxlflash_release {
 	struct dk_cxlflash_hdr hdr;	/* Common fields */
-	__u64 context_id;		/* Context ID for the attach */
+	__u64 context_id;		/* Context owning resources */
 	__u64 rsrc_handle;		/* Resource handle to release */
 };
 
 struct dk_cxlflash_resize {
 	struct dk_cxlflash_hdr hdr;	/* Common fields */
-	__u64 context_id;		/* Context ID of LUN to resize */
+	__u64 context_id;		/* Context owning resources */
 	__u64 rsrc_handle;		/* Resource handle of LUN to resize */
 	__u64 req_size;			/* New requested size, in 4K blocks */
 	__u64 last_lba;			/* Returned last LBA of LUN */
@@ -82,8 +82,8 @@ struct dk_cxlflash_resize {
 
 struct dk_cxlflash_clone {
 	struct dk_cxlflash_hdr hdr;	/* Common fields */
-	__u64 context_id_src;		/* Context ID to clone from */
-	__u64 context_id_dst;		/* Context ID to clone to */
+	__u64 context_id_src;		/* Context to clone from */
+	__u64 context_id_dst;		/* Context to clone to */
 	__u64 adap_fd_src;		/* Source context adapter fd */
 };
 
@@ -92,7 +92,7 @@ struct dk_cxlflash_clone {
 
 struct dk_cxlflash_verify {
 	struct dk_cxlflash_hdr hdr;	/* Common fields */
-	__u64 context_id;		/* Context ID of LUN to verify */
+	__u64 context_id;		/* Context owning resources to verify */
 	__u64 rsrc_handle;		/* Resource handle of LUN */
 	__u64 hint;			/* Reasons for verify */
 	__u64 last_lba;			/* Returned last LBA of device */
@@ -102,14 +102,16 @@ struct dk_cxlflash_verify {
 
 struct dk_cxlflash_recover_afu {
 	struct dk_cxlflash_hdr hdr;	/* Common fields */
-	__u64 context_id;		/* Context ID of LUN to resize */
-	__u64 rsrc_handle;		/* Resource handle for LUN to recover */
 	__u64 reason;			/* Reason for recovery request */
+	__u64 context_id;		/* Context to recover / updated ID */
+	__u64 mmio_size;		/* Returned size of MMIO area */
+	__u64 adap_fd;			/* Returned adapter file descriptor */
 };
 
 #define DK_CXLFLASH_MANAGE_LUN_WWID_LEN			16
 #define DK_CXLFLASH_MANAGE_LUN_ENABLE_SUPERPIPE		0x8000000000000000ULL
 #define DK_CXLFLASH_MANAGE_LUN_DISABLE_SUPERPIPE	0x4000000000000000ULL
+#define DK_CXLFLASH_MANAGE_LUN_ALL_PORTS_ACCESSIBLE	0x2000000000000000ULL
 
 struct dk_cxlflash_manage_lun {
 	struct dk_cxlflash_hdr hdr;			/* Common fields */
