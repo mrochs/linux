@@ -194,7 +194,7 @@ DK_CXLFLASH_USER_DIRECT
     treated as a resource handle that is returned to the user. The user
     is then able to use the handle to reference the LUN during I/O.
 
-DK_CXLFLASH_USER_VIRTUAL 
+DK_CXLFLASH_USER_VIRTUAL
 ------------------------
     This ioctl is responsible for transitioning the LUN to virtual mode
     of access and configuring the AFU for virtual access from user space
@@ -279,10 +279,9 @@ DK_CXLFLASH_VERIFY
 ------------------
     The DK_CXLFLASH_VERIFY ioctl is used to detect various changes such
     as the capacity of the disk changing, the number of LUNs visible
-    changing etc. In cases where the changes affect the application
+    changing, etc. In cases where the changes affect the application
     (such as a LUN resize), the cxlflash driver will report the changed
     state to the application.
-
 
 DK_CXLFLASH_RECOVER_AFU
 -----------------------
