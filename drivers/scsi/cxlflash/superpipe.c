@@ -1419,7 +1419,6 @@ static int process_sense(struct scsi_device *sdev,
 			/* fall through */
 		case 0x2A: /* Device settings/capacity changed */
 			read_cap16(afu, lun_info, sdev->channel + 1);
-			verify->last_lba = lun_info->max_lba;
 			if (prev_lba != lun_info->max_lba)
 				pr_debug("%s: Capacity changed old=%lld "
 					 "new=%lld\n", __func__, prev_lba,
