@@ -1456,6 +1456,8 @@ static int cxlflash_disk_verify(struct scsi_device *sdev,
 	struct ctx_info *ctx_info = NULL;
 	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)sdev->host->hostdata;
 	struct lun_info *lun_info = sdev->hostdata;
+	struct sisl_rht_entry *rht_entry = NULL;
+	res_hndl_t res_hndl = verify->rsrc_handle;
 	u64 ctxid = verify->context_id;
 
 	pr_debug("%s: ctxid=%llu res_hndl=0x%llx, hint=0x%llx\n",
@@ -1465,6 +1467,14 @@ static int cxlflash_disk_verify(struct scsi_device *sdev,
 	if (unlikely(!ctx_info)) {
 		pr_err("%s: Invalid context! (%llu)\n",
 		       __func__, ctxid);
+		rc = -EINVAL;
+		goto out;
+	}
+
+	rht_entry = cxlflash_get_rhte(ctx_info, res_hndl, lun_info);
+	if (unlikely(!rht_entry)) {
+		pr_err("%s: Invalid resource handle! (%d)\n",
+		       __func__, res_hndl);
 		rc = -EINVAL;
 		goto out;
 	}
