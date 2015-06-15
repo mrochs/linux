@@ -1459,6 +1459,7 @@ static int cxlflash_disk_verify(struct scsi_device *sdev,
 	struct sisl_rht_entry *rht_entry = NULL;
 	res_hndl_t res_hndl = verify->rsrc_handle;
 	u64 ctxid = verify->context_id;
+	u64 last_lba = 0;
 
 	pr_debug("%s: ctxid=%llu res_hndl=0x%llx, hint=0x%llx\n",
 		 __func__, ctxid, verify->rsrc_handle, verify->hint);
@@ -1483,8 +1484,28 @@ static int cxlflash_disk_verify(struct scsi_device *sdev,
 	 * Look at the hint/sense to see if it requires us to redrive
 	 * inquiry (i.e. the Unit attention is due to the WWN changing).
 	 */
-	if (verify->hint & DK_CXLFLASH_VERIFY_HINT_SENSE)
+	if (verify->hint & DK_CXLFLASH_VERIFY_HINT_SENSE) {
 		rc = process_sense(sdev, verify);
+		if (unlikely(rc)) {
+			pr_err("%s: Failed to validate sense data! (%d)\n",
+			       __func__, rc);
+			goto out;
+		}
+	}
+
+	switch (lun_info->mode) {
+	case MODE_PHYSICAL:
+		last_lba = lun_info->max_lba;
+		break;
+	case MODE_VIRTUAL:
+		last_lba = (((rht_entry->lxt_cnt * MC_CHUNK_SIZE *
+			      lun_info->blk_len) / CXLFLASH_BLOCK_SIZE) - 1);
+		break;
+	default:
+		BUG();
+	}
+
+	verify->last_lba = last_lba;
 
 out:
 	if (likely(ctx_info))
