@@ -57,7 +57,7 @@ struct afu_cmd *cxlflash_cmd_checkout(struct afu *afu)
 		cmd = &afu->cmd[k];
 
 		if (!atomic_dec_if_positive(&cmd->free)) {
-			pr_debug("%s: returning found index=%d\n",
+			pr_devel("%s: returning found index=%d\n",
 				 __func__, cmd->slot);
 			memset(cmd->buf, 0, CMD_BUFSIZE);
 			memset(cmd->rcb.cdb, 0, sizeof(cmd->rcb.cdb));
@@ -92,7 +92,7 @@ void cxlflash_cmd_checkin(struct afu_cmd *cmd)
 		return;
 	}
 
-	pr_debug("%s: released cmd %p index=%d\n", __func__, cmd, cmd->slot);
+	pr_devel("%s: released cmd %p index=%d\n", __func__, cmd, cmd->slot);
 }
 
 /**
@@ -106,6 +106,7 @@ static void process_cmd_err(struct afu_cmd *cmd, struct scsi_cmnd *scp)
 {
 	struct sisl_ioarcb *ioarcb;
 	struct sisl_ioasa *ioasa;
+	u32 resid;
 
 	if (unlikely(!cmd))
 		return;
@@ -114,9 +115,10 @@ static void process_cmd_err(struct afu_cmd *cmd, struct scsi_cmnd *scp)
 	ioasa = &(cmd->sa);
 
 	if (ioasa->rc.flags & SISL_RC_FLAGS_UNDERRUN) {
-		pr_debug("%s: cmd underrun cmd = %p scp = %p\n",
-			 __func__, cmd, scp);
-		scp->result = (DID_ERROR << 16);
+		resid = ioasa->resid;
+		scsi_set_resid(scp, resid);
+		pr_debug("%s: cmd underrun cmd = %p scp = %p, resid = %d\n",
+			 __func__, cmd, scp, resid);
 	}
 
 	if (ioasa->rc.flags & SISL_RC_FLAGS_OVERRUN) {
@@ -157,8 +159,7 @@ static void process_cmd_err(struct afu_cmd *cmd, struct scsi_cmnd *scp)
 				/* If the SISL_RC_FLAGS_OVERRUN flag was set,
 				 * then we will handle this error else where.
 				 * If not then we must handle it here.
-				 * This is probably an AFU bug. We will
-				 * attempt a retry to see if that resolves it.
+				 * This is probably an AFU bug.
 				 */
 				scp->result = (DID_ERROR << 16);
 			}
@@ -216,7 +217,6 @@ static void process_cmd_err(struct afu_cmd *cmd, struct scsi_cmnd *scp)
 static void cmd_complete(struct afu_cmd *cmd)
 {
 	struct scsi_cmnd *scp;
-	u32 resid;
 	ulong lock_flags;
 	struct afu *afu = cmd->parent;
 	struct cxlflash_cfg *cfg = afu->parent;
@@ -228,22 +228,17 @@ static void cmd_complete(struct afu_cmd *cmd)
 
 	if (cmd->rcb.scp) {
 		scp = cmd->rcb.scp;
-		if (unlikely(cmd->sa.rc.afu_rc ||
-			     cmd->sa.rc.scsi_rc ||
-			     cmd->sa.rc.fc_rc))
+		if (unlikely(cmd->sa.ioasc))
 			process_cmd_err(cmd, scp);
 		else
 			scp->result = (DID_OK << 16);
 
-		resid = cmd->sa.resid;
 		cmd_is_tmf = cmd->cmd_tmf;
 		cxlflash_cmd_checkin(cmd); /* Don't use cmd after here */
 
-		pr_debug("%s: calling scsi_set_resid, scp=%p "
-			 "result=%X resid=%d\n", __func__,
-			 scp, scp->result, resid);
+		pr_debug("%s: calling scsi_done scp=%p result=%X ioasc=%d\n",
+			 __func__, scp, scp->result, cmd->sa.ioasc);
 
-		scsi_set_resid(scp, resid);
 		scsi_dma_unmap(scp);
 		scp->scsi_done(scp);
 
@@ -635,7 +630,7 @@ static ssize_t cxlflash_show_dev_mode(struct device *dev,
 
 /**
  * cxlflash_wait_for_pci_err_recovery() - wait for error recovery during probe
- * @cxlflash:	Internal structure associated with the host.
+ * @cfg:	Internal structure associated with the host.
  */
 static void cxlflash_wait_for_pci_err_recovery(struct cxlflash_cfg *cfg)
 {
@@ -679,10 +674,13 @@ static struct scsi_host_template driver_template = {
 	.module = THIS_MODULE,
 	.name = CXLFLASH_ADAPTER_NAME,
 	.info = cxlflash_driver_info,
+	.ioctl = cxlflash_ioctl,
 	.proc_name = CXLFLASH_NAME,
 	.queuecommand = cxlflash_queuecommand,
 	.eh_device_reset_handler = cxlflash_eh_device_reset_handler,
 	.eh_host_reset_handler = cxlflash_eh_host_reset_handler,
+	.slave_alloc = cxlflash_slave_alloc,
+	.slave_configure = cxlflash_slave_configure,
 	.change_queue_depth = cxlflash_change_queue_depth,
 	.cmd_per_lun = 16,
 	.can_queue = CXLFLASH_MAX_CMDS,
@@ -712,7 +710,7 @@ MODULE_DEVICE_TABLE(pci, cxlflash_pci_table);
 
 /**
  * free_mem() - free memory associated with the AFU
- * @cxlflash:	Internal structure associated with the host.
+ * @cfg:	Internal structure associated with the host.
  */
 static void free_mem(struct cxlflash_cfg *cfg)
 {
@@ -734,7 +732,7 @@ static void free_mem(struct cxlflash_cfg *cfg)
 
 /**
  * stop_afu() - stops the AFU command timers and unmaps the MMIO space
- * @cxlflash:	Internal structure associated with the host.
+ * @cfg:	Internal structure associated with the host.
  *
  * Safe to call with AFU in a partially allocated/initialized state.
  */
@@ -756,7 +754,7 @@ static void stop_afu(struct cxlflash_cfg *cfg)
 
 /**
  * term_mc() - terminates the master context
- * @cxlflash:	Internal structure associated with the host.
+ * @cfg:	Internal structure associated with the host.
  * @level:	Depth of allocation, where to begin waterfall tear down.
  *
  * Safe to call with AFU/MC in partially allocated/initialized state.
@@ -791,7 +789,7 @@ static void term_mc(struct cxlflash_cfg *cfg, enum undo_level level)
 
 /**
  * term_afu() - terminates the AFU
- * @cxlflash:	Internal structure associated with the host.
+ * @cfg:	Internal structure associated with the host.
  *
  * Safe to call with AFU/MC in partially allocated/initialized state.
  */
@@ -846,7 +844,7 @@ static void cxlflash_remove(struct pci_dev *pdev)
 
 /**
  * alloc_mem() - allocates the AFU and its command pool
- * @cxlflash:	Internal structure associated with the host.
+ * @cfg:	Internal structure associated with the host.
  *
  * A partially allocated state remains on failure.
  *
@@ -897,7 +895,7 @@ out:
 
 /**
  * init_pci() - initializes the host as a PCI device
- * @cxlflash:	Internal structure associated with the host.
+ * @cfg:	Internal structure associated with the host.
  *
  * Return:
  *	0 on success
@@ -982,7 +980,7 @@ out_release_regions:
 
 /**
  * init_scsi() - adds the host to the SCSI stack and kicks off host scan
- * @cxlflash:	Internal structure associated with the host.
+ * @cfg:	Internal structure associated with the host.
  *
  * Return:
  *	0 on success
@@ -1453,7 +1451,7 @@ out:
 
 /**
  * start_context() - starts the master context
- * @cxlflash:	Internal structure associated with the host.
+ * @cfg:	Internal structure associated with the host.
  *
  * Return: A success or failure value from CXL services.
  */
@@ -1471,7 +1469,7 @@ static int start_context(struct cxlflash_cfg *cfg)
 
 /**
  * read_vpd() - obtains the WWPNs from VPD
- * @cxlflash:	Internal structure associated with the host.
+ * @cfg:	Internal structure associated with the host.
  * @wwpn:	Array of size NUM_FC_PORTS to pass back WWPNs
  *
  * Return:
@@ -1566,7 +1564,7 @@ out:
  *
  * Sends a reset to the AFU.
  */
-void cxlflash_context_reset(struct afu_cmd *cmd)
+static void cxlflash_context_reset(struct afu_cmd *cmd)
 {
 	int nretry = 0;
 	u64 rrin = 0x1;
@@ -1616,12 +1614,12 @@ write_rrin:
 
 /**
  * init_pcr() - initialize the provisioning and control registers
- * @cxlflash:	Internal structure associated with the host.
+ * @cfg:	Internal structure associated with the host.
  *
  * Also sets up fast access to the mapped registers and initializes AFU
  * command fields that never change.
  */
-void init_pcr(struct cxlflash_cfg *cfg)
+static void init_pcr(struct cxlflash_cfg *cfg)
 {
 	struct afu *afu = cfg->afu;
 	struct sisl_ctrl_map *ctrl_map;
@@ -1655,9 +1653,9 @@ void init_pcr(struct cxlflash_cfg *cfg)
 
 /**
  * init_global() - initialize AFU global registers
- * @cxlflash:	Internal structure associated with the host.
+ * @cfg:	Internal structure associated with the host.
  */
-int init_global(struct cxlflash_cfg *cfg)
+static int init_global(struct cxlflash_cfg *cfg)
 {
 	struct afu *afu = cfg->afu;
 	u64 wwpn[NUM_FC_PORTS];	/* wwpn of AFU ports */
@@ -1739,7 +1737,7 @@ out:
 
 /**
  * start_afu() - initializes and starts the AFU
- * @cxlflash:	Internal structure associated with the host.
+ * @cfg:	Internal structure associated with the host.
  */
 static int start_afu(struct cxlflash_cfg *cfg)
 {
@@ -1773,7 +1771,7 @@ static int start_afu(struct cxlflash_cfg *cfg)
 
 /**
  * init_mc() - create and register as the master context
- * @cxlflash:	Internal structure associated with the host.
+ * @cfg:	Internal structure associated with the host.
  *
  * Return:
  *	0 on success
@@ -1862,7 +1860,7 @@ out:
 
 /**
  * init_afu() - setup as master context and start AFU
- * @cxlflash:	Internal structure associated with the host.
+ * @cfg:	Internal structure associated with the host.
  *
  * This routine is a higher level of control for configuring the
  * AFU on probe and reset paths.
@@ -1964,7 +1962,7 @@ retry:
 	} else if (unlikely(newval < 0)) {
 		/* This should be rare. i.e. Only if two threads race and
 		 * decrement before the MMIO read is done. In this case
-		 * just benefit from the other thread having updated 
+		 * just benefit from the other thread having updated
 		 * afu->room.
 		 */
 		if (nretry++ < MC_ROOM_RETRY_CNT) {
@@ -1978,7 +1976,7 @@ retry:
 write_ioarrin:
 	writeq_be((u64)&cmd->rcb, &afu->host_map->ioarrin);
 out:
-	pr_debug("%s: cmd=%p len=%d ea=%p rc=%d\n", __func__, cmd,
+	pr_devel("%s: cmd=%p len=%d ea=%p rc=%d\n", __func__, cmd,
 		 cmd->rcb.data_len, (void *)cmd->rcb.data_ea, rc);
 	return rc;
 
@@ -2084,7 +2082,7 @@ out:
 
 /**
  * cxlflash_afu_reset() - resets the AFU
- * @cxlflash:	Internal structure associated with the host.
+ * @cfg:	Internal structure associated with the host.
  *
  * Return:
  *	0 on success
@@ -2198,9 +2196,12 @@ static int cxlflash_probe(struct pci_dev *pdev,
 
 	cfg->init_state = INIT_STATE_NONE;
 	cfg->dev = pdev;
+	cfg->last_lun_index[0] = 0;
+	cfg->last_lun_index[1] = 0;
 	cfg->dev_id = (struct pci_device_id *)dev_id;
 	cfg->mcctx = NULL;
 	cfg->err_recovery_active = 0;
+	cfg->num_user_contexts = 0;
 
 	init_waitqueue_head(&cfg->tmf_waitq);
 	init_waitqueue_head(&cfg->eeh_waitq);
@@ -2208,6 +2209,7 @@ static int cxlflash_probe(struct pci_dev *pdev,
 	INIT_WORK(&cfg->work_q, cxlflash_worker_thread);
 	cfg->lr_state = LINK_RESET_INVALID;
 	cfg->lr_port = -1;
+	spin_lock_init(&cfg->ctx_tbl_slock);
 
 	pci_set_drvdata(pdev, cfg);
 
@@ -2279,6 +2281,8 @@ static int __init init_cxlflash(void)
 	pr_info("%s: IBM Power CXL Flash Adapter: %s\n",
 		__func__, CXLFLASH_DRIVER_DATE);
 
+	cxlflash_list_init();
+
 	return pci_register_driver(&cxlflash_driver);
 }
 
@@ -2287,6 +2291,8 @@ static int __init init_cxlflash(void)
  */
 static void __exit exit_cxlflash(void)
 {
+	cxlflash_list_terminate();
+
 	pci_unregister_driver(&cxlflash_driver);
 }
 
