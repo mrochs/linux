@@ -1062,6 +1062,7 @@ static int cxlflash_mmap_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 			goto out;
 		}
 
+		get_page(err_page);
 		vmf->page = err_page;
 	}
 
@@ -1376,7 +1377,6 @@ static int cxlflash_afu_recover(struct scsi_device *sdev,
 		pr_info("%s: afu=%p reason 0x%llx\n",
 			__func__, afu, recover->reason);
 		cxlflash_afu_reset(cfg);
-
 	} else {
 		pr_debug("%s: reason 0x%llx MMIO working, no reset performed\n",
 			 __func__, recover->reason);
@@ -1679,7 +1679,18 @@ int cxlflash_ioctl(struct scsi_device *sdev, int cmd, void __user *arg)
 	case 0x4711:	/* XXX - remove case and assoc. vars before upstream */
 		ctxid = ((struct dk_cxlflash_detach *)arg)->context_id;
 		ctx_info = cxlflash_get_context(cfg, ctxid, NULL, false);
+		if (!ctx_info) {
+			rc = -EINVAL;
+			goto cxlflash_ioctl_exit;
+		}
+
+		if (cfg->err_recovery_active)
+			cfg->err_recovery_active = false;
+		else
+			cfg->err_recovery_active = true;
+
 		cxlflash_unmap_context(ctx_info);
+		atomic_dec(&ctx_info->nrefs);
 		goto cxlflash_ioctl_exit;
 	case DK_CXLFLASH_ATTACH:
 	case DK_CXLFLASH_USER_DIRECT:
