@@ -145,6 +145,13 @@ struct lun_access {
 	struct list_head list;
 };
 
+enum ctx_ctrl {
+	CTX_CTRL_CLONE		= (1 << 1),
+	CTX_CTRL_ERR		= (1 << 2),
+	CTX_CTRL_ERR_FALLBACK	= (1 << 3),
+	CTX_CTRL_NOPID		= (1 << 4)
+};
+
 /* Single AFU context can be pointed to by multiple client connections.
  * The client can create multiple endpoints (mc_hndl_t) to the same
  * (context + AFU).
@@ -192,7 +199,7 @@ void cxlflash_lun_detach(struct lun_info *);
 int cxlflash_check_status(struct afu_cmd *);
 
 struct ctx_info *cxlflash_get_context(struct cxlflash_cfg *, u64,
-				      struct lun_info *, bool);
+				      struct lun_info *, enum ctx_ctrl);
 
 struct sisl_rht_entry *cxlflash_get_rhte(struct ctx_info *, res_hndl_t,
 					 struct lun_info *);

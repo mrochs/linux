@@ -707,7 +707,7 @@ int cxlflash_vlun_resize(struct scsi_device *sdev,
 
 	}
 
-	ctx_info = cxlflash_get_context(cfg, ctxid, lun_info, false);
+	ctx_info = cxlflash_get_context(cfg, ctxid, lun_info, 0);
 	if (unlikely(!ctx_info)) {
 		pr_err("%s: Invalid context! (%llu)\n",
 		       __func__, ctxid);
@@ -803,7 +803,7 @@ int cxlflash_disk_virtual_open(struct scsi_device *sdev, void *arg)
 		goto out;
 	}
 
-	ctx_info = cxlflash_get_context(cfg, ctxid, lun_info, false);
+	ctx_info = cxlflash_get_context(cfg, ctxid, lun_info, 0);
 	if (unlikely(!ctx_info)) {
 		pr_err("%s: Invalid context! (%llu)\n",
 		       __func__, ctxid);
@@ -977,8 +977,9 @@ int cxlflash_disk_clone(struct scsi_device *sdev,
 		goto out;
 	}
 
-	ctx_info_src = cxlflash_get_context(cfg, ctxid_src, lun_info, true);
-	ctx_info_dst = cxlflash_get_context(cfg, ctxid_dst, lun_info, false);
+	ctx_info_src = cxlflash_get_context(cfg, ctxid_src, lun_info,
+					    CTX_CTRL_CLONE);
+	ctx_info_dst = cxlflash_get_context(cfg, ctxid_dst, lun_info, 0);
 	if (unlikely(!ctx_info_src || !ctx_info_dst)) {
 		pr_err("%s: Invalid context! (%llu,%llu)\n",
 		       __func__, ctxid_src, ctxid_dst);
