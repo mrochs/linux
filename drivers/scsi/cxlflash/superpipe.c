@@ -1050,7 +1050,7 @@ static int cxlflash_mmap_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 	pr_debug("%s: fault(%d) for context %d\n",
 		 __func__, ctx_info->lfd, ctxid);
 
-	if (likely(!cfg->err_recovery_active))
+	if (likely(!ctx_info->err_recovery_active))
 		rc = ctx_info->cxl_mmap_vmops->fault(vma, vmf);
 	else {
 		pr_debug("%s: err recovery active, use err_page!\n", __func__);
@@ -1684,10 +1684,10 @@ int cxlflash_ioctl(struct scsi_device *sdev, int cmd, void __user *arg)
 			goto cxlflash_ioctl_exit;
 		}
 
-		if (cfg->err_recovery_active)
-			cfg->err_recovery_active = false;
+		if (ctx_info->err_recovery_active)
+			ctx_info->err_recovery_active = false;
 		else
-			cfg->err_recovery_active = true;
+			ctx_info->err_recovery_active = true;
 
 		cxlflash_unmap_context(ctx_info);
 		atomic_dec(&ctx_info->nrefs);
