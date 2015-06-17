@@ -197,11 +197,11 @@ void cxlflash_list_terminate(void)
 }
 
 /**
- * cxlflash_get_context() - obtains a validated context reference
+ * get_context() - obtains a validated context reference
  * @cfg:	Internal structure associated with the host.
  * @ctxid:	Desired context.
  * @lun_info:	LUN associated with request.
- * @clone_path:	Clone path requires parent PID.
+ * @ctx_ctrl:	Control information to 'steer' desired lookup.
  *
  * NOTE: despite the name pid, in linux, current->pid actually refers
  * to the lightweight process id (tid) and can change if the process is
@@ -211,10 +211,8 @@ void cxlflash_list_terminate(void)
  *
  * Return: Validated context on success, NULL on failure
  */
-struct ctx_info *cxlflash_get_context(struct cxlflash_cfg *cfg,
-				      u64 ctxid,
-				      struct lun_info *lun_info,
-				      enum ctx_ctrl ctx_ctrl)
+struct ctx_info *get_context(struct cxlflash_cfg *cfg, u64 ctxid,
+			     struct lun_info *lun_info, enum ctx_ctrl ctx_ctrl)
 {
 	struct ctx_info *ctx_info = NULL;
 	struct lun_access *lun_access = NULL;
@@ -420,16 +418,15 @@ out:
 }
 
 /**
- * cxlflash_get_rhte() - obtains validated resource handle table entry reference
+ * get_rhte() - obtains validated resource handle table entry reference
  * @ctx_info:	Context owning the resource handle.
  * @res_hndl:	Resource handle associated with entry.
  * @lun_info:	LUN associated with request.
  *
  * Return: Validated RHTE on success, NULL on failure
  */
-struct sisl_rht_entry *cxlflash_get_rhte(struct ctx_info *ctx_info,
-					 res_hndl_t res_hndl,
-					 struct lun_info *lun_info)
+struct sisl_rht_entry *get_rhte(struct ctx_info *ctx_info, res_hndl_t res_hndl,
+				struct lun_info *lun_info)
 {
 	struct sisl_rht_entry *rhte = NULL;
 
@@ -617,14 +614,14 @@ int cxlflash_disk_release(struct scsi_device *sdev,
 		 __func__, ctxid, release->rsrc_handle, lun_info->mode,
 		 lun_info->users);
 
-	ctx_info = cxlflash_get_context(cfg, ctxid, lun_info, 0);
+	ctx_info = get_context(cfg, ctxid, lun_info, 0);
 	if (unlikely(!ctx_info)) {
 		pr_err("%s: Invalid context! (%llu)\n", __func__, ctxid);
 		rc = -EINVAL;
 		goto out;
 	}
 
-	rht_entry = cxlflash_get_rhte(ctx_info, res_hndl, lun_info);
+	rht_entry = get_rhte(ctx_info, res_hndl, lun_info);
 	if (unlikely(!rht_entry)) {
 		pr_err("%s: Invalid resource handle! (%d)\n",
 		       __func__, res_hndl);
@@ -798,7 +795,7 @@ static int cxlflash_disk_detach(struct scsi_device *sdev,
 
 	pr_debug("%s: ctxid=%llu\n", __func__, ctxid);
 
-	ctx_info = cxlflash_get_context(cfg, ctxid, lun_info, 0);
+	ctx_info = get_context(cfg, ctxid, lun_info, 0);
 	if (unlikely(!ctx_info)) {
 		pr_err("%s: Invalid context! (%llu)\n", __func__, ctxid);
 		rc = -EINVAL;
@@ -920,10 +917,9 @@ static int cxlflash_cxl_release(struct inode *inode, struct file *file)
 		goto out;
 	}
 
-	ctx_info = cxlflash_get_context(cfg, ctxid, NULL, 0);
+	ctx_info = get_context(cfg, ctxid, NULL, 0);
 	if (unlikely(!ctx_info)) {
-		ctx_info = cxlflash_get_context(cfg, ctxid, NULL,
-						CTX_CTRL_CLONE);
+		ctx_info = get_context(cfg, ctxid, NULL, CTX_CTRL_CLONE);
 		if (!ctx_info) {
 			pr_debug("%s: Context %d already free!\n",
 				 __func__, ctxid);
@@ -1042,7 +1038,7 @@ static int cxlflash_mmap_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 		goto err;
 	}
 
-	ctx_info = cxlflash_get_context(cfg, ctxid, NULL, 0);
+	ctx_info = get_context(cfg, ctxid, NULL, 0);
 	if (unlikely(!ctx_info)) {
 		pr_err("%s: Invalid context! (%d)\n", __func__, ctxid);
 		goto err;
@@ -1112,7 +1108,7 @@ static int cxlflash_cxl_mmap(struct file *file, struct vm_area_struct *vma)
 		goto out;
 	}
 
-	ctx_info = cxlflash_get_context(cfg, ctxid, NULL, 0);
+	ctx_info = get_context(cfg, ctxid, NULL, 0);
 	if (unlikely(!ctx_info)) {
 		pr_err("%s: Invalid context! (%d)\n", __func__, ctxid);
 		rc = -EIO;
@@ -1234,7 +1230,7 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 
 	if (attach->hdr.flags & DK_CXLFLASH_ATTACH_REUSE_CONTEXT) {
 		ctxid = attach->context_id;
-		ctx_info = cxlflash_get_context(cfg, ctxid, NULL, 0);
+		ctx_info = get_context(cfg, ctxid, NULL, 0);
 		if (!ctx_info) {
 			pr_err("%s: Invalid context! (%d)\n", __func__, ctxid);
 			rc = -EINVAL;
@@ -1481,7 +1477,7 @@ static int cxlflash_afu_recover(struct scsi_device *sdev,
 	int rc = 0;
 
 	/* Ensure that this process is attached to the context */
-	ctx_info = cxlflash_get_context(cfg, ctxid, lun_info, 0);
+	ctx_info = get_context(cfg, ctxid, lun_info, 0);
 	if (unlikely(!ctx_info)) {
 		pr_err("%s: Invalid context! (%llu)\n", __func__, ctxid);
 		rc = -EINVAL;
@@ -1594,7 +1590,7 @@ static int cxlflash_disk_verify(struct scsi_device *sdev,
 	pr_debug("%s: ctxid=%llu res_hndl=0x%llx, hint=0x%llx\n",
 		 __func__, ctxid, verify->rsrc_handle, verify->hint);
 
-	ctx_info = cxlflash_get_context(cfg, ctxid, lun_info, 0);
+	ctx_info = get_context(cfg, ctxid, lun_info, 0);
 	if (unlikely(!ctx_info)) {
 		pr_err("%s: Invalid context! (%llu)\n",
 		       __func__, ctxid);
@@ -1602,7 +1598,7 @@ static int cxlflash_disk_verify(struct scsi_device *sdev,
 		goto out;
 	}
 
-	rht_entry = cxlflash_get_rhte(ctx_info, res_hndl, lun_info);
+	rht_entry = get_rhte(ctx_info, res_hndl, lun_info);
 	if (unlikely(!rht_entry)) {
 		pr_err("%s: Invalid resource handle! (%d)\n",
 		       __func__, res_hndl);
@@ -1717,7 +1713,7 @@ static int cxlflash_disk_direct_open(struct scsi_device *sdev, void *arg)
 		goto out;
 	}
 
-	ctx_info = cxlflash_get_context(cfg, ctxid, lun_info, 0);
+	ctx_info = get_context(cfg, ctxid, lun_info, 0);
 	if (unlikely(!ctx_info)) {
 		pr_err("%s: Invalid context! (%llu)\n", __func__, ctxid);
 		rc = -EINVAL;
@@ -1809,7 +1805,7 @@ int cxlflash_ioctl(struct scsi_device *sdev, int cmd, void __user *arg)
 	switch (cmd) {
 	case 0x4711:	/* XXX - remove case and assoc. vars before upstream */
 		ctxid = ((struct dk_cxlflash_detach *)arg)->context_id;
-		ctx_info = cxlflash_get_context(cfg, ctxid, NULL, 0);
+		ctx_info = get_context(cfg, ctxid, NULL, 0);
 		if (!ctx_info) {
 			rc = -EINVAL;
 			goto cxlflash_ioctl_exit;
