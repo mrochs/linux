@@ -1378,12 +1378,10 @@ static int cxlflash_manage_lun(struct scsi_device *sdev,
 
 /**
  * recover_context() - recovers a context in error
- * @sdev:	SCSI device associated with LUN.
- * @manage:	Manage ioctl data structure.
+ * @cfg:	Internal structure associated with the host.
+ * @ctx_info:	Context to release.
  *
- * This routine is used to notify the driver about a LUN's WWID and associate
- * SCSI devices (sdev) with a global LUN instance. Additionally it serves to
- * change a LUN's operating mode: legacy or superpipe.
+ * Restablishes the state for a context-in-error.
  *
  * Return: 0 on success, -errno on failure
  */
