@@ -2261,6 +2261,66 @@ out_remove:
 	goto out;
 }
 
+/**
+ * cxlflash_pci_error_detected - Called when a PCI error is detected.
+ * @pdev: PCI device struct
+ * @state: PCI channel state
+ *
+ * Description: Called when a PCI error is detected.
+ *
+ * Return value:
+ * PCI_ERS_RESULT_NEED_RESET or PCI_ERS_RESULT_DISCONNECT
+ */
+static pci_ers_result_t cxlflash_pci_error_detected(struct pci_dev *pdev,
+						    pci_channel_state_t state)
+{
+	switch (state) {
+	case pci_channel_io_frozen:
+		/* XXX: Dummy */
+		return PCI_ERS_RESULT_CAN_RECOVER;
+	case pci_channel_io_perm_failure:
+		/* XXX: Dummy */
+		return PCI_ERS_RESULT_DISCONNECT;
+		break;
+	default:
+		break;
+	}
+	return PCI_ERS_RESULT_NEED_RESET;
+}
+
+/**
+ * cxlflash_pci_mmio_enabled - Called when MMIO has been re-enabled
+ * @pdev: PCI device struct
+ *
+ * Description: This routine is called to tell us that the MMIO
+ * access to the CFLASH has been restored
+ */
+static pci_ers_result_t cxlflash_pci_mmio_enabled(struct pci_dev *pdev)
+{
+	/* XXX: Dummy */
+	return PCI_ERS_RESULT_NEED_RESET;
+}
+
+/**
+ * cxlflash_pci_slot_reset - Called when PCI slot has been reset.
+ * @pdev: PCI device struct
+ *
+ * Description: This routine is called by the pci error recovery
+ * code after the PCI slot has been reset, just before we
+ * should resume normal operations.
+ */
+static pci_ers_result_t cxlflash_pci_slot_reset(struct pci_dev *pdev)
+{
+	/* XXX: Dummy */
+	return PCI_ERS_RESULT_RECOVERED;
+}
+
+static const struct pci_error_handlers cxlflash_err_handler = {
+	.error_detected = cxlflash_pci_error_detected,
+	.mmio_enabled = cxlflash_pci_mmio_enabled,
+	.slot_reset = cxlflash_pci_slot_reset,
+};
+
 /*
  * PCI device structure
  */
@@ -2269,6 +2329,7 @@ static struct pci_driver cxlflash_driver = {
 	.id_table = cxlflash_pci_table,
 	.probe = cxlflash_probe,
 	.remove = cxlflash_remove,
+	.err_handler = &cxlflash_err_handler,
 };
 
 /**
