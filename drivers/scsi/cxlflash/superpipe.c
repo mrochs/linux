@@ -1380,6 +1380,88 @@ static int cxlflash_manage_lun(struct scsi_device *sdev,
 }
 
 /**
+ * recover_context() - recovers a context in error
+ * @sdev:	SCSI device associated with LUN.
+ * @manage:	Manage ioctl data structure.
+ *
+ * This routine is used to notify the driver about a LUN's WWID and associate
+ * SCSI devices (sdev) with a global LUN instance. Additionally it serves to
+ * change a LUN's operating mode: legacy or superpipe.
+ *
+ * Return: 0 on success, -errno on failure
+ */
+static int recover_context(struct cxlflash_cfg *cfg, struct ctx_info *ctx_info)
+{
+	int rc = 0;
+	int fd = -1;
+	int ctxid = -1;
+	struct file *file;
+	struct cxl_context *ctx;
+	struct afu *afu = cfg->afu;
+
+	ctx = cxl_dev_context_init(cfg->dev);
+	if (!ctx) {
+		pr_err("%s: Could not initialize context\n", __func__);
+		rc = -ENODEV;
+		goto out;
+	}
+
+	ctxid = cxl_process_element(ctx);
+	if ((ctxid > MAX_CONTEXT) || (ctxid < 0)) {
+		pr_err("%s: ctxid (%d) invalid!\n", __func__, ctxid);
+		rc = -EPERM;
+		goto err1;
+	}
+
+	file = cxl_get_fd(ctx, &cfg->cxl_fops, &fd);
+	if (fd < 0) {
+		rc = -ENODEV;
+		pr_err("%s: Could not get file descriptor\n", __func__);
+		goto err1;
+	}
+
+	rc = cxl_start_work(ctx, &ctx_info->work);
+	if (rc) {
+		pr_err("%s: Could not start context rc=%d\n", __func__, rc);
+		goto err2;
+	}
+
+	/* Update with new MMIO area based on updated context id */
+	ctx_info->ctrl_map = &afu->afu_map->ctrls[ctxid].ctrl;
+
+	rc = cxlflash_afu_attach(cfg, ctx_info);
+	if (rc) {
+		pr_err("%s: Could not attach AFU rc %d\n", __func__, rc);
+		goto err3;
+	}
+
+	/*
+	 * No error paths after this point. Once the fd is installed it's
+	 * visible to user space and can't be undone safely on this thread.
+	 */
+	ctx_info->ctxid = ctxid;
+	ctx_info->lfd = fd;
+	ctx_info->ctx = ctx;
+
+	cfg->ctx_tbl[ctxid] = ctx_info;
+	fd_install(fd, file);
+
+out:
+	pr_debug("%s: returning ctxid=%d fd=%d rc=%d\n",
+		 __func__, ctxid, fd, rc);
+	return rc;
+
+err3:
+	cxl_stop_context(ctx);
+err2:
+	fput(file);
+	put_unused_fd(fd);
+err1:
+	cxl_release_context(ctx);
+	goto out;
+}
+
+/**
  * cxlflash_afu_recover() - initiates AFU recovery
  * @sdev:	SCSI device associated with LUN.
  * @recover:	Recover ioctl data structure.
@@ -1394,7 +1476,7 @@ static int cxlflash_afu_recover(struct scsi_device *sdev,
 	struct afu *afu = cfg->afu;
 	struct ctx_info *ctx_info = NULL;
 	u64 ctxid = recover->context_id;
-	long reg;
+	//long reg;
 	int rc = 0;
 
 	/* Ensure that this process is attached to the context */
@@ -1405,6 +1487,19 @@ static int cxlflash_afu_recover(struct scsi_device *sdev,
 		goto out;
 	}
 
+	rc = recover_context(cfg, ctx_info);
+	if (unlikely(rc)) {
+		pr_err("%s: Error recovery failed for context %llu (rc=%d)\n",
+		       __func__, ctxid, rc);
+		goto out;
+	}
+
+	ctx_info->err_recovery_active = false;
+	recover->context_id = ctx_info->ctxid;
+	recover->adap_fd = ctx_info->lfd;
+	recover->mmio_size = sizeof(afu->afu_map->hosts[0].harea);
+
+#if 0
 	reg = readq_be(&afu->ctrl_map->mbox_r);	/* Try MMIO */
 	/* MMIO returning 0xff, need to reset */
 	if (reg == -1) {
@@ -1416,6 +1511,7 @@ static int cxlflash_afu_recover(struct scsi_device *sdev,
 			 __func__, recover->reason);
 		rc = -EINVAL;
 	}
+#endif
 
 out:
 	if (likely(ctx_info))
