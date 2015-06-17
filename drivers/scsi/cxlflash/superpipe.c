@@ -1149,6 +1149,40 @@ static const struct file_operations cxlflash_cxl_fops = {
 };
 
 /**
+ * cxlflash_cxl_mmap() - mmap handler for adapter file descriptor
+ * @file:	File installed with adapter file descriptor.
+ * @vma:	VM area associated with mapping.
+ *
+ * Installs local mmap vmops to 'catch' faults for error notification support.
+ *
+ * Return: 0 on success, -errno on failure
+ */
+static int mark_contexts_error(struct cxlflash_cfg *cfg)
+{
+	int i, rc = 0;
+	ulong lock_flags;
+	struct ctx_info *ctx_info = NULL;
+
+	spin_lock_irqsave(&cfg->ctx_tbl_slock, lock_flags);
+
+	memcpy(cfg->err_tbl, cfg->ctx_tbl, sizeof(*cfg->ctx_tbl));
+	memset(cfg->ctx_tbl, 0, sizeof(*cfg->ctx_tbl));
+
+	for (i = 0; i < MAX_CONTEXT; i++) {
+		ctx_info = cfg->err_tbl[i];
+
+		if (ctx_info) {
+			ctx_info->err_recovery_active = true;
+			cxlflash_unmap_context(ctx_info);
+		}
+	}
+
+	spin_unlock_irqrestore(&cfg->ctx_tbl_slock, lock_flags);
+
+	return rc;
+}
+
+/**
  * cxlflash_disk_attach() - attach a LUN to a context
  * @sdev:	SCSI device associated with LUN.
  * @attach:	Attach ioctl data structure.
