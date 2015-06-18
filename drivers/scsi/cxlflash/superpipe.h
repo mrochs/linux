@@ -152,10 +152,9 @@ enum ctx_ctrl {
 	CTX_CTRL_NOPID		= (1 << 4)
 };
 
-/* Single AFU context can be pointed to by multiple client connections.
- * The client can create multiple endpoints (mc_hndl_t) to the same
- * (context + AFU).
- */
+#define ENCODE_CTXID(_ctx, _id)	(((((u64)_ctx) & 0xFFFFFFFF0) << 28) | _id)
+#define DECODE_CTXID(_val)	(_val & 0xFFFFFFFF)
+
 struct ctx_info {
 	struct sisl_ctrl_map *ctrl_map; /* initialized at startup */
 	struct sisl_rht_entry *rht_start; /* 1 page (req'd for alignment),
@@ -165,15 +164,15 @@ struct ctx_info {
 	struct lun_info **rht_lun; /* Mapping of RHT entries to LUNs */
 
 	struct cxl_ioctl_start_work work;
-	int ctxid;
+	u64 ctxid;
 	int lfd;
 	pid_t pid;
 	atomic_t nrefs;	/* Number of active references, must be 0 for removal */
+	bool err_recovery_active;
 	struct cxl_context *ctx;
 	struct list_head luns;	/* LUNs attached to this context */
 	const struct vm_operations_struct *cxl_mmap_vmops;
 	struct address_space *mapping;
-	bool err_recovery_active;
 };
 
 struct cxlflash_global {

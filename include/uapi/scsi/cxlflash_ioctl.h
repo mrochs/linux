@@ -29,7 +29,15 @@ struct dk_cxlflash_hdr {
 };
 
 /*
- * Note: For DK_CXLFLASH_ATTACH ioctl, user specifies read/write access
+ * Notes:
+ * -----
+ * The 'context_id' field of all ioctl structures contains the context
+ * identifier for a context in the lower 32-bits (upper 32-bits are not
+ * to be used when identifying a context to the AFU). That said, the value
+ * in its entirety (all 64-bits) is to be treated as an opaque cookie and
+ * should be presented as such when issuing ioctls.
+ *
+ * For DK_CXLFLASH_ATTACH ioctl, user specifies read/write access
  * permissions via the O_RDONLY, O_WRONLY, and O_RDWR flags defined in
  * the fcntl.h header file.
  */

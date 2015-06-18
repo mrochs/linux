@@ -604,7 +604,7 @@ int cxlflash_disk_release(struct scsi_device *sdev,
 	res_hndl_t res_hndl = release->rsrc_handle;
 
 	int rc = 0;
-	u64 ctxid = release->context_id;
+	u64 ctxid = DECODE_CTXID(release->context_id);
 
 	struct ctx_info *ctx_info = NULL;
 	struct sisl_rht_entry *rht_entry;
@@ -750,7 +750,7 @@ static struct ctx_info *create_context(struct cxlflash_cfg *cfg,
 	ctx_info->rht_perms = perms;
 
 	ctx_info->ctrl_map = &afu->afu_map->ctrls[ctxid].ctrl;
-	ctx_info->ctxid = ctxid;
+	ctx_info->ctxid = ENCODE_CTXID(ctx_info, ctxid);
 	ctx_info->lfd = adap_fd;
 	ctx_info->pid = current->tgid; /* tgid = pid */
 	ctx_info->ctx = ctx;
@@ -790,7 +790,7 @@ static int cxlflash_disk_detach(struct scsi_device *sdev,
 	int i;
 	int rc = 0;
 	int lfd;
-	u64 ctxid = detach->context_id;
+	u64 ctxid = DECODE_CTXID(detach->context_id);
 	ulong flags = 0;
 
 	pr_debug("%s: ctxid=%llu\n", __func__, ctxid);
@@ -936,14 +936,14 @@ static int cxlflash_cxl_release(struct inode *inode, struct file *file)
 
 	/* Reset the file descriptor to indicate we're on a close() thread */
 	ctx_info->lfd = -1;
-	detach.context_id = ctxid;
+	detach.context_id = ctx_info->ctxid;
 	atomic_dec(&ctx_info->nrefs); /* fix up reference count */
 	list_for_each_entry_safe(lun_access, t, &ctx_info->luns, list)
 		cxlflash_disk_detach(lun_access->sdev, &detach);
 
 	/*
 	 * Don't reference lun_access, or t (or ctx_info for that matter, even
-	 * though it's invalidated to appease the reference counting code.
+	 * though it's invalidated to appease the reference counting code).
 	 */
 	ctx_info = NULL;
 
@@ -1229,7 +1229,7 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 	}
 
 	if (attach->hdr.flags & DK_CXLFLASH_ATTACH_REUSE_CONTEXT) {
-		ctxid = attach->context_id;
+		ctxid = DECODE_CTXID(attach->context_id);
 		ctx_info = get_context(cfg, ctxid, NULL, 0);
 		if (!ctx_info) {
 			pr_err("%s: Invalid context! (%d)\n", __func__, ctxid);
@@ -1321,7 +1321,7 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 
 out_attach:
 	attach->hdr.return_flags = 0;
-	attach->context_id = ctxid;
+	attach->context_id = ctx_info->ctxid;
 	attach->block_size = lun_info->blk_len;
 	attach->mmio_size = sizeof(afu->afu_map->hosts[0].harea);
 	attach->last_lba = lun_info->max_lba;
@@ -1436,7 +1436,7 @@ static int recover_context(struct cxlflash_cfg *cfg, struct ctx_info *ctx_info)
 	 * No error paths after this point. Once the fd is installed it's
 	 * visible to user space and can't be undone safely on this thread.
 	 */
-	ctx_info->ctxid = ctxid;
+	ctx_info->ctxid = ENCODE_CTXID(ctx_info, ctxid);
 	ctx_info->lfd = fd;
 	ctx_info->ctx = ctx;
 
@@ -1472,7 +1472,7 @@ static int cxlflash_afu_recover(struct scsi_device *sdev,
 	struct lun_info *lun_info = sdev->hostdata;
 	struct afu *afu = cfg->afu;
 	struct ctx_info *ctx_info = NULL;
-	u64 ctxid = recover->context_id;
+	u64 ctxid = DECODE_CTXID(recover->context_id);
 	//long reg;
 	int rc = 0;
 
@@ -1584,7 +1584,7 @@ static int cxlflash_disk_verify(struct scsi_device *sdev,
 	struct lun_info *lun_info = sdev->hostdata;
 	struct sisl_rht_entry *rht_entry = NULL;
 	res_hndl_t res_hndl = verify->rsrc_handle;
-	u64 ctxid = verify->context_id;
+	u64 ctxid = DECODE_CTXID(verify->context_id);
 	u64 last_lba = 0;
 
 	pr_debug("%s: ctxid=%llu res_hndl=0x%llx, hint=0x%llx\n",
@@ -1694,7 +1694,7 @@ static int cxlflash_disk_direct_open(struct scsi_device *sdev, void *arg)
 
 	struct dk_cxlflash_udirect *pphys = (struct dk_cxlflash_udirect *)arg;
 
-	u64 ctxid = pphys->context_id;
+	u64 ctxid = DECODE_CTXID(pphys->context_id);
 	u64 lun_size = 0;
 	u64 last_lba = 0;
 	u64 rsrc_handle = -1;
@@ -1805,6 +1805,7 @@ int cxlflash_ioctl(struct scsi_device *sdev, int cmd, void __user *arg)
 	switch (cmd) {
 	case 0x4711:	/* XXX - remove case and assoc. vars before upstream */
 		ctxid = ((struct dk_cxlflash_detach *)arg)->context_id;
+		ctxid = DECODE_CTXID(ctxid);
 		ctx_info = get_context(cfg, ctxid, NULL, 0);
 		if (!ctx_info) {
 			rc = -EINVAL;

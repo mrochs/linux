@@ -681,7 +681,7 @@ int cxlflash_vlun_resize(struct scsi_device *sdev,
 	res_hndl_t res_hndl = resize->rsrc_handle;
 	u64 new_size;
 	u64 nsectors;
-	u64 ctxid = resize->context_id;
+	u64 ctxid = DECODE_CTXID(resize->context_id);
 
 	struct ctx_info *ctx_info = NULL;
 	struct sisl_rht_entry *rht_entry;
@@ -774,7 +774,7 @@ int cxlflash_disk_virtual_open(struct scsi_device *sdev, void *arg)
 	struct dk_cxlflash_uvirtual *virt = (struct dk_cxlflash_uvirtual *)arg;
 	struct dk_cxlflash_resize resize;
 
-	u64 ctxid = virt->context_id;
+	u64 ctxid = DECODE_CTXID(virt->context_id);
 	u64 lun_size = virt->lun_size;
 	u64 last_lba = 0;
 	u64 rsrc_handle = -1;
@@ -953,8 +953,8 @@ int cxlflash_disk_clone(struct scsi_device *sdev,
 			*ctx_info_dst = NULL;
 	struct lun_access *lun_access_src, *lun_access_dst;
 	u32 perms;
-	u64 ctxid_src = clone->context_id_src,
-	    ctxid_dst = clone->context_id_dst;
+	u64 ctxid_src = DECODE_CTXID(clone->context_id_src),
+	    ctxid_dst = DECODE_CTXID(clone->context_id_dst);
 	int adap_fd_src = clone->adap_fd_src;
 	int i, j;
 	int rc = 0;
