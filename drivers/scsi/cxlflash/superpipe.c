@@ -197,6 +197,35 @@ void cxlflash_list_terminate(void)
 }
 
 /**
+ * stop_term_user_contexts() - stops and terminates any known user contexts 
+ * @cfg:	Internal structure associated with the host.
+ */
+void stop_term_user_contexts(struct cxlflash_cfg *cfg)
+{
+	int i;
+	struct ctx_info *ctx_info, *t;
+
+	for (i = 0; i < MAX_CONTEXT; i++) {
+		ctx_info = cfg->ctx_tbl[i];
+
+		if (ctx_info) {
+			/* XXX - need to notify user */
+			pr_debug("%s: tbl calling sys_close(%d)\n",
+				 __func__, ctx_info->lfd);
+			sys_close(ctx_info->lfd);
+		}
+	}
+
+	list_for_each_entry_safe(ctx_info, t, &cfg->ctx_err_recovery, list) {
+		list_del(&ctx_info->list);
+		/* XXX - need to notify user */
+		pr_info("%s: list calling sys_close(%d)\n",
+			__func__, ctx_info->lfd);
+		sys_close(ctx_info->lfd);
+	}
+}
+
+/**
  * get_context() - obtains a validated context reference
  * @cfg:	Internal structure associated with the host.
  * @ctxid:	Desired context.
