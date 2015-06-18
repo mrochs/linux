@@ -105,7 +105,7 @@ struct cxlflash_cfg {
 
 	spinlock_t ctx_tbl_slock;
 	struct ctx_info *ctx_tbl[MAX_CONTEXT];
-	struct ctx_info *err_tbl[MAX_CONTEXT];
+	struct list_head ctx_err_recovery; /* contexts w/ recovery pending */
 	struct file_operations cxl_fops;
 
 	int num_user_contexts;

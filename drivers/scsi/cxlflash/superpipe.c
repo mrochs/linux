@@ -755,6 +755,7 @@ static struct ctx_info *create_context(struct cxlflash_cfg *cfg,
 	ctx_info->pid = current->tgid; /* tgid = pid */
 	ctx_info->ctx = ctx;
 	INIT_LIST_HEAD(&ctx_info->luns);
+	INIT_LIST_HEAD(&ctx_info->luns);
 	atomic_set(&ctx_info->nrefs, 1);
 
 	cfg->num_user_contexts++;
@@ -1146,11 +1147,8 @@ static const struct file_operations cxlflash_cxl_fops = {
 };
 
 /**
- * cxlflash_cxl_mmap() - mmap handler for adapter file descriptor
- * @file:	File installed with adapter file descriptor.
- * @vma:	VM area associated with mapping.
- *
- * Installs local mmap vmops to 'catch' faults for error notification support.
+ * mark_contexts_error() - move contexts to error list and install error page
+ * @cfg:	Internal structure associated with the host.
  *
  * Return: 0 on success, -errno on failure
  */
@@ -1162,13 +1160,12 @@ static int mark_contexts_error(struct cxlflash_cfg *cfg)
 
 	spin_lock_irqsave(&cfg->ctx_tbl_slock, lock_flags);
 
-	memcpy(cfg->err_tbl, cfg->ctx_tbl, sizeof(*cfg->ctx_tbl));
-	memset(cfg->ctx_tbl, 0, sizeof(*cfg->ctx_tbl));
-
 	for (i = 0; i < MAX_CONTEXT; i++) {
-		ctx_info = cfg->err_tbl[i];
+		ctx_info = cfg->ctx_tbl[i];
 
 		if (ctx_info) {
+			cfg->ctx_tbl[i] = NULL;
+			list_add(&ctx_info->list, &cfg->ctx_err_recovery);
 			ctx_info->err_recovery_active = true;
 			cxlflash_unmap_context(ctx_info);
 		}
