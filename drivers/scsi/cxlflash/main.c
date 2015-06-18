@@ -2276,9 +2276,15 @@ out_remove:
 static pci_ers_result_t cxlflash_pci_error_detected(struct pci_dev *pdev,
 						    pci_channel_state_t state)
 {
+	int rc = 0;
+	struct cxlflash_cfg *cfg = pci_get_drvdata(pdev);
+
 	switch (state) {
 	case pci_channel_io_frozen:
-		/* XXX: Dummy */
+		rc = mark_contexts_error(cfg);
+		if (unlikely(rc))
+			pr_err("%s: Failed to mark contexts in error!(rc=%d)\n",
+			       __func__, rc);
 		return PCI_ERS_RESULT_CAN_RECOVER;
 	case pci_channel_io_perm_failure:
 		/* XXX: Dummy */

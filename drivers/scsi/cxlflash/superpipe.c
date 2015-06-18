@@ -1181,7 +1181,7 @@ static const struct file_operations cxlflash_cxl_fops = {
  *
  * Return: 0 on success, -errno on failure
  */
-static int mark_contexts_error(struct cxlflash_cfg *cfg)
+int mark_contexts_error(struct cxlflash_cfg *cfg)
 {
 	int i, rc = 0;
 	ulong lock_flags;
