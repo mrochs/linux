@@ -226,6 +226,24 @@ void stop_term_user_contexts(struct cxlflash_cfg *cfg)
 }
 
 /**
+ * find_error_context() - locates a context by cookie on the error recovery list
+ * @cfg:	Internal structure associated with the host.
+ * @ctxid:	Desired context.
+ *
+ * Return: Found context on success, NULL on failure
+ */
+static struct ctx_info *find_error_context(struct cxlflash_cfg *cfg, u64 ctxid)
+{
+	struct ctx_info *ctx_info;
+
+	list_for_each_entry(ctx_info, &cfg->ctx_err_recovery, list)
+		if (ctx_info->ctxid == ctxid)
+			return ctx_info;
+
+	return NULL;
+}
+
+/**
  * get_context() - obtains a validated context reference
  * @cfg:	Internal structure associated with the host.
  * @ctxid:	Desired context.
@@ -255,11 +273,19 @@ struct ctx_info *get_context(struct cxlflash_cfg *cfg, u64 ctxid,
 	if (likely(ctxid < MAX_CONTEXT)) {
 		spin_lock_irqsave(&cfg->ctx_tbl_slock, flags);
 		ctx_info = cfg->ctx_tbl[ctxid];
+
+		if (unlikely(ctx_ctrl & CTX_CTRL_ERR))
+			ctx_info = find_error_context(cfg, ctxid);
 		if (unlikely(!ctx_info)) {
+			if (ctx_ctrl & CTX_CTRL_ERR_FALLBACK) {
+				ctx_info = find_error_context(cfg, ctxid);
+				if (ctx_info)
+					goto found_context;
+			}
 			spin_unlock_irqrestore(&cfg->ctx_tbl_slock, flags);
 			goto out;
 		}
-
+found_context:
 		/*
 		 * Increment the reference count under lock so the context
 		 * is not yanked from under us on a removal thread.
@@ -268,8 +294,9 @@ struct ctx_info *get_context(struct cxlflash_cfg *cfg, u64 ctxid,
 		spin_unlock_irqrestore(&cfg->ctx_tbl_slock, flags);
 
 		ctxpid = ctx_info->pid;
-		if (pid != ctxpid)
-			goto denied;
+		if (likely(!(ctx_ctrl & CTX_CTRL_NOPID)))
+			if (pid != ctxpid)
+				goto denied;
 
 		if (likely(lun_info)) {
 			list_for_each_entry(lun_access, &ctx_info->luns, list)
