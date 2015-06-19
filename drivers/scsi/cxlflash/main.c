@@ -2281,7 +2281,7 @@ static pci_ers_result_t cxlflash_pci_error_detected(struct pci_dev *pdev,
 
 	switch (state) {
 	case pci_channel_io_frozen:
-		rc = mark_contexts_error(cfg);
+		rc = cxlflash_mark_contexts_error(cfg);
 		if (unlikely(rc))
 			pr_err("%s: Failed to mark contexts in error!(rc=%d)\n",
 			       __func__, rc);

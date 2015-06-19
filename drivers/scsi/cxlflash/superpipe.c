@@ -1203,12 +1203,13 @@ static const struct file_operations cxlflash_cxl_fops = {
 };
 
 /**
- * mark_contexts_error() - move contexts to error list and install error page
+ * cxlflash_mark_contexts_error() - move contexts to error list and install 
+ * error page
  * @cfg:	Internal structure associated with the host.
  *
  * Return: 0 on success, -errno on failure
  */
-int mark_contexts_error(struct cxlflash_cfg *cfg)
+int cxlflash_mark_contexts_error(struct cxlflash_cfg *cfg)
 {
 	int i, rc = 0;
 	ulong lock_flags;
