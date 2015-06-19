@@ -324,14 +324,13 @@ denied:
 }
 
 /**
- * cxlflash_afu_attach() - attach a context to the AFU
+ * afu_attach() - attach a context to the AFU
  * @cfg:	Internal structure associated with the host.
  * @ctx_info:	Context to attach.
  *
  * Return: 0 on success, -errno on failure
  */
-static int cxlflash_afu_attach(struct cxlflash_cfg *cfg,
-			       struct ctx_info *ctx_info)
+static int afu_attach(struct cxlflash_cfg *cfg, struct ctx_info *ctx_info)
 {
 	struct afu *afu = cfg->afu;
 	int rc = 0;
@@ -1014,14 +1013,14 @@ out:
 }
 
 /**
- * cxlflash_unmap_context() - clears a previously established mapping
+ * unmap_context() - clears a previously established mapping
  * @ctx_info:	Context owning the mapping.
  *
  * This routine is used to switch between the error notification page
  * (dummy page of all 1's) and the real mapping (established by the CXL
  * fault handler).
  */
-static void cxlflash_unmap_context(struct ctx_info *ctx_info)
+static void unmap_context(struct ctx_info *ctx_info)
 {
 	unmap_mapping_range(ctx_info->mapping, 0, 0, 1);
 }
@@ -1223,7 +1222,7 @@ int mark_contexts_error(struct cxlflash_cfg *cfg)
 			cfg->ctx_tbl[i] = NULL;
 			list_add(&ctx_info->list, &cfg->ctx_err_recovery);
 			ctx_info->err_recovery_active = true;
-			cxlflash_unmap_context(ctx_info);
+			unmap_context(ctx_info);
 		}
 	}
 
@@ -1358,7 +1357,7 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 		goto err3;
 	}
 
-	rc = cxlflash_afu_attach(cfg, ctx_info);
+	rc = afu_attach(cfg, ctx_info);
 	if (rc) {
 		pr_err("%s: Could not attach AFU rc %d\n", __func__, rc);
 		goto err4;
@@ -1477,7 +1476,7 @@ static int recover_context(struct cxlflash_cfg *cfg, struct ctx_info *ctx_info)
 	/* Update with new MMIO area based on updated context id */
 	ctx_info->ctrl_map = &afu->afu_map->ctrls[ctxid].ctrl;
 
-	rc = cxlflash_afu_attach(cfg, ctx_info);
+	rc = afu_attach(cfg, ctx_info);
 	if (rc) {
 		pr_err("%s: Could not attach AFU rc %d\n", __func__, rc);
 		goto err3;
@@ -1868,7 +1867,7 @@ int cxlflash_ioctl(struct scsi_device *sdev, int cmd, void __user *arg)
 		else
 			ctx_info->err_recovery_active = true;
 
-		cxlflash_unmap_context(ctx_info);
+		unmap_context(ctx_info);
 		atomic_dec(&ctx_info->nrefs);
 		goto cxlflash_ioctl_exit;
 	case DK_CXLFLASH_ATTACH:
