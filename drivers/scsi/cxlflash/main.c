@@ -795,7 +795,7 @@ static void term_mc(struct cxlflash_cfg *cfg, enum undo_level level)
  */
 static void term_afu(struct cxlflash_cfg *cfg)
 {
-	stop_term_user_contexts(cfg);
+	cxlflash_stop_term_user_contexts(cfg);
 	term_mc(cfg, UNDO_START);
 
 	if (cfg->afu)

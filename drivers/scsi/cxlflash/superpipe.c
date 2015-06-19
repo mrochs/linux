@@ -197,10 +197,11 @@ void cxlflash_list_terminate(void)
 }
 
 /**
- * stop_term_user_contexts() - stops and terminates any known user contexts 
+ * cxlflash_stop_term_user_contexts() - stops and terminates any known user 
+ * contexts 
  * @cfg:	Internal structure associated with the host.
  */
-void stop_term_user_contexts(struct cxlflash_cfg *cfg)
+void cxlflash_stop_term_user_contexts(struct cxlflash_cfg *cfg)
 {
 	int i;
 	struct ctx_info *ctx_info, *t;
