@@ -53,6 +53,8 @@ static char read_buf[BUFFER_SIZE] __aligned(128);
 #define MEMCPY_QUEUE_SIZE (MEMCPY_QUEUE_ENTRIES * sizeof(struct memcpy_work_element))
 static struct memcpy_work_element cxl_memcpy_queue[MEMCPY_QUEUE_ENTRIES] __aligned(PAGE_SIZE);
 
+static bool handling_error = false;
+
 static void cxl_memcpy_vpd_info(struct pci_dev *dev)
 {
 	struct device *phys_dev;
@@ -186,8 +188,10 @@ static int memcpy_afu(struct pci_dev *dev)
 	struct cxl_context *ctx;
 	struct cxl_memcpy_info *info;
 	void __iomem *psa;
-
 	int rc = 0;
+
+	if (handling_error)
+		return -EIO;
 
 	info = kzalloc(sizeof(struct cxl_memcpy_info), GFP_KERNEL);
 
@@ -240,7 +244,7 @@ static int memcpy_afu(struct pci_dev *dev)
 	rc = cxl_memcpy_start_context(ctx);
 	if (rc) {
 		dev_err(&dev->dev, "Can't start context");
-		return rc;
+		goto err6;
 	}
 
 	/*
@@ -248,16 +252,27 @@ static int memcpy_afu(struct pci_dev *dev)
 	 * practice, this is just a demonstration that the AFU IRQ works.
 	 */
 	rc = 0;
-	while(!info->afu_irq_done) {
+	while(!info->afu_irq_done && rc < 10000) {
+		if (handling_error) {
+			rc = -EIO;
+			goto err7;
+		}
 		schedule();
 		rc++;
 	}
 
+	if (rc == 10000) {
+		dev_err(&dev->dev, "Timed out waiting for completion");
+		rc = -EIO;
+		goto err7;
+	}
 	rc = 0;
 
 	/* Copy is complete!  Lets tear things down again */
-	cxl_psa_unmap(psa);
+err7:
 	cxl_stop_context(ctx);
+err6:
+	cxl_psa_unmap(psa);
 err5:
 	cxl_unmap_afu_irq(ctx, 3, ctx);
 err4:
@@ -296,6 +311,7 @@ static ssize_t device_read(struct file *fp, char __user *buff, size_t length,
 
 	bytes_read = bytes_to_read - copy_to_user(buff, read_buf + *ppos,
 						  bytes_to_read);
+
 	*ppos += bytes_read;
 	return bytes_read;
 }
@@ -351,6 +367,9 @@ static long device_ioctl_get_fd(struct pci_dev *dev,
 	struct file *file;
 	int rc, fd;
 
+	if (handling_error)
+		return -EIO;
+
 	/* Copy the user info */
 	if (copy_from_user(&work, arg, sizeof(struct cxl_memcpy_ioctl_get_fd)))
 		return -EFAULT;
@@ -391,11 +410,40 @@ static long device_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	return -EINVAL;
 }
 
+static pci_ers_result_t cxl_memcpy_pci_error_detected(struct pci_dev *pdev,
+					       pci_channel_state_t state)
+{
+	printk("%s\n", __func__);
+	handling_error = true;
+	return PCI_ERS_RESULT_NEED_RESET;
+}
+
+static pci_ers_result_t cxl_memcpy_pci_slot_reset(struct pci_dev *pdev)
+{
+	printk("%s", __func__);
+	return PCI_ERS_RESULT_RECOVERED;
+}
+
+static void cxl_memcpy_pci_resume(struct pci_dev *pdev)
+{
+	printk("%s\n", __func__);
+	handling_error = false;
+}
+
+
+
+static const struct pci_error_handlers cxl_memcpy_err_handler = {
+	.error_detected = cxl_memcpy_pci_error_detected,
+	.slot_reset = cxl_memcpy_pci_slot_reset,
+	.resume = cxl_memcpy_pci_resume,
+};
+
 struct pci_driver cxl_memcpy_pci_driver = {
 	.name = "cxl-memcpy",
 	.id_table = cxl_memcpy_pci_tbl,
 	.probe = cxl_memcpy_probe,
 	.remove = cxl_memcpy_remove,
+	.err_handler = &cxl_memcpy_err_handler,
 };
 
 struct file_operations fops = {
