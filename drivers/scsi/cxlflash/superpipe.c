@@ -120,6 +120,7 @@ out:
 int cxlflash_slave_alloc(struct scsi_device *sdev)
 {
 	int rc = 0;
+#if 0
 	struct lun_info *lun_info = NULL;
 
 	lun_info = lookup_lun(sdev, NULL);
@@ -129,8 +130,8 @@ int cxlflash_slave_alloc(struct scsi_device *sdev)
 	}
 
 	sdev->hostdata = lun_info;
-
 out:
+#endif
 	pr_debug("%s: returning sdev %p rc=%d\n", __func__, sdev, rc);
 	return rc;
 }
@@ -145,6 +146,7 @@ out:
  */
 int cxlflash_slave_configure(struct scsi_device *sdev)
 {
+#if 0
 	struct Scsi_Host *shost = sdev->host;
 	struct lun_info *lun_info = sdev->hostdata;
 	struct cxlflash_cfg *cfg = shost_priv(shost);
@@ -160,7 +162,7 @@ int cxlflash_slave_configure(struct scsi_device *sdev)
 	writeq_be(lun_info->lun_id,
 		  &afu->afu_map->global.fc_port[sdev->channel]
 		  [cfg->last_lun_index[sdev->channel]++]);
-
+#endif
 	return 0;
 }
 
@@ -1466,14 +1468,39 @@ err0:
 static int cxlflash_manage_lun(struct scsi_device *sdev,
 			       struct dk_cxlflash_manage_lun *manage)
 {
+	int rc = 0;
+	struct Scsi_Host *shost = sdev->host;
+	struct cxlflash_cfg *cfg = shost_priv(shost);
+	struct afu *afu = cfg->afu;
 	struct lun_info *lun_info = NULL;
+	u64 flags = manage->hdr.flags;
 
 	lun_info = lookup_lun(sdev, manage->wwid);
 	pr_debug("%s: ENTER: WWID = %016llX%016llX, flags = %016llX li = %p\n",
 		 __func__, get_unaligned_le64(&manage->wwid[0]),
 		 get_unaligned_le64(&manage->wwid[8]),
 		 manage->hdr.flags, lun_info);
-	return 0;
+	if (unlikely(!lun_info)) {
+		rc = -ENOMEM;
+		goto out;
+	}
+
+	if (flags & DK_CXLFLASH_MANAGE_LUN_ENABLE_SUPERPIPE) {
+		/* Store off lun in unpacked, AFU-friendly format */
+		lun_info->lun_id = lun_to_lunid(sdev->lun);
+		lun_info->lun_index = cfg->last_lun_index[sdev->channel];
+
+		writeq_be(lun_info->lun_id,
+			  &afu->afu_map->global.fc_port[sdev->channel]
+			  [cfg->last_lun_index[sdev->channel]++]);
+		sdev->hostdata = lun_info;
+	} else if (flags & DK_CXLFLASH_MANAGE_LUN_DISABLE_SUPERPIPE) {
+		sdev->hostdata = NULL;
+	}
+
+out:
+	pr_debug("%s: returning rc=%d\n", __func__, rc);
+	return rc;
 }
 
 /**
