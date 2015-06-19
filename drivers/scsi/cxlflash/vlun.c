@@ -67,7 +67,7 @@ static void marshall_clone_to_rele(struct dk_cxlflash_clone *clone,
  *
  * Return: 0 on success, -errno on failure
  */
-int ba_init(struct ba_lun *ba_lun)
+static int ba_init(struct ba_lun *ba_lun)
 {
 	struct ba_lun_info *lun_info = NULL;
 	int lun_size_au = 0, i = 0;
