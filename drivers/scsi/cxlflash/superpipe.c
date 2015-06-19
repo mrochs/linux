@@ -616,7 +616,7 @@ int cxlflash_lun_attach(struct lun_info *lun_info, enum lun_mode mode)
 	}
 
 	lun_info->users++;
-	BUG_ON(lun_info->users < 0);
+	BUG_ON(lun_info->users <= 0);
 out:
 	pr_debug("%s: Returning rc=%d li_mode=%u li_users=%u\n",
 		 __func__, rc, lun_info->mode, lun_info->users);
