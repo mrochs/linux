@@ -185,7 +185,7 @@ void cxlflash_list_terminate(void)
 	spin_lock_irqsave(&global.slock, flags);
 	list_for_each_entry_safe(lun_info, temp, &global.luns, list) {
 		list_del(&lun_info->list);
-		ba_terminate(&lun_info->blka.ba_lun);
+		cxlflash_ba_terminate(&lun_info->blka.ba_lun);
 		kfree(lun_info);
 	}
 

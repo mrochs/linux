@@ -205,6 +205,6 @@ struct sisl_rht_entry *get_rhte(struct ctx_info *, res_hndl_t,
 struct sisl_rht_entry *rhte_checkout(struct ctx_info *, struct lun_info *);
 void rhte_checkin(struct ctx_info *, struct sisl_rht_entry *);
 
-void ba_terminate(struct ba_lun *);
+void cxlflash_ba_terminate(struct ba_lun *);
 
 #endif /* ifndef _CXLFLASH_SUPERPIPE_H */

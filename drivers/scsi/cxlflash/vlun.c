@@ -354,12 +354,12 @@ static u64 ba_space(struct ba_lun *ba_lun)
 }
 
 /**
- * ba_terminate() - frees resources associated with the block allocator
+ * cxlflash_ba_terminate() - frees resources associated with the block allocator
  * @ba_lun:	Block allocator.
  *
  * Safe to call in a partially allocated state.
  */
-void ba_terminate(struct ba_lun *ba_lun)
+void cxlflash_ba_terminate(struct ba_lun *ba_lun)
 {
 	struct ba_lun_info *lun_info =
 	    (struct ba_lun_info *)ba_lun->ba_lun_handle;
