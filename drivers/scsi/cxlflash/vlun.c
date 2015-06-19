@@ -464,7 +464,7 @@ out:
 }
 
 /**
- * grow_lxt() - expands the translation table assciated with the specified RHTE
+ * grow_lxt() - expands the translation table associated with the specified RHTE
  * @afu:		AFU associated with the host.
  * @lun_info:		Information structure associated with LUN.
  * @ctx_hndl_u:		Context ID of context owning the RHTE.
@@ -578,7 +578,7 @@ static int grow_lxt(struct afu *afu,
 }
 
 /**
- * shrink_lxt() - reduces translation table assciated with the specified RHTE
+ * shrink_lxt() - reduces translation table associated with the specified RHTE
  * @afu:		AFU associated with the host.
  * @lun_info:		Information structure associated with LUN.
  * @ctx_hndl_u:		Context ID of context owning the RHTE.

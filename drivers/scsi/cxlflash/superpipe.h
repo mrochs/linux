@@ -94,7 +94,7 @@ struct request_sense_data  {
 struct ba_lun {
 	u64 lun_id;
 	u64 wwpn;
-	size_t lsize;		/* Lun size in number of LBAs             */
+	size_t lsize;		/* LUN size in number of LBAs             */
 	size_t lba_size;	/* LBA size in number of bytes            */
 	size_t au_size;		/* Allocation Unit size in number of LBAs */
 	void *ba_lun_handle;
@@ -114,7 +114,7 @@ struct ba_lun_info {
 	u8 *aun_clone_map;
 };
 
-/* Block Alocator */
+/* Block Allocator */
 struct blka {
 	struct ba_lun ba_lun;
 	u64 nchunk;		/* number of chunks */
