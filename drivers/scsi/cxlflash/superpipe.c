@@ -29,6 +29,19 @@
 struct cxlflash_global global;
 
 /**
+ * marshall_rele_to_resize() - translate release to resize structure
+ * @rele:	Source structure from which to translate/copy.
+ * @resize:	Destination structure for the translate/copy.
+ */
+static void marshall_rele_to_resize(struct dk_cxlflash_release *release,
+				    struct dk_cxlflash_resize *resize)
+{
+	resize->hdr = release->hdr;
+	resize->context_id = release->context_id;
+	resize->rsrc_handle = release->rsrc_handle;
+}
+
+/**
  * marshall_det_to_rele() - translate detach to release structure
  * @detach:	Destination structure for the translate/copy.
  * @rele:	Source structure from which to translate/copy.
@@ -172,6 +185,7 @@ void cxlflash_list_terminate(void)
 	spin_lock_irqsave(&global.slock, flags);
 	list_for_each_entry_safe(lun_info, temp, &global.luns, list) {
 		list_del(&lun_info->list);
+		cxlflash_ba_terminate(&lun_info->blka.ba_lun);
 		kfree(lun_info);
 	}
 
@@ -611,6 +625,7 @@ int cxlflash_disk_release(struct scsi_device *sdev,
 	struct lun_info *lun_info = sdev->hostdata;
 	struct afu *afu = cfg->afu;
 
+	struct dk_cxlflash_resize size;
 	res_hndl_t res_hndl = release->rsrc_handle;
 
 	int rc = 0;
@@ -647,6 +662,16 @@ int cxlflash_disk_release(struct scsi_device *sdev,
 	 * Afterwards we clear the remaining fields.
 	 */
 	switch (lun_info->mode) {
+	case MODE_VIRTUAL:
+		marshall_rele_to_resize(release, &size);
+		size.req_size = 0;
+		rc = cxlflash_vlun_resize(sdev, &size);
+		if (rc) {
+			pr_err("%s: resize failed rc %d\n", __func__, rc);
+			goto out;
+		}
+
+		break;
 	case MODE_PHYSICAL:
 		/*
 		 * Clear the Format 1 RHT entry for direct access
@@ -1768,9 +1793,12 @@ int cxlflash_ioctl(struct scsi_device *sdev, int cmd, void __user *arg)
 	} ioctl_tbl[] = {	/* NOTE: order matters here */
 	{sizeof(struct dk_cxlflash_attach), (sioctl)cxlflash_disk_attach},
 	{sizeof(struct dk_cxlflash_udirect), cxlflash_disk_direct_open},
+	{sizeof(struct dk_cxlflash_uvirtual), cxlflash_disk_virtual_open},
+	{sizeof(struct dk_cxlflash_resize), (sioctl)cxlflash_vlun_resize},
 	{sizeof(struct dk_cxlflash_release), (sioctl)cxlflash_disk_release},
 	{sizeof(struct dk_cxlflash_detach), (sioctl)cxlflash_disk_detach},
 	{sizeof(struct dk_cxlflash_verify), (sioctl)cxlflash_disk_verify},
+	{sizeof(struct dk_cxlflash_clone), (sioctl)cxlflash_disk_clone},
 	{sizeof(struct dk_cxlflash_recover_afu), (sioctl)cxlflash_afu_recover},
 	{sizeof(struct dk_cxlflash_manage_lun), (sioctl)cxlflash_manage_lun},
 	};
