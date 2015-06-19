@@ -103,6 +103,14 @@ struct cxlflash_cfg {
 	struct pci_pool *cxlflash_cmd_pool;
 	struct pci_dev *parent_dev;
 
+	spinlock_t ctx_tbl_slock;
+	struct ctx_info *ctx_tbl[MAX_CONTEXT];
+	struct list_head ctx_err_recovery; /* contexts w/ recovery pending */
+	struct file_operations cxl_fops;
+
+	int num_user_contexts;
+	int last_lun_index[CXLFLASH_NUM_FC_PORTS];
+
 	wait_queue_head_t tmf_waitq;
 	bool tmf_active;
 	u8 err_recovery_active:1;
@@ -177,5 +185,15 @@ int cxlflash_afu_reset(struct cxlflash_cfg *);
 struct afu_cmd *cxlflash_cmd_checkout(struct afu *);
 void cxlflash_cmd_checkin(struct afu_cmd *);
 int cxlflash_afu_sync(struct afu *, ctx_hndl_t, res_hndl_t, u8);
+int cxlflash_alloc_lun(struct scsi_device *);
+void cxlflash_init_lun(struct scsi_device *);
+void cxlflash_list_init(void);
+void cxlflash_list_terminate(void);
+int cxlflash_slave_alloc(struct scsi_device *);
+int cxlflash_slave_configure(struct scsi_device *);
+void cxlflash_slave_destroy(struct scsi_device *);
+int cxlflash_ioctl(struct scsi_device *, int, void __user *);
+int cxlflash_mark_contexts_error(struct cxlflash_cfg *);
+
 #endif /* ifndef _CXLFLASH_COMMON_H */
 
