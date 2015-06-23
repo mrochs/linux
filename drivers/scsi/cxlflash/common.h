@@ -112,6 +112,7 @@ struct cxlflash_cfg {
 	int last_lun_index[CXLFLASH_NUM_FC_PORTS];
 
 	wait_queue_head_t tmf_waitq;
+	spinlock_t tmf_slock;
 	bool tmf_active;
 	u8 err_recovery_active:1;
 };
