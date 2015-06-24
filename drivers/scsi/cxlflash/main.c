@@ -2280,14 +2280,11 @@ out_remove:
 }
 
 /**
- * cxlflash_pci_error_detected - Called when a PCI error is detected.
- * @pdev: PCI device struct
- * @state: PCI channel state
+ * cxlflash_pci_error_detected() - called when a PCI error is detected
+ * @pdev:	PCI device struct.
+ * @state:	PCI channel state.
  *
- * Description: Called when a PCI error is detected.
- *
- * Return value:
- * PCI_ERS_RESULT_NEED_RESET or PCI_ERS_RESULT_DISCONNECT
+ * Return: PCI_ERS_RESULT_NEED_RESET or PCI_ERS_RESULT_DISCONNECT
  */
 static pci_ers_result_t cxlflash_pci_error_detected(struct pci_dev *pdev,
 						    pci_channel_state_t state)
@@ -2314,25 +2311,13 @@ static pci_ers_result_t cxlflash_pci_error_detected(struct pci_dev *pdev,
 }
 
 /**
- * cxlflash_pci_mmio_enabled - Called when MMIO has been re-enabled
- * @pdev: PCI device struct
+ * cxlflash_pci_slot_reset() - called when PCI slot has been reset
+ * @pdev:	PCI device struct.
  *
- * Description: This routine is called to tell us that the MMIO
- * access to the CFLASH has been restored
- */
-static pci_ers_result_t cxlflash_pci_mmio_enabled(struct pci_dev *pdev)
-{
-	pr_debug("%s: pdev=%p\n", __func__, pdev);
-	return PCI_ERS_RESULT_NEED_RESET;
-}
-
-/**
- * cxlflash_pci_slot_reset - Called when PCI slot has been reset.
- * @pdev: PCI device struct
+ * This routine is called by the pci error recovery code after the PCI
+ * slot has been reset, just before we should resume normal operations.
  *
- * Description: This routine is called by the pci error recovery
- * code after the PCI slot has been reset, just before we
- * should resume normal operations.
+ * Return: PCI_ERS_RESULT_RECOVERED
  */
 static pci_ers_result_t cxlflash_pci_slot_reset(struct pci_dev *pdev)
 {
@@ -2340,10 +2325,19 @@ static pci_ers_result_t cxlflash_pci_slot_reset(struct pci_dev *pdev)
 	return PCI_ERS_RESULT_RECOVERED;
 }
 
+/**
+ * cxlflash_pci_resume() - called when normal operation can resume
+ * @pdev:	PCI device struct
+ */
+static void cxlflash_pci_resume(struct pci_dev *pdev)
+{
+	pr_debug("%s: pdev=%p\n", __func__, pdev);
+}
+
 static const struct pci_error_handlers cxlflash_err_handler = {
 	.error_detected = cxlflash_pci_error_detected,
-	.mmio_enabled = cxlflash_pci_mmio_enabled,
 	.slot_reset = cxlflash_pci_slot_reset,
+	.resume = cxlflash_pci_resume,
 };
 
 /*
