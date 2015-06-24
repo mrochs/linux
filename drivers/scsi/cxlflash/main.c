@@ -2295,6 +2295,8 @@ static pci_ers_result_t cxlflash_pci_error_detected(struct pci_dev *pdev,
 	int rc = 0;
 	struct cxlflash_cfg *cfg = pci_get_drvdata(pdev);
 
+	pr_debug("%s: pdev=%p state=%u\n", __func__, pdev, state);
+
 	switch (state) {
 	case pci_channel_io_frozen:
 		rc = cxlflash_mark_contexts_error(cfg);
@@ -2303,7 +2305,6 @@ static pci_ers_result_t cxlflash_pci_error_detected(struct pci_dev *pdev,
 			       __func__, rc);
 		return PCI_ERS_RESULT_CAN_RECOVER;
 	case pci_channel_io_perm_failure:
-		/* XXX: Dummy */
 		return PCI_ERS_RESULT_DISCONNECT;
 		break;
 	default:
@@ -2321,7 +2322,7 @@ static pci_ers_result_t cxlflash_pci_error_detected(struct pci_dev *pdev,
  */
 static pci_ers_result_t cxlflash_pci_mmio_enabled(struct pci_dev *pdev)
 {
-	/* XXX: Dummy */
+	pr_debug("%s: pdev=%p\n", __func__, pdev);
 	return PCI_ERS_RESULT_NEED_RESET;
 }
 
@@ -2335,7 +2336,7 @@ static pci_ers_result_t cxlflash_pci_mmio_enabled(struct pci_dev *pdev)
  */
 static pci_ers_result_t cxlflash_pci_slot_reset(struct pci_dev *pdev)
 {
-	/* XXX: Dummy */
+	pr_debug("%s: pdev=%p\n", __func__, pdev);
 	return PCI_ERS_RESULT_RECOVERED;
 }
 
