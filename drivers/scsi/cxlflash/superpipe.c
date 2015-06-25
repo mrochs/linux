@@ -1233,6 +1233,13 @@ int cxlflash_mark_contexts_error(struct cxlflash_cfg *cfg)
 	return rc;
 }
 
+/*
+ * Dummy NULL fops
+ */
+static const struct file_operations null_fops = {
+	.owner = THIS_MODULE,
+};
+
 /**
  * cxlflash_disk_attach() - attach a LUN to a context
  * @sdev:	SCSI device associated with LUN.
@@ -1396,6 +1403,19 @@ err4:
 err3:
 	destroy_context(cfg, ctx_info);
 err2:
+	/*
+	 * XXX - look at collapsing this such that we don't need to override
+	 * the fops. Instead, we should be able to simplify some of this error
+	 * handling with the notion that CXL cleanup will be performed via the
+	 * release call that fput(file) makes.
+	 *
+	 * Here, we're overriding the fops with a dummy all-NULL fops because
+	 * fput() calls the release fop, which will cause us to mistakenly
+	 * call into the CXL code. Rather than try to add yet more complexity
+	 * to that routine (cxlflash_cxl_release) we should try to fix the
+	 * issue here.
+	 */
+	file->f_op = &null_fops;
 	fput(file);
 	put_unused_fd(fd);
 	fd = -1;
