@@ -91,8 +91,6 @@ struct cxlflash_cfg {
 
 	ulong cxlflash_regs_pci;
 
-	wait_queue_head_t eeh_waitq;
-
 	struct work_struct work_q;
 	enum cxlflash_init_state init_state;
 	enum cxlflash_lr_state lr_state;
@@ -114,7 +112,8 @@ struct cxlflash_cfg {
 	wait_queue_head_t tmf_waitq;
 	spinlock_t tmf_slock;
 	bool tmf_active;
-	u8 err_recovery_active:1;
+	wait_queue_head_t eeh_waitq;
+	bool eeh_active;
 };
 
 struct afu_cmd {

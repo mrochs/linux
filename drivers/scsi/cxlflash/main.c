@@ -33,7 +33,6 @@ MODULE_AUTHOR("Manoj N. Kumar <manoj@linux.vnet.ibm.com>");
 MODULE_AUTHOR("Matthew R. Ochs <mrochs@linux.vnet.ibm.com>");
 MODULE_LICENSE("GPL");
 
-
 /**
  * cxlflash_cmd_checkout() - checks out an AFU command
  * @afu:	AFU to checkout from.
@@ -384,6 +383,12 @@ static int cxlflash_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *scp)
 		goto out;
 	}
 	spin_unlock_irqrestore(&cfg->tmf_slock, lock_flags);
+
+	if (cfg->eeh_active) {
+		pr_debug("%s: BUSY - EEH Recovery in process!\n", __func__);
+		rc = SCSI_MLQUEUE_HOST_BUSY;
+		goto out;
+	}
 
 	cmd = cxlflash_cmd_checkout(afu);
 	if (unlikely(!cmd)) {
@@ -2217,7 +2222,6 @@ static int cxlflash_probe(struct pci_dev *pdev,
 	cfg->last_lun_index[1] = 0;
 	cfg->dev_id = (struct pci_device_id *)dev_id;
 	cfg->mcctx = NULL;
-	cfg->err_recovery_active = 0;
 	cfg->num_user_contexts = 0;
 
 	init_waitqueue_head(&cfg->tmf_waitq);
@@ -2296,10 +2300,17 @@ static pci_ers_result_t cxlflash_pci_error_detected(struct pci_dev *pdev,
 
 	switch (state) {
 	case pci_channel_io_frozen:
+		cfg->eeh_active = true;
+		udelay(100);
+
 		rc = cxlflash_mark_contexts_error(cfg);
 		if (unlikely(rc))
 			pr_err("%s: Failed to mark contexts in error!(rc=%d)\n",
 			       __func__, rc);
+
+		term_mc(cfg, UNDO_START);
+		stop_afu(cfg);
+
 		return PCI_ERS_RESULT_CAN_RECOVER;
 	case pci_channel_io_perm_failure:
 		return PCI_ERS_RESULT_DISCONNECT;
@@ -2321,7 +2332,11 @@ static pci_ers_result_t cxlflash_pci_error_detected(struct pci_dev *pdev,
  */
 static pci_ers_result_t cxlflash_pci_slot_reset(struct pci_dev *pdev)
 {
+	struct cxlflash_cfg *cfg = pci_get_drvdata(pdev);
+
 	pr_debug("%s: pdev=%p\n", __func__, pdev);
+
+	init_afu(cfg);
 	return PCI_ERS_RESULT_RECOVERED;
 }
 
@@ -2331,7 +2346,11 @@ static pci_ers_result_t cxlflash_pci_slot_reset(struct pci_dev *pdev)
  */
 static void cxlflash_pci_resume(struct pci_dev *pdev)
 {
+	struct cxlflash_cfg *cfg = pci_get_drvdata(pdev);
+
 	pr_debug("%s: pdev=%p\n", __func__, pdev);
+
+	cfg->eeh_active = false;
 }
 
 static const struct pci_error_handlers cxlflash_err_handler = {
