@@ -1383,7 +1383,7 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 
 	rc = cxl_start_work(ctx, work);
 	if (rc) {
-		pr_err("%s: Could not start context rc=%d\n", __func__, rc);
+		pr_debug("%s: Could not start context rc=%d\n", __func__, rc);
 		goto err3;
 	}
 
