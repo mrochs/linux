@@ -1567,6 +1567,13 @@ static int cxlflash_afu_recover(struct scsi_device *sdev,
 	//long reg;
 	int rc = 0;
 
+	if (cfg->eeh_active) {
+		pr_debug("%s: EEH Active, going to wait...\n", __func__);
+		rc = wait_event_interruptible(cfg->eeh_waitq, !cfg->eeh_active);
+		if (unlikely(rc))
+			goto out;
+	}
+
 	/* Ensure that this process is attached to the context */
 	ctx_info = get_context(cfg, ctxid, lun_info, 0);
 	if (unlikely(!ctx_info)) {
