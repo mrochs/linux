@@ -688,6 +688,13 @@ int cxlflash_vlun_resize(struct scsi_device *sdev,
 
 	int rc = 0;
 
+	if (cfg->eeh_active) {
+		pr_debug("%s: EEH Active, going to wait...\n", __func__);
+		rc = wait_event_interruptible(cfg->eeh_waitq, !cfg->eeh_active);
+		if (unlikely(rc))
+			goto out;
+	}
+
 	/* req_size is always assumed to be in 4k blocks. So we have to convert
 	 * it from 4k to chunk size
 	 */
@@ -783,6 +790,13 @@ int cxlflash_disk_virtual_open(struct scsi_device *sdev, void *arg)
 
 	struct ctx_info *ctx_info = NULL;
 	struct sisl_rht_entry *rht_entry = NULL;
+
+	if (cfg->eeh_active) {
+		pr_debug("%s: EEH Active, going to wait...\n", __func__);
+		rc = wait_event_interruptible(cfg->eeh_waitq, !cfg->eeh_active);
+		if (unlikely(rc))
+			goto out;
+	}
 
 	pr_debug("%s: ctxid=%llu ls=0x%llx\n", __func__, ctxid, lun_size);
 
@@ -960,6 +974,13 @@ int cxlflash_disk_clone(struct scsi_device *sdev,
 	int rc = 0;
 	bool found;
 	LIST_HEAD(sidecar);
+
+	if (cfg->eeh_active) {
+		pr_debug("%s: EEH Active, going to wait...\n", __func__);
+		rc = wait_event_interruptible(cfg->eeh_waitq, !cfg->eeh_active);
+		if (unlikely(rc))
+			goto out;
+	}
 
 	pr_debug("%s: ctxid_src=%llu ctxid_dst=%llu adap_fd_src=%d\n",
 		 __func__, ctxid_src, ctxid_dst, adap_fd_src);

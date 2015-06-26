@@ -666,6 +666,13 @@ int cxlflash_disk_release(struct scsi_device *sdev,
 	struct sisl_rht_entry *rht_entry;
 	struct sisl_rht_entry_f1 *rht_entry_f1;
 
+	if (cfg->eeh_active) {
+		pr_debug("%s: EEH Active, going to wait...\n", __func__);
+		rc = wait_event_interruptible(cfg->eeh_waitq, !cfg->eeh_active);
+		if (unlikely(rc))
+			goto out;
+	}
+
 	pr_debug("%s: ctxid=%llu res_hndl=0x%llx li->mode=%u li->users=%u\n",
 		 __func__, ctxid, release->rsrc_handle, lun_info->mode,
 		 lun_info->users);
@@ -849,6 +856,13 @@ static int cxlflash_disk_detach(struct scsi_device *sdev,
 	int lfd;
 	u64 ctxid = DECODE_CTXID(detach->context_id);
 	ulong flags = 0;
+
+	if (cfg->eeh_active) {
+		pr_debug("%s: EEH Active, going to wait...\n", __func__);
+		rc = wait_event_interruptible(cfg->eeh_waitq, !cfg->eeh_active);
+		if (unlikely(rc))
+			goto out;
+	}
 
 	pr_debug("%s: ctxid=%llu\n", __func__, ctxid);
 
@@ -1270,6 +1284,13 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 
 	int fd = -1;
 
+	if (cfg->eeh_active) {
+		pr_debug("%s: EEH Active, going to wait...\n", __func__);
+		rc = wait_event_interruptible(cfg->eeh_waitq, !cfg->eeh_active);
+		if (unlikely(rc))
+			goto out;
+	}
+
 	/* On first attach set fileops */
 	if (cfg->num_user_contexts == 0)
 		cfg->cxl_fops = cxlflash_cxl_fops;
@@ -1659,6 +1680,13 @@ static int cxlflash_disk_verify(struct scsi_device *sdev,
 	u64 ctxid = DECODE_CTXID(verify->context_id);
 	u64 last_lba = 0;
 
+	if (cfg->eeh_active) {
+		pr_debug("%s: EEH Active, going to wait...\n", __func__);
+		rc = wait_event_interruptible(cfg->eeh_waitq, !cfg->eeh_active);
+		if (unlikely(rc))
+			goto out;
+	}
+
 	pr_debug("%s: ctxid=%llu res_hndl=0x%llx, hint=0x%llx\n",
 		 __func__, ctxid, verify->rsrc_handle, verify->hint);
 
@@ -1775,6 +1803,13 @@ static int cxlflash_disk_direct_open(struct scsi_device *sdev, void *arg)
 
 	struct ctx_info *ctx_info = NULL;
 	struct sisl_rht_entry *rht_entry = NULL;
+
+	if (cfg->eeh_active) {
+		pr_debug("%s: EEH Active, going to wait...\n", __func__);
+		rc = wait_event_interruptible(cfg->eeh_waitq, !cfg->eeh_active);
+		if (unlikely(rc))
+			goto out;
+	}
 
 	pr_debug("%s: ctxid=%llu ls=0x%llx\n", __func__, ctxid, lun_size);
 

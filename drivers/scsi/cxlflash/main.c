@@ -465,9 +465,12 @@ static int cxlflash_eh_device_reset_handler(struct scsi_cmnd *scp)
 		 get_unaligned_be32(&((u32 *)scp->cmnd)[2]),
 		 get_unaligned_be32(&((u32 *)scp->cmnd)[3]));
 
-	rcr = send_tmf(afu, scp, TMF_LUN_RESET);
-	if (unlikely(rcr))
-		rc = FAILED;
+	if (!cfg->eeh_active) {
+		rcr = send_tmf(afu, scp, TMF_LUN_RESET);
+		if (unlikely(rcr))
+			rc = FAILED;
+	} else
+		wait_event(cfg->eeh_waitq, !cfg->eeh_active);
 
 	pr_debug("%s: returning rc=%d\n", __func__, rc);
 	return rc;
@@ -497,11 +500,14 @@ static int cxlflash_eh_host_reset_handler(struct scsi_cmnd *scp)
 		 get_unaligned_be32(&((u32 *)scp->cmnd)[2]),
 		 get_unaligned_be32(&((u32 *)scp->cmnd)[3]));
 
-	rcr = cxlflash_afu_reset(cfg);
-	if (rcr == 0)
-		rc = SUCCESS;
-	else
-		rc = FAILED;
+	if (!cfg->eeh_active) {
+		rcr = cxlflash_afu_reset(cfg);
+		if (rcr == 0)
+			rc = SUCCESS;
+		else
+			rc = FAILED;
+	} else
+		wait_event(cfg->eeh_waitq, !cfg->eeh_active);
 
 	pr_debug("%s: returning rc=%d\n", __func__, rc);
 	return rc;
@@ -2351,6 +2357,7 @@ static void cxlflash_pci_resume(struct pci_dev *pdev)
 	pr_debug("%s: pdev=%p\n", __func__, pdev);
 
 	cfg->eeh_active = false;
+	wake_up_all(&cfg->eeh_waitq);
 }
 
 static const struct pci_error_handlers cxlflash_err_handler = {
