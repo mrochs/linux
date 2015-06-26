@@ -213,7 +213,7 @@ void cxlflash_stop_term_user_contexts(struct cxlflash_cfg *cfg)
 			/* XXX - need to notify user */
 			pr_debug("%s: tbl calling sys_close(%d)\n",
 				 __func__, ctx_info->lfd);
-			sys_close(ctx_info->lfd);
+			sys_close(ctx_info->lfd); /* XXX - can't use this */
 		}
 	}
 
@@ -222,7 +222,7 @@ void cxlflash_stop_term_user_contexts(struct cxlflash_cfg *cfg)
 		/* XXX - need to notify user */
 		pr_info("%s: list calling sys_close(%d)\n",
 			__func__, ctx_info->lfd);
-		sys_close(ctx_info->lfd);
+		sys_close(ctx_info->lfd); /* XXX - can't use this */
 	}
 }
 
