@@ -246,6 +246,8 @@ static void reclaim_ctx(struct rcu_head *rcu)
 
 	free_page((u64)ctx->sstp);
 	ctx->sstp = NULL;
+	if (ctx->kernelapi)
+		kfree(ctx->mapping);
 
 	kfree(ctx);
 }

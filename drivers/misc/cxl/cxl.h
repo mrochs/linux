@@ -418,6 +418,7 @@ struct cxl_context {
 	/* Used to unmap any mmaps when force detaching */
 	struct address_space *mapping;
 	struct mutex mapping_lock;
+	bool kernelapi;
 
 	spinlock_t sste_lock; /* Protects segment table entries */
 	struct cxl_sste *sstp;
