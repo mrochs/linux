@@ -365,13 +365,14 @@ static int cxlflash_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *scp)
 	short lflag = 0;
 	int rc = 0;
 
-	pr_debug("%s: (scp=%p) %d/%d/%d/%llu cdb=(%08X-%08X-%08X-%08X)\n",
-		 __func__, scp, host->host_no, scp->device->channel,
-		 scp->device->id, scp->device->lun,
-		 get_unaligned_be32(&((u32 *)scp->cmnd)[0]),
-		 get_unaligned_be32(&((u32 *)scp->cmnd)[1]),
-		 get_unaligned_be32(&((u32 *)scp->cmnd)[2]),
-		 get_unaligned_be32(&((u32 *)scp->cmnd)[3]));
+	pr_debug_ratelimited("%s: (scp=%p) %d/%d/%d/%llu "
+			     "cdb=(%08X-%08X-%08X-%08X)\n",
+			     __func__, scp, host->host_no, scp->device->channel,
+			     scp->device->id, scp->device->lun,
+			     get_unaligned_be32(&((u32 *)scp->cmnd)[0]),
+			     get_unaligned_be32(&((u32 *)scp->cmnd)[1]),
+			     get_unaligned_be32(&((u32 *)scp->cmnd)[2]),
+			     get_unaligned_be32(&((u32 *)scp->cmnd)[3]));
 
 	/* If a Task Management Function is active, wait for it to complete
 	 * before continuing with regular commands.
@@ -385,7 +386,7 @@ static int cxlflash_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *scp)
 	spin_unlock_irqrestore(&cfg->tmf_slock, lock_flags);
 
 	if (cfg->eeh_active) {
-		pr_debug("%s: BUSY - EEH Recovery in process!\n", __func__);
+		pr_debug_ratelimited("%s: BUSY w/ EEH Recovery!\n", __func__);
 		rc = SCSI_MLQUEUE_HOST_BUSY;
 		goto out;
 	}
