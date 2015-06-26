@@ -777,13 +777,15 @@ static void destroy_context(struct cxlflash_cfg *cfg,
  * @ctx:	Previously obtained CXL context reference.
  * @ctxid:	Previously obtained process element associated with CXL context.
  * @adap_fd:	Previously obtained adapter fd associated with CXL context.
+ * @file:	Previously obtained file associated with CXL context.
  * @perms:	User-specified permissions.
  *
  * Return: Allocated context on success, NULL on failure
  */
 static struct ctx_info *create_context(struct cxlflash_cfg *cfg,
 				       struct cxl_context *ctx, int ctxid,
-				       int adap_fd, u32 perms)
+				       int adap_fd, struct file *file,
+				       u32 perms)
 {
 	char *tmp = NULL;
 	size_t size;
@@ -817,6 +819,7 @@ static struct ctx_info *create_context(struct cxlflash_cfg *cfg,
 	ctx_info->lfd = adap_fd;
 	ctx_info->pid = current->tgid; /* tgid = pid */
 	ctx_info->ctx = ctx;
+	ctx_info->file = file;
 	INIT_LIST_HEAD(&ctx_info->luns);
 	INIT_LIST_HEAD(&ctx_info->luns);
 	atomic_set(&ctx_info->nrefs, 1);
@@ -1037,7 +1040,7 @@ out:
  */
 static void unmap_context(struct ctx_info *ctx_info)
 {
-	unmap_mapping_range(ctx_info->mapping, 0, 0, 1);
+	unmap_mapping_range(ctx_info->file->f_mapping, 0, 0, 1);
 }
 
 /**
@@ -1191,14 +1194,9 @@ static int cxlflash_cxl_mmap(struct file *file, struct vm_area_struct *vma)
 
 	rc = cxl_fd_mmap(file, vma);
 	if (likely(!rc)) {
-		/*
-		 * Insert ourself in the mmap fault handler path and save off
-		 * the address space for toggling the mapping on error context.
-		 */
+		/* Insert ourself in the mmap fault handler path */
 		ctx_info->cxl_mmap_vmops = vma->vm_ops;
 		vma->vm_ops = &cxlflash_mmap_vmops;
-
-		ctx_info->mapping = file->f_inode->i_mapping;
 	}
 
 out:
@@ -1371,7 +1369,7 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 	/* Translate read/write O_* flags from fcntl.h to AFU permission bits */
 	perms = SISL_RHT_PERM(attach->hdr.flags + 1);
 
-	ctx_info = create_context(cfg, ctx, ctxid, fd, perms);
+	ctx_info = create_context(cfg, ctx, ctxid, fd, file, perms);
 	if (unlikely(!ctx_info)) {
 		pr_err("%s: Failed to create context! (%d)\n", __func__, ctxid);
 		goto err2;

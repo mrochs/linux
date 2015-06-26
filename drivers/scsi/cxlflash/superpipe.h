@@ -172,7 +172,7 @@ struct ctx_info {
 	struct cxl_context *ctx;
 	struct list_head luns;	/* LUNs attached to this context */
 	const struct vm_operations_struct *cxl_mmap_vmops;
-	struct address_space *mapping;
+	struct file *file;
 	struct list_head list; /* Link contexts in error recovery */
 };
 
