@@ -392,6 +392,11 @@ static int cxlflash_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *scp)
 		goto out;
 	}
 
+	if (cfg->device_failed) {
+		pr_debug_ratelimited("%s: device has failed!\n", __func__);
+		goto error;
+	}
+
 	cmd = cxlflash_cmd_checkout(afu);
 	if (unlikely(!cmd)) {
 		pr_err("%s: could not get a free command\n", __func__);
@@ -440,6 +445,10 @@ static int cxlflash_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *scp)
 
 out:
 	return rc;
+error:
+	scp->result = (DID_NO_CONNECT << 16);
+	scp->scsi_done(scp);
+	return 0;
 }
 
 /**
@@ -2144,11 +2153,16 @@ int cxlflash_afu_reset(struct cxlflash_cfg *cfg)
  */
 static void cxlflash_worker_thread(struct work_struct *work)
 {
-	struct cxlflash_cfg *cfg =
-	    container_of(work, struct cxlflash_cfg, work_q);
+	struct cxlflash_cfg *cfg = container_of(work, struct cxlflash_cfg,
+						work_q);
 	struct afu *afu = cfg->afu;
 	int port;
 	ulong lock_flags;
+
+	/* Avoid MMIO if the device has failed */
+
+	if (cfg->device_failed)
+		return;
 
 	spin_lock_irqsave(cfg->host->host_lock, lock_flags);
 
@@ -2231,6 +2245,7 @@ static int cxlflash_probe(struct pci_dev *pdev,
 	cfg->dev_id = (struct pci_device_id *)dev_id;
 	cfg->mcctx = NULL;
 	cfg->num_user_contexts = 0;
+	cfg->device_failed = false;
 
 	init_waitqueue_head(&cfg->tmf_waitq);
 	init_waitqueue_head(&cfg->eeh_waitq);
@@ -2322,6 +2337,7 @@ static pci_ers_result_t cxlflash_pci_error_detected(struct pci_dev *pdev,
 		return PCI_ERS_RESULT_CAN_RECOVER;
 	case pci_channel_io_perm_failure:
 		cfg->eeh_active = false;
+		cfg->device_failed = true;
 		wake_up_all(&cfg->eeh_waitq);
 		return PCI_ERS_RESULT_DISCONNECT;
 		break;
