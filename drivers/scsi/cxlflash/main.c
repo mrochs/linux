@@ -235,8 +235,9 @@ static void cmd_complete(struct afu_cmd *cmd)
 		cmd_is_tmf = cmd->cmd_tmf;
 		cxlflash_cmd_checkin(cmd); /* Don't use cmd after here */
 
-		pr_debug("%s: calling scsi_done scp=%p result=%X ioasc=%d\n",
-			 __func__, scp, scp->result, cmd->sa.ioasc);
+		pr_debug_ratelimited("%s: calling scsi_done scp=%p result=%X "
+				     "ioasc=%d\n", __func__, scp, scp->result,
+				     cmd->sa.ioasc);
 
 		scsi_dma_unmap(scp);
 		scp->scsi_done(scp);
