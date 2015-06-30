@@ -108,6 +108,8 @@ struct dk_cxlflash_verify {
 	__u8 pad[6];			/* Pad to next 8-byte boundary */
 };
 
+#define DK_CXLFLASH_RECOVER_AFU_CONTEXT_RESET	0x8000000000000000ULL
+
 struct dk_cxlflash_recover_afu {
 	struct dk_cxlflash_hdr hdr;	/* Common fields */
 	__u64 reason;			/* Reason for recovery request */
