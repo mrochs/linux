@@ -2321,6 +2321,8 @@ static pci_ers_result_t cxlflash_pci_error_detected(struct pci_dev *pdev,
 
 		return PCI_ERS_RESULT_CAN_RECOVER;
 	case pci_channel_io_perm_failure:
+		cfg->eeh_active = false;
+		wake_up_all(&cfg->eeh_waitq);
 		return PCI_ERS_RESULT_DISCONNECT;
 		break;
 	default:
