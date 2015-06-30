@@ -114,6 +114,7 @@ struct cxlflash_cfg {
 	bool tmf_active;
 	wait_queue_head_t eeh_waitq;
 	bool eeh_active;
+	bool device_failed;
 };
 
 struct afu_cmd {
