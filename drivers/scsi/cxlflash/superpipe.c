@@ -247,7 +247,7 @@ static struct ctx_info *find_error_context(struct cxlflash_cfg *cfg, u64 ctxid)
 /**
  * get_context() - obtains a validated context reference
  * @cfg:	Internal structure associated with the host.
- * @ctxid:	Desired context.
+ * @rctxid:	Desired context (raw, undecoded format).
  * @lun_info:	LUN associated with request.
  * @ctx_ctrl:	Control information to 'steer' desired lookup.
  *
