@@ -563,6 +563,7 @@ void rhte_checkin(struct ctx_info *ctx_info,
  * @rht_entry:	RHTE to populate.
  * @lun_id:	LUN ID of LUN associated with RHTE.
  * @perm:	Desired permissions for RHTE.
+ * @port_sel:   Port selection mask
  */
 static void rht_format1(struct sisl_rht_entry *rht_entry, u64 lun_id, u32 perm,
 			u32 port_sel)
