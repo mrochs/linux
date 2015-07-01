@@ -472,6 +472,7 @@ out:
  * @rht_entry:		Resource handle entry (RHTE).
  * @delta:		Number of additional translation entries needed.
  * @act_new_size:	Number of translation entries associated with RHTE.
+ * @port_sel:           Port selection mask
  *
  * By design, this routine employs a 'best attempt' allocation and will
  * truncate the requested size down if there is not sufficient space in
@@ -587,6 +588,7 @@ static int grow_lxt(struct afu *afu,
  * @rht_entry:		Resource handle entry (RHTE).
  * @delta:		Number of translation entries that can be removed.
  * @act_new_size:	Number of translation entries associated with RHTE.
+ * @port_sel:           Port selection mask
  *
  * Return: 0 on success, -errno on failure
  */
