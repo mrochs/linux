@@ -564,7 +564,8 @@ void rhte_checkin(struct ctx_info *ctx_info,
  * @lun_id:	LUN ID of LUN associated with RHTE.
  * @perm:	Desired permissions for RHTE.
  */
-static void rht_format1(struct sisl_rht_entry *rht_entry, u64 lun_id, u32 perm)
+static void rht_format1(struct sisl_rht_entry *rht_entry, u64 lun_id, u32 perm,
+			u32 port_sel)
 {
 	/*
 	 * Populate the Format 1 RHT entry for direct access (physical
@@ -588,7 +589,7 @@ static void rht_format1(struct sisl_rht_entry *rht_entry, u64 lun_id, u32 perm)
 	 */
 	dummy.valid = 0x80;
 	dummy.fp = SISL_RHT_FP(1U, perm);
-	dummy.port_sel = BOTH_PORTS;
+	dummy.port_sel = port_sel;
 	rht_entry_f1->dw = dummy.dw;
 
 	smp_wmb(); /* Make remaining RHT entry fields visible */
@@ -1812,6 +1813,7 @@ static int cxlflash_disk_direct_open(struct scsi_device *sdev, void *arg)
 	u64 lun_size = 0;
 	u64 last_lba = 0;
 	u64 rsrc_handle = -1;
+	u32 port_sel = sdev->channel + 1;
 
 	int rc = 0;
 
@@ -1850,7 +1852,7 @@ static int cxlflash_disk_direct_open(struct scsi_device *sdev, void *arg)
 
 	rsrc_handle = (rht_entry - ctx_info->rht_start);
 
-	rht_format1(rht_entry, lun_info->lun_id, ctx_info->rht_perms);
+	rht_format1(rht_entry, lun_info->lun_id, ctx_info->rht_perms, port_sel);
 	cxlflash_afu_sync(afu, ctxid, rsrc_handle, AFU_LW_SYNC);
 
 	last_lba = lun_info->max_lba;
