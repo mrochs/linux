@@ -1303,7 +1303,12 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 	if (lun_info->max_lba == 0) {
 		pr_debug("%s: No capacity info yet for this LUN "
 			"(%016llX)\n", __func__, lun_info->lun_id);
-		read_cap16(afu, lun_info, sdev->channel + 1);
+		rc = read_cap16(afu, lun_info, sdev->channel + 1);
+		if (rc) {
+			pr_err("%s: Invalid device! (%d)\n", __func__, rc);
+			rc = -ENODEV;
+			goto out;
+		}
 		pr_debug("%s: LBA = %016llX\n", __func__, lun_info->max_lba);
 		pr_debug("%s: BLK_LEN = %08X\n", __func__, lun_info->blk_len);
 	}
@@ -1643,7 +1648,11 @@ static int process_sense(struct scsi_device *sdev,
 		case 0x29: /* Power on Reset or Device Reset */
 			/* fall through */
 		case 0x2A: /* Device settings/capacity changed */
-			read_cap16(afu, lun_info, sdev->channel + 1);
+			rc = read_cap16(afu, lun_info, sdev->channel + 1);
+			if (rc) {
+				rc = -ENODEV;
+				break;
+			}
 			if (prev_lba != lun_info->max_lba)
 				pr_debug("%s: Capacity changed old=%lld "
 					 "new=%lld\n", __func__, prev_lba,
