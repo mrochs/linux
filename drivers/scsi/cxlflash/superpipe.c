@@ -259,11 +259,12 @@ static struct ctx_info *find_error_context(struct cxlflash_cfg *cfg, u64 ctxid)
  *
  * Return: Validated context on success, NULL on failure
  */
-struct ctx_info *get_context(struct cxlflash_cfg *cfg, u64 ctxid,
+struct ctx_info *get_context(struct cxlflash_cfg *cfg, u64 rctxid,
 			     struct lun_info *lun_info, enum ctx_ctrl ctx_ctrl)
 {
 	struct ctx_info *ctx_info = NULL;
 	struct lun_access *lun_access = NULL;
+	u64 ctxid = DECODE_CTXID(rctxid);
 	bool found = false;
 	pid_t pid = current->tgid, ctxpid = 0;
 	ulong flags = 0;
@@ -276,10 +277,10 @@ struct ctx_info *get_context(struct cxlflash_cfg *cfg, u64 ctxid,
 		ctx_info = cfg->ctx_tbl[ctxid];
 
 		if (unlikely(ctx_ctrl & CTX_CTRL_ERR))
-			ctx_info = find_error_context(cfg, ctxid);
+			ctx_info = find_error_context(cfg, rctxid);
 		if (unlikely(!ctx_info)) {
 			if (ctx_ctrl & CTX_CTRL_ERR_FALLBACK) {
-				ctx_info = find_error_context(cfg, ctxid);
+				ctx_info = find_error_context(cfg, rctxid);
 				if (ctx_info)
 					goto found_context;
 			}
@@ -312,8 +313,8 @@ found_context:
 	}
 
 out:
-	pr_debug("%s: ctxid=%llu ctxinfo=%p ctxpid=%u pid=%u ctx_ctrl=%u "
-		 "found=%d\n", __func__, ctxid, ctx_info, ctxpid, pid,
+	pr_debug("%s: rctxid=%016llX ctxinfo=%p ctxpid=%u pid=%u ctx_ctrl=%u "
+		 "found=%d\n", __func__, rctxid, ctx_info, ctxpid, pid,
 		 ctx_ctrl, found);
 
 	return ctx_info;
@@ -662,7 +663,8 @@ int cxlflash_disk_release(struct scsi_device *sdev,
 	res_hndl_t res_hndl = release->rsrc_handle;
 
 	int rc = 0;
-	u64 ctxid = DECODE_CTXID(release->context_id);
+	u64 ctxid = DECODE_CTXID(release->context_id),
+	    rctxid = release->context_id;
 
 	struct ctx_info *ctx_info = NULL;
 	struct sisl_rht_entry *rht_entry;
@@ -679,7 +681,7 @@ int cxlflash_disk_release(struct scsi_device *sdev,
 		 __func__, ctxid, release->rsrc_handle, lun_info->mode,
 		 lun_info->users);
 
-	ctx_info = get_context(cfg, ctxid, lun_info, 0);
+	ctx_info = get_context(cfg, rctxid, lun_info, 0);
 	if (unlikely(!ctx_info)) {
 		pr_err("%s: Invalid context! (%llu)\n", __func__, ctxid);
 		rc = -EINVAL;
@@ -859,7 +861,8 @@ static int cxlflash_disk_detach(struct scsi_device *sdev,
 	int i;
 	int rc = 0;
 	int lfd;
-	u64 ctxid = DECODE_CTXID(detach->context_id);
+	u64 ctxid = DECODE_CTXID(detach->context_id),
+	    rctxid = detach->context_id;
 	ulong flags = 0;
 
 	if (cfg->eeh_active) {
@@ -871,7 +874,7 @@ static int cxlflash_disk_detach(struct scsi_device *sdev,
 
 	pr_debug("%s: ctxid=%llu\n", __func__, ctxid);
 
-	ctx_info = get_context(cfg, ctxid, lun_info, 0);
+	ctx_info = get_context(cfg, rctxid, lun_info, 0);
 	if (unlikely(!ctx_info)) {
 		pr_err("%s: Invalid context! (%llu)\n", __func__, ctxid);
 		rc = -EINVAL;
@@ -1570,7 +1573,8 @@ static int cxlflash_afu_recover(struct scsi_device *sdev,
 	struct lun_info *lun_info = sdev->hostdata;
 	struct afu *afu = cfg->afu;
 	struct ctx_info *ctx_info = NULL;
-	u64 ctxid = DECODE_CTXID(recover->context_id);
+	u64 ctxid = DECODE_CTXID(recover->context_id),
+	    rctxid = recover->context_id;
 	//long reg;
 	int rc = 0;
 
@@ -1582,7 +1586,7 @@ static int cxlflash_afu_recover(struct scsi_device *sdev,
 	}
 
 	/* Ensure that this process is attached to the context */
-	ctx_info = get_context(cfg, ctxid, lun_info, 0);
+	ctx_info = get_context(cfg, rctxid, lun_info, 0);
 	if (unlikely(!ctx_info)) {
 		pr_err("%s: Invalid context! (%llu)\n", __func__, ctxid);
 		rc = -EINVAL;
@@ -1693,7 +1697,8 @@ static int cxlflash_disk_verify(struct scsi_device *sdev,
 	struct lun_info *lun_info = sdev->hostdata;
 	struct sisl_rht_entry *rht_entry = NULL;
 	res_hndl_t res_hndl = verify->rsrc_handle;
-	u64 ctxid = DECODE_CTXID(verify->context_id);
+	u64 ctxid = DECODE_CTXID(verify->context_id),
+	    rctxid = verify->context_id;
 	u64 last_lba = 0;
 
 	if (cfg->eeh_active) {
@@ -1706,7 +1711,7 @@ static int cxlflash_disk_verify(struct scsi_device *sdev,
 	pr_debug("%s: ctxid=%llu res_hndl=0x%llx, hint=0x%llx\n",
 		 __func__, ctxid, verify->rsrc_handle, verify->hint);
 
-	ctx_info = get_context(cfg, ctxid, lun_info, 0);
+	ctx_info = get_context(cfg, rctxid, lun_info, 0);
 	if (unlikely(!ctx_info)) {
 		pr_err("%s: Invalid context! (%llu)\n",
 		       __func__, ctxid);
@@ -1810,7 +1815,8 @@ static int cxlflash_disk_direct_open(struct scsi_device *sdev, void *arg)
 
 	struct dk_cxlflash_udirect *pphys = (struct dk_cxlflash_udirect *)arg;
 
-	u64 ctxid = DECODE_CTXID(pphys->context_id);
+	u64 ctxid = DECODE_CTXID(pphys->context_id),
+	    rctxid = pphys->context_id;
 	u64 lun_size = 0;
 	u64 last_lba = 0;
 	u64 rsrc_handle = -1;
@@ -1837,7 +1843,7 @@ static int cxlflash_disk_direct_open(struct scsi_device *sdev, void *arg)
 		goto out;
 	}
 
-	ctx_info = get_context(cfg, ctxid, lun_info, 0);
+	ctx_info = get_context(cfg, rctxid, lun_info, 0);
 	if (unlikely(!ctx_info)) {
 		pr_err("%s: Invalid context! (%llu)\n", __func__, ctxid);
 		rc = -EINVAL;
@@ -1894,7 +1900,7 @@ int cxlflash_ioctl(struct scsi_device *sdev, int cmd, void __user *arg)
 	int rc = 0;
 	struct Scsi_Host *shost = sdev->host;
 	sioctl do_ioctl = NULL;
-	u64 ctxid;
+	u64 rctxid;
 	struct ctx_info *ctx_info;
 
 	static const struct {
@@ -1928,9 +1934,8 @@ int cxlflash_ioctl(struct scsi_device *sdev, int cmd, void __user *arg)
 
 	switch (cmd) {
 	case 0x4711:	/* XXX - remove case and assoc. vars before upstream */
-		ctxid = ((struct dk_cxlflash_detach *)arg)->context_id;
-		ctxid = DECODE_CTXID(ctxid);
-		ctx_info = get_context(cfg, ctxid, NULL, 0);
+		rctxid = ((struct dk_cxlflash_detach *)arg)->context_id;
+		ctx_info = get_context(cfg, rctxid, NULL, 0);
 		if (!ctx_info) {
 			rc = -EINVAL;
 			goto cxlflash_ioctl_exit;
