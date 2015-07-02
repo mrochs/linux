@@ -551,7 +551,27 @@ static void cxl_release_afu(struct device *dev)
 
 	pr_devel("cxl_release_afu\n");
 
+	free_pages((unsigned long) afu->spa, afu->spa_order);
+
 	kfree(afu);
+}
+
+static int spa_max_procs(int spa_size)
+{
+	/*
+	 * From the CAIA:
+	 *    end_of_SPA_area = SPA_Base + ((n+4) * 128) + (( ((n*8) + 127) >> 7) * 128) + 255
+	 * Most of that junk is really just an overly-complicated way of saying
+	 * the last 256 bytes are __aligned(128), so it's really:
+	 *    end_of_SPA_area = end_of_PSL_queue_area + __aligned(128) 255
+	 * and
+	 *    end_of_PSL_queue_area = SPA_Base + ((n+4) * 128) + (n*8) - 1
+	 * so
+	 *    sizeof(SPA) = ((n+4) * 128) + (n*8) + __aligned(128) 256
+	 * Ignore the alignment (which is safe in this case as long as we are
+	 * careful with our rounding) and solve for n:
+	 */
+	return ((spa_size / 8) - 96) / 17;
 }
 
 static struct cxl_afu *cxl_alloc_afu(struct cxl *adapter, int slice)
@@ -572,6 +592,24 @@ static struct cxl_afu *cxl_alloc_afu(struct cxl *adapter, int slice)
 
 	afu->prefault_mode = CXL_PREFAULT_NONE;
 	afu->irqs_max = afu->adapter->user_irqs;
+
+	/* SPA: Work out how many pages to allocate */
+	afu->spa_order = 0;
+	do {
+		afu->spa_order++;
+		afu->spa_size = (1 << afu->spa_order) * PAGE_SIZE;
+		afu->spa_max_procs = spa_max_procs(afu->spa_size);
+	} while (afu->spa_max_procs < afu->num_procs);
+
+	WARN_ON(afu->spa_size > 0x100000); /* Max size supported by the hardware */
+
+	if (!(afu->spa = (struct cxl_process_element *)
+	      __get_free_pages(GFP_KERNEL | __GFP_ZERO, afu->spa_order))) {
+		pr_err("cxl_alloc_afu: Unable to allocate scheduled process area\n");
+		return NULL;
+	}
+	pr_devel("spa pages: %i afu->spa_max_procs: %i   afu->num_procs: %i\n",
+		 1<<afu->spa_order, afu->spa_max_procs, afu->num_procs);
 
 	return afu;
 }

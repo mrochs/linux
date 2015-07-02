@@ -168,45 +168,9 @@ out:
 	return rc;
 }
 
-static int spa_max_procs(int spa_size)
-{
-	/*
-	 * From the CAIA:
-	 *    end_of_SPA_area = SPA_Base + ((n+4) * 128) + (( ((n*8) + 127) >> 7) * 128) + 255
-	 * Most of that junk is really just an overly-complicated way of saying
-	 * the last 256 bytes are __aligned(128), so it's really:
-	 *    end_of_SPA_area = end_of_PSL_queue_area + __aligned(128) 255
-	 * and
-	 *    end_of_PSL_queue_area = SPA_Base + ((n+4) * 128) + (n*8) - 1
-	 * so
-	 *    sizeof(SPA) = ((n+4) * 128) + (n*8) + __aligned(128) 256
-	 * Ignore the alignment (which is safe in this case as long as we are
-	 * careful with our rounding) and solve for n:
-	 */
-	return ((spa_size / 8) - 96) / 17;
-}
-
-static int alloc_spa(struct cxl_afu *afu)
+static void attach_spa(struct cxl_afu *afu)
 {
 	u64 spap;
-
-	/* Work out how many pages to allocate */
-	afu->spa_order = 0;
-	do {
-		afu->spa_order++;
-		afu->spa_size = (1 << afu->spa_order) * PAGE_SIZE;
-		afu->spa_max_procs = spa_max_procs(afu->spa_size);
-	} while (afu->spa_max_procs < afu->num_procs);
-
-	WARN_ON(afu->spa_size > 0x100000); /* Max size supported by the hardware */
-
-	if (!(afu->spa = (struct cxl_process_element *)
-	      __get_free_pages(GFP_KERNEL | __GFP_ZERO, afu->spa_order))) {
-		pr_err("cxl_alloc_spa: Unable to allocate scheduled process area\n");
-		return -ENOMEM;
-	}
-	pr_devel("spa pages: %i afu->spa_max_procs: %i   afu->num_procs: %i\n",
-		 1<<afu->spa_order, afu->spa_max_procs, afu->num_procs);
 
 	afu->sw_command_status = (__be64 *)((char *)afu->spa +
 					    ((afu->spa_max_procs + 3) * 128));
@@ -216,16 +180,13 @@ static int alloc_spa(struct cxl_afu *afu)
 	spap |= CXL_PSL_SPAP_V;
 	pr_devel("cxl: SPA allocated at 0x%p. Max processes: %i, sw_command_status: 0x%p CXL_PSL_SPAP_An=0x%016llx\n", afu->spa, afu->spa_max_procs, afu->sw_command_status, spap);
 	cxl_p1n_write(afu, CXL_PSL_SPAP_An, spap);
-
-	return 0;
 }
 
-static void release_spa(struct cxl_afu *afu)
+static inline void detach_spa(struct cxl_afu *afu)
 {
 	if (adapter_link_ok(afu->adapter))
 		cxl_p1n_write(afu, CXL_PSL_SPAP_An, 0);
 
-	free_pages((unsigned long) afu->spa, afu->spa_order);
 }
 
 int cxl_tlb_slb_invalidate(struct cxl *adapter)
@@ -482,8 +443,7 @@ static int activate_afu_directed(struct cxl_afu *afu)
 		return -EIO;
 	}
 
-	if (alloc_spa(afu))
-		return -ENOMEM;
+	attach_spa(afu);
 
 	cxl_p1n_write(afu, CXL_PSL_SCNTL_An, CXL_PSL_SCNTL_An_PM_AFU);
 	cxl_p1n_write(afu, CXL_PSL_AMOR_An, 0xFFFFFFFFFFFFFFFFULL);
@@ -595,8 +555,6 @@ static int deactivate_afu_directed(struct cxl_afu *afu)
 	__cxl_afu_reset(afu);
 	cxl_afu_disable(afu);
 	cxl_psl_purge(afu);
-
-	release_spa(afu);
 
 	return 0;
 }
