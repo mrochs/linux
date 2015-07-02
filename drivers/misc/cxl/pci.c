@@ -560,7 +560,8 @@ static void cxl_release_afu(struct device *dev)
 
 	pr_devel("cxl_release_afu\n");
 
-	free_pages((unsigned long) afu->spa, afu->spa_order);
+	if (afu->spa)
+		cxl_release_spa(afu);
 
 	kfree(afu);
 }
