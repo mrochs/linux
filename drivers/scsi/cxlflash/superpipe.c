@@ -26,7 +26,7 @@
 #include "common.h"
 #include "superpipe.h"
 
-struct cxlflash_global global;
+static struct cxlflash_global global;
 
 /**
  * marshall_rele_to_resize() - translate release to resize structure
