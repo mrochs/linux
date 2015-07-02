@@ -1946,10 +1946,10 @@ int cxlflash_ioctl(struct scsi_device *sdev, int cmd, void __user *arg)
 	case DK_CXLFLASH_VERIFY:
 	case DK_CXLFLASH_CLONE:
 	case DK_CXLFLASH_RECOVER_AFU:
-	case DK_CXLFLASH_MANAGE_LUN:
 		rc = ioctl_common(sdev);
 		if (rc)
 			goto cxlflash_ioctl_exit;
+	case DK_CXLFLASH_MANAGE_LUN:
 		known_ioctl = true;
 		idx = _IOC_NR(cmd) - _IOC_NR(DK_CXLFLASH_ATTACH);
 		size = ioctl_tbl[idx].size;
