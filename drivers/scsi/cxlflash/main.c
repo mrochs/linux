@@ -386,15 +386,16 @@ static int cxlflash_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *scp)
 	}
 	spin_unlock_irqrestore(&cfg->tmf_slock, lock_flags);
 
-	if (cfg->eeh_active) {
+	switch (cfg->eeh_active) {
+	case EEH_STATE_ACTIVE:
 		pr_debug_ratelimited("%s: BUSY w/ EEH Recovery!\n", __func__);
 		rc = SCSI_MLQUEUE_HOST_BUSY;
 		goto out;
-	}
-
-	if (cfg->device_failed) {
+	case EEH_STATE_FAILED:
 		pr_debug_ratelimited("%s: device has failed!\n", __func__);
 		goto error;
+	case EEH_STATE_NONE:
+		break;
 	}
 
 	cmd = cxlflash_cmd_checkout(afu);
@@ -476,12 +477,18 @@ static int cxlflash_eh_device_reset_handler(struct scsi_cmnd *scp)
 		 get_unaligned_be32(&((u32 *)scp->cmnd)[2]),
 		 get_unaligned_be32(&((u32 *)scp->cmnd)[3]));
 
-	if (!cfg->eeh_active) {
+	switch (cfg->eeh_active) {
+	case EEH_STATE_NONE:
 		rcr = send_tmf(afu, scp, TMF_LUN_RESET);
 		if (unlikely(rcr))
 			rc = FAILED;
-	} else
+		break;
+	case EEH_STATE_ACTIVE:
 		wait_event(cfg->eeh_waitq, !cfg->eeh_active);
+		break;
+	case EEH_STATE_FAILED:
+		break;
+	}
 
 	pr_debug("%s: returning rc=%d\n", __func__, rc);
 	return rc;
@@ -511,14 +518,20 @@ static int cxlflash_eh_host_reset_handler(struct scsi_cmnd *scp)
 		 get_unaligned_be32(&((u32 *)scp->cmnd)[2]),
 		 get_unaligned_be32(&((u32 *)scp->cmnd)[3]));
 
-	if (!cfg->eeh_active) {
+	switch (cfg->eeh_active) {
+	case EEH_STATE_NONE:
 		rcr = cxlflash_afu_reset(cfg);
 		if (rcr == 0)
 			rc = SUCCESS;
 		else
 			rc = FAILED;
-	} else
+		break;
+	case EEH_STATE_ACTIVE:
 		wait_event(cfg->eeh_waitq, !cfg->eeh_active);
+		break;
+	case EEH_STATE_FAILED:
+		break;
+	}
 
 	pr_debug("%s: returning rc=%d\n", __func__, rc);
 	return rc;
@@ -2159,7 +2172,7 @@ static void cxlflash_worker_thread(struct work_struct *work)
 
 	/* Avoid MMIO if the device has failed */
 
-	if (cfg->device_failed)
+	if (cfg->eeh_active == EEH_STATE_FAILED)
 		return;
 
 	spin_lock_irqsave(cfg->host->host_lock, lock_flags);
@@ -2246,7 +2259,7 @@ static int cxlflash_probe(struct pci_dev *pdev,
 	cfg->dev_id = (struct pci_device_id *)dev_id;
 	cfg->mcctx = NULL;
 	cfg->num_user_contexts = 0;
-	cfg->device_failed = false;
+	cfg->eeh_active = EEH_STATE_NONE;
 
 	init_waitqueue_head(&cfg->tmf_waitq);
 	init_waitqueue_head(&cfg->eeh_waitq);
@@ -2324,7 +2337,7 @@ static pci_ers_result_t cxlflash_pci_error_detected(struct pci_dev *pdev,
 
 	switch (state) {
 	case pci_channel_io_frozen:
-		cfg->eeh_active = true;
+		cfg->eeh_active = EEH_STATE_ACTIVE;
 		udelay(100);
 
 		rc = cxlflash_mark_contexts_error(cfg);
@@ -2337,8 +2350,7 @@ static pci_ers_result_t cxlflash_pci_error_detected(struct pci_dev *pdev,
 
 		return PCI_ERS_RESULT_CAN_RECOVER;
 	case pci_channel_io_perm_failure:
-		cfg->eeh_active = false;
-		cfg->device_failed = true;
+		cfg->eeh_active = EEH_STATE_FAILED;
 		wake_up_all(&cfg->eeh_waitq);
 		return PCI_ERS_RESULT_DISCONNECT;
 		break;
@@ -2377,7 +2389,7 @@ static void cxlflash_pci_resume(struct pci_dev *pdev)
 
 	pr_debug("%s: pdev=%p\n", __func__, pdev);
 
-	cfg->eeh_active = false;
+	cfg->eeh_active = EEH_STATE_NONE;
 	wake_up_all(&cfg->eeh_waitq);
 }
 

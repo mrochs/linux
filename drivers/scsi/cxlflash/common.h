@@ -76,6 +76,12 @@ enum cxlflash_init_state {
 	INIT_STATE_SCSI
 };
 
+enum eeh_state {
+	EEH_STATE_NONE,
+	EEH_STATE_ACTIVE,
+	EEH_STATE_FAILED
+};
+
 /*
  * Each context has its own set of resource handles that is visible
  * only from that context.
@@ -114,8 +120,7 @@ struct cxlflash_cfg {
 	spinlock_t tmf_slock;
 	bool tmf_active;
 	wait_queue_head_t eeh_waitq;
-	bool eeh_active;
-	bool device_failed;
+	enum eeh_state eeh_active;
 };
 
 struct afu_cmd {

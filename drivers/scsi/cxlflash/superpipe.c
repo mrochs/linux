@@ -670,11 +670,19 @@ int cxlflash_disk_release(struct scsi_device *sdev,
 	struct sisl_rht_entry *rht_entry;
 	struct sisl_rht_entry_f1 *rht_entry_f1;
 
-	if (cfg->eeh_active) {
+	switch (cfg->eeh_active) {
+	case EEH_STATE_ACTIVE:
 		pr_debug("%s: EEH Active, going to wait...\n", __func__);
 		rc = wait_event_interruptible(cfg->eeh_waitq, !cfg->eeh_active);
 		if (unlikely(rc))
 			goto out;
+		break;
+	case EEH_STATE_FAILED:
+		pr_debug("%s: EEH Failed\n", __func__);
+		rc = -ENODEV;
+		goto out;
+	case EEH_STATE_NONE:
+		break;
 	}
 
 	pr_debug("%s: ctxid=%llu res_hndl=0x%llx li->mode=%u li->users=%u\n",
@@ -865,11 +873,19 @@ static int cxlflash_disk_detach(struct scsi_device *sdev,
 	    rctxid = detach->context_id;
 	ulong flags = 0;
 
-	if (cfg->eeh_active) {
+	switch (cfg->eeh_active) {
+	case EEH_STATE_ACTIVE:
 		pr_debug("%s: EEH Active, going to wait...\n", __func__);
 		rc = wait_event_interruptible(cfg->eeh_waitq, !cfg->eeh_active);
 		if (unlikely(rc))
 			goto out;
+		break;
+	case EEH_STATE_FAILED:
+		pr_debug("%s: EEH Failed\n", __func__);
+		rc = -ENODEV;
+		goto out;
+	case EEH_STATE_NONE:
+		break;
 	}
 
 	pr_debug("%s: ctxid=%llu\n", __func__, ctxid);
@@ -1287,11 +1303,19 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 
 	int fd = -1;
 
-	if (cfg->eeh_active) {
+	switch (cfg->eeh_active) {
+	case EEH_STATE_ACTIVE:
 		pr_debug("%s: EEH Active, going to wait...\n", __func__);
 		rc = wait_event_interruptible(cfg->eeh_waitq, !cfg->eeh_active);
 		if (unlikely(rc))
 			goto out;
+		break;
+	case EEH_STATE_FAILED:
+		pr_debug("%s: EEH Failed\n", __func__);
+		rc = -ENODEV;
+		goto out;
+	case EEH_STATE_NONE:
+		break;
 	}
 
 	/* On first attach set fileops */
@@ -1578,11 +1602,19 @@ static int cxlflash_afu_recover(struct scsi_device *sdev,
 	//long reg;
 	int rc = 0;
 
-	if (cfg->eeh_active) {
+	switch (cfg->eeh_active) {
+	case EEH_STATE_ACTIVE:
 		pr_debug("%s: EEH Active, going to wait...\n", __func__);
 		rc = wait_event_interruptible(cfg->eeh_waitq, !cfg->eeh_active);
 		if (unlikely(rc))
 			goto out;
+		break;
+	case EEH_STATE_FAILED:
+		pr_debug("%s: EEH Failed\n", __func__);
+		rc = -ENODEV;
+		goto out;
+	case EEH_STATE_NONE:
+		break;
 	}
 
 	/* Ensure that this process is attached to the context */
@@ -1701,11 +1733,19 @@ static int cxlflash_disk_verify(struct scsi_device *sdev,
 	    rctxid = verify->context_id;
 	u64 last_lba = 0;
 
-	if (cfg->eeh_active) {
+	switch (cfg->eeh_active) {
+	case EEH_STATE_ACTIVE:
 		pr_debug("%s: EEH Active, going to wait...\n", __func__);
 		rc = wait_event_interruptible(cfg->eeh_waitq, !cfg->eeh_active);
 		if (unlikely(rc))
 			goto out;
+		break;
+	case EEH_STATE_FAILED:
+		pr_debug("%s: EEH Failed\n", __func__);
+		rc = -ENODEV;
+		goto out;
+	case EEH_STATE_NONE:
+		break;
 	}
 
 	pr_debug("%s: ctxid=%llu res_hndl=0x%llx, hint=0x%llx\n",
@@ -1827,11 +1867,19 @@ static int cxlflash_disk_direct_open(struct scsi_device *sdev, void *arg)
 	struct ctx_info *ctx_info = NULL;
 	struct sisl_rht_entry *rht_entry = NULL;
 
-	if (cfg->eeh_active) {
+	switch (cfg->eeh_active) {
+	case EEH_STATE_ACTIVE:
 		pr_debug("%s: EEH Active, going to wait...\n", __func__);
 		rc = wait_event_interruptible(cfg->eeh_waitq, !cfg->eeh_active);
 		if (unlikely(rc))
 			goto out;
+		break;
+	case EEH_STATE_FAILED:
+		pr_debug("%s: EEH Failed\n", __func__);
+		rc = -ENODEV;
+		goto out;
+	case EEH_STATE_NONE:
+		break;
 	}
 
 	pr_debug("%s: ctxid=%llu ls=0x%llx\n", __func__, ctxid, lun_size);
