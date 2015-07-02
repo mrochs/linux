@@ -1840,7 +1840,14 @@ err1:
 static int ioctl_common(struct scsi_device *sdev)
 {
 	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)sdev->host->hostdata;
+	struct lun_info *lun_info = sdev->hostdata;
 	int rc = 0;
+
+	if (!lun_info) {
+		pr_debug("%s: Unknown LUN\n", __func__);
+		rc = -EINVAL;
+		goto out;
+	}
 
 	switch (cfg->eeh_active) {
 	case EEH_STATE_ACTIVE:
