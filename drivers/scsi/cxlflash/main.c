@@ -558,33 +558,24 @@ static int cxlflash_change_queue_depth(struct scsi_device *sdev, int qdepth)
 
 /**
  * cxlflash_show_port_status() - queries and presents the current port status
- * @dev:	Generic device associated with the host owning the port.
- * @attr:	Device attribute representing the port.
+ * @port:	Desired port for status reporting.
+ * @afu:	AFU owning the specified port.
  * @buf:	Buffer of length PAGE_SIZE to report back port status in ASCII.
  *
  * Return: The size of the ASCII string returned in @buf.
  */
-static ssize_t cxlflash_show_port_status(struct device *dev,
-					 struct device_attribute *attr,
-					 char *buf)
+static ssize_t cxlflash_show_port_status(u32 port, struct afu *afu, char *buf)
 {
-	struct Scsi_Host *shost = class_to_shost(dev);
-	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)shost->hostdata;
-	struct afu *afu = cfg->afu;
-
 	char *disp_status;
-	int rc;
-	u32 port;
 	u64 status;
 	u64 *fc_regs;
 
-	rc = kstrtouint((attr->attr.name + 4), 10, &port);
-	if (rc || (port > NUM_FC_PORTS))
+	if (port > NUM_FC_PORTS)
 		return 0;
 
 	fc_regs = &afu->afu_map->global.fc_regs[port][0];
-	status =
-	    (readq_be(&fc_regs[FC_MTIP_STATUS / 8]) & FC_MTIP_STATUS_MASK);
+	status = readq_be(&fc_regs[FC_MTIP_STATUS / 8]);
+	status &= FC_MTIP_STATUS_MASK;
 
 	if (status == FC_MTIP_STATUS_ONLINE)
 		disp_status = "online";
@@ -593,29 +584,67 @@ static ssize_t cxlflash_show_port_status(struct device *dev,
 	else
 		disp_status = "unknown";
 
-	return snprintf(buf, PAGE_SIZE, "%s\n", disp_status);
+	return scnprintf(buf, PAGE_SIZE, "%s\n", disp_status);
 }
 
 /**
- * cxlflash_show_lun_mode() - presents the current LUN mode of the host
+ * port0_show() - queries and presents the current status of port 0
+ * @dev:	Generic device associated with the host owning the port.
+ * @attr:	Device attribute representing the port.
+ * @buf:	Buffer of length PAGE_SIZE to report back port status in ASCII.
+ *
+ * Return: The size of the ASCII string returned in @buf.
+ */
+static ssize_t port0_show(struct device *dev,
+			  struct device_attribute *attr,
+			  char *buf)
+{
+	struct Scsi_Host *shost = class_to_shost(dev);
+	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)shost->hostdata;
+	struct afu *afu = cfg->afu;
+
+	return cxlflash_show_port_status(0, afu, buf);
+}
+
+/**
+ * port1_show() - queries and presents the current status of port 1
+ * @dev:	Generic device associated with the host owning the port.
+ * @attr:	Device attribute representing the port.
+ * @buf:	Buffer of length PAGE_SIZE to report back port status in ASCII.
+ *
+ * Return: The size of the ASCII string returned in @buf.
+ */
+static ssize_t port1_show(struct device *dev,
+			  struct device_attribute *attr,
+			  char *buf)
+{
+	struct Scsi_Host *shost = class_to_shost(dev);
+	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)shost->hostdata;
+	struct afu *afu = cfg->afu;
+
+	return cxlflash_show_port_status(1, afu, buf);
+}
+
+/**
+ * lun_mode_show() - presents the current LUN mode of the host
  * @dev:	Generic device associated with the host.
  * @attr:	Device attribute representing the lun mode.
  * @buf:	Buffer of length PAGE_SIZE to report back the LUN mode in ASCII.
  *
  * Return: The size of the ASCII string returned in @buf.
  */
-static ssize_t cxlflash_show_lun_mode(struct device *dev,
-				      struct device_attribute *attr, char *buf)
+static ssize_t lun_mode_show(struct device *dev,
+			     struct device_attribute *attr, char *buf)
 {
 	struct Scsi_Host *shost = class_to_shost(dev);
 	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)shost->hostdata;
 	struct afu *afu = cfg->afu;
 
-	return snprintf(buf, PAGE_SIZE, "%u\n", afu->internal_lun);
+	return scnprintf(buf, PAGE_SIZE, "%u\n", afu->internal_lun);
 }
 
 /**
- * cxlflash_store_lun_mode() - sets the LUN mode of the host
+ * lun_mode_store() - sets the LUN mode of the host
  * @dev:	Generic device associated with the host.
  * @attr:	Device attribute representing the lun mode.
  * @buf:	Buffer of length PAGE_SIZE containing the LUN mode in ASCII.
@@ -636,9 +665,9 @@ static ssize_t cxlflash_show_lun_mode(struct device *dev,
  *
  * Return: The size of the ASCII string returned in @buf.
  */
-static ssize_t cxlflash_store_lun_mode(struct device *dev,
-				       struct device_attribute *attr,
-				       const char *buf, size_t count)
+static ssize_t lun_mode_store(struct device *dev,
+			      struct device_attribute *attr,
+			      const char *buf, size_t count)
 {
 	struct Scsi_Host *shost = class_to_shost(dev);
 	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)shost->hostdata;
@@ -657,20 +686,20 @@ static ssize_t cxlflash_store_lun_mode(struct device *dev,
 }
 
 /**
- * cxlflash_show_dev_mode() - presents the current mode of the device
+ * mode_show() - presents the current mode of the device
  * @dev:	Generic device associated with the device.
  * @attr:	Device attribute representing the device mode.
  * @buf:	Buffer of length PAGE_SIZE to report back the dev mode in ASCII.
  *
  * Return: The size of the ASCII string returned in @buf.
  */
-static ssize_t cxlflash_show_dev_mode(struct device *dev,
-				      struct device_attribute *attr, char *buf)
+static ssize_t mode_show(struct device *dev,
+			 struct device_attribute *attr, char *buf)
 {
 	struct scsi_device *sdev = to_scsi_device(dev);
 
-	return snprintf(buf, PAGE_SIZE, "%s\n",
-			sdev->hostdata ? "superpipe" : "legacy");
+	return scnprintf(buf, PAGE_SIZE, "%s\n",
+			 sdev->hostdata ? "superpipe" : "legacy");
 }
 
 /**
@@ -690,10 +719,9 @@ static void cxlflash_wait_for_pci_err_recovery(struct cxlflash_cfg *cfg)
 /*
  * Host attributes
  */
-static DEVICE_ATTR(port0, S_IRUGO, cxlflash_show_port_status, NULL);
-static DEVICE_ATTR(port1, S_IRUGO, cxlflash_show_port_status, NULL);
-static DEVICE_ATTR(lun_mode, S_IRUGO | S_IWUSR, cxlflash_show_lun_mode,
-		   cxlflash_store_lun_mode);
+static DEVICE_ATTR_RO(port0);
+static DEVICE_ATTR_RO(port1);
+static DEVICE_ATTR_RW(lun_mode);
 
 static struct device_attribute *cxlflash_host_attrs[] = {
 	&dev_attr_port0,
@@ -705,7 +733,7 @@ static struct device_attribute *cxlflash_host_attrs[] = {
 /*
  * Device attributes
  */
-static DEVICE_ATTR(mode, S_IRUGO, cxlflash_show_dev_mode, NULL);
+static DEVICE_ATTR_RO(mode);
 
 static struct device_attribute *cxlflash_dev_attrs[] = {
 	&dev_attr_mode,
