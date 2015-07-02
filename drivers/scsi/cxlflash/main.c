@@ -2282,11 +2282,7 @@ static int cxlflash_probe(struct pci_dev *pdev,
 
 	cfg->init_state = INIT_STATE_NONE;
 	cfg->dev = pdev;
-	cfg->last_lun_index[0] = 0;
-	cfg->last_lun_index[1] = 0;
 	cfg->dev_id = (struct pci_device_id *)dev_id;
-	cfg->mcctx = NULL;
-	cfg->num_user_contexts = 0;
 	cfg->eeh_active = EEH_STATE_NONE;
 
 	init_waitqueue_head(&cfg->tmf_waitq);

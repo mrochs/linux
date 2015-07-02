@@ -765,7 +765,7 @@ static void destroy_context(struct cxlflash_cfg *cfg,
 
 	/* Free the context; note that rht_lun was allocated at same time */
 	kfree(ctx_info);
-	cfg->num_user_contexts--;
+	atomic_dec_if_positive(&cfg->num_user_contexts);
 }
 
 /**
@@ -818,10 +818,9 @@ static struct ctx_info *create_context(struct cxlflash_cfg *cfg,
 	ctx_info->ctx = ctx;
 	ctx_info->file = file;
 	INIT_LIST_HEAD(&ctx_info->luns);
-	INIT_LIST_HEAD(&ctx_info->luns);
 	atomic_set(&ctx_info->nrefs, 1);
 
-	cfg->num_user_contexts++;
+	atomic_inc(&cfg->num_user_contexts);
 
 out:
 	return ctx_info;
@@ -1267,6 +1266,7 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 	int rc = 0;
 	u32 perms;
 	int ctxid = -1;
+	ulong lock_flags;
 	struct file *file;
 
 	struct cxl_context *ctx;
@@ -1274,7 +1274,7 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 	int fd = -1;
 
 	/* On first attach set fileops */
-	if (cfg->num_user_contexts == 0)
+	if (atomic_read(&cfg->num_user_contexts) == 0)
 		cfg->cxl_fops = cxlflash_cxl_fops;
 
 	if (attach->num_interrupts > 4) {
@@ -1385,7 +1385,9 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 	 * visible to user space and can't be undone safely on this thread.
 	 */
 	list_add(&lun_access->list, &ctx_info->luns);
+	spin_lock_irqsave(&cfg->ctx_tbl_slock, lock_flags);
 	cfg->ctx_tbl[ctxid] = ctx_info;
+	spin_unlock_irqrestore(&cfg->ctx_tbl_slock, lock_flags);
 	fd_install(fd, file);
 
 out_attach:
@@ -1472,6 +1474,7 @@ static int recover_context(struct cxlflash_cfg *cfg, struct ctx_info *ctx_info)
 	int rc = 0;
 	int fd = -1;
 	int ctxid = -1;
+	ulong lock_flags;
 	struct file *file;
 	struct cxl_context *ctx;
 	struct afu *afu = cfg->afu;
@@ -1520,7 +1523,9 @@ static int recover_context(struct cxlflash_cfg *cfg, struct ctx_info *ctx_info)
 	ctx_info->lfd = fd;
 	ctx_info->ctx = ctx;
 
+	spin_lock_irqsave(&cfg->ctx_tbl_slock, lock_flags);
 	cfg->ctx_tbl[ctxid] = ctx_info;
+	spin_unlock_irqrestore(&cfg->ctx_tbl_slock, lock_flags);
 	fd_install(fd, file);
 
 out:

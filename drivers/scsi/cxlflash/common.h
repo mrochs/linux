@@ -113,7 +113,7 @@ struct cxlflash_cfg {
 	struct list_head ctx_err_recovery; /* contexts w/ recovery pending */
 	struct file_operations cxl_fops;
 
-	int num_user_contexts;
+	atomic_t num_user_contexts;
 	int last_lun_index[CXLFLASH_NUM_FC_PORTS];
 
 	wait_queue_head_t tmf_waitq;
