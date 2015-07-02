@@ -977,46 +977,6 @@ static void cxl_unmap_adapter_regs(struct cxl *adapter)
 	}
 }
 
-static void cxl_set_default_perst_mode(struct cxl *adapter, struct pci_dev *dev, int vsec)
-{
-	u8 image_state;
-
-	CXL_READ_VSEC_IMAGE_STATE(dev, vsec, &image_state);
-
-	adapter->user_image_loaded = !!(image_state & CXL_VSEC_USER_IMAGE_LOADED);
-	adapter->perst_loads_image = true;
-	adapter->perst_select_user = !!(image_state & CXL_VSEC_USER_IMAGE_LOADED);
-	adapter->perst_same_image = false;
-
-	switch (cxl_def_perst_image) {
-	case -1:
-		break;
-	case 0:
-		adapter->perst_loads_image = false;
-		break;
-	case 1:
-		adapter->perst_select_user = true;
-		break;
-	case 2:
-		adapter->perst_select_user = false;
-		break;
-	default:
-		dev_warn(&adapter->dev, "Unknown load_image_on_perst %i requested by module parameter\n", cxl_def_perst_image);
-		break;
-	}
-
-	switch (cxl_perst_same_image) {
-	case 0:
-		adapter->perst_same_image = false;
-		break;
-	case 1:
-		adapter->perst_same_image = true;
-		break;
-	default:
-		dev_warn(&adapter->dev, "Unknown perst_reloads_same_image %i requested by module parameter\n", cxl_perst_same_image);
-	}
-}
-
 static int cxl_read_vsec(struct cxl *adapter, struct pci_dev *dev)
 {
 	int vsec;
