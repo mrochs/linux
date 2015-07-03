@@ -413,10 +413,11 @@ init_ba_exit:
  *
  * Return: 0 on success, -1 on failure
  */
-static int write_same16(struct afu *afu, struct lun_info *lun_info, u64 lba,
+static int write_same16(struct afu *afu, struct scsi_device *sdev, u64 lba,
 			u32 nblks)
 {
 	struct afu_cmd *cmd = NULL;
+	struct lun_info *lun_info = sdev->hostdata;
 	int rc = 0;
 
 	cmd = cxlflash_cmd_checkout(afu);
@@ -482,13 +483,14 @@ out:
  * Return: 0 on success, -errno on failure
  */
 static int grow_lxt(struct afu *afu,
-		    struct lun_info *lun_info,
+		    struct scsi_device *sdev,
 		    ctx_hndl_t ctx_hndl_u,
 		    res_hndl_t res_hndl_u,
 		    struct sisl_rht_entry *rht_entry,
 		    u64 *new_size)
 {
 	struct sisl_lxt_entry *lxt = NULL, *lxt_old = NULL;
+	struct lun_info *lun_info = sdev->hostdata;
 	u32 av_size;
 	u32 ngrps, ngrps_old;
 	u64 aun;		/* chunk# allocated by block allocator */
@@ -595,13 +597,14 @@ out:
  * Return: 0 on success, -errno on failure
  */
 static int shrink_lxt(struct afu *afu,
-		      struct lun_info *lun_info,
+		      struct scsi_device *sdev,
 		      ctx_hndl_t ctx_hndl_u,
 		      res_hndl_t res_hndl_u,
 		      struct sisl_rht_entry *rht_entry,
 		      u64 *new_size)
 {
 	struct sisl_lxt_entry *lxt, *lxt_old;
+	struct lun_info *lun_info = sdev->hostdata;
 	u32 ngrps, ngrps_old;
 	u64 aun;		/* chunk# allocated by block allocator */
 	u64 delta = rht_entry->lxt_cnt - *new_size;
@@ -655,7 +658,7 @@ static int shrink_lxt(struct afu *afu,
 		aun = ((lxt_old[my_new_size + i].rlba_base &
 			SISL_ASTATUS_MASK) >> MC_CHUNK_SHIFT);
 		if (ws)
-			write_same16(afu, lun_info, aun, MC_CHUNK_SIZE);
+			write_same16(afu, sdev, aun, MC_CHUNK_SIZE);
 		ba_free(&blka->ba_lun, aun);
 	}
 	mutex_unlock(&blka->mutex);
@@ -735,14 +738,14 @@ int cxlflash_vlun_resize(struct scsi_device *sdev,
 
 	if (new_size > rht_entry->lxt_cnt)
 		rc = grow_lxt(afu,
-			      lun_info,
+			      sdev,
 			      ctxid,
 			      res_hndl,
 			      rht_entry,
 			      &new_size);
 	else if (new_size < rht_entry->lxt_cnt)
 		rc = shrink_lxt(afu,
-				lun_info,
+				sdev,
 				ctxid,
 				res_hndl,
 				rht_entry,
