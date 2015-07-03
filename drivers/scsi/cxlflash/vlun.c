@@ -386,7 +386,8 @@ static int init_ba(struct lun_info *lun_info)
 	memset(blka, 0, sizeof(*blka));
 	mutex_init(&blka->mutex);
 
-	blka->ba_lun.lun_id = lun_info->lun_id;
+	/* LUN IDs are unique per port, save the index instead */
+	blka->ba_lun.lun_id = lun_info->lun_index;
 	blka->ba_lun.lsize = lun_info->max_lba + 1;
 	blka->ba_lun.lba_size = lun_info->blk_len;
 
@@ -432,7 +433,7 @@ static int write_same16(struct afu *afu, struct scsi_device *sdev, u64 lba,
 			      SISL_REQ_FLAGS_HOST_READ);
 
 	cmd->rcb.port_sel = lun_info->port_sel;
-	cmd->rcb.lun_id = lun_info->lun_id;
+	cmd->rcb.lun_id = lun_info->lun_id[sdev->channel];
 	cmd->rcb.data_len = CMD_BUFSIZE;
 	cmd->rcb.data_ea = (u64) cmd->buf; /* Filled w/ zeros on checkout */
 	cmd->rcb.timeout = MC_DISCOVERY_TIMEOUT;

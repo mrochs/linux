@@ -432,7 +432,7 @@ static int read_cap16(struct afu *afu, struct lun_info *lun_info, u32 port_sel)
 			      SISL_REQ_FLAGS_HOST_READ);
 
 	cmd->rcb.port_sel = port_sel;
-	cmd->rcb.lun_id = lun_info->lun_id;
+	cmd->rcb.lun_id = lun_info->lun_id[port_sel - 1];
 	cmd->rcb.data_len = CMD_BUFSIZE;
 	cmd->rcb.data_ea = (u64) cmd->buf;
 	cmd->rcb.timeout = MC_DISCOVERY_TIMEOUT;
@@ -1304,7 +1304,7 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 
 	if (lun_info->max_lba == 0) {
 		pr_debug("%s: No capacity info yet for this LUN "
-			"(%016llX)\n", __func__, lun_info->lun_id);
+			"(%016llX)\n", __func__, lun_info->lun_id[sdev->channel]);
 		rc = read_cap16(afu, lun_info, sdev->channel + 1);
 		if (rc) {
 			pr_err("%s: Invalid device! (%d)\n", __func__, rc);
@@ -1487,11 +1487,11 @@ static int cxlflash_manage_lun(struct scsi_device *sdev,
 
 	if (flags & DK_CXLFLASH_MANAGE_LUN_ENABLE_SUPERPIPE) {
 		/* Store off lun in unpacked, AFU-friendly format */
-		lun_info->lun_id = lun_to_lunid(sdev->lun);
+		lun_info->lun_id[sdev->channel] = lun_to_lunid(sdev->lun);
 		lun_info->lun_index = cfg->last_lun_index[sdev->channel];
 		lun_info->port_sel = sdev->channel + 1;
 
-		writeq_be(lun_info->lun_id,
+		writeq_be(lun_info->lun_id[sdev->channel],
 			  &afu->afu_map->global.fc_port[sdev->channel]
 			  [cfg->last_lun_index[sdev->channel]++]);
 		sdev->hostdata = lun_info;
@@ -1870,7 +1870,8 @@ static int cxlflash_disk_direct_open(struct scsi_device *sdev, void *arg)
 
 	rsrc_handle = (rht_entry - ctx_info->rht_start);
 
-	rht_format1(rht_entry, lun_info->lun_id, ctx_info->rht_perms, port_sel);
+	rht_format1(rht_entry, lun_info->lun_id[sdev->channel],
+		    ctx_info->rht_perms, port_sel);
 	cxlflash_afu_sync(afu, ctxid, rsrc_handle, AFU_LW_SYNC);
 
 	last_lba = lun_info->max_lba;
