@@ -127,6 +127,7 @@ struct lun_info {
 	u32 blk_len;		/* from read cap(16) */
 	u32 lun_index;
 	u32 port_sel;		/* What port to use for this LUN */
+	bool newly_created;     /* Whether the LUN was just discovered */
 	int users;		/* Number of users w/ references to LUN */
 	enum lun_mode mode;	/* NONE, VIRTUAL, PHYSICAL */
 

@@ -70,6 +70,7 @@ static struct lun_info *create_lun_info(struct scsi_device *sdev)
 	}
 
 	lun_info->sdev = sdev;
+	lun_info->newly_created = true;
 
 	spin_lock_init(&lun_info->slock);
 
@@ -92,8 +93,10 @@ static struct lun_info *lookup_lun(struct scsi_device *sdev, __u8 *wwid)
 	if (wwid)
 		list_for_each_entry_safe(lun_info, temp, &global.luns, list) {
 			if (!memcmp(lun_info->wwid, wwid,
-				    DK_CXLFLASH_MANAGE_LUN_WWID_LEN))
+				    DK_CXLFLASH_MANAGE_LUN_WWID_LEN)) {
+				lun_info->newly_created = false;
 				return lun_info;
+			}
 		}
 
 	lun_info = create_lun_info(sdev);
