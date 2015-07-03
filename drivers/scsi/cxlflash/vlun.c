@@ -430,7 +430,7 @@ static int write_same16(struct afu *afu, struct lun_info *lun_info, u64 lba,
 			      SISL_REQ_FLAGS_SUP_UNDERRUN |
 			      SISL_REQ_FLAGS_HOST_READ);
 
-	cmd->rcb.port_sel = BOTH_PORTS;
+	cmd->rcb.port_sel = lun_info->port_sel;
 	cmd->rcb.lun_id = lun_info->lun_id;
 	cmd->rcb.data_len = CMD_BUFSIZE;
 	cmd->rcb.data_ea = (u64) cmd->buf; /* Filled w/ zeros on checkout */
@@ -486,8 +486,7 @@ static int grow_lxt(struct afu *afu,
 		    ctx_hndl_t ctx_hndl_u,
 		    res_hndl_t res_hndl_u,
 		    struct sisl_rht_entry *rht_entry,
-		    u64 *new_size,
-		    u32 port_sel)
+		    u64 *new_size)
 {
 	struct sisl_lxt_entry *lxt = NULL, *lxt_old = NULL;
 	u32 av_size;
@@ -555,7 +554,7 @@ static int grow_lxt(struct afu *afu,
 		lxt[i].rlba_base = ((aun << MC_CHUNK_SHIFT) |
 				    (lun_info->lun_index << LXT_LUNIDX_SHIFT) |
 				    (RHT_PERM_RW << LXT_PERM_SHIFT |
-				     port_sel));
+				     lun_info->port_sel));
 	}
 
 	mutex_unlock(&blka->mutex);
@@ -600,7 +599,7 @@ static int shrink_lxt(struct afu *afu,
 		      ctx_hndl_t ctx_hndl_u,
 		      res_hndl_t res_hndl_u,
 		      struct sisl_rht_entry *rht_entry,
-		      u64 *new_size, u32 port_sel)
+		      u64 *new_size)
 {
 	struct sisl_lxt_entry *lxt, *lxt_old;
 	u32 ngrps, ngrps_old;
@@ -693,7 +692,6 @@ int cxlflash_vlun_resize(struct scsi_device *sdev,
 	u64 nsectors;
 	u64 ctxid = DECODE_CTXID(resize->context_id),
 	    rctxid = resize->context_id;
-	u32 port_sel = sdev->channel + 1;
 
 	struct ctx_info *ctx_info = NULL;
 	struct sisl_rht_entry *rht_entry;
@@ -741,16 +739,14 @@ int cxlflash_vlun_resize(struct scsi_device *sdev,
 			      ctxid,
 			      res_hndl,
 			      rht_entry,
-			      &new_size,
-			      port_sel);
+			      &new_size);
 	else if (new_size < rht_entry->lxt_cnt)
 		rc = shrink_lxt(afu,
 				lun_info,
 				ctxid,
 				res_hndl,
 				rht_entry,
-				&new_size,
-				port_sel);
+				&new_size);
 
 	resize->hdr.return_flags = 0;
 	resize->last_lba = (((new_size * MC_CHUNK_SIZE *
