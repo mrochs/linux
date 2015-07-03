@@ -414,7 +414,9 @@ init_ba_exit:
  *
  * Return: 0 on success, -1 on failure
  */
-static int write_same16(struct afu *afu, struct scsi_device *sdev, u64 lba,
+static int write_same16(struct afu *afu,
+			struct scsi_device *sdev,
+			u64 lba,
 			u32 nblks)
 {
 	struct afu_cmd *cmd = NULL;
@@ -432,7 +434,7 @@ static int write_same16(struct afu *afu, struct scsi_device *sdev, u64 lba,
 			      SISL_REQ_FLAGS_SUP_UNDERRUN |
 			      SISL_REQ_FLAGS_HOST_READ);
 
-	cmd->rcb.port_sel = lun_info->port_sel;
+	cmd->rcb.port_sel = sdev->channel + 1;
 	cmd->rcb.lun_id = lun_info->lun_id[sdev->channel];
 	cmd->rcb.data_len = CMD_BUFSIZE;
 	cmd->rcb.data_ea = (u64) cmd->buf; /* Filled w/ zeros on checkout */
