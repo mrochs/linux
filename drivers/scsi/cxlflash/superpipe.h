@@ -126,6 +126,7 @@ struct lun_info {
 	u64 max_lba;		/* from read cap(16) */
 	u32 blk_len;		/* from read cap(16) */
 	u32 lun_index;
+	unsigned int host_no;   /* host_no from Scsi_host */
 	u32 port_sel;		/* What port to use for this LUN */
 	bool newly_created;     /* Whether the LUN was just discovered */
 	int users;		/* Number of users w/ references to LUN */
