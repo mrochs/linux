@@ -1559,42 +1559,46 @@ static int cxlflash_afu_recover(struct scsi_device *sdev,
 	struct ctx_info *ctx_info = NULL;
 	u64 ctxid = DECODE_CTXID(recover->context_id),
 	    rctxid = recover->context_id;
-	//long reg;
+	long reg;
 	int rc = 0;
 
+	pr_debug("%s: reason 0x%016llX rctxid=%016llX\n", __func__,
+		 recover->reason, rctxid);
+
 	/* Ensure that this process is attached to the context */
-	ctx_info = get_context(cfg, rctxid, lun_info, 0);
+	ctx_info = get_context(cfg, rctxid, lun_info, CTX_CTRL_ERR_FALLBACK);
 	if (unlikely(!ctx_info)) {
 		pr_err("%s: Invalid context! (%llu)\n", __func__, ctxid);
 		rc = -EINVAL;
 		goto out;
 	}
 
-	rc = recover_context(cfg, ctx_info);
-	if (unlikely(rc)) {
-		pr_err("%s: Error recovery failed for context %llu (rc=%d)\n",
-		       __func__, ctxid, rc);
+	if (ctx_info->err_recovery_active) {
+		rc = recover_context(cfg, ctx_info);
+		if (unlikely(rc)) {
+			pr_err("%s: Recovery failed for context %llu (rc=%d)\n",
+			       __func__, ctxid, rc);
+			goto out;
+		}
+
+		ctx_info->err_recovery_active = false;
+		recover->context_id = ctx_info->ctxid;
+		recover->adap_fd = ctx_info->lfd;
+		recover->mmio_size = sizeof(afu->afu_map->hosts[0].harea);
+		recover->hdr.return_flags |=
+			DK_CXLFLASH_RECOVER_AFU_CONTEXT_RESET;
 		goto out;
 	}
 
-	ctx_info->err_recovery_active = false;
-	recover->context_id = ctx_info->ctxid;
-	recover->adap_fd = ctx_info->lfd;
-	recover->mmio_size = sizeof(afu->afu_map->hosts[0].harea);
-
-#if 0
-	reg = readq_be(&afu->ctrl_map->mbox_r);	/* Try MMIO */
-	/* MMIO returning 0xff, need to reset */
+	/* Test if in error state */
+	reg = readq_be(&afu->ctrl_map->mbox_r);
 	if (reg == -1) {
-		pr_info("%s: afu=%p reason 0x%llx\n",
-			__func__, afu, recover->reason);
-		cxlflash_afu_reset(cfg);
+		pr_info("%s: MMIO read failed!\n", __func__);
 	} else {
 		pr_debug("%s: reason 0x%llx MMIO working, no reset performed\n",
 			 __func__, recover->reason);
 		rc = -EINVAL;
 	}
-#endif
 
 out:
 	if (likely(ctx_info))
