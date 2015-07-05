@@ -1846,13 +1846,21 @@ err1:
 	goto out;
 }
 
+/**
+ * ioctl_common() - common IOCTL handler for driver
+ * @sdev:	SCSI device associated with LUN.
+ *
+ * Handles common fencing operations that are valid for multiple ioctls.
+ *
+ * Return: 0 on success, -errno on failure
+ */
 static int ioctl_common(struct scsi_device *sdev)
 {
 	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)sdev->host->hostdata;
 	struct lun_info *lun_info = sdev->hostdata;
 	int rc = 0;
 
-	if (!lun_info) {
+	if (unlikely(!lun_info)) {
 		pr_debug("%s: Unknown LUN\n", __func__);
 		rc = -EINVAL;
 		goto out;
