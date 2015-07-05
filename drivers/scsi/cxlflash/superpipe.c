@@ -1897,8 +1897,6 @@ int cxlflash_ioctl(struct scsi_device *sdev, int cmd, void __user *arg)
 	int rc = 0;
 	struct Scsi_Host *shost = sdev->host;
 	sioctl do_ioctl = NULL;
-	u64 rctxid;
-	struct ctx_info *ctx_info;
 
 	static const struct {
 		size_t size;
@@ -1930,22 +1928,6 @@ int cxlflash_ioctl(struct scsi_device *sdev, int cmd, void __user *arg)
 		}
 
 	switch (cmd) {
-	case 0x4711:	/* XXX - remove case and assoc. vars before upstream */
-		rctxid = ((struct dk_cxlflash_detach *)arg)->context_id;
-		ctx_info = get_context(cfg, rctxid, NULL, 0);
-		if (!ctx_info) {
-			rc = -EINVAL;
-			goto cxlflash_ioctl_exit;
-		}
-
-		if (ctx_info->err_recovery_active)
-			ctx_info->err_recovery_active = false;
-		else
-			ctx_info->err_recovery_active = true;
-
-		unmap_context(ctx_info);
-		atomic_dec(&ctx_info->nrefs);
-		goto cxlflash_ioctl_exit;
 	case DK_CXLFLASH_ATTACH:
 	case DK_CXLFLASH_USER_DIRECT:
 	case DK_CXLFLASH_USER_VIRTUAL:
