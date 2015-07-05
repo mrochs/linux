@@ -115,6 +115,7 @@ struct cxlflash_cfg {
 
 	atomic_t num_user_contexts;
 	int last_lun_index[CXLFLASH_NUM_FC_PORTS];
+	int promote_lun_index;
 
 	wait_queue_head_t tmf_waitq;
 	spinlock_t tmf_slock;

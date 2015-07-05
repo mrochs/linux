@@ -2282,6 +2282,18 @@ static int cxlflash_probe(struct pci_dev *pdev,
 
 	cfg->init_state = INIT_STATE_NONE;
 	cfg->dev = pdev;
+<<<<<<< HEAD
+=======
+
+	/* The promoted LUNs move to the top of the LUN table. The rest stay
+	 * on the bottom half. At 256 VLUNs per port, the 2nd half will start
+	 * at index 128.
+	 */
+	cfg->promote_lun_index  = 0;
+	cfg->last_lun_index[0] = CXLFLASH_NUM_VLUNS/4;
+	cfg->last_lun_index[1] = CXLFLASH_NUM_VLUNS/4;
+
+>>>>>>> cflash: Initial drop of promotion code
 	cfg->dev_id = (struct pci_device_id *)dev_id;
 	cfg->eeh_active = EEH_STATE_NONE;
 

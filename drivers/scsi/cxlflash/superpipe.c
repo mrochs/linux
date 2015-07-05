@@ -435,7 +435,7 @@ static int read_cap16(struct afu *afu, struct lun_info *lun_info, u32 port_sel)
 			      SISL_REQ_FLAGS_HOST_READ);
 
 	cmd->rcb.port_sel = port_sel;
-	cmd->rcb.lun_id = lun_info->lun_id[port_sel - 1];
+	cmd->rcb.lun_id = lun_info->lun_id[port_sel-1];
 	cmd->rcb.data_len = CMD_BUFSIZE;
 	cmd->rcb.data_ea = (u64) cmd->buf;
 	cmd->rcb.timeout = MC_DISCOVERY_TIMEOUT;
@@ -1489,15 +1489,58 @@ static int cxlflash_manage_lun(struct scsi_device *sdev,
 	}
 
 	if (flags & DK_CXLFLASH_MANAGE_LUN_ENABLE_SUPERPIPE) {
-		/* Store off lun in unpacked, AFU-friendly format */
-		lun_info->lun_id[sdev->channel] = lun_to_lunid(sdev->lun);
-		lun_info->lun_index = cfg->last_lun_index[sdev->channel];
-		lun_info->port_sel = sdev->channel + 1;
+		/* 
+		 * If it is a newly discovered LUN we will put it in the
+		 * bottom half of the LUN table.
+		 */
+		if (lun_info->newly_created) {
+			/* Store off lun in unpacked, AFU-friendly format */
+			lun_info->lun_id[sdev->channel] = lun_to_lunid(sdev->lun);
+			lun_info->lun_index = cfg->
+				last_lun_index[sdev->channel];
+			lun_info->port_sel = sdev->channel+1;
 
-		writeq_be(lun_info->lun_id[sdev->channel],
-			  &afu->afu_map->global.fc_port[sdev->channel]
-			  [cfg->last_lun_index[sdev->channel]++]);
-		sdev->hostdata = lun_info;
+			writeq_be(lun_info->lun_id[sdev->channel],
+				  &afu->afu_map->global.fc_port[sdev->channel]
+				  [cfg->last_lun_index[sdev->channel]++]);
+			pr_debug("%s: ENTER: WWID = %016llX%016llX, index = %d "
+				 "lid%d = %llx port_sel=%d\n",
+				 __func__, get_unaligned_le64(&manage->wwid[0]),
+				 get_unaligned_le64(&manage->wwid[8]),
+				 lun_info->lun_index,
+				 sdev->channel,
+				 lun_info->lun_id[sdev->channel],
+				 lun_info->port_sel);
+			sdev->hostdata = lun_info;
+		/* 
+		 * If it is not newly created (i.e. we have seen
+		 * this LUN before), we will promote it to the top.
+		 * We do need to store the unique LUN ids on each port,
+		 */
+		} else {
+			lun_info->lun_id[sdev->channel] = lun_to_lunid(sdev->lun);
+			lun_info->port_sel = BOTH_PORTS;
+			pr_debug("%s: LUN WWID = %016llX%016llX is being "
+				 "promoted, previous index=%d, new index=%d "
+				 "lid0=%llx lid1=%llx port_sel=%d\n",
+				 __func__,
+				 get_unaligned_le64(&manage->wwid[0]),
+				 get_unaligned_le64(&manage->wwid[8]),
+				 lun_info->lun_index,
+				 cfg->promote_lun_index,
+				 lun_info->lun_id[0],
+				 lun_info->lun_id[1],
+				 lun_info->port_sel);
+			lun_info->lun_index = cfg->promote_lun_index;
+			writeq_be(lun_info->lun_id[0], 
+				  &afu->afu_map->global.fc_port[0]
+				  [cfg->promote_lun_index]);
+			writeq_be(lun_info->lun_id[1], 
+				  &afu->afu_map->global.fc_port[1]
+				  [cfg->promote_lun_index]);
+			cfg->promote_lun_index++;
+			sdev->hostdata = lun_info;
+		}
 	} else if (flags & DK_CXLFLASH_MANAGE_LUN_DISABLE_SUPERPIPE) {
 		sdev->hostdata = NULL;
 	}
