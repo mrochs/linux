@@ -1310,7 +1310,7 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 	if (lun_info->max_lba == 0) {
 		pr_debug("%s: No capacity info yet for this LUN (%016llX)\n",
 			 __func__, lun_info->lun_id[sdev->channel]);
-		rc = read_cap16(afu, lun_info, sdev->channel + 1);
+		rc = read_cap16(afu, lun_info, CHAN2PORT(sdev->channel));
 		if (rc) {
 			pr_err("%s: Invalid device! (%d)\n", __func__, rc);
 			rc = -ENODEV;
@@ -1479,6 +1479,7 @@ static int cxlflash_manage_lun(struct scsi_device *sdev,
 	struct afu *afu = cfg->afu;
 	struct lun_info *lun_info = NULL;
 	u64 flags = manage->hdr.flags;
+	u32 chan = sdev->channel;
 
 	lun_info = lookup_lun(sdev, manage->wwid);
 	pr_debug("%s: ENTER: WWID = %016llX%016llX, flags = %016llX li = %p\n",
@@ -1496,33 +1497,29 @@ static int cxlflash_manage_lun(struct scsi_device *sdev,
 		 * bottom half of the LUN table.
 		 */
 		if (lun_info->newly_created) {
-			if (cfg->last_lun_index[sdev->channel] ==
-			    CXLFLASH_NUM_VLUNS/2) {
+			if (cfg->last_lun_index[chan] == CXLFLASH_NUM_VLUNS/2) {
 				rc = -ENOENT;
 				pr_debug("%s Filled up the LUN table, cannot "
 					 "take any more entries %d:%d\n",
 					 __func__,
-					 cfg->last_lun_index[sdev->channel],
-					 sdev->channel);
+					 cfg->last_lun_index[chan], chan);
 				goto out;
 			}
 			/* Store off lun in unpacked, AFU-friendly format */
-			lun_info->lun_id[sdev->channel] =
-				lun_to_lunid(sdev->lun);
-			lun_info->lun_index = cfg->
-				last_lun_index[sdev->channel];
-			lun_info->port_sel = sdev->channel+1;
+			lun_info->lun_id[chan] = lun_to_lunid(sdev->lun);
+			lun_info->lun_index = cfg->last_lun_index[chan];
+			lun_info->port_sel = CHAN2PORT(chan);
 
-			writeq_be(lun_info->lun_id[sdev->channel],
-				  &afu->afu_map->global.fc_port[sdev->channel]
-				  [cfg->last_lun_index[sdev->channel]++]);
+			writeq_be(lun_info->lun_id[chan],
+				  &afu->afu_map->global.fc_port[chan]
+				  [cfg->last_lun_index[chan]++]);
 			pr_debug("%s: ENTER: WWID = %016llX%016llX, index = %d "
 				 "lid%d = %llx port_sel=%d\n",
 				 __func__, get_unaligned_le64(&manage->wwid[0]),
 				 get_unaligned_le64(&manage->wwid[8]),
 				 lun_info->lun_index,
-				 sdev->channel,
-				 lun_info->lun_id[sdev->channel],
+				 chan,
+				 lun_info->lun_id[chan],
 				 lun_info->port_sel);
 			sdev->hostdata = lun_info;
 		/*
@@ -1538,8 +1535,7 @@ static int cxlflash_manage_lun(struct scsi_device *sdev,
 					 __func__, cfg->promote_lun_index);
 				goto out;
 			}
-			lun_info->lun_id[sdev->channel] =
-				lun_to_lunid(sdev->lun);
+			lun_info->lun_id[chan] = lun_to_lunid(sdev->lun);
 			lun_info->port_sel = BOTH_PORTS;
 			pr_debug("%s: LUN WWID = %016llX%016llX is being "
 				 "promoted, previous index=%d, new index=%d "
@@ -1733,6 +1729,7 @@ static int process_sense(struct scsi_device *sdev,
 	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)sdev->host->hostdata;
 	struct afu *afu = cfg->afu;
 	u64 prev_lba = lun_info->max_lba;
+	u32 chan = sdev->channel;
 	int rc = 0;
 
 	switch (sense_data->sense_key) {
@@ -1746,7 +1743,7 @@ static int process_sense(struct scsi_device *sdev,
 		case 0x29: /* Power on Reset or Device Reset */
 			/* fall through */
 		case 0x2A: /* Device settings/capacity changed */
-			rc = read_cap16(afu, lun_info, sdev->channel + 1);
+			rc = read_cap16(afu, lun_info, CHAN2PORT(chan));
 			if (rc) {
 				rc = -ENODEV;
 				break;
@@ -1905,7 +1902,7 @@ static int cxlflash_disk_direct_open(struct scsi_device *sdev, void *arg)
 	u64 lun_size = 0;
 	u64 last_lba = 0;
 	u64 rsrc_handle = -1;
-	u32 port_sel = sdev->channel + 1;
+	u32 port_sel = CHAN2PORT(sdev->channel);
 
 	int rc = 0;
 
