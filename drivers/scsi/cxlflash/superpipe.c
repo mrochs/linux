@@ -1308,8 +1308,8 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 	}
 
 	if (lun_info->max_lba == 0) {
-		pr_debug("%s: No capacity info yet for this LUN "
-			"(%016llX)\n", __func__, lun_info->lun_id[sdev->channel]);
+		pr_debug("%s: No capacity info yet for this LUN (%016llX)\n",
+			 __func__, lun_info->lun_id[sdev->channel]);
 		rc = read_cap16(afu, lun_info, sdev->channel + 1);
 		if (rc) {
 			pr_err("%s: Invalid device! (%d)\n", __func__, rc);
@@ -1491,7 +1491,7 @@ static int cxlflash_manage_lun(struct scsi_device *sdev,
 	}
 
 	if (flags & DK_CXLFLASH_MANAGE_LUN_ENABLE_SUPERPIPE) {
-		/* 
+		/*
 		 * If it is a newly discovered LUN we will put it in the
 		 * bottom half of the LUN table.
 		 */
@@ -1525,7 +1525,7 @@ static int cxlflash_manage_lun(struct scsi_device *sdev,
 				 lun_info->lun_id[sdev->channel],
 				 lun_info->port_sel);
 			sdev->hostdata = lun_info;
-		/* 
+		/*
 		 * If it is not newly created (i.e. we have seen
 		 * this LUN before), we will promote it to the top.
 		 * We do need to store the unique LUN ids on each port,
