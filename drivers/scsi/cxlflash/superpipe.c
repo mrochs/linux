@@ -1209,6 +1209,9 @@ static const struct file_operations cxlflash_cxl_fops = {
  * error page
  * @cfg:	Internal structure associated with the host.
  *
+ * A context is only moved over to the error list when there are no outstanding
+ * references to it. This ensures that a running operation has completed.
+ *
  * Return: 0 on success, -errno on failure
  */
 int cxlflash_mark_contexts_error(struct cxlflash_cfg *cfg)
@@ -1220,9 +1223,24 @@ int cxlflash_mark_contexts_error(struct cxlflash_cfg *cfg)
 	spin_lock_irqsave(&cfg->ctx_tbl_slock, lock_flags);
 
 	for (i = 0; i < MAX_CONTEXT; i++) {
+	retry:
 		ctx_info = cfg->ctx_tbl[i];
 
 		if (ctx_info) {
+			if (atomic_read(&ctx_info->nrefs) > 1) {
+				spin_unlock_irqrestore(&cfg->ctx_tbl_slock,
+						       lock_flags);
+				while (atomic_read(&ctx_info->nrefs) > 1) {
+					pr_debug("%s: waiting on threads...\n",
+						 __func__);
+					cpu_relax();
+				}
+
+				spin_lock_irqsave(&cfg->ctx_tbl_slock,
+						  lock_flags);
+				goto retry;
+			}
+
 			cfg->ctx_tbl[i] = NULL;
 			list_add(&ctx_info->list, &cfg->ctx_err_recovery);
 			ctx_info->err_recovery_active = true;
