@@ -1496,8 +1496,19 @@ static int cxlflash_manage_lun(struct scsi_device *sdev,
 		 * bottom half of the LUN table.
 		 */
 		if (lun_info->newly_created) {
+			if (cfg->last_lun_index[sdev->channel] ==
+			    CXLFLASH_NUM_VLUNS/2) {
+				rc = -ENOENT;
+				pr_debug("%s Filled up the LUN table, cannot "
+					 "take any more entries %d:%d\n",
+					 __func__,
+					 cfg->last_lun_index[sdev->channel],
+					 sdev->channel);
+				goto out;
+			}
 			/* Store off lun in unpacked, AFU-friendly format */
-			lun_info->lun_id[sdev->channel] = lun_to_lunid(sdev->lun);
+			lun_info->lun_id[sdev->channel] =
+				lun_to_lunid(sdev->lun);
 			lun_info->lun_index = cfg->
 				last_lun_index[sdev->channel];
 			lun_info->port_sel = sdev->channel+1;
@@ -1520,7 +1531,15 @@ static int cxlflash_manage_lun(struct scsi_device *sdev,
 		 * We do need to store the unique LUN ids on each port,
 		 */
 		} else {
-			lun_info->lun_id[sdev->channel] = lun_to_lunid(sdev->lun);
+			if (cfg->promote_lun_index == CXLFLASH_NUM_VLUNS/4) {
+				rc = -ENOENT;
+				pr_debug("%s Filled up the LUN table, cannot "
+					 "take any more entries %d\n",
+					 __func__, cfg->promote_lun_index);
+				goto out;
+			}
+			lun_info->lun_id[sdev->channel] =
+				lun_to_lunid(sdev->lun);
 			lun_info->port_sel = BOTH_PORTS;
 			pr_debug("%s: LUN WWID = %016llX%016llX is being "
 				 "promoted, previous index=%d, new index=%d "
@@ -1534,10 +1553,10 @@ static int cxlflash_manage_lun(struct scsi_device *sdev,
 				 lun_info->lun_id[1],
 				 lun_info->port_sel);
 			lun_info->lun_index = cfg->promote_lun_index;
-			writeq_be(lun_info->lun_id[0], 
+			writeq_be(lun_info->lun_id[0],
 				  &afu->afu_map->global.fc_port[0]
 				  [cfg->promote_lun_index]);
-			writeq_be(lun_info->lun_id[1], 
+			writeq_be(lun_info->lun_id[1],
 				  &afu->afu_map->global.fc_port[1]
 				  [cfg->promote_lun_index]);
 			cfg->promote_lun_index++;
