@@ -465,14 +465,13 @@ out:
 
 /**
  * grow_lxt() - expands the translation table associated with the specified RHTE
- * @afu:		AFU associated with the host.
- * @lun_info:		Information structure associated with LUN.
- * @ctx_hndl_u:		Context ID of context owning the RHTE.
- * @res_hndl_u:		Resource handle associated with the RHTE.
- * @rht_entry:		Resource handle entry (RHTE).
- * @delta:		Number of additional translation entries needed.
- * @act_new_size:	Number of translation entries associated with RHTE.
- * @port_sel:           Port selection mask
+ * @afu:	AFU associated with the host.
+ * @lun_info:	Information structure associated with LUN.
+ * @ctx_hndl_u:	Context ID of context owning the RHTE.
+ * @res_hndl_u:	Resource handle associated with the RHTE.
+ * @rht_entry:	Resource handle entry (RHTE).
+ * @new_size:	Number of translation entries associated with RHTE.
+ * @port_sel:	Port selection mask.
  *
  * By design, this routine employs a 'best attempt' allocation and will
  * truncate the requested size down if there is not sufficient space in
@@ -487,15 +486,16 @@ static int grow_lxt(struct afu *afu,
 		    ctx_hndl_t ctx_hndl_u,
 		    res_hndl_t res_hndl_u,
 		    struct sisl_rht_entry *rht_entry,
-		    u64 delta,
-		    u64 *act_new_size,
+		    u64 *new_size,
 		    u32 port_sel)
 {
 	struct sisl_lxt_entry *lxt = NULL, *lxt_old = NULL;
 	u32 av_size;
 	u32 ngrps, ngrps_old;
 	u64 aun;		/* chunk# allocated by block allocator */
-	int i;
+	u64 delta = *new_size - rht_entry->lxt_cnt;
+	u64 my_new_size;
+	int i, rc = 0;
 	struct blka *blka = &lun_info->blka;
 
 	/*
@@ -508,7 +508,8 @@ static int grow_lxt(struct afu *afu,
 	if (unlikely(av_size <= 0)) {
 		pr_err("%s: ba_space error: av_size %d\n", __func__, av_size);
 		mutex_unlock(&blka->mutex);
-		return -ENOSPC;
+		rc = -ENOSPC;
+		goto out;
 	}
 
 	if (av_size < delta)
@@ -521,10 +522,11 @@ static int grow_lxt(struct afu *afu,
 	if (ngrps != ngrps_old) {
 		/* reallocate to fit new size */
 		lxt = kzalloc((sizeof(*lxt) * LXT_GROUP_SIZE * ngrps),
-				GFP_KERNEL);
+			      GFP_KERNEL);
 		if (unlikely(!lxt)) {
 			mutex_unlock(&blka->mutex);
-			return -ENOMEM;
+			rc = -ENOMEM;
+			goto out;
 		}
 
 		/* copy over all old entries */
@@ -534,10 +536,10 @@ static int grow_lxt(struct afu *afu,
 		lxt = lxt_old;
 
 	/* nothing can fail from now on */
-	*act_new_size = rht_entry->lxt_cnt + delta;
+	my_new_size = rht_entry->lxt_cnt + delta;
 
 	/* add new entries to the end */
-	for (i = rht_entry->lxt_cnt; i < *act_new_size; i++) {
+	for (i = rht_entry->lxt_cnt; i < my_new_size; i++) {
 		/*
 		 * Due to the earlier check of available space, ba_alloc
 		 * cannot fail here. If it did due to internal error,
@@ -567,7 +569,7 @@ static int grow_lxt(struct afu *afu,
 	rht_entry->lxt_start = lxt;
 	smp_wmb(); /* Make RHT entry's LXT table update visible */
 
-	rht_entry->lxt_cnt = *act_new_size;
+	rht_entry->lxt_cnt = my_new_size;
 	smp_wmb(); /* Make RHT entry's LXT table size update visible */
 
 	cxlflash_afu_sync(afu, ctx_hndl_u, res_hndl_u, AFU_LW_SYNC);
@@ -575,20 +577,21 @@ static int grow_lxt(struct afu *afu,
 	/* free old lxt if reallocated */
 	if (lxt != lxt_old)
 		kfree(lxt_old);
-	pr_debug("%s: returning\n", __func__);
-	return 0;
+	*new_size = my_new_size;
+out:
+	pr_debug("%s: returning rc=%d\n", __func__, rc);
+	return rc;
 }
 
 /**
  * shrink_lxt() - reduces translation table associated with the specified RHTE
- * @afu:		AFU associated with the host.
- * @lun_info:		Information structure associated with LUN.
- * @ctx_hndl_u:		Context ID of context owning the RHTE.
- * @res_hndl_u:		Resource handle associated with the RHTE.
- * @rht_entry:		Resource handle entry (RHTE).
- * @delta:		Number of translation entries that can be removed.
- * @act_new_size:	Number of translation entries associated with RHTE.
- * @port_sel:           Port selection mask
+ * @afu:	AFU associated with the host.
+ * @lun_info:	Information structure associated with LUN.
+ * @ctx_hndl_u:	Context ID of context owning the RHTE.
+ * @res_hndl_u:	Resource handle associated with the RHTE.
+ * @rht_entry:	Resource handle entry (RHTE).
+ * @new_size:	Number of translation entries associated with RHTE.
+ * @port_sel:	Port selection mask.
  *
  * Return: 0 on success, -errno on failure
  */
@@ -597,12 +600,14 @@ static int shrink_lxt(struct afu *afu,
 		      ctx_hndl_t ctx_hndl_u,
 		      res_hndl_t res_hndl_u,
 		      struct sisl_rht_entry *rht_entry,
-		      u64 delta, u64 *act_new_size, u32 port_sel)
+		      u64 *new_size, u32 port_sel)
 {
 	struct sisl_lxt_entry *lxt, *lxt_old;
 	u32 ngrps, ngrps_old;
 	u64 aun;		/* chunk# allocated by block allocator */
-	int i;
+	u64 delta = rht_entry->lxt_cnt - *new_size;
+	u64 my_new_size;
+	int i, rc = 0;
 	struct blka *blka = &lun_info->blka;
 
 	lxt_old = rht_entry->lxt_start;
@@ -612,28 +617,29 @@ static int shrink_lxt(struct afu *afu,
 	if (ngrps != ngrps_old) {
 		/* reallocate to fit new size unless new size is 0 */
 		if (ngrps) {
-			lxt = kzalloc((sizeof(*lxt) * LXT_GROUP_SIZE *
-					 ngrps), GFP_KERNEL);
-			if (unlikely(!lxt))
-				return -ENOMEM;
+			lxt = kzalloc((sizeof(*lxt) * LXT_GROUP_SIZE * ngrps),
+				      GFP_KERNEL);
+			if (unlikely(!lxt)) {
+				rc = -ENOMEM;
+				goto out;
+			}
 
 			/* copy over old entries that will remain */
-			memcpy(lxt, lxt_old, (sizeof(*lxt) *
-						  (rht_entry->lxt_cnt -
-						   delta)));
+			memcpy(lxt, lxt_old,
+			       (sizeof(*lxt) * (rht_entry->lxt_cnt - delta)));
 		} else
 			lxt = NULL;
 	} else
 		lxt = lxt_old;
 
 	/* nothing can fail from now on */
-	*act_new_size = rht_entry->lxt_cnt - delta;
+	my_new_size = rht_entry->lxt_cnt - delta;
 
 	/*
 	 * The following sequence is prescribed in the SISlite spec
 	 * for syncing up with the AFU when removing LXT entries.
 	 */
-	rht_entry->lxt_cnt = *act_new_size;
+	rht_entry->lxt_cnt = my_new_size;
 	smp_wmb(); /* Make RHT entry's LXT table size update visible */
 
 	rht_entry->lxt_start = lxt;
@@ -647,7 +653,7 @@ static int shrink_lxt(struct afu *afu,
 		/* Mask the higher 48 bits before shifting, even though
 		 * it is a noop
 		 */
-		aun = ((lxt_old[*act_new_size + i].rlba_base &
+		aun = ((lxt_old[my_new_size + i].rlba_base &
 			SISL_ASTATUS_MASK) >> MC_CHUNK_SHIFT);
 		if (ws)
 			write_same16(afu, lun_info, aun, MC_CHUNK_SIZE);
@@ -658,8 +664,10 @@ static int shrink_lxt(struct afu *afu,
 	/* free old lxt if reallocated */
 	if (lxt != lxt_old)
 		kfree(lxt_old);
-	pr_debug("%s: returning\n", __func__);
-	return 0;
+	*new_size = my_new_size;
+out:
+	pr_debug("%s: returning rc=%d\n", __func__, rc);
+	return rc;
 }
 
 /**
@@ -680,7 +688,6 @@ int cxlflash_vlun_resize(struct scsi_device *sdev,
 	struct lun_info *lun_info = sdev->hostdata;
 	struct afu *afu = cfg->afu;
 
-	u64 act_new_size = 0;
 	res_hndl_t res_hndl = resize->rsrc_handle;
 	u64 new_size;
 	u64 nsectors;
@@ -734,8 +741,7 @@ int cxlflash_vlun_resize(struct scsi_device *sdev,
 			      ctxid,
 			      res_hndl,
 			      rht_entry,
-			      new_size - rht_entry->lxt_cnt,
-			      &act_new_size,
+			      &new_size,
 			      port_sel);
 	else if (new_size < rht_entry->lxt_cnt)
 		rc = shrink_lxt(afu,
@@ -743,15 +749,12 @@ int cxlflash_vlun_resize(struct scsi_device *sdev,
 				ctxid,
 				res_hndl,
 				rht_entry,
-				rht_entry->lxt_cnt - new_size,
-				&act_new_size,
+				&new_size,
 				port_sel);
-	else
-		act_new_size = new_size;
 
 	resize->hdr.return_flags = 0;
-	resize->last_lba = (((act_new_size * MC_CHUNK_SIZE *
-			    lun_info->blk_len) / CXLFLASH_BLOCK_SIZE) - 1);
+	resize->last_lba = (((new_size * MC_CHUNK_SIZE *
+			      lun_info->blk_len) / CXLFLASH_BLOCK_SIZE) - 1);
 
 out:
 	if (likely(ctx_info))
@@ -861,7 +864,7 @@ err1:
 }
 
 /**
- * shrink_lxt() - copies translation tables from source to destination RHTE
+ * clone_lxt() - copies translation tables from source to destination RHTE
  * @afu:		AFU associated with the host.
  * @blka:		Block allocator associated with LUN.
  * @ctx_hndl_u:		Context ID of context owning the RHTE.
