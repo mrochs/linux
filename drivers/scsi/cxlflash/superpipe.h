@@ -58,6 +58,8 @@
 
 #define MC_DISCOVERY_TIMEOUT 5  /* 5 secs */
 
+#define CHAN2PORT(_x)	((_x) + 1)
+
 enum lun_mode {
 	MODE_NONE = 0,
 	MODE_VIRTUAL,
