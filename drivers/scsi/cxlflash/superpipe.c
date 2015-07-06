@@ -197,8 +197,7 @@ void cxlflash_list_terminate(void)
 }
 
 /**
- * cxlflash_stop_term_user_contexts() - stops and terminates any known user 
- * contexts 
+ * cxlflash_stop_term_user_contexts() - stops/terminates known user contexts
  * @cfg:	Internal structure associated with the host.
  */
 void cxlflash_stop_term_user_contexts(struct cxlflash_cfg *cfg)
@@ -1205,8 +1204,7 @@ static const struct file_operations cxlflash_cxl_fops = {
 };
 
 /**
- * cxlflash_mark_contexts_error() - move contexts to error list and install 
- * error page
+ * cxlflash_mark_contexts_error() - move contexts to error state and list
  * @cfg:	Internal structure associated with the host.
  *
  * A context is only moved over to the error list when there are no outstanding
@@ -1223,7 +1221,7 @@ int cxlflash_mark_contexts_error(struct cxlflash_cfg *cfg)
 	spin_lock_irqsave(&cfg->ctx_tbl_slock, lock_flags);
 
 	for (i = 0; i < MAX_CONTEXT; i++) {
-	retry:
+retry:
 		ctx_info = cfg->ctx_tbl[i];
 
 		if (ctx_info) {

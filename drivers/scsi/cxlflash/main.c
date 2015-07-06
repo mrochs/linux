@@ -2377,7 +2377,6 @@ static pci_ers_result_t cxlflash_pci_error_detected(struct pci_dev *pdev,
 		cfg->eeh_active = EEH_STATE_FAILED;
 		wake_up_all(&cfg->eeh_waitq);
 		return PCI_ERS_RESULT_DISCONNECT;
-		break;
 	default:
 		break;
 	}
