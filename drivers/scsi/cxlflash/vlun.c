@@ -776,18 +776,25 @@ out:
  * At the top for LUNs visible on both ports.
  * At the bottom for LUNs visible only on one port.
  */
-static void init_lun_table(struct cxlflash_cfg *cfg, struct lun_info *lun_info)
+static int init_lun_table(struct cxlflash_cfg *cfg, struct lun_info *lun_info)
 {
 	u32 chan;
+	int rc = 0;
 	struct afu *afu = cfg->afu;
 
 	if (lun_info->in_table)
-		return;
+		goto out;
 
 	if (lun_info->port_sel == BOTH_PORTS) {
 		/* If this LUN is visible from both ports, we will put
 		 * it in the top half of the LUN table 
 		 */
+		if ((cfg->promote_lun_index == cfg->last_lun_index[0]) ||
+		    (cfg->promote_lun_index == cfg->last_lun_index[1])) {
+			rc = -ENOSPC;
+			goto out;
+		}
+
 		lun_info->lun_index = cfg->promote_lun_index;
 		writeq_be(lun_info->lun_id[0],
 			  &afu->afu_map->global.fc_port[0]
@@ -804,6 +811,10 @@ static void init_lun_table(struct cxlflash_cfg *cfg, struct lun_info *lun_info)
 		 * it in the bottom half of the LUN table 
 		 */
 		chan = PORT2CHAN(lun_info->port_sel);
+		if ((cfg->promote_lun_index == cfg->last_lun_index[chan])) {
+			rc = -ENOSPC;
+			goto out;
+		}
 		lun_info->lun_index = cfg->last_lun_index[chan];
 		writeq_be(lun_info->lun_id[chan],
 			  &afu->afu_map->global.fc_port[chan]
@@ -814,6 +825,10 @@ static void init_lun_table(struct cxlflash_cfg *cfg, struct lun_info *lun_info)
 			 lun_info->lun_id[chan]);
 	}
 	lun_info->in_table = true;
+out:
+	pr_debug("%s: returning rc=%d\n",
+		 __func__, rc);
+	return rc;
 }
 
 /**
@@ -851,7 +866,12 @@ int cxlflash_disk_virtual_open(struct scsi_device *sdev, void *arg)
 
 	if (lun_info->parent->mode == MODE_NONE) {
 		/* Setup the LUN table on the first call */
-		init_lun_table(cfg, lun_info);
+		rc = init_lun_table(cfg, lun_info);
+		if (rc) {
+			pr_err("%s: call to init_lun_table failed rc=%d!\n",
+			       __func__, rc);
+			goto out;
+		}
 
 		rc = init_ba(lun_info);
 		if (rc) {

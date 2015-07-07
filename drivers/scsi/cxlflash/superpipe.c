@@ -1579,16 +1579,13 @@ static int cxlflash_manage_lun(struct scsi_device *sdev,
 	}
 
 	if (flags & DK_CXLFLASH_MANAGE_LUN_ENABLE_SUPERPIPE) {
-		if (lun_info->newly_created) {
-			/* Store off lun in unpacked, AFU-friendly format */
-			lun_info->lun_id[chan] = lun_to_lunid(sdev->lun);
+		if (lun_info->newly_created)
 			lun_info->port_sel = CHAN2PORT(chan);
-			sdev->hostdata = lun_info;
-		} else {
-			lun_info->lun_id[chan] = lun_to_lunid(sdev->lun);
+		else
 			lun_info->port_sel = BOTH_PORTS;
-			sdev->hostdata = lun_info;
-		}
+		/* Store off lun in unpacked, AFU-friendly format */
+		lun_info->lun_id[chan] = lun_to_lunid(sdev->lun);
+		sdev->hostdata = lun_info;
 	} else if (flags & DK_CXLFLASH_MANAGE_LUN_DISABLE_SUPERPIPE) {
 		sdev->hostdata = NULL;
 	}
