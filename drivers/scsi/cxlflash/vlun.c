@@ -767,6 +767,15 @@ out:
 	return rc;
 }
 
+/**
+ * init_lun_table() - Write an entry in the LUN table
+ * @cfg:        Internal structure associated with the host.
+ * @lun_info:	Per adapter LUN info structure
+ *
+ * On successful return, a LUN table entry is created.
+ * At the top for LUNs visible on both ports.
+ * At the bottom for LUNs visible only on one port.
+ */
 static void init_lun_table(struct cxlflash_cfg *cfg, struct lun_info *lun_info)
 {
 	u32 chan;
