@@ -163,7 +163,8 @@ enum ctx_ctrl {
 	CTX_CTRL_CLONE		= (1 << 1),
 	CTX_CTRL_ERR		= (1 << 2),
 	CTX_CTRL_ERR_FALLBACK	= (1 << 3),
-	CTX_CTRL_NOPID		= (1 << 4)
+	CTX_CTRL_NOPID		= (1 << 4),
+	CTX_CTRL_FILE		= (1 << 5)
 };
 
 #define ENCODE_CTXID(_ctx, _id)	(((((u64)_ctx) & 0xFFFFFFFF0) << 28) | _id)
@@ -210,8 +211,7 @@ void cxlflash_lun_detach(struct lun_info *);
 
 int cxlflash_check_status(struct afu_cmd *);
 
-struct ctx_info *get_context(struct cxlflash_cfg *, u64, struct lun_info *,
-			     enum ctx_ctrl);
+struct ctx_info *get_context(struct cxlflash_cfg *, u64, void *, enum ctx_ctrl);
 
 struct sisl_rht_entry *get_rhte(struct ctx_info *, res_hndl_t,
 				struct lun_info *);

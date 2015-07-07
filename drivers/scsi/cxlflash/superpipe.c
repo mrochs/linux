@@ -320,16 +320,18 @@ void cxlflash_stop_term_user_contexts(struct cxlflash_cfg *cfg)
 /**
  * find_error_context() - locates a context by cookie on the error recovery list
  * @cfg:	Internal structure associated with the host.
- * @ctxid:	Desired context.
+ * @rctxid:	Desired context by id.
+ * @file:	Desired context by file.
  *
  * Return: Found context on success, NULL on failure
  */
-static struct ctx_info *find_error_context(struct cxlflash_cfg *cfg, u64 ctxid)
+static struct ctx_info *find_error_context(struct cxlflash_cfg *cfg, u64 rctxid,
+					   struct file *file)
 {
 	struct ctx_info *ctx_info;
 
 	list_for_each_entry(ctx_info, &cfg->ctx_err_recovery, list)
-		if (ctx_info->ctxid == ctxid)
+		if ((ctx_info->ctxid == rctxid) || (ctx_info->file == file))
 			return ctx_info;
 
 	return NULL;
@@ -351,34 +353,42 @@ static struct ctx_info *find_error_context(struct cxlflash_cfg *cfg, u64 ctxid)
  * Return: Validated context on success, NULL on failure
  */
 struct ctx_info *get_context(struct cxlflash_cfg *cfg, u64 rctxid,
-			     struct lun_info *lun_info, enum ctx_ctrl ctx_ctrl)
+			     void *arg, enum ctx_ctrl ctx_ctrl)
 {
 	struct ctx_info *ctx_info = NULL;
 	struct lun_access *lun_access = NULL;
+	struct file *file = NULL;
+	struct lun_info *lun_info = (struct lun_info *)arg;
 	u64 ctxid = DECODE_CTXID(rctxid);
 	bool found = false;
 	pid_t pid = current->tgid, ctxpid = 0;
 	ulong flags = 0;
 
-	if (unlikely(ctx_ctrl & CTX_CTRL_CLONE))
+	if (ctx_ctrl & CTX_CTRL_FILE) {
+		lun_info = NULL;
+		file = (struct file *)arg;
+	}
+
+	if (ctx_ctrl & CTX_CTRL_CLONE)
 		pid = current->parent->tgid;
 
 	if (likely(ctxid < MAX_CONTEXT)) {
 		spin_lock_irqsave(&cfg->ctx_tbl_slock, flags);
 		ctx_info = cfg->ctx_tbl[ctxid];
 
-		if (unlikely(ctx_ctrl & CTX_CTRL_ERR))
-			ctx_info = find_error_context(cfg, rctxid);
+		if (ctx_info)
+			if ((file && (ctx_info->file != file)) ||
+			    (!file && (ctx_info->ctxid != rctxid)))
+				ctx_info = NULL;
+
+		if ((ctx_ctrl & CTX_CTRL_ERR) ||
+		    (!ctx_info && (ctx_ctrl & CTX_CTRL_ERR_FALLBACK)))
+			ctx_info = find_error_context(cfg, rctxid, file);
 		if (unlikely(!ctx_info)) {
-			if (ctx_ctrl & CTX_CTRL_ERR_FALLBACK) {
-				ctx_info = find_error_context(cfg, rctxid);
-				if (ctx_info)
-					goto found_context;
-			}
 			spin_unlock_irqrestore(&cfg->ctx_tbl_slock, flags);
 			goto out;
 		}
-found_context:
+
 		/*
 		 * Increment the reference count under lock so the context
 		 * is not yanked from under us on a removal thread.
@@ -391,7 +401,7 @@ found_context:
 			if (pid != ctxpid)
 				goto denied;
 
-		if (likely(lun_info)) {
+		if (lun_info) {
 			list_for_each_entry(lun_access, &ctx_info->luns, list)
 				if (lun_access->lun_info == lun_info) {
 					found = true;
@@ -952,7 +962,7 @@ static int cxlflash_disk_detach(struct scsi_device *sdev,
 
 	pr_debug("%s: ctxid=%llu\n", __func__, ctxid);
 
-	ctx_info = get_context(cfg, rctxid, lun_info, 0);
+	ctx_info = get_context(cfg, rctxid, lun_info, CTX_CTRL_ERR_FALLBACK);
 	if (unlikely(!ctx_info)) {
 		pr_err("%s: Invalid context! (%llu)\n", __func__, ctxid);
 		rc = -EINVAL;
@@ -1064,6 +1074,7 @@ static int cxlflash_cxl_release(struct inode *inode, struct file *file)
 	struct ctx_info *ctx_info = NULL;
 	struct dk_cxlflash_detach detach = { { 0 }, 0 };
 	struct lun_access *lun_access, *t;
+	enum ctx_ctrl ctrl = CTX_CTRL_ERR_FALLBACK | CTX_CTRL_FILE;
 	int ctxid;
 
 	ctxid = cxl_process_element(ctx);
@@ -1074,9 +1085,9 @@ static int cxlflash_cxl_release(struct inode *inode, struct file *file)
 		goto out;
 	}
 
-	ctx_info = get_context(cfg, ctxid, NULL, 0);
+	ctx_info = get_context(cfg, ctxid, file, ctrl);
 	if (unlikely(!ctx_info)) {
-		ctx_info = get_context(cfg, ctxid, NULL, CTX_CTRL_CLONE);
+		ctx_info = get_context(cfg, ctxid, file, ctrl | CTX_CTRL_CLONE);
 		if (!ctx_info) {
 			pr_debug("%s: Context %d already free!\n",
 				 __func__, ctxid);
@@ -1184,6 +1195,7 @@ static int cxlflash_mmap_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 						cxl_fops);
 	struct ctx_info *ctx_info = NULL;
 	struct page *err_page = NULL;
+	enum ctx_ctrl ctrl = CTX_CTRL_ERR_FALLBACK | CTX_CTRL_FILE;
 	int rc = 0;
 	int ctxid;
 
@@ -1195,7 +1207,7 @@ static int cxlflash_mmap_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 		goto err;
 	}
 
-	ctx_info = get_context(cfg, ctxid, NULL, 0);
+	ctx_info = get_context(cfg, ctxid, file, ctrl);
 	if (unlikely(!ctx_info)) {
 		pr_err("%s: Invalid context! (%d)\n", __func__, ctxid);
 		goto err;
@@ -1253,6 +1265,7 @@ static int cxlflash_cxl_mmap(struct file *file, struct vm_area_struct *vma)
 	struct cxlflash_cfg *cfg = container_of(file->f_op, struct cxlflash_cfg,
 						cxl_fops);
 	struct ctx_info *ctx_info = NULL;
+	enum ctx_ctrl ctrl = CTX_CTRL_ERR_FALLBACK | CTX_CTRL_FILE;
 	int ctxid;
 	int rc = 0;
 
@@ -1265,7 +1278,7 @@ static int cxlflash_cxl_mmap(struct file *file, struct vm_area_struct *vma)
 		goto out;
 	}
 
-	ctx_info = get_context(cfg, ctxid, NULL, 0);
+	ctx_info = get_context(cfg, ctxid, file, ctrl);
 	if (unlikely(!ctx_info)) {
 		pr_err("%s: Invalid context! (%d)\n", __func__, ctxid);
 		rc = -EIO;
