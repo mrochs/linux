@@ -1579,7 +1579,7 @@ out:
 static int recover_context(struct cxlflash_cfg *cfg, struct ctx_info *ctx_info)
 {
 	int rc = 0;
-	int fd = -1;
+	int old_fd, fd = -1;
 	int ctxid = -1;
 	ulong lock_flags;
 	struct file *file;
@@ -1626,15 +1626,19 @@ static int recover_context(struct cxlflash_cfg *cfg, struct ctx_info *ctx_info)
 	 * No error paths after this point. Once the fd is installed it's
 	 * visible to user space and can't be undone safely on this thread.
 	 */
+	old_fd = ctx_info->lfd;
 	ctx_info->ctxid = ENCODE_CTXID(ctx_info, ctxid);
 	ctx_info->lfd = fd;
 	ctx_info->ctx = ctx;
+	ctx_info->file = file;
 
 	spin_lock_irqsave(&cfg->ctx_tbl_slock, lock_flags);
 	cfg->ctx_tbl[ctxid] = ctx_info;
 	spin_unlock_irqrestore(&cfg->ctx_tbl_slock, lock_flags);
 	fd_install(fd, file);
 
+	/* Release the original adapter fd and associated CXL resources */
+	sys_close(old_fd);
 out:
 	pr_debug("%s: returning ctxid=%d fd=%d rc=%d\n",
 		 __func__, ctxid, fd, rc);
