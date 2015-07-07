@@ -381,15 +381,15 @@ void cxlflash_ba_terminate(struct ba_lun *ba_lun)
 static int init_ba(struct lun_info *lun_info)
 {
 	int rc = 0;
-	struct blka *blka = &lun_info->blka;
+	struct blka *blka = &lun_info->parent->blka;
 
 	memset(blka, 0, sizeof(*blka));
 	mutex_init(&blka->mutex);
 
 	/* LUN IDs are unique per port, save the index instead */
 	blka->ba_lun.lun_id = lun_info->lun_index;
-	blka->ba_lun.lsize = lun_info->max_lba + 1;
-	blka->ba_lun.lba_size = lun_info->blk_len;
+	blka->ba_lun.lsize = lun_info->parent->max_lba + 1;
+	blka->ba_lun.lba_size = lun_info->parent->blk_len;
 
 	blka->ba_lun.au_size = MC_CHUNK_SIZE;
 	blka->nchunk = blka->ba_lun.lsize / MC_CHUNK_SIZE;
@@ -500,7 +500,7 @@ static int grow_lxt(struct afu *afu,
 	u64 delta = *new_size - rht_entry->lxt_cnt;
 	u64 my_new_size;
 	int i, rc = 0;
-	struct blka *blka = &lun_info->blka;
+	struct blka *blka = &lun_info->parent->blka;
 
 	/*
 	 * Check what is available in the block allocator before re-allocating
@@ -613,7 +613,7 @@ static int shrink_lxt(struct afu *afu,
 	u64 delta = rht_entry->lxt_cnt - *new_size;
 	u64 my_new_size;
 	int i, rc = 0;
-	struct blka *blka = &lun_info->blka;
+	struct blka *blka = &lun_info->parent->blka;
 
 	lxt_old = rht_entry->lxt_start;
 	ngrps_old = LXT_NUM_GROUPS(rht_entry->lxt_cnt);
@@ -708,16 +708,16 @@ int cxlflash_vlun_resize(struct scsi_device *sdev,
 	 * it from 4k to chunk size
 	 */
 	nsectors = (resize->req_size * CXLFLASH_BLOCK_SIZE) /
-	    (lun_info->blk_len);
+	    (lun_info->parent->blk_len);
 	new_size = (nsectors + MC_CHUNK_SIZE - 1) / MC_CHUNK_SIZE;
 
 	pr_debug("%s: ctxid=%llu res_hndl=0x%llx, req_size=0x%llx,"
 		 "new_size=%llx\n", __func__, ctxid, resize->rsrc_handle,
 		 resize->req_size, new_size);
 
-	if (unlikely(lun_info->mode != MODE_VIRTUAL)) {
+	if (unlikely(lun_info->parent->mode != MODE_VIRTUAL)) {
 		pr_err("%s: LUN mode does not support resize! (%d)\n",
-		       __func__, lun_info->mode);
+		       __func__, lun_info->parent->mode);
 		rc = -EINVAL;
 		goto out;
 
@@ -756,7 +756,7 @@ int cxlflash_vlun_resize(struct scsi_device *sdev,
 
 	resize->hdr.return_flags = 0;
 	resize->last_lba = (((new_size * MC_CHUNK_SIZE *
-			      lun_info->blk_len) / CXLFLASH_BLOCK_SIZE) - 1);
+			      lun_info->parent->blk_len) / CXLFLASH_BLOCK_SIZE) - 1);
 
 out:
 	if (likely(ctx_info))
@@ -799,7 +799,7 @@ int cxlflash_disk_virtual_open(struct scsi_device *sdev, void *arg)
 
 	pr_debug("%s: ctxid=%llu ls=0x%llx\n", __func__, ctxid, lun_size);
 
-	if (lun_info->mode == MODE_NONE) {
+	if (lun_info->parent->mode == MODE_NONE) {
 		rc = init_ba(lun_info);
 		if (rc) {
 			pr_err("%s: call to init_ba failed rc=%d!\n",
@@ -958,7 +958,7 @@ int cxlflash_disk_clone(struct scsi_device *sdev,
 {
 	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)sdev->host->hostdata;
 	struct lun_info *lun_info = sdev->hostdata;
-	struct blka *blka = &lun_info->blka;
+	struct blka *blka = &lun_info->parent->blka;
 	struct afu *afu = cfg->afu;
 	struct dk_cxlflash_release release = { { 0 }, 0 };
 
@@ -985,10 +985,10 @@ int cxlflash_disk_clone(struct scsi_device *sdev,
 		goto out;
 	}
 
-	if (unlikely(lun_info->mode != MODE_VIRTUAL)) {
+	if (unlikely(lun_info->parent->mode != MODE_VIRTUAL)) {
 		rc = -EINVAL;
 		pr_err("%s: Clone not supported on physical LUNs! (%d)\n",
-		       __func__, lun_info->mode);
+		       __func__, lun_info->parent->mode);
 		goto out;
 	}
 
@@ -1087,7 +1087,7 @@ int cxlflash_disk_clone(struct scsi_device *sdev,
 			goto err;
 		}
 
-		cxlflash_lun_attach(lun_info, lun_info->mode);
+		cxlflash_lun_attach(lun_info, lun_info->parent->mode);
 	}
 
 out_success:

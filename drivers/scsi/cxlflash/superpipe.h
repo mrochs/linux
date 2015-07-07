@@ -121,16 +121,10 @@ struct blka {
 	struct mutex mutex;
 };
 
-/* LUN discovery results are in lun_info */
-struct lun_info {
-	u64 lun_id[CXLFLASH_NUM_FC_PORTS]; /* from REPORT_LUNS */
+/* Global lun_info structure, Capacity, block allocator are here */
+struct glun_info {
 	u64 max_lba;		/* from read cap(16) */
 	u32 blk_len;		/* from read cap(16) */
-	u32 lun_index;
-	u32 host_no;		/* host_no from Scsi_host */
-	u32 port_sel;		/* What port to use for this LUN */
-	bool newly_created;	/* Whether the LUN was just discovered */
-	int users;		/* Number of users w/ references to LUN */
 	enum lun_mode mode;	/* NONE, VIRTUAL, PHYSICAL */
 
 	__u8 wwid[16];
@@ -138,6 +132,21 @@ struct lun_info {
 	spinlock_t slock;
 
 	struct blka blka;
+	struct list_head list;
+};
+
+/* LUN discovery results are in lun_info */
+struct lun_info {
+	u64 lun_id[CXLFLASH_NUM_FC_PORTS]; /* from REPORT_LUNS */
+	u32 lun_index;          /* Index in the lun table */
+	u32 host_no;		/* host_no from Scsi_host */
+	u32 port_sel;		/* What port to use for this LUN */
+	bool newly_created;	/* Whether the LUN was just discovered */
+	int users;		/* Number of users w/ references to LUN */
+
+	__u8 wwid[16];          /* Keep a duplicate copy here? */
+
+	struct glun_info *parent; /* Pointer to entry in global lun structure */
 	struct scsi_device *sdev;
 	struct list_head list;
 };
@@ -181,7 +190,7 @@ struct ctx_info {
 
 struct cxlflash_global {
 	spinlock_t slock;
-	struct list_head luns;  /* list of lun_info structs */
+	struct list_head gluns;/* list of glun_info structs */
 	struct page *err_page; /* One page of all 0xF for error notification */
 };
 

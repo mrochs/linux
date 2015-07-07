@@ -114,8 +114,11 @@ struct cxlflash_cfg {
 	struct file_operations cxl_fops;
 
 	atomic_t num_user_contexts;
+
+	/* Parameters that are LUN table related */
 	int last_lun_index[CXLFLASH_NUM_FC_PORTS];
 	int promote_lun_index;
+	struct list_head lluns; /* list of llun_info structs */
 
 	wait_queue_head_t tmf_waitq;
 	spinlock_t tmf_slock;
