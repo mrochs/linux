@@ -168,6 +168,16 @@ out:
 	return lun_info;
 }
 
+void cxlflash_term_luns(struct cxlflash_cfg *cfg)
+{
+	struct lun_info *lun_info, *temp;
+
+	list_for_each_entry_safe(lun_info, temp, &cfg->lluns, list) {
+		list_del(&lun_info->list);
+		kfree(lun_info);
+	}
+}
+
 /**
  * cxlflash_slave_alloc() - allocate and associate LUN information structure
  * @sdev:	SCSI device associated with LUN.

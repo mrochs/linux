@@ -901,6 +901,7 @@ static void cxlflash_remove(struct pci_dev *pdev)
 
 	switch (cfg->init_state) {
 	case INIT_STATE_SCSI:
+		cxlflash_term_luns(cfg);
 		scsi_remove_host(cfg->host);
 		scsi_host_put(cfg->host);
 		/* Fall through */

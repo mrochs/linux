@@ -206,6 +206,7 @@ void cxlflash_slave_destroy(struct scsi_device *);
 int cxlflash_ioctl(struct scsi_device *, int, void __user *);
 void cxlflash_stop_term_user_contexts(struct cxlflash_cfg *);
 int cxlflash_mark_contexts_error(struct cxlflash_cfg *);
+void cxlflash_term_luns(struct cxlflash_cfg *);
 
 #endif /* ifndef _CXLFLASH_COMMON_H */
 
