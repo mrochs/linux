@@ -520,6 +520,7 @@ static int cxlflash_eh_host_reset_handler(struct scsi_cmnd *scp)
 
 	switch (cfg->eeh_active) {
 	case EEH_STATE_NONE:
+		cxlflash_mark_contexts_error(cfg);
 		rcr = cxlflash_afu_reset(cfg);
 		if (rcr == 0)
 			rc = SUCCESS;
