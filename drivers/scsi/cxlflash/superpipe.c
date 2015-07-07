@@ -1580,77 +1580,14 @@ static int cxlflash_manage_lun(struct scsi_device *sdev,
 	}
 
 	if (flags & DK_CXLFLASH_MANAGE_LUN_ENABLE_SUPERPIPE) {
-		/*
-		 * If it is a newly discovered LUN we will put it in the
-		 * bottom half of the LUN table.
-		 */
 		if (lun_info->newly_created) {
-			if (cfg->last_lun_index[chan] == 
-			    cfg->promote_lun_index) {
-				rc = -ENOENT;
-				pr_debug("%s Filled up the LUN table, cannot "
-					 "take any more entries %d:%d\n",
-					 __func__,
-					 cfg->last_lun_index[chan], chan);
-				goto out;
-			}
 			/* Store off lun in unpacked, AFU-friendly format */
 			lun_info->lun_id[chan] = lun_to_lunid(sdev->lun);
-			lun_info->lun_index = cfg->last_lun_index[chan];
 			lun_info->port_sel = CHAN2PORT(chan);
-
-			writeq_be(lun_info->lun_id[chan],
-				  &afu->afu_map->global.fc_port[chan]
-				  [cfg->last_lun_index[chan]--]);
-			pr_debug("%s: ENTER: WWID = %016llX%016llX, index = %d "
-				 "lid%d = %llx port_sel=%d lun=%p parent=%p\n",
-				 __func__, get_unaligned_le64(&manage->wwid[0]),
-				 get_unaligned_le64(&manage->wwid[8]),
-				 lun_info->lun_index,
-				 chan,
-				 lun_info->lun_id[chan],
-				 lun_info->port_sel,
-				 lun_info, lun_info->parent);
 			sdev->hostdata = lun_info;
-		/*
-		 * If it is not newly created (i.e. we have seen
-		 * this LUN before), we will promote it to the top.
-		 * We do need to store the unique LUN ids on each port,
-		 */
 		} else {
-			if ((cfg->promote_lun_index ==
-			    cfg->last_lun_index[0]) ||
-			    (cfg->promote_lun_index ==
-			    cfg->last_lun_index[1])) {
-				rc = -ENOENT;
-				pr_debug("%s Filled up the LUN table, cannot "
-					 "take any more entries %d\n",
-					 __func__, cfg->promote_lun_index);
-				goto out;
-			}
 			lun_info->lun_id[chan] = lun_to_lunid(sdev->lun);
 			lun_info->port_sel = BOTH_PORTS;
-			pr_debug("%s: LUN WWID = %016llX%016llX is being "
-				 "promoted, previous index=%d, new index=%d "
-				 "lid0=%llx lid1=%llx port_sel=%d lun=%p "
-				 "parent=%p\n",
-				 __func__,
-				 get_unaligned_le64(&manage->wwid[0]),
-				 get_unaligned_le64(&manage->wwid[8]),
-				 lun_info->lun_index,
-				 cfg->promote_lun_index,
-				 lun_info->lun_id[0],
-				 lun_info->lun_id[1],
-				 lun_info->port_sel,
-				 lun_info, lun_info->parent);
-			lun_info->lun_index = cfg->promote_lun_index;
-			writeq_be(lun_info->lun_id[0],
-				  &afu->afu_map->global.fc_port[0]
-				  [cfg->promote_lun_index]);
-			writeq_be(lun_info->lun_id[1],
-				  &afu->afu_map->global.fc_port[1]
-				  [cfg->promote_lun_index]);
-			cfg->promote_lun_index++;
 			sdev->hostdata = lun_info;
 		}
 	} else if (flags & DK_CXLFLASH_MANAGE_LUN_DISABLE_SUPERPIPE) {

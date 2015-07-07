@@ -767,6 +767,42 @@ out:
 	return rc;
 }
 
+static void init_lun_table(struct cxlflash_cfg *cfg, struct lun_info *lun_info)
+{
+	u32 chan;
+	struct afu *afu = cfg->afu;
+
+	if (lun_info->port_sel == BOTH_PORTS) {
+		/* If this LUN is visible from both ports, we will put
+		 * it in the top half of the LUN table 
+		 */
+		lun_info->lun_index = cfg->promote_lun_index;
+		writeq_be(lun_info->lun_id[0],
+			  &afu->afu_map->global.fc_port[0]
+			  [cfg->promote_lun_index]);
+		writeq_be(lun_info->lun_id[1],
+			  &afu->afu_map->global.fc_port[1]
+			  [cfg->promote_lun_index]);
+		cfg->promote_lun_index++;
+		pr_debug("%s: Virtual LUN on slot %d  id0=%llx, id1=%llx\n",
+			 __func__, lun_info->lun_index, lun_info->lun_id[0],
+			 lun_info->lun_id[1]);
+	} else {
+		/* If this LUN is visible only from one port, we will put
+		 * it in the bottom half of the LUN table 
+		 */
+		chan = PORT2CHAN(lun_info->port_sel);
+		lun_info->lun_index = cfg->last_lun_index[chan];
+		writeq_be(lun_info->lun_id[chan],
+			  &afu->afu_map->global.fc_port[chan]
+			  [cfg->last_lun_index[chan]]);
+		cfg->last_lun_index[chan]--;
+		pr_debug("%s: Virtual LUN on slot %d  chan=%d, id=%llx\n",
+			 __func__, lun_info->lun_index, chan,
+			 lun_info->lun_id[chan]);
+	}
+}
+
 /**
  * cxlflash_disk_virtual_open() - open a virtual disk of specified size
  * @sdev:	SCSI device associated with LUN owning virtual LUN.
@@ -801,6 +837,9 @@ int cxlflash_disk_virtual_open(struct scsi_device *sdev, void *arg)
 	pr_debug("%s: ctxid=%llu ls=0x%llx\n", __func__, ctxid, lun_size);
 
 	if (lun_info->parent->mode == MODE_NONE) {
+		/* Setup the LUN table on the first call */
+		init_lun_table(cfg, lun_info);
+
 		rc = init_ba(lun_info);
 		if (rc) {
 			pr_err("%s: call to init_ba failed rc=%d!\n",
