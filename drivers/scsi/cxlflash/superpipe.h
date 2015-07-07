@@ -143,6 +143,7 @@ struct lun_info {
 	u32 host_no;		/* host_no from Scsi_host */
 	u32 port_sel;		/* What port to use for this LUN */
 	bool newly_created;	/* Whether the LUN was just discovered */
+	bool in_table;	        /* Whether a LUN table entry was created */
 	int users;		/* Number of users w/ references to LUN */
 
 	__u8 wwid[16];          /* Keep a duplicate copy here? */

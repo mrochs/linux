@@ -73,6 +73,8 @@ static struct lun_info *create_local(struct scsi_device *sdev, __u8 *wwid)
 	lun_info->sdev = sdev;
 	lun_info->newly_created = true;
 	lun_info->host_no = sdev->host->host_no;
+	lun_info->in_table = false;
+
 	memcpy(lun_info->wwid, wwid, DK_CXLFLASH_MANAGE_LUN_WWID_LEN);
 
 create_lun_info_exit:
@@ -1562,9 +1564,6 @@ static int cxlflash_manage_lun(struct scsi_device *sdev,
 			       struct dk_cxlflash_manage_lun *manage)
 {
 	int rc = 0;
-	struct Scsi_Host *shost = sdev->host;
-	struct cxlflash_cfg *cfg = shost_priv(shost);
-	struct afu *afu = cfg->afu;
 	struct lun_info *lun_info = NULL;
 	u64 flags = manage->hdr.flags;
 	u32 chan = sdev->channel;

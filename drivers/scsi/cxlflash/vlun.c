@@ -772,6 +772,9 @@ static void init_lun_table(struct cxlflash_cfg *cfg, struct lun_info *lun_info)
 	u32 chan;
 	struct afu *afu = cfg->afu;
 
+	if (lun_info->in_table)
+		return;
+
 	if (lun_info->port_sel == BOTH_PORTS) {
 		/* If this LUN is visible from both ports, we will put
 		 * it in the top half of the LUN table 
@@ -801,6 +804,7 @@ static void init_lun_table(struct cxlflash_cfg *cfg, struct lun_info *lun_info)
 			 __func__, lun_info->lun_index, chan,
 			 lun_info->lun_id[chan]);
 	}
+	lun_info->in_table = true;
 }
 
 /**
