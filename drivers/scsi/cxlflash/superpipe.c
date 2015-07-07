@@ -56,8 +56,9 @@ static void marshall_det_to_rele(struct dk_cxlflash_detach *detach,
 /**
  * create_local() - allocate and initialize a LUN information structure
  * @sdev:	SCSI device associated with LUN.
+ * @wwid:	World Wide Node Name for LUN
  *
- * Return: Allocated lun_info structure on success, NULL on failure
+ * Return: Allocated local lun_info structure on success, NULL on failure
  */
 static struct lun_info *create_local(struct scsi_device *sdev, __u8 *wwid)
 {
@@ -81,8 +82,9 @@ create_lun_info_exit:
 /**
  * create_global() - allocate and initialize a LUN information structure
  * @sdev:	SCSI device associated with LUN.
+ * @wwid:	World Wide Node Name for LUN
  *
- * Return: Allocated lun_info structure on success, NULL on failure
+ * Return: Allocated global lun_info structure on success, NULL on failure
  */
 static struct glun_info *create_global(struct scsi_device *sdev, __u8 *wwid)
 {
@@ -100,6 +102,13 @@ create_lun_info_exit:
 }
 
 
+/**
+ * lookup_local() - find a LUN information structure by WWID
+ * @cfg:	Internal structure associated with the host.
+ * @wwid:	WWID associated with LUN.
+ *
+ * Return: Found local lun_info structure on success, NULL on failure
+ */
 static struct lun_info *lookup_local(struct cxlflash_cfg *cfg, __u8 *wwid)
 {
 	struct lun_info *lun_info, *temp;
@@ -114,6 +123,12 @@ static struct lun_info *lookup_local(struct cxlflash_cfg *cfg, __u8 *wwid)
 	return NULL;
 }
 
+/**
+ * lookup_global() - find a LUN information structure by WWID
+ * @wwid:	WWID associated with LUN.
+ *
+ * Return: Found global lun_info structure on success, NULL on failure
+ */
 static struct glun_info *lookup_global(__u8 *wwid)
 {
 	struct glun_info *lun_info, *temp;
@@ -132,7 +147,7 @@ static struct glun_info *lookup_global(__u8 *wwid)
  * @sdev:	SCSI device associated with LUN.
  * @wwid:	WWID associated with LUN.
  *
- * Return: Found/Allocated lun_info structure on success, NULL on failure
+ * Return: Found/Allocated local lun_info structure on success, NULL on failure
  */
 static struct lun_info *lookup_lun(struct scsi_device *sdev, __u8 *wwid)
 {
@@ -168,6 +183,12 @@ out:
 	return lun_info;
 }
 
+/**
+ * cxlflash_term_luns() - Delete all entries from local lun list, free.
+ * @cfg:	Internal structure associated with the host.
+ *
+ * Return: Not applicable
+ */
 void cxlflash_term_luns(struct cxlflash_cfg *cfg)
 {
 	struct lun_info *lun_info, *temp;
