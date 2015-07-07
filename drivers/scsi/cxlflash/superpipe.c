@@ -302,18 +302,16 @@ void cxlflash_stop_term_user_contexts(struct cxlflash_cfg *cfg)
 
 		if (ctx_info) {
 			/* XXX - need to notify user */
-			pr_debug("%s: tbl calling sys_close(%d)\n",
-				 __func__, ctx_info->lfd);
-			sys_close(ctx_info->lfd); /* XXX - can't use this */
+			pr_debug("%s: tbl context = %016llX\n",
+				 __func__, ctx_info->ctxid);
 		}
 	}
 
 	list_for_each_entry_safe(ctx_info, t, &cfg->ctx_err_recovery, list) {
 		list_del(&ctx_info->list);
 		/* XXX - need to notify user */
-		pr_info("%s: list calling sys_close(%d)\n",
-			__func__, ctx_info->lfd);
-		sys_close(ctx_info->lfd); /* XXX - can't use this */
+		pr_debug("%s: list context = %016llX\n",
+			 __func__, ctx_info->ctxid);
 	}
 }
 
