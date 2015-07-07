@@ -2087,6 +2087,9 @@ int cxlflash_ioctl(struct scsi_device *sdev, int cmd, void __user *arg)
 	case DK_CXLFLASH_VERIFY:
 	case DK_CXLFLASH_CLONE:
 	case DK_CXLFLASH_RECOVER_AFU:
+		pr_debug("%s: %s (%08X) on dev(%d/%d/%d/%llu)\n", __func__,
+			 decode_ioctl(cmd), cmd, shost->host_no, sdev->channel,
+			 sdev->id, sdev->lun);
 		rc = ioctl_common(sdev);
 		if (unlikely(rc))
 			goto cxlflash_ioctl_exit;
