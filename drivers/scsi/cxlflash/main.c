@@ -2287,12 +2287,13 @@ static int cxlflash_probe(struct pci_dev *pdev,
 	cfg->dev = pdev;
 
 	/* The promoted LUNs move to the top of the LUN table. The rest stay
-	 * on the bottom half. At 256 VLUNs per port, the 2nd half will start
-	 * at index 128.
+	 * on the bottom half. The bottom half grows from the end 
+	 * (index = 255), whereas the top half grows from the beginning 
+	 * (index = 0).
 	 */
 	cfg->promote_lun_index  = 0;
-	cfg->last_lun_index[0] = CXLFLASH_NUM_VLUNS/4;
-	cfg->last_lun_index[1] = CXLFLASH_NUM_VLUNS/4;
+	cfg->last_lun_index[0] = CXLFLASH_NUM_VLUNS/2 - 1;
+	cfg->last_lun_index[1] = CXLFLASH_NUM_VLUNS/2 - 1;
 
 	cfg->dev_id = (struct pci_device_id *)dev_id;
 	cfg->eeh_active = EEH_STATE_NONE;
