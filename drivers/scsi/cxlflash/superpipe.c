@@ -559,7 +559,8 @@ out:
 	if (cmd)
 		cxlflash_cmd_checkin(cmd);
 	pr_debug("%s: maxlba=%lld blklen=%d pcmd %p\n",
-		 __func__, lun_info->parent->max_lba, lun_info->parent->blk_len, cmd);
+		 __func__, lun_info->parent->max_lba,
+		 lun_info->parent->blk_len, cmd);
 	return rc;
 }
 
@@ -723,7 +724,8 @@ out:
 void cxlflash_lun_detach(struct lun_info *lun_info)
 {
 	spin_lock(&lun_info->parent->slock);
-	BUG_ON(lun_info->parent->mode == MODE_NONE); /* XXX - remove me before submit */
+	/* XXX - remove me before submit */
+	BUG_ON(lun_info->parent->mode == MODE_NONE);
 	if (--lun_info->users == 0)
 		lun_info->parent->mode = MODE_NONE;
 	pr_debug("%s: li_users=%u\n", __func__, lun_info->users);
@@ -1399,8 +1401,10 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 			rc = -ENODEV;
 			goto out;
 		}
-		pr_debug("%s: LBA = %016llX\n", __func__, lun_info->parent->max_lba);
-		pr_debug("%s: BLK_LEN = %08X\n", __func__, lun_info->parent->blk_len);
+		pr_debug("%s: LBA = %016llX\n", __func__,
+			 lun_info->parent->max_lba);
+		pr_debug("%s: BLK_LEN = %08X\n", __func__,
+			 lun_info->parent->blk_len);
 	}
 
 	if (attach->hdr.flags & DK_CXLFLASH_ATTACH_REUSE_CONTEXT) {
@@ -1502,7 +1506,8 @@ out_attach:
 	attach->block_size = lun_info->parent->blk_len;
 	attach->mmio_size = sizeof(afu->afu_map->hosts[0].harea);
 	attach->last_lba = lun_info->parent->max_lba;
-	attach->max_xfer = (sdev->host->max_sectors * 512) / lun_info->parent->blk_len;
+	attach->max_xfer = (sdev->host->max_sectors * 512) /
+		lun_info->parent->blk_len;
 
 out:
 	attach->adap_fd = fd;
@@ -1922,7 +1927,8 @@ static int cxlflash_disk_verify(struct scsi_device *sdev,
 		break;
 	case MODE_VIRTUAL:
 		last_lba = (((rht_entry->lxt_cnt * MC_CHUNK_SIZE *
-			      lun_info->parent->blk_len) / CXLFLASH_BLOCK_SIZE) - 1);
+			      lun_info->parent->blk_len) /
+			     CXLFLASH_BLOCK_SIZE) - 1);
 		break;
 	default:
 		BUG();

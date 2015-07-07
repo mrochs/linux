@@ -756,7 +756,8 @@ int cxlflash_vlun_resize(struct scsi_device *sdev,
 
 	resize->hdr.return_flags = 0;
 	resize->last_lba = (((new_size * MC_CHUNK_SIZE *
-			      lun_info->parent->blk_len) / CXLFLASH_BLOCK_SIZE) - 1);
+			      lun_info->parent->blk_len) /
+			     CXLFLASH_BLOCK_SIZE) - 1);
 
 out:
 	if (likely(ctx_info))
