@@ -1458,21 +1458,21 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 	}
 
 	ctx = cxl_dev_context_init(cfg->dev);
-	if (!ctx) {
-		pr_err("%s: Could not initialize context\n", __func__);
+	if (unlikely(IS_ERR_OR_NULL(ctx))) {
+		pr_err("%s: Could not initialize context %p\n", __func__, ctx);
 		rc = -ENODEV;
 		goto err0;
 	}
 
 	ctxid = cxl_process_element(ctx);
-	if ((ctxid > MAX_CONTEXT) || (ctxid < 0)) {
+	if (unlikely((ctxid > MAX_CONTEXT) || (ctxid < 0))) {
 		pr_err("%s: ctxid (%d) invalid!\n", __func__, ctxid);
 		rc = -EPERM;
 		goto err1;
 	}
 
 	file = cxl_get_fd(ctx, &cfg->cxl_fops, &fd);
-	if (fd < 0) {
+	if (unlikely(fd < 0)) {
 		rc = -ENODEV;
 		pr_err("%s: Could not get file descriptor\n", __func__);
 		goto err1;
@@ -1492,13 +1492,13 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 	work->flags = CXL_START_WORK_NUM_IRQS;
 
 	rc = cxl_start_work(ctx, work);
-	if (rc) {
+	if (unlikely(rc)) {
 		pr_debug("%s: Could not start context rc=%d\n", __func__, rc);
 		goto err3;
 	}
 
 	rc = afu_attach(cfg, ctx_info);
-	if (rc) {
+	if (unlikely(rc)) {
 		pr_err("%s: Could not attach AFU rc %d\n", __func__, rc);
 		goto err4;
 	}
@@ -1626,28 +1626,28 @@ static int recover_context(struct cxlflash_cfg *cfg, struct ctx_info *ctx_info)
 	struct afu *afu = cfg->afu;
 
 	ctx = cxl_dev_context_init(cfg->dev);
-	if (!ctx) {
-		pr_err("%s: Could not initialize context\n", __func__);
+	if (unlikely(IS_ERR_OR_NULL(ctx))) {
+		pr_err("%s: Could not initialize context %p\n", __func__, ctx);
 		rc = -ENODEV;
 		goto out;
 	}
 
 	ctxid = cxl_process_element(ctx);
-	if ((ctxid > MAX_CONTEXT) || (ctxid < 0)) {
+	if (unlikely((ctxid > MAX_CONTEXT) || (ctxid < 0))) {
 		pr_err("%s: ctxid (%d) invalid!\n", __func__, ctxid);
 		rc = -EPERM;
 		goto err1;
 	}
 
 	file = cxl_get_fd(ctx, &cfg->cxl_fops, &fd);
-	if (fd < 0) {
+	if (unlikely(fd < 0)) {
 		rc = -ENODEV;
 		pr_err("%s: Could not get file descriptor\n", __func__);
 		goto err1;
 	}
 
 	rc = cxl_start_work(ctx, &ctx_info->work);
-	if (rc) {
+	if (unlikely(rc)) {
 		pr_err("%s: Could not start context rc=%d\n", __func__, rc);
 		goto err2;
 	}
