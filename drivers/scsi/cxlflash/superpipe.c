@@ -1721,6 +1721,7 @@ static int cxlflash_afu_recover(struct scsi_device *sdev,
 	pr_debug("%s: reason 0x%016llX rctxid=%016llX\n", __func__,
 		 recover->reason, rctxid);
 
+retry:
 	/* Ensure that this process is attached to the context */
 	ctx_info = get_context(cfg, rctxid, lun_info, CTX_CTRL_ERR_FALLBACK);
 	if (unlikely(!ctx_info)) {
@@ -1749,7 +1750,13 @@ static int cxlflash_afu_recover(struct scsi_device *sdev,
 	/* Test if in error state */
 	reg = readq_be(&afu->ctrl_map->mbox_r);
 	if (reg == -1) {
-		pr_info("%s: MMIO read failed!\n", __func__);
+		pr_info("%s: MMIO read fail! Wait for recovery...\n", __func__);
+		ssleep(1);
+		rc = wait_event_interruptible(cfg->eeh_waitq, !cfg->eeh_active);
+		if (unlikely(rc))
+			goto out;
+		atomic_dec(&ctx_info->nrefs);
+		goto retry;
 	} else {
 		pr_debug("%s: reason 0x%llx MMIO working, no reset performed\n",
 			 __func__, recover->reason);
