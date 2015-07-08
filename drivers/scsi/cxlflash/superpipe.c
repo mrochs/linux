@@ -1600,7 +1600,10 @@ static int cxlflash_manage_lun(struct scsi_device *sdev,
 		lun_info->lun_id[chan] = lun_to_lunid(sdev->lun);
 		sdev->hostdata = lun_info;
 	} else if (flags & DK_CXLFLASH_MANAGE_LUN_DISABLE_SUPERPIPE) {
-		sdev->hostdata = NULL;
+		if (lun_info->parent->mode != MODE_NONE)
+			rc = -EBUSY;
+		else
+			sdev->hostdata = NULL;
 	}
 
 out:
