@@ -1387,6 +1387,7 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 	int rc = 0;
 	u32 perms;
 	int ctxid = -1;
+	u64 rctxid = 0UL;
 	ulong lock_flags;
 	struct file *file;
 
@@ -1421,10 +1422,11 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 	}
 
 	if (attach->hdr.flags & DK_CXLFLASH_ATTACH_REUSE_CONTEXT) {
-		ctxid = DECODE_CTXID(attach->context_id);
-		ctx_info = get_context(cfg, ctxid, NULL, 0);
+		rctxid = attach->context_id;
+		ctx_info = get_context(cfg, rctxid, NULL, 0);
 		if (!ctx_info) {
-			pr_err("%s: Invalid context! (%d)\n", __func__, ctxid);
+			pr_err("%s: Invalid context! (%016llX)\n", __func__,
+			       rctxid);
 			rc = -EINVAL;
 			goto out;
 		}
@@ -1450,8 +1452,8 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 
 	/* Non-NULL context indicates reuse */
 	if (ctx_info) {
-		pr_debug("%s: Reusing context for LUN! (%d)\n",
-			 __func__, ctxid);
+		pr_debug("%s: Reusing context for LUN! (%016llX)\n",
+			 __func__, rctxid);
 		list_add(&lun_access->list, &ctx_info->luns);
 		fd = ctx_info->lfd;
 		goto out_attach;
