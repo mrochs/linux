@@ -1650,6 +1650,40 @@ err1:
 }
 
 /**
+ * check_eeh() - checks and responds to the current EEH state
+ * @cfg:	Internal structure associated with the host.
+ *
+ * This routine can block and should only be used on process context.
+ * Note that when waking up from waiting on the EEH event to clear,
+ * the state must be checked again in case another EEH has occurred or
+ * the previous event failed recovery.
+ *
+ * Return: 0 on success, -errno on failure
+ */
+static int check_eeh(struct cxlflash_cfg *cfg)
+{
+	int rc = 0;
+
+retry:
+	switch (cfg->eeh_active) {
+	case EEH_STATE_ACTIVE:
+		pr_debug("%s: EEH Active, going to wait...\n", __func__);
+		rc = wait_event_interruptible(cfg->eeh_waitq, !cfg->eeh_active);
+		if (unlikely(rc))
+			goto out;
+		goto retry;
+	case EEH_STATE_FAILED:
+		pr_debug("%s: EEH Failed\n", __func__);
+		rc = -ENODEV;
+		goto out;
+	case EEH_STATE_NONE:
+		break;
+	}
+out:
+	return rc;
+}
+
+/**
  * cxlflash_afu_recover() - initiates AFU recovery
  * @sdev:	SCSI device associated with LUN.
  * @recover:	Recover ioctl data structure.
@@ -1702,7 +1736,7 @@ retry:
 	if (reg == -1) {
 		pr_info("%s: MMIO read fail! Wait for recovery...\n", __func__);
 		ssleep(1);
-		rc = wait_event_interruptible(cfg->eeh_waitq, !cfg->eeh_active);
+		rc = check_eeh(cfg);
 		if (unlikely(rc))
 			goto out;
 		atomic_dec(&ctx_info->nrefs);
@@ -1981,20 +2015,9 @@ static int ioctl_common(struct scsi_device *sdev)
 		goto out;
 	}
 
-	switch (cfg->eeh_active) {
-	case EEH_STATE_ACTIVE:
-		pr_debug("%s: EEH Active, going to wait...\n", __func__);
-		rc = wait_event_interruptible(cfg->eeh_waitq, !cfg->eeh_active);
-		if (unlikely(rc))
-			goto out;
-		break;
-	case EEH_STATE_FAILED:
-		pr_debug("%s: EEH Failed\n", __func__);
-		rc = -ENODEV;
-		goto out;
-	case EEH_STATE_NONE:
-		break;
-	}
+	rc = check_eeh(cfg);
+
+	/* fall through */
 out:
 	return rc;
 }
