@@ -1707,12 +1707,9 @@ retry:
 			goto out;
 		atomic_dec(&ctx_info->nrefs);
 		goto retry;
-	} else {
-		pr_debug("%s: reason 0x%llx MMIO working, no reset performed\n",
-			 __func__, recover->reason);
-		rc = -EINVAL;
 	}
 
+	pr_debug("%s: MMIO working, no recovery required!\n", __func__);
 out:
 	if (likely(ctx_info))
 		atomic_dec(&ctx_info->nrefs);
