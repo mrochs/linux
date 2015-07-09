@@ -54,206 +54,159 @@ static void marshall_det_to_rele(struct dk_cxlflash_detach *detach,
 }
 
 /**
- * create_local() - allocate and initialize a LUN information structure
+ * create_local() - allocate and initialize a local LUN information structure
  * @sdev:	SCSI device associated with LUN.
- * @wwid:	World Wide Node Name for LUN
+ * @wwid:	World Wide Node Name for LUN.
  *
- * Return: Allocated local lun_info structure on success, NULL on failure
+ * Return: Allocated local llun_info structure on success, NULL on failure
  */
-static struct lun_info *create_local(struct scsi_device *sdev, __u8 *wwid)
+static struct llun_info *create_local(struct scsi_device *sdev, u8 *wwid)
 {
-	struct lun_info *lun_info = NULL;
+	struct llun_info *lli = NULL;
 
-	lun_info = kzalloc(sizeof(*lun_info), GFP_KERNEL);
-	if (unlikely(!lun_info)) {
-		pr_err("%s: could not allocate lun_info\n", __func__);
-		goto create_lun_info_exit;
+	lli = kzalloc(sizeof(*lli), GFP_KERNEL);
+	if (unlikely(!lli)) {
+		pr_err("%s: could not allocate lli\n", __func__);
+		goto out;
 	}
 
-	lun_info->sdev = sdev;
-	lun_info->newly_created = true;
-	lun_info->host_no = sdev->host->host_no;
-	lun_info->in_table = false;
+	lli->sdev = sdev;
+	lli->newly_created = true;
+	lli->host_no = sdev->host->host_no;
+	lli->in_table = false;
 
-	memcpy(lun_info->wwid, wwid, DK_CXLFLASH_MANAGE_LUN_WWID_LEN);
-
-create_lun_info_exit:
-	return lun_info;
+	memcpy(lli->wwid, wwid, DK_CXLFLASH_MANAGE_LUN_WWID_LEN);
+out:
+	return lli;
 }
 
 /**
- * create_global() - allocate and initialize a LUN information structure
+ * create_global() - allocate and initialize a global LUN information structure
  * @sdev:	SCSI device associated with LUN.
- * @wwid:	World Wide Node Name for LUN
+ * @wwid:	World Wide Node Name for LUN.
  *
- * Return: Allocated global lun_info structure on success, NULL on failure
+ * Return: Allocated global glun_info structure on success, NULL on failure
  */
-static struct glun_info *create_global(struct scsi_device *sdev, __u8 *wwid)
+static struct glun_info *create_global(struct scsi_device *sdev, u8 *wwid)
 {
-	struct glun_info *lun_info = NULL;
+	struct glun_info *gli = NULL;
 
-	lun_info = kzalloc(sizeof(*lun_info), GFP_KERNEL);
-	if (unlikely(!lun_info)) {
-		pr_err("%s: could not allocate lun_info\n", __func__);
-		goto create_lun_info_exit;
+	gli = kzalloc(sizeof(*gli), GFP_KERNEL);
+	if (unlikely(!gli)) {
+		pr_err("%s: could not allocate gli\n", __func__);
+		goto out;
 	}
-	memcpy(lun_info->wwid, wwid, DK_CXLFLASH_MANAGE_LUN_WWID_LEN);
 
-create_lun_info_exit:
-	return lun_info;
+	memcpy(gli->wwid, wwid, DK_CXLFLASH_MANAGE_LUN_WWID_LEN);
+out:
+	return gli;
 }
 
-
 /**
- * lookup_local() - find a LUN information structure by WWID
+ * lookup_local() - find a local LUN information structure by WWID
  * @cfg:	Internal structure associated with the host.
  * @wwid:	WWID associated with LUN.
  *
  * Return: Found local lun_info structure on success, NULL on failure
  */
-static struct lun_info *lookup_local(struct cxlflash_cfg *cfg, __u8 *wwid)
+static struct llun_info *lookup_local(struct cxlflash_cfg *cfg, u8 *wwid)
 {
-	struct lun_info *lun_info, *temp;
+	struct llun_info *lli, *temp;
 
-	list_for_each_entry_safe(lun_info, temp, &cfg->lluns, list) {
-		if (!memcmp(lun_info->wwid, wwid,
-			    DK_CXLFLASH_MANAGE_LUN_WWID_LEN)) {
-				lun_info->newly_created = false;
-				return lun_info;
-			}
-	}
+	list_for_each_entry_safe(lli, temp, &cfg->lluns, list)
+		if (!memcmp(lli->wwid, wwid, DK_CXLFLASH_MANAGE_LUN_WWID_LEN)) {
+			lli->newly_created = false;
+			return lli;
+		}
+
 	return NULL;
 }
 
 /**
- * lookup_global() - find a LUN information structure by WWID
+ * lookup_global() - find a global LUN information structure by WWID
  * @wwid:	WWID associated with LUN.
  *
  * Return: Found global lun_info structure on success, NULL on failure
  */
-static struct glun_info *lookup_global(__u8 *wwid)
+static struct glun_info *lookup_global(u8 *wwid)
 {
-	struct glun_info *lun_info, *temp;
+	struct glun_info *gli, *temp;
 
-	list_for_each_entry_safe(lun_info, temp, &global.gluns, list) {
-		if (!memcmp(lun_info->wwid, wwid,
-			    DK_CXLFLASH_MANAGE_LUN_WWID_LEN)) {
-				return lun_info;
-			}
-	}
+	list_for_each_entry_safe(gli, temp, &global.gluns, list)
+		if (!memcmp(gli->wwid, wwid, DK_CXLFLASH_MANAGE_LUN_WWID_LEN))
+			return gli;
+
 	return NULL;
 }
 
 /**
- * lookup_lun() - find or create a LUN information structure
+ * lookup_lun() - find or create a local LUN information structure
  * @sdev:	SCSI device associated with LUN.
  * @wwid:	WWID associated with LUN.
  *
+ * When a local LUN is not found and a global LUN is also not found, both
+ * a global LUN and local LUN are created. The global LUN is added to the
+ * global list and the local LUN is returned.
+ *
  * Return: Found/Allocated local lun_info structure on success, NULL on failure
  */
-static struct lun_info *lookup_lun(struct scsi_device *sdev, __u8 *wwid)
+static struct llun_info *lookup_lun(struct scsi_device *sdev, u8 *wwid)
 {
-	struct lun_info *lun_info = NULL;
-	struct glun_info *glun_info = NULL;
+	struct llun_info *lli = NULL;
+	struct glun_info *gli = NULL;
 	struct Scsi_Host *shost = sdev->host;
 	struct cxlflash_cfg *cfg = shost_priv(shost);
-	ulong flags = 0UL;
+	ulong lock_flags;
 
-	if (wwid) {
-		lun_info = lookup_local(cfg, wwid);
-		if (lun_info)
-			goto out;
-		else {
-			glun_info = lookup_global(wwid);
-			if (glun_info) {
-				lun_info = create_local(sdev, wwid);
-				lun_info->parent = glun_info;
-				list_add(&lun_info->list, &cfg->lluns);
-			} else {
-				glun_info = create_global(sdev, wwid);
-				spin_lock_irqsave(&global.slock, flags);
-				list_add(&glun_info->list, &global.gluns);
-				lun_info = create_local(sdev, wwid);
-				lun_info->parent = glun_info;
-				list_add(&lun_info->list, &cfg->lluns);
-				spin_unlock_irqrestore(&global.slock, flags);
-			}
-		}
+	if (unlikely(!wwid))
+		goto out;
+
+	lli = lookup_local(cfg, wwid);
+	if (lli)
+		goto out;
+
+	lli = create_local(sdev, wwid);
+	if (unlikely(!lli))
+		goto out;
+
+	gli = lookup_global(wwid);
+	if (gli) {
+		lli->parent = gli;
+		list_add(&lli->list, &cfg->lluns);
+		goto out;
 	}
+
+	gli = create_global(sdev, wwid);
+	if (unlikely(!gli)) {
+		kfree(lli);
+		lli = NULL;
+		goto out;
+	}
+
+	lli->parent = gli;
+	list_add(&lli->list, &cfg->lluns);
+
+	spin_lock_irqsave(&global.slock, lock_flags);
+	list_add(&gli->list, &global.gluns);
+	spin_unlock_irqrestore(&global.slock, lock_flags);
+
 out:
-	pr_debug("%s: returning %p\n", __func__, lun_info);
-	return lun_info;
+	pr_debug("%s: returning %p\n", __func__, lli);
+	return lli;
 }
 
 /**
  * cxlflash_term_luns() - Delete all entries from local lun list, free.
  * @cfg:	Internal structure associated with the host.
- *
- * Return: Not applicable
  */
 void cxlflash_term_luns(struct cxlflash_cfg *cfg)
 {
-	struct lun_info *lun_info, *temp;
+	struct llun_info *lli, *temp;
 
-	list_for_each_entry_safe(lun_info, temp, &cfg->lluns, list) {
-		list_del(&lun_info->list);
-		kfree(lun_info);
+	list_for_each_entry_safe(lli, temp, &cfg->lluns, list) {
+		list_del(&lli->list);
+		kfree(lli);
 	}
-}
-
-/**
- * cxlflash_slave_alloc() - allocate and associate LUN information structure
- * @sdev:	SCSI device associated with LUN.
- *
- * Return: 0 on success, -errno on failure
- */
-int cxlflash_slave_alloc(struct scsi_device *sdev)
-{
-	int rc = 0;
-#if 0
-	struct lun_info *lun_info = NULL;
-
-	lun_info = lookup_lun(sdev, NULL);
-	if (unlikely(!lun_info)) {
-		rc = -ENOMEM;
-		goto out;
-	}
-
-	sdev->hostdata = lun_info;
-out:
-#endif
-	pr_debug("%s: returning sdev %p rc=%d\n", __func__, sdev, rc);
-	return rc;
-}
-
-/**
- * cxlflash_slave_configure() - configure and make device aware of LUN
- * @sdev:	SCSI device associated with LUN.
- *
- * Stores the LUN id and lun_index and programs the AFU's LUN mapping table.
- *
- * Return: 0 on success, -errno on failure
- */
-int cxlflash_slave_configure(struct scsi_device *sdev)
-{
-#if 0
-	struct Scsi_Host *shost = sdev->host;
-	struct lun_info *lun_info = sdev->hostdata;
-	struct cxlflash_cfg *cfg = shost_priv(shost);
-	struct afu *afu = cfg->afu;
-
-	pr_debug("%s: id = %d/%d/%d/%llu\n", __func__, shost->host_no,
-		 sdev->channel, sdev->id, sdev->lun);
-
-	/* Store off lun in unpacked, AFU-friendly format */
-	lun_info->lun_id = lun_to_lunid(sdev->lun);
-	lun_info->lun_index = cfg->last_lun_index[sdev->channel];
-
-	writeq_be(lun_info->lun_id,
-		  &afu->afu_map->global.fc_port[sdev->channel]
-		  [cfg->last_lun_index[sdev->channel]++]);
-#endif
-	return 0;
 }
 
 /**
@@ -271,14 +224,14 @@ void cxlflash_list_init(void)
  */
 void cxlflash_list_terminate(void)
 {
-	struct glun_info *lun_info, *temp;
+	struct glun_info *gli, *temp;
 	ulong flags = 0;
 
 	spin_lock_irqsave(&global.slock, flags);
-	list_for_each_entry_safe(lun_info, temp, &global.gluns, list) {
-		list_del(&lun_info->list);
-		cxlflash_ba_terminate(&lun_info->blka.ba_lun);
-		kfree(lun_info);
+	list_for_each_entry_safe(gli, temp, &global.gluns, list) {
+		list_del(&gli->list);
+		cxlflash_ba_terminate(&gli->blka.ba_lun);
+		kfree(gli);
 	}
 
 	if (global.err_page) {
@@ -339,7 +292,7 @@ static struct ctx_info *find_error_context(struct cxlflash_cfg *cfg, u64 rctxid,
  * get_context() - obtains a validated context reference
  * @cfg:	Internal structure associated with the host.
  * @rctxid:	Desired context (raw, undecoded format).
- * @lun_info:	LUN associated with request.
+ * @arg:	LUN information or file associated with request.
  * @ctx_ctrl:	Control information to 'steer' desired lookup.
  *
  * NOTE: despite the name pid, in linux, current->pid actually refers
@@ -356,14 +309,14 @@ struct ctx_info *get_context(struct cxlflash_cfg *cfg, u64 rctxid,
 	struct ctx_info *ctx_info = NULL;
 	struct lun_access *lun_access = NULL;
 	struct file *file = NULL;
-	struct lun_info *lun_info = (struct lun_info *)arg;
+	struct llun_info *lli = (struct llun_info *)arg;
 	u64 ctxid = DECODE_CTXID(rctxid);
 	bool found = false;
 	pid_t pid = current->tgid, ctxpid = 0;
 	ulong flags = 0;
 
 	if (ctx_ctrl & CTX_CTRL_FILE) {
-		lun_info = NULL;
+		lli = NULL;
 		file = (struct file *)arg;
 	}
 
@@ -399,9 +352,9 @@ struct ctx_info *get_context(struct cxlflash_cfg *cfg, u64 rctxid,
 			if (pid != ctxpid)
 				goto denied;
 
-		if (lun_info) {
+		if (lli) {
 			list_for_each_entry(lun_access, &ctx_info->luns, list)
-				if (lun_access->lun_info == lun_info) {
+				if (lun_access->lli == lli) {
 					found = true;
 					break;
 				}
@@ -509,12 +462,12 @@ int cxlflash_check_status(struct afu_cmd *cmd)
 /**
  * read_cap16() - issues a SCSI READ_CAP16 command
  * @afu:	AFU associated with the host.
- * @lun_info:	LUN to destined for capacity request.
+ * @lli:	LUN destined for capacity request.
  * @port_sel:	Port to send request.
  *
  * Return: 0 on success, -1 on failure
  */
-static int read_cap16(struct afu *afu, struct lun_info *lun_info, u32 port_sel)
+static int read_cap16(struct afu *afu, struct llun_info *lli, u32 port_sel)
 {
 	struct afu_cmd *cmd = NULL;
 	int rc = 0;
@@ -530,7 +483,7 @@ static int read_cap16(struct afu *afu, struct lun_info *lun_info, u32 port_sel)
 			      SISL_REQ_FLAGS_HOST_READ);
 
 	cmd->rcb.port_sel = port_sel;
-	cmd->rcb.lun_id = lun_info->lun_id[port_sel-1];
+	cmd->rcb.lun_id = lli->lun_id[port_sel-1];
 	cmd->rcb.data_len = CMD_BUFSIZE;
 	cmd->rcb.data_ea = (u64) cmd->buf;
 	cmd->rcb.timeout = MC_DISCOVERY_TIMEOUT;
@@ -560,17 +513,16 @@ static int read_cap16(struct afu *afu, struct lun_info *lun_info, u32 port_sel)
 	 * note that we don't need to worry about unaligned access
 	 * as the buffer is allocated on an aligned boundary.
 	 */
-	spin_lock(&lun_info->parent->slock);
-	lun_info->parent->max_lba = swab64(*((u64 *)&cmd->buf[0]));
-	lun_info->parent->blk_len = swab32(*((u32 *)&cmd->buf[8]));
-	spin_unlock(&lun_info->parent->slock);
+	spin_lock(&lli->parent->slock);
+	lli->parent->max_lba = swab64(*((u64 *)&cmd->buf[0]));
+	lli->parent->blk_len = swab32(*((u32 *)&cmd->buf[8]));
+	spin_unlock(&lli->parent->slock);
 
 out:
 	if (cmd)
 		cxlflash_cmd_checkin(cmd);
-	pr_debug("%s: maxlba=%lld blklen=%d pcmd %p\n",
-		 __func__, lun_info->parent->max_lba,
-		 lun_info->parent->blk_len, cmd);
+	pr_debug("%s: maxlba=%lld blklen=%d pcmd %p\n", __func__,
+		 lli->parent->max_lba, lli->parent->blk_len, cmd);
 	return rc;
 }
 
@@ -578,12 +530,12 @@ out:
  * get_rhte() - obtains validated resource handle table entry reference
  * @ctx_info:	Context owning the resource handle.
  * @res_hndl:	Resource handle associated with entry.
- * @lun_info:	LUN associated with request.
+ * @lli:	LUN associated with request.
  *
  * Return: Validated RHTE on success, NULL on failure
  */
 struct sisl_rht_entry *get_rhte(struct ctx_info *ctx_info, res_hndl_t res_hndl,
-				struct lun_info *lun_info)
+				struct llun_info *lli)
 {
 	struct sisl_rht_entry *rhte = NULL;
 
@@ -599,7 +551,7 @@ struct sisl_rht_entry *get_rhte(struct ctx_info *ctx_info, res_hndl_t res_hndl,
 		goto out;
 	}
 
-	if (unlikely(ctx_info->rht_lun[res_hndl] != lun_info)) {
+	if (unlikely(ctx_info->rht_lun[res_hndl] != lli)) {
 		pr_err("%s: Resource handle invalid for LUN! (%d)\n",
 		       __func__, res_hndl);
 		goto out;
@@ -620,12 +572,12 @@ out:
 /**
  * rhte_checkout() - obtains free/empty resource handle table entry
  * @ctx_info:	Context owning the resource handle.
- * @lun_info:	LUN associated with request.
+ * @lli:	LUN associated with request.
  *
  * Return: Free RHTE on success, NULL on failure
  */
 struct sisl_rht_entry *rhte_checkout(struct ctx_info *ctx_info,
-				     struct lun_info *lun_info)
+				     struct llun_info *lli)
 {
 	struct sisl_rht_entry *rht_entry = NULL;
 	int i;
@@ -639,7 +591,7 @@ struct sisl_rht_entry *rhte_checkout(struct ctx_info *ctx_info,
 		}
 
 	if (likely(rht_entry))
-		ctx_info->rht_lun[i] = lun_info;
+		ctx_info->rht_lun[i] = lli;
 
 	pr_debug("%s: returning rht_entry=%p (%d)\n", __func__, rht_entry, i);
 	return rht_entry;
@@ -699,48 +651,48 @@ static void rht_format1(struct sisl_rht_entry *rht_entry, u64 lun_id, u32 perm,
 
 /**
  * cxlflash_lun_attach() - attaches a user to a LUN and manages the LUN's mode
- * @lun_info:	LUN to attach.
+ * @lli:	LUN to attach.
  * @mode:	Desired mode of the LUN.
  *
  * Return: 0 on success, -errno on failure
  */
-int cxlflash_lun_attach(struct lun_info *lun_info, enum lun_mode mode)
+int cxlflash_lun_attach(struct llun_info *lli, enum lun_mode mode)
 {
 	int rc = 0;
 
-	spin_lock(&lun_info->parent->slock);
-	if (lun_info->parent->mode == MODE_NONE)
-		lun_info->parent->mode = mode;
-	else if (lun_info->parent->mode != mode) {
+	spin_lock(&lli->parent->slock);
+	if (lli->parent->mode == MODE_NONE)
+		lli->parent->mode = mode;
+	else if (lli->parent->mode != mode) {
 		pr_err("%s: LUN operating in mode %d, requested mode %d\n",
-		       __func__, lun_info->parent->mode, mode);
+		       __func__, lli->parent->mode, mode);
 		rc = -EINVAL;
 		goto out;
 	}
 
-	lun_info->users++;
-	BUG_ON(lun_info->users <= 0);
+	lli->users++;
+	BUG_ON(lli->users <= 0);
 out:
 	pr_debug("%s: Returning rc=%d li_mode=%u li_users=%u\n",
-		 __func__, rc, lun_info->parent->mode, lun_info->users);
-	spin_unlock(&lun_info->parent->slock);
+		 __func__, rc, lli->parent->mode, lli->users);
+	spin_unlock(&lli->parent->slock);
 	return rc;
 }
 
 /**
  * cxlflash_lun_detach() - detaches a user from a LUN and resets the LUN's mode
- * @lun_info:	LUN to detach.
+ * @lli:	LUN to detach.
  */
-void cxlflash_lun_detach(struct lun_info *lun_info)
+void cxlflash_lun_detach(struct llun_info *lli)
 {
-	spin_lock(&lun_info->parent->slock);
+	spin_lock(&lli->parent->slock);
 	/* XXX - remove me before submit */
-	BUG_ON(lun_info->parent->mode == MODE_NONE);
-	if (--lun_info->users == 0)
-		lun_info->parent->mode = MODE_NONE;
-	pr_debug("%s: li_users=%u\n", __func__, lun_info->users);
-	BUG_ON(lun_info->users < 0);
-	spin_unlock(&lun_info->parent->slock);
+	BUG_ON(lli->parent->mode == MODE_NONE);
+	if (--lli->users == 0)
+		lli->parent->mode = MODE_NONE;
+	pr_debug("%s: li_users=%u\n", __func__, lli->users);
+	BUG_ON(lli->users < 0);
+	spin_unlock(&lli->parent->slock);
 }
 
 /**
@@ -757,7 +709,7 @@ int cxlflash_disk_release(struct scsi_device *sdev,
 			  struct dk_cxlflash_release *release)
 {
 	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)sdev->host->hostdata;
-	struct lun_info *lun_info = sdev->hostdata;
+	struct llun_info *lli = sdev->hostdata;
 	struct afu *afu = cfg->afu;
 
 	struct dk_cxlflash_resize size;
@@ -772,17 +724,17 @@ int cxlflash_disk_release(struct scsi_device *sdev,
 	struct sisl_rht_entry_f1 *rht_entry_f1;
 
 	pr_debug("%s: ctxid=%llu res_hndl=0x%llx li->mode=%u li->users=%u\n",
-		 __func__, ctxid, release->rsrc_handle, lun_info->parent->mode,
-		 lun_info->users);
+		 __func__, ctxid, release->rsrc_handle, lli->parent->mode,
+		 lli->users);
 
-	ctx_info = get_context(cfg, rctxid, lun_info, 0);
+	ctx_info = get_context(cfg, rctxid, lli, 0);
 	if (unlikely(!ctx_info)) {
 		pr_err("%s: Invalid context! (%llu)\n", __func__, ctxid);
 		rc = -EINVAL;
 		goto out;
 	}
 
-	rht_entry = get_rhte(ctx_info, res_hndl, lun_info);
+	rht_entry = get_rhte(ctx_info, res_hndl, lli);
 	if (unlikely(!rht_entry)) {
 		pr_err("%s: Invalid resource handle! (%d)\n",
 		       __func__, res_hndl);
@@ -797,7 +749,7 @@ int cxlflash_disk_release(struct scsi_device *sdev,
 	 *
 	 * Afterwards we clear the remaining fields.
 	 */
-	switch (lun_info->parent->mode) {
+	switch (lli->parent->mode) {
 	case MODE_VIRTUAL:
 		marshall_rele_to_resize(release, &size);
 		size.req_size = 0;
@@ -833,7 +785,7 @@ int cxlflash_disk_release(struct scsi_device *sdev,
 	}
 
 	rhte_checkin(ctx_info, rht_entry);
-	cxlflash_lun_detach(lun_info);
+	cxlflash_lun_detach(lli);
 
 out:
 	if (likely(ctx_info))
@@ -908,7 +860,7 @@ static struct ctx_info *create_context(struct cxlflash_cfg *cfg,
 	}
 
 	ctx_info = (struct ctx_info *)tmp;
-	ctx_info->rht_lun = (struct lun_info **)(tmp + sizeof(*ctx_info));
+	ctx_info->rht_lun = (struct llun_info **)(tmp + sizeof(*ctx_info));
 	ctx_info->rht_start = rht;
 	ctx_info->rht_perms = perms;
 
@@ -946,7 +898,7 @@ static int cxlflash_disk_detach(struct scsi_device *sdev,
 				struct dk_cxlflash_detach *detach)
 {
 	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)sdev->host->hostdata;
-	struct lun_info *lun_info = sdev->hostdata;
+	struct llun_info *lli = sdev->hostdata;
 	struct lun_access *lun_access, *t;
 	struct dk_cxlflash_release rel;
 	struct ctx_info *ctx_info = NULL;
@@ -960,7 +912,7 @@ static int cxlflash_disk_detach(struct scsi_device *sdev,
 
 	pr_debug("%s: ctxid=%llu\n", __func__, ctxid);
 
-	ctx_info = get_context(cfg, rctxid, lun_info, CTX_CTRL_ERR_FALLBACK);
+	ctx_info = get_context(cfg, rctxid, lli, CTX_CTRL_ERR_FALLBACK);
 	if (unlikely(!ctx_info)) {
 		pr_err("%s: Invalid context! (%llu)\n", __func__, ctxid);
 		rc = -EINVAL;
@@ -971,7 +923,7 @@ static int cxlflash_disk_detach(struct scsi_device *sdev,
 	if (ctx_info->rht_out) {
 		marshall_det_to_rele(detach, &rel);
 		for (i = 0; i < MAX_RHT_PER_CONTEXT; i++) {
-			if (ctx_info->rht_lun[i] == lun_info) {
+			if (ctx_info->rht_lun[i] == lli) {
 				rel.rsrc_handle = i;
 				cxlflash_disk_release(sdev, &rel);
 			}
@@ -984,7 +936,7 @@ static int cxlflash_disk_detach(struct scsi_device *sdev,
 
 	/* Take our LUN out of context, free the node */
 	list_for_each_entry_safe(lun_access, t, &ctx_info->luns, list)
-		if (lun_access->lun_info == lun_info) {
+		if (lun_access->lli == lli) {
 			list_del(&lun_access->list);
 			kfree(lun_access);
 			lun_access = NULL;
@@ -1380,7 +1332,7 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 {
 	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)sdev->host->hostdata;
 	struct afu *afu = cfg->afu;
-	struct lun_info *lun_info = sdev->hostdata;
+	struct llun_info *lli = sdev->hostdata;
 	struct cxl_ioctl_start_work *work;
 	struct ctx_info *ctx_info = NULL;
 	struct lun_access *lun_access = NULL;
@@ -1406,19 +1358,18 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 		goto out;
 	}
 
-	if (lun_info->parent->max_lba == 0) {
+	if (lli->parent->max_lba == 0) {
 		pr_debug("%s: No capacity info yet for this LUN (%016llX)\n",
-			 __func__, lun_info->lun_id[sdev->channel]);
-		rc = read_cap16(afu, lun_info, CHAN2PORT(sdev->channel));
+			 __func__, lli->lun_id[sdev->channel]);
+		rc = read_cap16(afu, lli, CHAN2PORT(sdev->channel));
 		if (rc) {
 			pr_err("%s: Invalid device! (%d)\n", __func__, rc);
 			rc = -ENODEV;
 			goto out;
 		}
-		pr_debug("%s: LBA = %016llX\n", __func__,
-			 lun_info->parent->max_lba);
+		pr_debug("%s: LBA = %016llX\n", __func__, lli->parent->max_lba);
 		pr_debug("%s: BLK_LEN = %08X\n", __func__,
-			 lun_info->parent->blk_len);
+			 lli->parent->blk_len);
 	}
 
 	if (attach->hdr.flags & DK_CXLFLASH_ATTACH_REUSE_CONTEXT) {
@@ -1432,7 +1383,7 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 		}
 
 		list_for_each_entry(lun_access, &ctx_info->luns, list)
-			if (lun_access->lun_info == lun_info) {
+			if (lun_access->lli == lli) {
 				pr_err("%s: Context already attached!\n",
 				       __func__);
 				rc = -EINVAL;
@@ -1447,7 +1398,7 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 		goto out;
 	}
 
-	lun_access->lun_info = lun_info;
+	lun_access->lli = lli;
 	lun_access->sdev = sdev;
 
 	/* Non-NULL context indicates reuse */
@@ -1518,11 +1469,11 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 out_attach:
 	attach->hdr.return_flags = 0;
 	attach->context_id = ctx_info->ctxid;
-	attach->block_size = lun_info->parent->blk_len;
+	attach->block_size = lli->parent->blk_len;
 	attach->mmio_size = sizeof(afu->afu_map->hosts[0].harea);
-	attach->last_lba = lun_info->parent->max_lba;
+	attach->last_lba = lli->parent->max_lba;
 	attach->max_xfer = (sdev->host->max_sectors * 512) /
-		lun_info->parent->blk_len;
+		lli->parent->blk_len;
 
 out:
 	attach->adap_fd = fd;
@@ -1577,30 +1528,30 @@ static int cxlflash_manage_lun(struct scsi_device *sdev,
 			       struct dk_cxlflash_manage_lun *manage)
 {
 	int rc = 0;
-	struct lun_info *lun_info = NULL;
+	struct llun_info *lli = NULL;
 	u64 flags = manage->hdr.flags;
 	u32 chan = sdev->channel;
 
-	lun_info = lookup_lun(sdev, manage->wwid);
+	lli = lookup_lun(sdev, manage->wwid);
 	pr_debug("%s: ENTER: WWID = %016llX%016llX, flags = %016llX li = %p\n",
 		 __func__, get_unaligned_le64(&manage->wwid[0]),
 		 get_unaligned_le64(&manage->wwid[8]),
-		 manage->hdr.flags, lun_info);
-	if (unlikely(!lun_info)) {
+		 manage->hdr.flags, lli);
+	if (unlikely(!lli)) {
 		rc = -ENOMEM;
 		goto out;
 	}
 
 	if (flags & DK_CXLFLASH_MANAGE_LUN_ENABLE_SUPERPIPE) {
-		if (lun_info->newly_created)
-			lun_info->port_sel = CHAN2PORT(chan);
+		if (lli->newly_created)
+			lli->port_sel = CHAN2PORT(chan);
 		else
-			lun_info->port_sel = BOTH_PORTS;
+			lli->port_sel = BOTH_PORTS;
 		/* Store off lun in unpacked, AFU-friendly format */
-		lun_info->lun_id[chan] = lun_to_lunid(sdev->lun);
-		sdev->hostdata = lun_info;
+		lli->lun_id[chan] = lun_to_lunid(sdev->lun);
+		sdev->hostdata = lli;
 	} else if (flags & DK_CXLFLASH_MANAGE_LUN_DISABLE_SUPERPIPE) {
-		if (lun_info->parent->mode != MODE_NONE)
+		if (lli->parent->mode != MODE_NONE)
 			rc = -EBUSY;
 		else
 			sdev->hostdata = NULL;
@@ -1710,7 +1661,7 @@ static int cxlflash_afu_recover(struct scsi_device *sdev,
 				struct dk_cxlflash_recover_afu *recover)
 {
 	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)sdev->host->hostdata;
-	struct lun_info *lun_info = sdev->hostdata;
+	struct llun_info *lli = sdev->hostdata;
 	struct afu *afu = cfg->afu;
 	struct ctx_info *ctx_info = NULL;
 	u64 ctxid = DECODE_CTXID(recover->context_id),
@@ -1723,7 +1674,7 @@ static int cxlflash_afu_recover(struct scsi_device *sdev,
 
 retry:
 	/* Ensure that this process is attached to the context */
-	ctx_info = get_context(cfg, rctxid, lun_info, CTX_CTRL_ERR_FALLBACK);
+	ctx_info = get_context(cfg, rctxid, lli, CTX_CTRL_ERR_FALLBACK);
 	if (unlikely(!ctx_info)) {
 		pr_err("%s: Invalid context! (%llu)\n", __func__, ctxid);
 		rc = -EINVAL;
@@ -1781,10 +1732,10 @@ static int process_sense(struct scsi_device *sdev,
 {
 	struct request_sense_data *sense_data = (struct request_sense_data *)
 		&verify->sense_data;
-	struct lun_info *lun_info = sdev->hostdata;
+	struct llun_info *lli = sdev->hostdata;
 	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)sdev->host->hostdata;
 	struct afu *afu = cfg->afu;
-	u64 prev_lba = lun_info->parent->max_lba;
+	u64 prev_lba = lli->parent->max_lba;
 	u32 chan = sdev->channel;
 	int rc = 0;
 
@@ -1799,15 +1750,15 @@ static int process_sense(struct scsi_device *sdev,
 		case 0x29: /* Power on Reset or Device Reset */
 			/* fall through */
 		case 0x2A: /* Device settings/capacity changed */
-			rc = read_cap16(afu, lun_info, CHAN2PORT(chan));
+			rc = read_cap16(afu, lli, CHAN2PORT(chan));
 			if (rc) {
 				rc = -ENODEV;
 				break;
 			}
-			if (prev_lba != lun_info->parent->max_lba)
+			if (prev_lba != lli->parent->max_lba)
 				pr_debug("%s: Capacity changed old=%lld "
 					 "new=%lld\n", __func__, prev_lba,
-					 lun_info->parent->max_lba);
+					 lli->parent->max_lba);
 			break;
 		case 0x3F: /* Report LUNs changed, Rescan. */
 			scsi_scan_host(cfg->host);
@@ -1839,7 +1790,7 @@ static int cxlflash_disk_verify(struct scsi_device *sdev,
 	int rc = 0;
 	struct ctx_info *ctx_info = NULL;
 	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)sdev->host->hostdata;
-	struct lun_info *lun_info = sdev->hostdata;
+	struct llun_info *lli = sdev->hostdata;
 	struct sisl_rht_entry *rht_entry = NULL;
 	res_hndl_t res_hndl = verify->rsrc_handle;
 	u64 ctxid = DECODE_CTXID(verify->context_id),
@@ -1849,7 +1800,7 @@ static int cxlflash_disk_verify(struct scsi_device *sdev,
 	pr_debug("%s: ctxid=%llu res_hndl=0x%llx, hint=0x%llx\n",
 		 __func__, ctxid, verify->rsrc_handle, verify->hint);
 
-	ctx_info = get_context(cfg, rctxid, lun_info, 0);
+	ctx_info = get_context(cfg, rctxid, lli, 0);
 	if (unlikely(!ctx_info)) {
 		pr_err("%s: Invalid context! (%llu)\n",
 		       __func__, ctxid);
@@ -1857,7 +1808,7 @@ static int cxlflash_disk_verify(struct scsi_device *sdev,
 		goto out;
 	}
 
-	rht_entry = get_rhte(ctx_info, res_hndl, lun_info);
+	rht_entry = get_rhte(ctx_info, res_hndl, lli);
 	if (unlikely(!rht_entry)) {
 		pr_err("%s: Invalid resource handle! (%d)\n",
 		       __func__, res_hndl);
@@ -1878,14 +1829,13 @@ static int cxlflash_disk_verify(struct scsi_device *sdev,
 		}
 	}
 
-	switch (lun_info->parent->mode) {
+	switch (lli->parent->mode) {
 	case MODE_PHYSICAL:
-		last_lba = lun_info->parent->max_lba;
+		last_lba = lli->parent->max_lba;
 		break;
 	case MODE_VIRTUAL:
 		last_lba = (((rht_entry->lxt_cnt * MC_CHUNK_SIZE *
-			      lun_info->parent->blk_len) /
-			     CXLFLASH_BLOCK_SIZE) - 1);
+			      lli->parent->blk_len) / CXLFLASH_BLOCK_SIZE) - 1);
 		break;
 	default:
 		BUG();
@@ -1950,7 +1900,7 @@ static int cxlflash_disk_direct_open(struct scsi_device *sdev, void *arg)
 {
 	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)sdev->host->hostdata;
 	struct afu *afu = cfg->afu;
-	struct lun_info *lun_info = sdev->hostdata;
+	struct llun_info *lli = sdev->hostdata;
 
 	struct dk_cxlflash_udirect *pphys = (struct dk_cxlflash_udirect *)arg;
 
@@ -1968,21 +1918,21 @@ static int cxlflash_disk_direct_open(struct scsi_device *sdev, void *arg)
 
 	pr_debug("%s: ctxid=%llu ls=0x%llx\n", __func__, ctxid, lun_size);
 
-	rc = cxlflash_lun_attach(lun_info, MODE_PHYSICAL);
+	rc = cxlflash_lun_attach(lli, MODE_PHYSICAL);
 	if (unlikely(rc)) {
 		pr_err("%s: Failed to attach to LUN! mode=%u\n",
 		       __func__, MODE_PHYSICAL);
 		goto out;
 	}
 
-	ctx_info = get_context(cfg, rctxid, lun_info, 0);
+	ctx_info = get_context(cfg, rctxid, lli, 0);
 	if (unlikely(!ctx_info)) {
 		pr_err("%s: Invalid context! (%llu)\n", __func__, ctxid);
 		rc = -EINVAL;
 		goto err1;
 	}
 
-	rht_entry = rhte_checkout(ctx_info, lun_info);
+	rht_entry = rhte_checkout(ctx_info, lli);
 	if (unlikely(!rht_entry)) {
 		pr_err("%s: too many opens for this context\n", __func__);
 		rc = -EMFILE;	/* too many opens  */
@@ -1991,11 +1941,11 @@ static int cxlflash_disk_direct_open(struct scsi_device *sdev, void *arg)
 
 	rsrc_handle = (rht_entry - ctx_info->rht_start);
 
-	rht_format1(rht_entry, lun_info->lun_id[sdev->channel],
+	rht_format1(rht_entry, lli->lun_id[sdev->channel],
 		    ctx_info->rht_perms, port_sel);
 	cxlflash_afu_sync(afu, ctxid, rsrc_handle, AFU_LW_SYNC);
 
-	last_lba = lun_info->parent->max_lba;
+	last_lba = lli->parent->max_lba;
 	pphys->hdr.return_flags = 0;
 	pphys->last_lba = last_lba;
 	pphys->rsrc_handle = rsrc_handle;
@@ -2008,7 +1958,7 @@ out:
 	return rc;
 
 err1:
-	cxlflash_lun_detach(lun_info);
+	cxlflash_lun_detach(lli);
 	goto out;
 }
 
@@ -2023,10 +1973,10 @@ err1:
 static int ioctl_common(struct scsi_device *sdev)
 {
 	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)sdev->host->hostdata;
-	struct lun_info *lun_info = sdev->hostdata;
+	struct llun_info *lli = sdev->hostdata;
 	int rc = 0;
 
-	if (unlikely(!lun_info)) {
+	if (unlikely(!lli)) {
 		pr_debug("%s: Unknown LUN\n", __func__);
 		rc = -EINVAL;
 		goto out;

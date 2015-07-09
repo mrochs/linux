@@ -122,13 +122,13 @@ struct blka {
 	struct mutex mutex;
 };
 
-/* Global lun_info structure, Capacity, block allocator are here */
+/* Global (entire driver, spans adapters) lun_info structure */
 struct glun_info {
 	u64 max_lba;		/* from read cap(16) */
 	u32 blk_len;		/* from read cap(16) */
 	enum lun_mode mode;	/* NONE, VIRTUAL, PHYSICAL */
 
-	__u8 wwid[16];
+	u8 wwid[16];
 
 	spinlock_t slock;
 
@@ -136,17 +136,17 @@ struct glun_info {
 	struct list_head list;
 };
 
-/* LUN discovery results are in lun_info */
-struct lun_info {
+/* Local (per-adapter) lun_info structure */
+struct llun_info {
 	u64 lun_id[CXLFLASH_NUM_FC_PORTS]; /* from REPORT_LUNS */
-	u32 lun_index;          /* Index in the lun table */
+	u32 lun_index;		/* Index in the lun table */
 	u32 host_no;		/* host_no from Scsi_host */
 	u32 port_sel;		/* What port to use for this LUN */
 	bool newly_created;	/* Whether the LUN was just discovered */
-	bool in_table;	        /* Whether a LUN table entry was created */
+	bool in_table;		/* Whether a LUN table entry was created */
 	int users;		/* Number of users w/ references to LUN */
 
-	__u8 wwid[16];          /* Keep a duplicate copy here? */
+	u8 wwid[16];		/* Keep a duplicate copy here? */
 
 	struct glun_info *parent; /* Pointer to entry in global lun structure */
 	struct scsi_device *sdev;
@@ -154,7 +154,7 @@ struct lun_info {
 };
 
 struct lun_access {
-	struct lun_info *lun_info;
+	struct llun_info *lli;
 	struct scsi_device *sdev;
 	struct list_head list;
 };
@@ -176,7 +176,7 @@ struct ctx_info {
 					     alloc/free on attach/detach */
 	u32 rht_out;		/* Number of checked out RHT entries */
 	u32 rht_perms;		/* User-defined permissions for RHT entries */
-	struct lun_info **rht_lun; /* Mapping of RHT entries to LUNs */
+	struct llun_info **rht_lun; /* Mapping of RHT entries to LUNs */
 
 	struct cxl_ioctl_start_work work;
 	u64 ctxid;
@@ -206,17 +206,17 @@ int cxlflash_disk_clone(struct scsi_device *, struct dk_cxlflash_clone *);
 
 int cxlflash_disk_virtual_open(struct scsi_device *, void *);
 
-int cxlflash_lun_attach(struct lun_info *, enum lun_mode);
-void cxlflash_lun_detach(struct lun_info *);
+int cxlflash_lun_attach(struct llun_info *, enum lun_mode);
+void cxlflash_lun_detach(struct llun_info *);
 
 int cxlflash_check_status(struct afu_cmd *);
 
 struct ctx_info *get_context(struct cxlflash_cfg *, u64, void *, enum ctx_ctrl);
 
 struct sisl_rht_entry *get_rhte(struct ctx_info *, res_hndl_t,
-				struct lun_info *);
+				struct llun_info *);
 
-struct sisl_rht_entry *rhte_checkout(struct ctx_info *, struct lun_info *);
+struct sisl_rht_entry *rhte_checkout(struct ctx_info *, struct llun_info *);
 void rhte_checkin(struct ctx_info *, struct sisl_rht_entry *);
 
 void cxlflash_ba_terminate(struct ba_lun *);

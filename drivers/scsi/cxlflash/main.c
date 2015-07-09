@@ -753,8 +753,6 @@ static struct scsi_host_template driver_template = {
 	.queuecommand = cxlflash_queuecommand,
 	.eh_device_reset_handler = cxlflash_eh_device_reset_handler,
 	.eh_host_reset_handler = cxlflash_eh_host_reset_handler,
-	.slave_alloc = cxlflash_slave_alloc,
-	.slave_configure = cxlflash_slave_configure,
 	.change_queue_depth = cxlflash_change_queue_depth,
 	.cmd_per_lun = 16,
 	.can_queue = CXLFLASH_MAX_CMDS,
@@ -2288,8 +2286,8 @@ static int cxlflash_probe(struct pci_dev *pdev,
 	cfg->dev = pdev;
 
 	/* The promoted LUNs move to the top of the LUN table. The rest stay
-	 * on the bottom half. The bottom half grows from the end 
-	 * (index = 255), whereas the top half grows from the beginning 
+	 * on the bottom half. The bottom half grows from the end
+	 * (index = 255), whereas the top half grows from the beginning
 	 * (index = 0).
 	 */
 	cfg->promote_lun_index  = 0;

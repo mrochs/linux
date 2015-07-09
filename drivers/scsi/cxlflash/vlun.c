@@ -378,18 +378,18 @@ void cxlflash_ba_terminate(struct ba_lun *ba_lun)
  *
  * Return: 0 on success, -errno on failure
  */
-static int init_ba(struct lun_info *lun_info)
+static int init_ba(struct llun_info *lli)
 {
 	int rc = 0;
-	struct blka *blka = &lun_info->parent->blka;
+	struct blka *blka = &lli->parent->blka;
 
 	memset(blka, 0, sizeof(*blka));
 	mutex_init(&blka->mutex);
 
 	/* LUN IDs are unique per port, save the index instead */
-	blka->ba_lun.lun_id = lun_info->lun_index;
-	blka->ba_lun.lsize = lun_info->parent->max_lba + 1;
-	blka->ba_lun.lba_size = lun_info->parent->blk_len;
+	blka->ba_lun.lun_id = lli->lun_index;
+	blka->ba_lun.lsize = lli->parent->max_lba + 1;
+	blka->ba_lun.lba_size = lli->parent->blk_len;
 
 	blka->ba_lun.au_size = MC_CHUNK_SIZE;
 	blka->nchunk = blka->ba_lun.lsize / MC_CHUNK_SIZE;
@@ -401,14 +401,14 @@ static int init_ba(struct lun_info *lun_info)
 	}
 
 init_ba_exit:
-	pr_debug("%s: returning rc=%d lun_info=%p\n", __func__, rc, lun_info);
+	pr_debug("%s: returning rc=%d lli=%p\n", __func__, rc, lli);
 	return rc;
 }
 
 /**
  * write_same16() - sends a SCSI WRITE_SAME16 (0) command to specified LUN
  * @afu:	AFU associated with the host.
- * @lun_info:	Information structure associated with LUN.
+ * @sdev:	SCSI device associated with LUN.
  * @lba:	Logical block address to start write same.
  * @nblks:	Number of logical blocks to write same.
  *
@@ -420,7 +420,7 @@ static int write_same16(struct afu *afu,
 			u32 nblks)
 {
 	struct afu_cmd *cmd = NULL;
-	struct lun_info *lun_info = sdev->hostdata;
+	struct llun_info *lli = sdev->hostdata;
 	int rc = 0;
 
 	cmd = cxlflash_cmd_checkout(afu);
@@ -435,7 +435,7 @@ static int write_same16(struct afu *afu,
 			      SISL_REQ_FLAGS_HOST_READ);
 
 	cmd->rcb.port_sel = CHAN2PORT(sdev->channel);
-	cmd->rcb.lun_id = lun_info->lun_id[sdev->channel];
+	cmd->rcb.lun_id = lli->lun_id[sdev->channel];
 	cmd->rcb.data_len = CMD_BUFSIZE;
 	cmd->rcb.data_ea = (u64) cmd->buf; /* Filled w/ zeros on checkout */
 	cmd->rcb.timeout = MC_DISCOVERY_TIMEOUT;
@@ -470,7 +470,7 @@ out:
 /**
  * grow_lxt() - expands the translation table associated with the specified RHTE
  * @afu:	AFU associated with the host.
- * @lun_info:	Information structure associated with LUN.
+ * @sdev:	SCSI device associated with LUN.
  * @ctx_hndl_u:	Context ID of context owning the RHTE.
  * @res_hndl_u:	Resource handle associated with the RHTE.
  * @rht_entry:	Resource handle entry (RHTE).
@@ -493,14 +493,14 @@ static int grow_lxt(struct afu *afu,
 		    u64 *new_size)
 {
 	struct sisl_lxt_entry *lxt = NULL, *lxt_old = NULL;
-	struct lun_info *lun_info = sdev->hostdata;
+	struct llun_info *lli = sdev->hostdata;
 	u32 av_size;
 	u32 ngrps, ngrps_old;
 	u64 aun;		/* chunk# allocated by block allocator */
 	u64 delta = *new_size - rht_entry->lxt_cnt;
 	u64 my_new_size;
 	int i, rc = 0;
-	struct blka *blka = &lun_info->parent->blka;
+	struct blka *blka = &lli->parent->blka;
 
 	/*
 	 * Check what is available in the block allocator before re-allocating
@@ -557,9 +557,9 @@ static int grow_lxt(struct afu *afu,
 
 		/* select both ports, use r/w perms from RHT */
 		lxt[i].rlba_base = ((aun << MC_CHUNK_SHIFT) |
-				    (lun_info->lun_index << LXT_LUNIDX_SHIFT) |
+				    (lli->lun_index << LXT_LUNIDX_SHIFT) |
 				    (RHT_PERM_RW << LXT_PERM_SHIFT |
-				     lun_info->port_sel));
+				     lli->port_sel));
 	}
 
 	mutex_unlock(&blka->mutex);
@@ -590,7 +590,7 @@ out:
 /**
  * shrink_lxt() - reduces translation table associated with the specified RHTE
  * @afu:	AFU associated with the host.
- * @lun_info:	Information structure associated with LUN.
+ * @sdev:	SCSI device associated with LUN.
  * @ctx_hndl_u:	Context ID of context owning the RHTE.
  * @res_hndl_u:	Resource handle associated with the RHTE.
  * @rht_entry:	Resource handle entry (RHTE).
@@ -607,13 +607,13 @@ static int shrink_lxt(struct afu *afu,
 		      u64 *new_size)
 {
 	struct sisl_lxt_entry *lxt, *lxt_old;
-	struct lun_info *lun_info = sdev->hostdata;
+	struct llun_info *lli = sdev->hostdata;
 	u32 ngrps, ngrps_old;
 	u64 aun;		/* chunk# allocated by block allocator */
 	u64 delta = rht_entry->lxt_cnt - *new_size;
 	u64 my_new_size;
 	int i, rc = 0;
-	struct blka *blka = &lun_info->parent->blka;
+	struct blka *blka = &lli->parent->blka;
 
 	lxt_old = rht_entry->lxt_start;
 	ngrps_old = LXT_NUM_GROUPS(rht_entry->lxt_cnt);
@@ -690,7 +690,7 @@ int cxlflash_vlun_resize(struct scsi_device *sdev,
 			 struct dk_cxlflash_resize *resize)
 {
 	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)sdev->host->hostdata;
-	struct lun_info *lun_info = sdev->hostdata;
+	struct llun_info *lli = sdev->hostdata;
 	struct afu *afu = cfg->afu;
 
 	res_hndl_t res_hndl = resize->rsrc_handle;
@@ -708,22 +708,22 @@ int cxlflash_vlun_resize(struct scsi_device *sdev,
 	 * it from 4k to chunk size
 	 */
 	nsectors = (resize->req_size * CXLFLASH_BLOCK_SIZE) /
-	    (lun_info->parent->blk_len);
+		(lli->parent->blk_len);
 	new_size = (nsectors + MC_CHUNK_SIZE - 1) / MC_CHUNK_SIZE;
 
 	pr_debug("%s: ctxid=%llu res_hndl=0x%llx, req_size=0x%llx,"
 		 "new_size=%llx\n", __func__, ctxid, resize->rsrc_handle,
 		 resize->req_size, new_size);
 
-	if (unlikely(lun_info->parent->mode != MODE_VIRTUAL)) {
+	if (unlikely(lli->parent->mode != MODE_VIRTUAL)) {
 		pr_err("%s: LUN mode does not support resize! (%d)\n",
-		       __func__, lun_info->parent->mode);
+		       __func__, lli->parent->mode);
 		rc = -EINVAL;
 		goto out;
 
 	}
 
-	ctx_info = get_context(cfg, rctxid, lun_info, 0);
+	ctx_info = get_context(cfg, rctxid, lli, 0);
 	if (unlikely(!ctx_info)) {
 		pr_err("%s: Invalid context! (%llu)\n",
 		       __func__, ctxid);
@@ -731,7 +731,7 @@ int cxlflash_vlun_resize(struct scsi_device *sdev,
 		goto out;
 	}
 
-	rht_entry = get_rhte(ctx_info, res_hndl, lun_info);
+	rht_entry = get_rhte(ctx_info, res_hndl, lli);
 	if (unlikely(!rht_entry)) {
 		pr_err("%s: Invalid resource handle! (%u)\n",
 		       __func__, res_hndl);
@@ -755,8 +755,7 @@ int cxlflash_vlun_resize(struct scsi_device *sdev,
 				&new_size);
 
 	resize->hdr.return_flags = 0;
-	resize->last_lba = (((new_size * MC_CHUNK_SIZE *
-			      lun_info->parent->blk_len) /
+	resize->last_lba = (((new_size * MC_CHUNK_SIZE * lli->parent->blk_len) /
 			     CXLFLASH_BLOCK_SIZE) - 1);
 
 out:
@@ -768,26 +767,29 @@ out:
 }
 
 /**
- * init_lun_table() - Write an entry in the LUN table
+ * init_lun_table() - write an entry in the LUN table
  * @cfg:        Internal structure associated with the host.
- * @lun_info:	Per adapter LUN info structure
+ * @lli:	Per adapter LUN information structure.
  *
  * On successful return, a LUN table entry is created.
  * At the top for LUNs visible on both ports.
  * At the bottom for LUNs visible only on one port.
+ *
+ * Return: 0 on success, -errno on failure
  */
-static int init_lun_table(struct cxlflash_cfg *cfg, struct lun_info *lun_info)
+static int init_lun_table(struct cxlflash_cfg *cfg, struct llun_info *lli)
 {
 	u32 chan;
 	int rc = 0;
 	struct afu *afu = cfg->afu;
 
-	if (lun_info->in_table)
+	if (lli->in_table)
 		goto out;
 
-	if (lun_info->port_sel == BOTH_PORTS) {
-		/* If this LUN is visible from both ports, we will put
-		 * it in the top half of the LUN table 
+	if (lli->port_sel == BOTH_PORTS) {
+		/*
+		 * If this LUN is visible from both ports, we will put
+		 * it in the top half of the LUN table.
 		 */
 		if ((cfg->promote_lun_index == cfg->last_lun_index[0]) ||
 		    (cfg->promote_lun_index == cfg->last_lun_index[1])) {
@@ -795,39 +797,40 @@ static int init_lun_table(struct cxlflash_cfg *cfg, struct lun_info *lun_info)
 			goto out;
 		}
 
-		lun_info->lun_index = cfg->promote_lun_index;
-		writeq_be(lun_info->lun_id[0],
+		lli->lun_index = cfg->promote_lun_index;
+		writeq_be(lli->lun_id[0],
 			  &afu->afu_map->global.fc_port[0]
 			  [cfg->promote_lun_index]);
-		writeq_be(lun_info->lun_id[1],
+		writeq_be(lli->lun_id[1],
 			  &afu->afu_map->global.fc_port[1]
 			  [cfg->promote_lun_index]);
 		cfg->promote_lun_index++;
 		pr_debug("%s: Virtual LUN on slot %d  id0=%llx, id1=%llx\n",
-			 __func__, lun_info->lun_index, lun_info->lun_id[0],
-			 lun_info->lun_id[1]);
+			 __func__, lli->lun_index, lli->lun_id[0],
+			 lli->lun_id[1]);
 	} else {
-		/* If this LUN is visible only from one port, we will put
-		 * it in the bottom half of the LUN table 
+		/*
+		 * If this LUN is visible only from one port, we will put
+		 * it in the bottom half of the LUN table.
 		 */
-		chan = PORT2CHAN(lun_info->port_sel);
-		if ((cfg->promote_lun_index == cfg->last_lun_index[chan])) {
+		chan = PORT2CHAN(lli->port_sel);
+		if (cfg->promote_lun_index == cfg->last_lun_index[chan]) {
 			rc = -ENOSPC;
 			goto out;
 		}
-		lun_info->lun_index = cfg->last_lun_index[chan];
-		writeq_be(lun_info->lun_id[chan],
+
+		lli->lun_index = cfg->last_lun_index[chan];
+		writeq_be(lli->lun_id[chan],
 			  &afu->afu_map->global.fc_port[chan]
 			  [cfg->last_lun_index[chan]]);
 		cfg->last_lun_index[chan]--;
 		pr_debug("%s: Virtual LUN on slot %d  chan=%d, id=%llx\n",
-			 __func__, lun_info->lun_index, chan,
-			 lun_info->lun_id[chan]);
+			 __func__, lli->lun_index, chan, lli->lun_id[chan]);
 	}
-	lun_info->in_table = true;
+
+	lli->in_table = true;
 out:
-	pr_debug("%s: returning rc=%d\n",
-		 __func__, rc);
+	pr_debug("%s: returning rc=%d\n", __func__, rc);
 	return rc;
 }
 
@@ -846,7 +849,7 @@ out:
 int cxlflash_disk_virtual_open(struct scsi_device *sdev, void *arg)
 {
 	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)sdev->host->hostdata;
-	struct lun_info *lun_info = sdev->hostdata;
+	struct llun_info *lli = sdev->hostdata;
 
 	struct dk_cxlflash_uvirtual *virt = (struct dk_cxlflash_uvirtual *)arg;
 	struct dk_cxlflash_resize resize;
@@ -864,16 +867,16 @@ int cxlflash_disk_virtual_open(struct scsi_device *sdev, void *arg)
 
 	pr_debug("%s: ctxid=%llu ls=0x%llx\n", __func__, ctxid, lun_size);
 
-	if (lun_info->parent->mode == MODE_NONE) {
+	if (lli->parent->mode == MODE_NONE) {
 		/* Setup the LUN table on the first call */
-		rc = init_lun_table(cfg, lun_info);
+		rc = init_lun_table(cfg, lli);
 		if (rc) {
 			pr_err("%s: call to init_lun_table failed rc=%d!\n",
 			       __func__, rc);
 			goto out;
 		}
 
-		rc = init_ba(lun_info);
+		rc = init_ba(lli);
 		if (rc) {
 			pr_err("%s: call to init_ba failed rc=%d!\n",
 			       __func__, rc);
@@ -882,14 +885,14 @@ int cxlflash_disk_virtual_open(struct scsi_device *sdev, void *arg)
 		}
 	}
 
-	rc = cxlflash_lun_attach(lun_info, MODE_VIRTUAL);
+	rc = cxlflash_lun_attach(lli, MODE_VIRTUAL);
 	if (unlikely(rc)) {
 		pr_err("%s: Failed to attach to LUN! mode=%u\n",
 		       __func__, MODE_VIRTUAL);
 		goto out;
 	}
 
-	ctx_info = get_context(cfg, rctxid, lun_info, 0);
+	ctx_info = get_context(cfg, rctxid, lli, 0);
 	if (unlikely(!ctx_info)) {
 		pr_err("%s: Invalid context! (%llu)\n",
 		       __func__, ctxid);
@@ -897,7 +900,7 @@ int cxlflash_disk_virtual_open(struct scsi_device *sdev, void *arg)
 		goto err1;
 	}
 
-	rht_entry = rhte_checkout(ctx_info, lun_info);
+	rht_entry = rhte_checkout(ctx_info, lli);
 	if (unlikely(!rht_entry)) {
 		pr_err("%s: too many opens for this context\n", __func__);
 		rc = -EMFILE;	/* too many opens  */
@@ -934,7 +937,7 @@ out:
 err2:
 	rhte_checkin(ctx_info, rht_entry);
 err1:
-	cxlflash_lun_detach(lun_info);
+	cxlflash_lun_detach(lli);
 	goto out;
 }
 
@@ -1030,8 +1033,8 @@ int cxlflash_disk_clone(struct scsi_device *sdev,
 			struct dk_cxlflash_clone *clone)
 {
 	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)sdev->host->hostdata;
-	struct lun_info *lun_info = sdev->hostdata;
-	struct blka *blka = &lun_info->parent->blka;
+	struct llun_info *lli = sdev->hostdata;
+	struct blka *blka = &lli->parent->blka;
 	struct afu *afu = cfg->afu;
 	struct dk_cxlflash_release release = { { 0 }, 0 };
 
@@ -1058,15 +1061,15 @@ int cxlflash_disk_clone(struct scsi_device *sdev,
 		goto out;
 	}
 
-	if (unlikely(lun_info->parent->mode != MODE_VIRTUAL)) {
+	if (unlikely(lli->parent->mode != MODE_VIRTUAL)) {
 		rc = -EINVAL;
 		pr_err("%s: Clone not supported on physical LUNs! (%d)\n",
-		       __func__, lun_info->parent->mode);
+		       __func__, lli->parent->mode);
 		goto out;
 	}
 
-	ctx_info_src = get_context(cfg, rctxid_src, lun_info, CTX_CTRL_CLONE);
-	ctx_info_dst = get_context(cfg, rctxid_dst, lun_info, 0);
+	ctx_info_src = get_context(cfg, rctxid_src, lli, CTX_CTRL_CLONE);
+	ctx_info_dst = get_context(cfg, rctxid_dst, lli, 0);
 	if (unlikely(!ctx_info_src || !ctx_info_dst)) {
 		pr_err("%s: Invalid context! (%llu,%llu)\n",
 		       __func__, ctxid_src, ctxid_dst);
@@ -1160,7 +1163,7 @@ int cxlflash_disk_clone(struct scsi_device *sdev,
 			goto err;
 		}
 
-		cxlflash_lun_attach(lun_info, lun_info->parent->mode);
+		cxlflash_lun_attach(lli, lli->parent->mode);
 	}
 
 out_success:
