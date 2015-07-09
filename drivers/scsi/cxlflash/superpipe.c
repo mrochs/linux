@@ -265,6 +265,11 @@ void cxlflash_stop_term_user_contexts(struct cxlflash_cfg *cfg)
 		/* XXX - need to notify user */
 		pr_debug("%s: list context = %016llX\n",
 			 __func__, ctx_info->ctxid);
+		while (atomic_read(&ctx_info->nrefs) > 0) {
+			pr_debug("%s: waiting on threads... (%d)\n",
+				 __func__, atomic_read(&ctx_info->nrefs));
+			cpu_relax();
+		}
 	}
 }
 
@@ -1282,7 +1287,7 @@ retry:
 		ctx_info = cfg->ctx_tbl[i];
 
 		if (ctx_info) {
-			if (atomic_read(&ctx_info->nrefs) > 1) {
+			if (atomic_read(&ctx_info->nrefs) > 0) {
 				spin_unlock_irqrestore(&cfg->ctx_tbl_slock,
 						       lock_flags);
 				while (atomic_read(&ctx_info->nrefs) > 1) {
@@ -1688,6 +1693,15 @@ out:
  * @sdev:	SCSI device associated with LUN.
  * @recover:	Recover ioctl data structure.
  *
+ * Because a user can detect an error condition before the kernel, it is
+ * quite possible for this routine to act as the kernel's EEH detection
+ * source (MMIO read of mbox_r). Because of this, there is a window of
+ * time where an EEH might have been detected but not yet 'serviced'
+ * (callback invoked, causing the EEH state to flip). To avoid looping
+ * in this routine during that window, a 1 second sleep is in place
+ * between the time the MMIO failure is detected and the time a wait
+ * on the EEH wait queue is attempted.
+ *
  * Return: 0 on success, -errno on failure
  */
 static int cxlflash_afu_recover(struct scsi_device *sdev,
@@ -1735,11 +1749,12 @@ retry:
 	reg = readq_be(&afu->ctrl_map->mbox_r);
 	if (reg == -1) {
 		pr_info("%s: MMIO read fail! Wait for recovery...\n", __func__);
+		atomic_dec(&ctx_info->nrefs);
+		ctx_info = NULL;
 		ssleep(1);
 		rc = check_eeh(cfg);
 		if (unlikely(rc))
 			goto out;
-		atomic_dec(&ctx_info->nrefs);
 		goto retry;
 	}
 
