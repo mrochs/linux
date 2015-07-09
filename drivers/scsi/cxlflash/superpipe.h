@@ -127,6 +127,7 @@ struct glun_info {
 	u64 max_lba;		/* from read cap(16) */
 	u32 blk_len;		/* from read cap(16) */
 	enum lun_mode mode;	/* NONE, VIRTUAL, PHYSICAL */
+	int users;		/* Number of users w/ references to LUN */
 
 	u8 wwid[16];
 
@@ -144,7 +145,6 @@ struct llun_info {
 	u32 port_sel;		/* What port to use for this LUN */
 	bool newly_created;	/* Whether the LUN was just discovered */
 	bool in_table;		/* Whether a LUN table entry was created */
-	int users;		/* Number of users w/ references to LUN */
 
 	u8 wwid[16];		/* Keep a duplicate copy here? */
 
@@ -206,8 +206,8 @@ int cxlflash_disk_clone(struct scsi_device *, struct dk_cxlflash_clone *);
 
 int cxlflash_disk_virtual_open(struct scsi_device *, void *);
 
-int cxlflash_lun_attach(struct llun_info *, enum lun_mode);
-void cxlflash_lun_detach(struct llun_info *);
+int cxlflash_lun_attach(struct glun_info *, enum lun_mode);
+void cxlflash_lun_detach(struct glun_info *);
 
 int cxlflash_check_status(struct afu_cmd *);
 

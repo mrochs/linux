@@ -469,6 +469,7 @@ int cxlflash_check_status(struct afu_cmd *cmd)
  */
 static int read_cap16(struct afu *afu, struct llun_info *lli, u32 port_sel)
 {
+	struct glun_info *gli = lli->parent;
 	struct afu_cmd *cmd = NULL;
 	int rc = 0;
 
@@ -485,7 +486,7 @@ static int read_cap16(struct afu *afu, struct llun_info *lli, u32 port_sel)
 	cmd->rcb.port_sel = port_sel;
 	cmd->rcb.lun_id = lli->lun_id[port_sel-1];
 	cmd->rcb.data_len = CMD_BUFSIZE;
-	cmd->rcb.data_ea = (u64) cmd->buf;
+	cmd->rcb.data_ea = (u64)cmd->buf;
 	cmd->rcb.timeout = MC_DISCOVERY_TIMEOUT;
 
 	cmd->rcb.cdb[0] = 0x9E;	/* read cap(16) */
@@ -513,16 +514,16 @@ static int read_cap16(struct afu *afu, struct llun_info *lli, u32 port_sel)
 	 * note that we don't need to worry about unaligned access
 	 * as the buffer is allocated on an aligned boundary.
 	 */
-	spin_lock(&lli->parent->slock);
-	lli->parent->max_lba = swab64(*((u64 *)&cmd->buf[0]));
-	lli->parent->blk_len = swab32(*((u32 *)&cmd->buf[8]));
-	spin_unlock(&lli->parent->slock);
+	spin_lock(&gli->slock);
+	gli->max_lba = swab64(*((u64 *)&cmd->buf[0]));
+	gli->blk_len = swab32(*((u32 *)&cmd->buf[8]));
+	spin_unlock(&gli->slock);
 
 out:
 	if (cmd)
 		cxlflash_cmd_checkin(cmd);
 	pr_debug("%s: maxlba=%lld blklen=%d pcmd %p\n", __func__,
-		 lli->parent->max_lba, lli->parent->blk_len, cmd);
+		 gli->max_lba, gli->blk_len, cmd);
 	return rc;
 }
 
@@ -656,26 +657,26 @@ static void rht_format1(struct sisl_rht_entry *rht_entry, u64 lun_id, u32 perm,
  *
  * Return: 0 on success, -errno on failure
  */
-int cxlflash_lun_attach(struct llun_info *lli, enum lun_mode mode)
+int cxlflash_lun_attach(struct glun_info *gli, enum lun_mode mode)
 {
 	int rc = 0;
 
-	spin_lock(&lli->parent->slock);
-	if (lli->parent->mode == MODE_NONE)
-		lli->parent->mode = mode;
-	else if (lli->parent->mode != mode) {
+	spin_lock(&gli->slock);
+	if (gli->mode == MODE_NONE)
+		gli->mode = mode;
+	else if (gli->mode != mode) {
 		pr_err("%s: LUN operating in mode %d, requested mode %d\n",
-		       __func__, lli->parent->mode, mode);
+		       __func__, gli->mode, mode);
 		rc = -EINVAL;
 		goto out;
 	}
 
-	lli->users++;
-	BUG_ON(lli->users <= 0);
+	gli->users++;
+	BUG_ON(gli->users <= 0);
 out:
-	pr_debug("%s: Returning rc=%d li_mode=%u li_users=%u\n",
-		 __func__, rc, lli->parent->mode, lli->users);
-	spin_unlock(&lli->parent->slock);
+	pr_debug("%s: Returning rc=%d gli->mode=%u gli->users=%u\n",
+		 __func__, rc, gli->mode, gli->users);
+	spin_unlock(&gli->slock);
 	return rc;
 }
 
@@ -683,16 +684,15 @@ out:
  * cxlflash_lun_detach() - detaches a user from a LUN and resets the LUN's mode
  * @lli:	LUN to detach.
  */
-void cxlflash_lun_detach(struct llun_info *lli)
+void cxlflash_lun_detach(struct glun_info *gli)
 {
-	spin_lock(&lli->parent->slock);
-	/* XXX - remove me before submit */
-	BUG_ON(lli->parent->mode == MODE_NONE);
-	if (--lli->users == 0)
-		lli->parent->mode = MODE_NONE;
-	pr_debug("%s: li_users=%u\n", __func__, lli->users);
-	BUG_ON(lli->users < 0);
-	spin_unlock(&lli->parent->slock);
+	spin_lock(&gli->slock);
+	BUG_ON(gli->mode == MODE_NONE); /* XXX - remove me before submit */
+	if (--gli->users == 0)
+		gli->mode = MODE_NONE;
+	pr_debug("%s: gli->users=%u\n", __func__, gli->users);
+	BUG_ON(gli->users < 0);
+	spin_unlock(&gli->slock);
 }
 
 /**
@@ -710,6 +710,7 @@ int cxlflash_disk_release(struct scsi_device *sdev,
 {
 	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)sdev->host->hostdata;
 	struct llun_info *lli = sdev->hostdata;
+	struct glun_info *gli = lli->parent;
 	struct afu *afu = cfg->afu;
 
 	struct dk_cxlflash_resize size;
@@ -723,9 +724,8 @@ int cxlflash_disk_release(struct scsi_device *sdev,
 	struct sisl_rht_entry *rht_entry;
 	struct sisl_rht_entry_f1 *rht_entry_f1;
 
-	pr_debug("%s: ctxid=%llu res_hndl=0x%llx li->mode=%u li->users=%u\n",
-		 __func__, ctxid, release->rsrc_handle, lli->parent->mode,
-		 lli->users);
+	pr_debug("%s: ctxid=%llu res_hndl=0x%llx gli->mode=%u gli->users=%u\n",
+		 __func__, ctxid, release->rsrc_handle, gli->mode, gli->users);
 
 	ctx_info = get_context(cfg, rctxid, lli, 0);
 	if (unlikely(!ctx_info)) {
@@ -749,7 +749,7 @@ int cxlflash_disk_release(struct scsi_device *sdev,
 	 *
 	 * Afterwards we clear the remaining fields.
 	 */
-	switch (lli->parent->mode) {
+	switch (gli->mode) {
 	case MODE_VIRTUAL:
 		marshall_rele_to_resize(release, &size);
 		size.req_size = 0;
@@ -785,7 +785,7 @@ int cxlflash_disk_release(struct scsi_device *sdev,
 	}
 
 	rhte_checkin(ctx_info, rht_entry);
-	cxlflash_lun_detach(lli);
+	cxlflash_lun_detach(gli);
 
 out:
 	if (likely(ctx_info))
@@ -1333,6 +1333,7 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)sdev->host->hostdata;
 	struct afu *afu = cfg->afu;
 	struct llun_info *lli = sdev->hostdata;
+	struct glun_info *gli = lli->parent;
 	struct cxl_ioctl_start_work *work;
 	struct ctx_info *ctx_info = NULL;
 	struct lun_access *lun_access = NULL;
@@ -1358,7 +1359,7 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 		goto out;
 	}
 
-	if (lli->parent->max_lba == 0) {
+	if (gli->max_lba == 0) {
 		pr_debug("%s: No capacity info yet for this LUN (%016llX)\n",
 			 __func__, lli->lun_id[sdev->channel]);
 		rc = read_cap16(afu, lli, CHAN2PORT(sdev->channel));
@@ -1367,9 +1368,8 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 			rc = -ENODEV;
 			goto out;
 		}
-		pr_debug("%s: LBA = %016llX\n", __func__, lli->parent->max_lba);
-		pr_debug("%s: BLK_LEN = %08X\n", __func__,
-			 lli->parent->blk_len);
+		pr_debug("%s: LBA = %016llX\n", __func__, gli->max_lba);
+		pr_debug("%s: BLK_LEN = %08X\n", __func__, gli->blk_len);
 	}
 
 	if (attach->hdr.flags & DK_CXLFLASH_ATTACH_REUSE_CONTEXT) {
@@ -1469,11 +1469,10 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 out_attach:
 	attach->hdr.return_flags = 0;
 	attach->context_id = ctx_info->ctxid;
-	attach->block_size = lli->parent->blk_len;
+	attach->block_size = gli->blk_len;
 	attach->mmio_size = sizeof(afu->afu_map->hosts[0].harea);
-	attach->last_lba = lli->parent->max_lba;
-	attach->max_xfer = (sdev->host->max_sectors * 512) /
-		lli->parent->blk_len;
+	attach->last_lba = gli->max_lba;
+	attach->max_xfer = (sdev->host->max_sectors * 512) / gli->blk_len;
 
 out:
 	attach->adap_fd = fd;
@@ -1733,9 +1732,10 @@ static int process_sense(struct scsi_device *sdev,
 	struct request_sense_data *sense_data = (struct request_sense_data *)
 		&verify->sense_data;
 	struct llun_info *lli = sdev->hostdata;
+	struct glun_info *gli = lli->parent;
 	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)sdev->host->hostdata;
 	struct afu *afu = cfg->afu;
-	u64 prev_lba = lli->parent->max_lba;
+	u64 prev_lba = gli->max_lba;
 	u32 chan = sdev->channel;
 	int rc = 0;
 
@@ -1755,10 +1755,10 @@ static int process_sense(struct scsi_device *sdev,
 				rc = -ENODEV;
 				break;
 			}
-			if (prev_lba != lli->parent->max_lba)
+			if (prev_lba != gli->max_lba)
 				pr_debug("%s: Capacity changed old=%lld "
 					 "new=%lld\n", __func__, prev_lba,
-					 lli->parent->max_lba);
+					 gli->max_lba);
 			break;
 		case 0x3F: /* Report LUNs changed, Rescan. */
 			scsi_scan_host(cfg->host);
@@ -1791,6 +1791,7 @@ static int cxlflash_disk_verify(struct scsi_device *sdev,
 	struct ctx_info *ctx_info = NULL;
 	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)sdev->host->hostdata;
 	struct llun_info *lli = sdev->hostdata;
+	struct glun_info *gli = lli->parent;
 	struct sisl_rht_entry *rht_entry = NULL;
 	res_hndl_t res_hndl = verify->rsrc_handle;
 	u64 ctxid = DECODE_CTXID(verify->context_id),
@@ -1829,13 +1830,13 @@ static int cxlflash_disk_verify(struct scsi_device *sdev,
 		}
 	}
 
-	switch (lli->parent->mode) {
+	switch (gli->mode) {
 	case MODE_PHYSICAL:
-		last_lba = lli->parent->max_lba;
+		last_lba = gli->max_lba;
 		break;
 	case MODE_VIRTUAL:
 		last_lba = (((rht_entry->lxt_cnt * MC_CHUNK_SIZE *
-			      lli->parent->blk_len) / CXLFLASH_BLOCK_SIZE) - 1);
+			      gli->blk_len) / CXLFLASH_BLOCK_SIZE) - 1);
 		break;
 	default:
 		BUG();
@@ -1901,6 +1902,7 @@ static int cxlflash_disk_direct_open(struct scsi_device *sdev, void *arg)
 	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)sdev->host->hostdata;
 	struct afu *afu = cfg->afu;
 	struct llun_info *lli = sdev->hostdata;
+	struct glun_info *gli = lli->parent;
 
 	struct dk_cxlflash_udirect *pphys = (struct dk_cxlflash_udirect *)arg;
 
@@ -1918,7 +1920,7 @@ static int cxlflash_disk_direct_open(struct scsi_device *sdev, void *arg)
 
 	pr_debug("%s: ctxid=%llu ls=0x%llx\n", __func__, ctxid, lun_size);
 
-	rc = cxlflash_lun_attach(lli, MODE_PHYSICAL);
+	rc = cxlflash_lun_attach(gli, MODE_PHYSICAL);
 	if (unlikely(rc)) {
 		pr_err("%s: Failed to attach to LUN! mode=%u\n",
 		       __func__, MODE_PHYSICAL);
@@ -1945,7 +1947,7 @@ static int cxlflash_disk_direct_open(struct scsi_device *sdev, void *arg)
 		    ctx_info->rht_perms, port_sel);
 	cxlflash_afu_sync(afu, ctxid, rsrc_handle, AFU_LW_SYNC);
 
-	last_lba = lli->parent->max_lba;
+	last_lba = gli->max_lba;
 	pphys->hdr.return_flags = 0;
 	pphys->last_lba = last_lba;
 	pphys->rsrc_handle = rsrc_handle;
@@ -1958,7 +1960,7 @@ out:
 	return rc;
 
 err1:
-	cxlflash_lun_detach(lli);
+	cxlflash_lun_detach(gli);
 	goto out;
 }
 
