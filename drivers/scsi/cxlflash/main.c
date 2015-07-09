@@ -2404,15 +2404,21 @@ static pci_ers_result_t cxlflash_pci_error_detected(struct pci_dev *pdev,
  * This routine is called by the pci error recovery code after the PCI
  * slot has been reset, just before we should resume normal operations.
  *
- * Return: PCI_ERS_RESULT_RECOVERED
+ * Return: PCI_ERS_RESULT_RECOVERED or PCI_ERS_RESULT_DISCONNECT
  */
 static pci_ers_result_t cxlflash_pci_slot_reset(struct pci_dev *pdev)
 {
+	int rc = 0;
 	struct cxlflash_cfg *cfg = pci_get_drvdata(pdev);
 
 	pr_debug("%s: pdev=%p\n", __func__, pdev);
 
-	init_afu(cfg);
+	rc = init_afu(cfg);
+	if (unlikely(rc)) {
+		pr_err("%s: EEH recovery failed! (%d)\n", __func__, rc);
+		return PCI_ERS_RESULT_DISCONNECT;
+	}
+
 	return PCI_ERS_RESULT_RECOVERED;
 }
 
