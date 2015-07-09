@@ -727,7 +727,7 @@ int cxlflash_disk_release(struct scsi_device *sdev,
 	pr_debug("%s: ctxid=%llu res_hndl=0x%llx gli->mode=%u gli->users=%u\n",
 		 __func__, ctxid, release->rsrc_handle, gli->mode, gli->users);
 
-	ctx_info = get_context(cfg, rctxid, lli, 0);
+	ctx_info = get_context(cfg, rctxid, lli, CTX_CTRL_ERR_FALLBACK);
 	if (unlikely(!ctx_info)) {
 		pr_err("%s: Invalid context! (%llu)\n", __func__, ctxid);
 		rc = -EINVAL;

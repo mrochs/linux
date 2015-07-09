@@ -726,7 +726,7 @@ int cxlflash_vlun_resize(struct scsi_device *sdev,
 
 	}
 
-	ctx_info = get_context(cfg, rctxid, lli, 0);
+	ctx_info = get_context(cfg, rctxid, lli, CTX_CTRL_ERR_FALLBACK);
 	if (unlikely(!ctx_info)) {
 		pr_err("%s: Invalid context! (%llu)\n",
 		       __func__, ctxid);
