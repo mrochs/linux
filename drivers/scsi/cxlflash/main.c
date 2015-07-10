@@ -867,7 +867,6 @@ static void term_mc(struct cxlflash_cfg *cfg, enum undo_level level)
  */
 static void term_afu(struct cxlflash_cfg *cfg)
 {
-	cxlflash_stop_term_user_contexts(cfg);
 	term_mc(cfg, UNDO_START);
 
 	if (cfg->afu)
@@ -896,6 +895,8 @@ static void cxlflash_remove(struct pci_dev *pdev)
 						  !cfg->tmf_active,
 						  cfg->tmf_slock);
 	spin_unlock_irqrestore(&cfg->tmf_slock, lock_flags);
+
+	cxlflash_stop_term_user_contexts(cfg);
 
 	switch (cfg->init_state) {
 	case INIT_STATE_SCSI:

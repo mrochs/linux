@@ -244,32 +244,34 @@ void cxlflash_list_terminate(void)
 /**
  * cxlflash_stop_term_user_contexts() - stops/terminates known user contexts
  * @cfg:	Internal structure associated with the host.
+ *
+ * When the host needs to go down, all users must be quiesced and their
+ * memory freed. This is accomplished by putting the contexts in error
+ * state which will notify the user and let them 'drive' the teardown.
+ * Meanwhile, this routine camps until all user contexts have been removed.
  */
 void cxlflash_stop_term_user_contexts(struct cxlflash_cfg *cfg)
 {
-	int i;
-	struct ctx_info *ctx_info, *t;
+	int i, found;
 
-	for (i = 0; i < MAX_CONTEXT; i++) {
-		ctx_info = cfg->ctx_tbl[i];
+	cfg->eeh_active = EEH_STATE_FAILED;
+	cxlflash_mark_contexts_error(cfg);
 
-		if (ctx_info) {
-			/* XXX - need to notify user */
-			pr_debug("%s: tbl context = %016llX\n",
-				 __func__, ctx_info->ctxid);
-		}
-	}
+	while (true) {
+		found = false;
 
-	list_for_each_entry_safe(ctx_info, t, &cfg->ctx_err_recovery, list) {
-		list_del(&ctx_info->list);
-		/* XXX - need to notify user */
-		pr_debug("%s: list context = %016llX\n",
-			 __func__, ctx_info->ctxid);
-		while (atomic_read(&ctx_info->nrefs) > 0) {
-			pr_debug("%s: waiting on threads... (%d)\n",
-				 __func__, atomic_read(&ctx_info->nrefs));
-			cpu_relax();
-		}
+		for (i = 0; i < MAX_CONTEXT; i++)
+			if (cfg->ctx_tbl[i]) {
+				found = true;
+				break;
+			}
+
+		if (!found && list_empty(&cfg->ctx_err_recovery))
+			return;
+
+		pr_debug("%s: Wait for user context to quiesce...\n", __func__);
+		wake_up_all(&cfg->eeh_waitq);
+		ssleep(1);
 	}
 }
 
@@ -951,6 +953,7 @@ static int cxlflash_disk_detach(struct scsi_device *sdev,
 	/* Tear down context following last LUN cleanup */
 	if (list_empty(&ctx_info->luns)) {
 		spin_lock_irqsave(&cfg->ctx_tbl_slock, flags);
+		list_del(&ctx_info->list);
 		cfg->ctx_tbl[ctxid] = NULL;
 		spin_unlock_irqrestore(&cfg->ctx_tbl_slock, flags);
 
@@ -1270,7 +1273,9 @@ static const struct file_operations cxlflash_cxl_fops = {
  * @cfg:	Internal structure associated with the host.
  *
  * A context is only moved over to the error list when there are no outstanding
- * references to it. This ensures that a running operation has completed.
+ * references to it. This ensures that a running operation has completed. After
+ * marking all contexts in error, the CPU is scheduled to allow user threads
+ * time to respond to the freshly installed error page.
  *
  * Return: 0 on success, -errno on failure
  */
@@ -1290,10 +1295,10 @@ retry:
 			if (atomic_read(&ctx_info->nrefs) > 0) {
 				spin_unlock_irqrestore(&cfg->ctx_tbl_slock,
 						       lock_flags);
-				while (atomic_read(&ctx_info->nrefs) > 1) {
+				while (atomic_read(&ctx_info->nrefs) > 0) {
 					pr_debug("%s: waiting on threads...\n",
 						 __func__);
-					cpu_relax();
+					ssleep(1);
 				}
 
 				spin_lock_irqsave(&cfg->ctx_tbl_slock,
@@ -1309,7 +1314,7 @@ retry:
 	}
 
 	spin_unlock_irqrestore(&cfg->ctx_tbl_slock, lock_flags);
-
+	schedule();
 	return rc;
 }
 
