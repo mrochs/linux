@@ -763,7 +763,7 @@ int cxlflash_vlun_resize(struct scsi_device *sdev,
 
 out:
 	if (likely(ctx_info))
-		atomic_dec(&ctx_info->nrefs);
+		atomic_dec_if_positive(&ctx_info->nrefs);
 	pr_debug("%s: resized to %lld returning rc=%d\n",
 		 __func__, resize->last_lba, rc);
 	return rc;
@@ -933,7 +933,7 @@ int cxlflash_disk_virtual_open(struct scsi_device *sdev, void *arg)
 
 out:
 	if (likely(ctx_info))
-		atomic_dec(&ctx_info->nrefs);
+		atomic_dec_if_positive(&ctx_info->nrefs);
 	pr_debug("%s: returning handle 0x%llx rc=%d llba %lld\n",
 		 __func__, rsrc_handle, rc, last_lba);
 	return rc;
@@ -1178,9 +1178,9 @@ out_success:
 	/* fall through */
 out:
 	if (likely(ctx_info_src))
-		atomic_dec(&ctx_info_src->nrefs);
+		atomic_dec_if_positive(&ctx_info_src->nrefs);
 	if (likely(ctx_info_dst))
-		atomic_dec(&ctx_info_dst->nrefs);
+		atomic_dec_if_positive(&ctx_info_dst->nrefs);
 	pr_debug("%s: returning rc=%d\n", __func__, rc);
 	return rc;
 

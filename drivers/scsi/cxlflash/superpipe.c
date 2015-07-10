@@ -377,7 +377,7 @@ out:
 	return ctx_info;
 
 denied:
-	atomic_dec(&ctx_info->nrefs);
+	atomic_dec_if_positive(&ctx_info->nrefs);
 	ctx_info = NULL;
 	goto out;
 }
@@ -794,7 +794,7 @@ int cxlflash_disk_release(struct scsi_device *sdev,
 
 out:
 	if (likely(ctx_info))
-		atomic_dec(&ctx_info->nrefs);
+		atomic_dec_if_positive(&ctx_info->nrefs);
 	pr_debug("%s: returning rc=%d\n", __func__, rc);
 	return rc;
 }
@@ -978,7 +978,7 @@ static int cxlflash_disk_detach(struct scsi_device *sdev,
 
 out:
 	if (likely(ctx_info))
-		atomic_dec(&ctx_info->nrefs);
+		atomic_dec_if_positive(&ctx_info->nrefs);
 	pr_debug("%s: returning rc=%d\n", __func__, rc);
 	return rc;
 }
@@ -1060,7 +1060,7 @@ static int cxlflash_cxl_release(struct inode *inode, struct file *file)
 	/* Reset the file descriptor to indicate we're on a close() thread */
 	ctx_info->lfd = -1;
 	detach.context_id = ctx_info->ctxid;
-	atomic_dec(&ctx_info->nrefs); /* fix up reference count */
+	atomic_dec_if_positive(&ctx_info->nrefs); /* fix up reference count */
 	list_for_each_entry_safe(lun_access, t, &ctx_info->luns, list)
 		cxlflash_disk_detach(lun_access->sdev, &detach);
 
@@ -1074,7 +1074,7 @@ out_release:
 	cxl_fd_release(inode, file);
 out:
 	if (likely(ctx_info))
-		atomic_dec(&ctx_info->nrefs);
+		atomic_dec_if_positive(&ctx_info->nrefs);
 	pr_debug("%s: returning\n", __func__);
 	return 0;
 }
@@ -1189,7 +1189,7 @@ static int cxlflash_mmap_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 
 out:
 	if (likely(ctx_info))
-		atomic_dec(&ctx_info->nrefs);
+		atomic_dec_if_positive(&ctx_info->nrefs);
 	pr_debug("%s: returning rc=%d\n", __func__, rc);
 	return rc;
 
@@ -1252,7 +1252,7 @@ static int cxlflash_cxl_mmap(struct file *file, struct vm_area_struct *vma)
 
 out:
 	if (likely(ctx_info))
-		atomic_dec(&ctx_info->nrefs);
+		atomic_dec_if_positive(&ctx_info->nrefs);
 	return rc;
 }
 
@@ -1483,7 +1483,7 @@ out:
 	attach->adap_fd = fd;
 
 	if (likely(ctx_info))
-		atomic_dec(&ctx_info->nrefs);
+		atomic_dec_if_positive(&ctx_info->nrefs);
 
 	pr_debug("%s: returning ctxid=%d fd=%d bs=%lld rc=%d llba=%lld\n",
 		 __func__, ctxid, fd, attach->block_size, rc, attach->last_lba);
@@ -1749,7 +1749,7 @@ retry:
 	reg = readq_be(&afu->ctrl_map->mbox_r);
 	if (reg == -1) {
 		pr_info("%s: MMIO read fail! Wait for recovery...\n", __func__);
-		atomic_dec(&ctx_info->nrefs);
+		atomic_dec_if_positive(&ctx_info->nrefs);
 		ctx_info = NULL;
 		ssleep(1);
 		rc = check_eeh(cfg);
@@ -1761,7 +1761,7 @@ retry:
 	pr_debug("%s: MMIO working, no recovery required!\n", __func__);
 out:
 	if (likely(ctx_info))
-		atomic_dec(&ctx_info->nrefs);
+		atomic_dec_if_positive(&ctx_info->nrefs);
 	return rc;
 }
 
@@ -1892,7 +1892,7 @@ static int cxlflash_disk_verify(struct scsi_device *sdev,
 
 out:
 	if (likely(ctx_info))
-		atomic_dec(&ctx_info->nrefs);
+		atomic_dec_if_positive(&ctx_info->nrefs);
 	pr_debug("%s: returning rc=%d llba=%lld\n",
 		 __func__, rc, verify->last_lba);
 	return rc;
@@ -2000,7 +2000,7 @@ static int cxlflash_disk_direct_open(struct scsi_device *sdev, void *arg)
 
 out:
 	if (likely(ctx_info))
-		atomic_dec(&ctx_info->nrefs);
+		atomic_dec_if_positive(&ctx_info->nrefs);
 	pr_debug("%s: returning handle 0x%llx rc=%d llba %lld\n",
 		 __func__, rsrc_handle, rc, last_lba);
 	return rc;
