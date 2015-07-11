@@ -470,9 +470,8 @@ int cxlflash_check_status(struct afu_cmd *cmd)
 
 /**
  * read_cap16() - issues a SCSI READ_CAP16 command
- * @afu:	AFU associated with the host.
+ * @sdev:       SCSI device associated with LUN.
  * @lli:	LUN destined for capacity request.
- * @port_sel:	Port to send request.
  *
  * Return: 0 on success, -1 on failure
  */
@@ -504,7 +503,7 @@ static int read_cap16(struct scsi_device *sdev, struct llun_info *lli)
 			      (MC_DISCOVERY_TIMEOUT*HZ), 5, 0, NULL);
 
 	if (result) {
-		pr_err("%s: command failed\n", __func__);
+		pr_err("%s: command failed, result=%d\n", __func__, result);
 		rc = -EIO;
 		goto out;
 	}
@@ -522,8 +521,8 @@ static int read_cap16(struct scsi_device *sdev, struct llun_info *lli)
 out:
 	kfree(cmd_buf);
 	kfree(sense_buf);
-	pr_debug("%s: maxlba=%lld blklen=%d result %d\n", __func__,
-		 gli->max_lba, gli->blk_len, result);
+	pr_debug("%s: maxlba=%lld blklen=%d rc=%d\n", __func__,
+		 gli->max_lba, gli->blk_len, rc);
 	return rc;
 }
 
