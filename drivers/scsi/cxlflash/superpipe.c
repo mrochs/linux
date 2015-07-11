@@ -19,7 +19,9 @@
 #include <misc/cxl.h>
 #include <asm/unaligned.h>
 
+#include <scsi/scsi.h>
 #include <scsi/scsi_host.h>
+#include <scsi/scsi_cmnd.h>
 #include <uapi/scsi/cxlflash_ioctl.h>
 
 #include "sislite.h"
@@ -468,51 +470,41 @@ int cxlflash_check_status(struct afu_cmd *cmd)
 
 /**
  * read_cap16() - issues a SCSI READ_CAP16 command
- * @afu:	AFU associated with the host.
+ * @sdev:       SCSI device associated with LUN.
  * @lli:	LUN destined for capacity request.
- * @port_sel:	Port to send request.
  *
  * Return: 0 on success, -1 on failure
  */
-static int read_cap16(struct afu *afu, struct llun_info *lli, u32 port_sel)
+static int read_cap16(struct scsi_device *sdev, struct llun_info *lli)
 {
 	struct glun_info *gli = lli->parent;
-	struct afu_cmd *cmd = NULL;
+	u8 scsi_cmd[MAX_COMMAND_SIZE];
+	u8 *cmd_buf = NULL;
+	u8 *sense_buf = NULL;
 	int rc = 0;
+	int result = 0;
 
-	cmd = cxlflash_cmd_checkout(afu);
-	if (unlikely(!cmd)) {
-		pr_err("%s: could not get a free command\n", __func__);
-		return -1;
+	memset(scsi_cmd, 0, sizeof(scsi_cmd));
+	cmd_buf = kzalloc(CMD_BUFSIZE, GFP_KERNEL);
+	sense_buf = kzalloc(SCSI_SENSE_BUFFERSIZE, GFP_NOIO);
+	if (!cmd_buf || !sense_buf) {
+		rc = -ENOMEM;
+		goto out;
 	}
 
-	cmd->rcb.req_flags = (SISL_REQ_FLAGS_PORT_LUN_ID |
-			      SISL_REQ_FLAGS_SUP_UNDERRUN |
-			      SISL_REQ_FLAGS_HOST_READ);
+	scsi_cmd[0] = SERVICE_ACTION_IN_16;	/* read cap(16) */
+	scsi_cmd[1] = SAI_READ_CAPACITY_16;	/* service action */
+	put_unaligned_be32(CMD_BUFSIZE, &scsi_cmd[10]);
 
-	cmd->rcb.port_sel = port_sel;
-	cmd->rcb.lun_id = lli->lun_id[port_sel-1];
-	cmd->rcb.data_len = CMD_BUFSIZE;
-	cmd->rcb.data_ea = (u64)cmd->buf;
-	cmd->rcb.timeout = MC_DISCOVERY_TIMEOUT;
+	pr_debug("%s: sending cmd(0x%x)\n", __func__, scsi_cmd[0]);
 
-	cmd->rcb.cdb[0] = 0x9E;	/* read cap(16) */
-	cmd->rcb.cdb[1] = 0x10;	/* service action */
-	put_unaligned_be32(CMD_BUFSIZE, &cmd->rcb.cdb[10]);
+	result = scsi_execute(sdev, scsi_cmd, DMA_FROM_DEVICE, cmd_buf,
+			      CMD_BUFSIZE, sense_buf,
+			      (MC_DISCOVERY_TIMEOUT*HZ), 5, 0, NULL);
 
-	pr_debug("%s: sending cmd(0x%x) with RCB EA=%p data EA=0x%llx\n",
-		 __func__, cmd->rcb.cdb[0], &cmd->rcb, cmd->rcb.data_ea);
-
-	do {
-		rc = cxlflash_send_cmd(afu, cmd);
-		if (unlikely(rc))
-			goto out;
-		cxlflash_wait_resp(afu, cmd);
-	} while (cxlflash_check_status(cmd));
-
-	if (unlikely(cmd->sa.host_use_b[0] & B_ERROR)) {
-		pr_err("%s: command failed\n", __func__);
-		rc = -1;
+	if (result) {
+		pr_err("%s: command failed, result=%d\n", __func__, result);
+		rc = -EIO;
 		goto out;
 	}
 
@@ -522,15 +514,15 @@ static int read_cap16(struct afu *afu, struct llun_info *lli, u32 port_sel)
 	 * as the buffer is allocated on an aligned boundary.
 	 */
 	spin_lock(&gli->slock);
-	gli->max_lba = swab64(*((u64 *)&cmd->buf[0]));
-	gli->blk_len = swab32(*((u32 *)&cmd->buf[8]));
+	gli->max_lba = swab64(*((u64 *)&cmd_buf[0]));
+	gli->blk_len = swab32(*((u32 *)&cmd_buf[8]));
 	spin_unlock(&gli->slock);
 
 out:
-	if (cmd)
-		cxlflash_cmd_checkin(cmd);
-	pr_debug("%s: maxlba=%lld blklen=%d pcmd %p\n", __func__,
-		 gli->max_lba, gli->blk_len, cmd);
+	kfree(cmd_buf);
+	kfree(sense_buf);
+	pr_debug("%s: maxlba=%lld blklen=%d rc=%d\n", __func__,
+		 gli->max_lba, gli->blk_len, rc);
 	return rc;
 }
 
@@ -1376,7 +1368,7 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 	if (gli->max_lba == 0) {
 		pr_debug("%s: No capacity info yet for this LUN (%016llX)\n",
 			 __func__, lli->lun_id[sdev->channel]);
-		rc = read_cap16(afu, lli, CHAN2PORT(sdev->channel));
+		rc = read_cap16(sdev, lli);
 		if (rc) {
 			pr_err("%s: Invalid device! (%d)\n", __func__, rc);
 			rc = -ENODEV;
@@ -1789,9 +1781,7 @@ static int process_sense(struct scsi_device *sdev,
 	struct llun_info *lli = sdev->hostdata;
 	struct glun_info *gli = lli->parent;
 	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)sdev->host->hostdata;
-	struct afu *afu = cfg->afu;
 	u64 prev_lba = gli->max_lba;
-	u32 chan = sdev->channel;
 	int rc = 0;
 
 	switch (sense_data->sense_key) {
@@ -1805,7 +1795,7 @@ static int process_sense(struct scsi_device *sdev,
 		case 0x29: /* Power on Reset or Device Reset */
 			/* fall through */
 		case 0x2A: /* Device settings/capacity changed */
-			rc = read_cap16(afu, lli, CHAN2PORT(chan));
+			rc = read_cap16(sdev, lli);
 			if (rc) {
 				rc = -ENODEV;
 				break;

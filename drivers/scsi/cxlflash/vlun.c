@@ -19,6 +19,7 @@
 #include <misc/cxl.h>
 #include <asm/unaligned.h>
 
+#include <scsi/scsi_cmnd.h>
 #include <scsi/scsi_host.h>
 #include <uapi/scsi/cxlflash_ioctl.h>
 
@@ -408,62 +409,47 @@ init_ba_exit:
 
 /**
  * write_same16() - sends a SCSI WRITE_SAME16 (0) command to specified LUN
- * @afu:	AFU associated with the host.
  * @sdev:	SCSI device associated with LUN.
  * @lba:	Logical block address to start write same.
  * @nblks:	Number of logical blocks to write same.
  *
  * Return: 0 on success, -1 on failure
  */
-static int write_same16(struct afu *afu,
-			struct scsi_device *sdev,
+static int write_same16(struct scsi_device *sdev,
 			u64 lba,
 			u32 nblks)
 {
-	struct afu_cmd *cmd = NULL;
-	struct llun_info *lli = sdev->hostdata;
+	u8 scsi_cmd[MAX_COMMAND_SIZE];
+	u8 *cmd_buf = NULL;
+	u8 *sense_buf = NULL;
 	int rc = 0;
+	int result = 0;
 
-	cmd = cxlflash_cmd_checkout(afu);
-	if (unlikely(!cmd)) {
-		pr_err("%s: could not get a free command\n", __func__);
-		rc = -1;
+	memset(scsi_cmd, 0, sizeof(scsi_cmd));
+	cmd_buf = kzalloc(CMD_BUFSIZE, GFP_KERNEL);
+	sense_buf = kzalloc(SCSI_SENSE_BUFFERSIZE, GFP_NOIO);
+	if (!cmd_buf || !sense_buf) {
+		rc = -ENOMEM;
 		goto out;
 	}
 
-	cmd->rcb.req_flags = (SISL_REQ_FLAGS_PORT_LUN_ID |
-			      SISL_REQ_FLAGS_SUP_UNDERRUN |
-			      SISL_REQ_FLAGS_HOST_READ);
+	scsi_cmd[0] = WRITE_SAME_16;
+	put_unaligned_be64(lba, &scsi_cmd[2]);
+	put_unaligned_be32(nblks, &scsi_cmd[10]);
 
-	cmd->rcb.port_sel = CHAN2PORT(sdev->channel);
-	cmd->rcb.lun_id = lli->lun_id[sdev->channel];
-	cmd->rcb.data_len = CMD_BUFSIZE;
-	cmd->rcb.data_ea = (u64) cmd->buf; /* Filled w/ zeros on checkout */
-	cmd->rcb.timeout = MC_DISCOVERY_TIMEOUT;
+	pr_debug("%s: sending cmd(0x%x)\n", __func__, scsi_cmd[0]);
 
-	cmd->rcb.cdb[0] = WRITE_SAME_16;
-	put_unaligned_be64(lba, &cmd->rcb.cdb[2]);
-	put_unaligned_be32(nblks, &cmd->rcb.cdb[10]);
+	result = scsi_execute(sdev, scsi_cmd, DMA_FROM_DEVICE, cmd_buf,
+			      CMD_BUFSIZE, sense_buf,
+			      (MC_DISCOVERY_TIMEOUT*HZ), 5, 0, NULL);
 
-	pr_debug("%s: sending cmd(0x%x) with RCB EA=%p data EA=0x%llx\n",
-		 __func__, cmd->rcb.cdb[0], &cmd->rcb, cmd->rcb.data_ea);
-
-	do {
-		rc = cxlflash_send_cmd(afu, cmd);
-		if (unlikely(rc))
-			break;
-		cxlflash_wait_resp(afu, cmd);
-	} while (cxlflash_check_status(cmd));
-
-	if (unlikely(cmd->sa.host_use_b[0] & B_ERROR)) {
-		pr_err("%s: command failed\n", __func__);
-		rc = -1;
+	if (result) {
+		pr_err("%s: command failed result=%d\n", __func__, result);
+		rc = -EIO;
 		goto out;
 	}
 
 out:
-	if (cmd)
-		cxlflash_cmd_checkin(cmd);
 	pr_debug("%s: returning rc=%d\n", __func__, rc);
 	return rc;
 }
@@ -664,7 +650,7 @@ static int shrink_lxt(struct afu *afu,
 		aun = ((lxt_old[my_new_size + i].rlba_base &
 			SISL_ASTATUS_MASK) >> MC_CHUNK_SHIFT);
 		if (ws)
-			write_same16(afu, sdev, aun, MC_CHUNK_SIZE);
+			write_same16(sdev, aun, MC_CHUNK_SIZE);
 		ba_free(&blka->ba_lun, aun);
 	}
 	mutex_unlock(&blka->mutex);
