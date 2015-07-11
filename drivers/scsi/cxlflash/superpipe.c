@@ -953,7 +953,11 @@ static int cxlflash_disk_detach(struct scsi_device *sdev,
 	/* Tear down context following last LUN cleanup */
 	if (list_empty(&ctx_info->luns)) {
 		spin_lock_irqsave(&cfg->ctx_tbl_slock, flags);
-		list_del(&ctx_info->list);
+
+		/* XXX - need to remove from list but this causes a crash,
+		 * maybe need to do a conditional removal?
+		 */
+		//list_del(&ctx_info->list);
 		cfg->ctx_tbl[ctxid] = NULL;
 		spin_unlock_irqrestore(&cfg->ctx_tbl_slock, flags);
 
