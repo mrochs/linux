@@ -823,12 +823,16 @@ out:
 static void destroy_context(struct cxlflash_cfg *cfg,
 			    struct ctx_info *ctx_info)
 {
+	struct afu *afu = cfg->afu;
+
 	BUG_ON(!list_empty(&ctx_info->luns));
 
 	/* Clear RHT registers and drop all capabilities for this context */
-	writeq_be(0, &ctx_info->ctrl_map->rht_start);
-	writeq_be(0, &ctx_info->ctrl_map->rht_cnt_id);
-	writeq_be(0, &ctx_info->ctrl_map->ctx_cap);
+	if (afu->afu_map) {
+		writeq_be(0, &ctx_info->ctrl_map->rht_start);
+		writeq_be(0, &ctx_info->ctrl_map->rht_cnt_id);
+		writeq_be(0, &ctx_info->ctrl_map->ctx_cap);
+	}
 
 	/* Free the RHT memory */
 	free_page((ulong)ctx_info->rht_start);
