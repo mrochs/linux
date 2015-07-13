@@ -888,6 +888,7 @@ static struct ctx_info *create_context(struct cxlflash_cfg *cfg,
 	ctx_info->ctx = ctx;
 	ctx_info->file = file;
 	INIT_LIST_HEAD(&ctx_info->luns);
+	INIT_LIST_HEAD(&ctx_info->list); /* initialize for list_empty() */
 	atomic_set(&ctx_info->nrefs, 1);
 
 	atomic_inc(&cfg->num_user_contexts);
@@ -964,10 +965,9 @@ static int cxlflash_disk_detach(struct scsi_device *sdev,
 	if (list_empty(&ctx_info->luns)) {
 		spin_lock_irqsave(&cfg->ctx_tbl_slock, flags);
 
-		/* XXX - need to remove from list but this causes a crash,
-		 * maybe need to do a conditional removal?
-		 */
-		//list_del(&ctx_info->list);
+		/* Might not have been in error list so conditionally remove */
+		if (!list_empty(&ctx_info->list))
+			list_del(&ctx_info->list);
 		cfg->ctx_tbl[ctxid] = NULL;
 		spin_unlock_irqrestore(&cfg->ctx_tbl_slock, flags);
 
