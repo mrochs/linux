@@ -2032,12 +2032,15 @@ err1:
 /**
  * ioctl_common() - common IOCTL handler for driver
  * @sdev:	SCSI device associated with LUN.
+ * @cmd:	IOCTL command.
  *
- * Handles common fencing operations that are valid for multiple ioctls.
+ * Handles common fencing operations that are valid for multiple ioctls. In
+ * the event of an EEH failure, allow through ioctls that are cleanup oriented
+ * in nature.
  *
  * Return: 0 on success, -errno on failure
  */
-static int ioctl_common(struct scsi_device *sdev)
+static int ioctl_common(struct scsi_device *sdev, int cmd)
 {
 	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)sdev->host->hostdata;
 	struct llun_info *lli = sdev->hostdata;
@@ -2050,8 +2053,16 @@ static int ioctl_common(struct scsi_device *sdev)
 	}
 
 	rc = check_eeh(cfg);
-
-	/* fall through */
+	if (unlikely(rc) && (cfg->eeh_active == EEH_STATE_FAILED)) {
+		switch (cmd) {
+		case DK_CXLFLASH_VLUN_RESIZE:
+		case DK_CXLFLASH_RELEASE:
+		case DK_CXLFLASH_DETACH:
+			pr_debug("%s: Command override! (%d)\n", __func__, rc);
+			rc = 0;
+			break;
+		}
+	}
 out:
 	return rc;
 }
@@ -2059,6 +2070,7 @@ out:
 /**
  * cxlflash_ioctl() - IOCTL handler for driver
  * @sdev:	SCSI device associated with LUN.
+ * @cmd:	IOCTL command.
  * @arg:	Userspace ioctl data structure.
  *
  * Return: 0 on success, -errno on failure
@@ -2120,7 +2132,7 @@ int cxlflash_ioctl(struct scsi_device *sdev, int cmd, void __user *arg)
 		pr_debug("%s: %s (%08X) on dev(%d/%d/%d/%llu)\n", __func__,
 			 decode_ioctl(cmd), cmd, shost->host_no, sdev->channel,
 			 sdev->id, sdev->lun);
-		rc = ioctl_common(sdev);
+		rc = ioctl_common(sdev, cmd);
 		if (unlikely(rc))
 			goto cxlflash_ioctl_exit;
 
