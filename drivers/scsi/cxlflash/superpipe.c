@@ -521,7 +521,7 @@ static int read_cap16(struct scsi_device *sdev, struct llun_info *lli)
 			      (MC_DISCOVERY_TIMEOUT*HZ), 5, 0, NULL);
 
 	if (result) {
-		pr_err("%s: command failed, result=%d\n", __func__, result);
+		pr_err("%s: command failed, result=%x\n", __func__, result);
 		rc = -EIO;
 		goto out;
 	}
