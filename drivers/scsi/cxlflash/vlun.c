@@ -890,7 +890,7 @@ int cxlflash_disk_virtual_open(struct scsi_device *sdev, void *arg)
 		goto err1;
 	}
 
-	rht_entry = rhte_checkout(ctx_info, lli);
+	rht_entry = rhte_checkout(ctx_info, (void *)lli);
 	if (unlikely(!rht_entry)) {
 		pr_err("%s: too many opens for this context\n", __func__);
 		rc = -EMFILE;	/* too many opens  */

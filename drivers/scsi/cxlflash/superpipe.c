@@ -553,7 +553,7 @@ out:
  * Return: Validated RHTE on success, NULL on failure
  */
 struct sisl_rht_entry *get_rhte(struct ctx_info *ctx_info, res_hndl_t res_hndl,
-				struct llun_info *lli)
+				void *lli)
 {
 	struct sisl_rht_entry *rhte = NULL;
 
@@ -595,7 +595,7 @@ out:
  * Return: Free RHTE on success, NULL on failure
  */
 struct sisl_rht_entry *rhte_checkout(struct ctx_info *ctx_info,
-				     struct llun_info *lli)
+				     void *lli)
 {
 	struct sisl_rht_entry *rht_entry = NULL;
 	int i;
@@ -751,7 +751,7 @@ int cxlflash_disk_release(struct scsi_device *sdev,
 		goto out;
 	}
 
-	rht_entry = get_rhte(ctx_info, res_hndl, lli);
+	rht_entry = get_rhte(ctx_info, res_hndl, (void *)lli);
 	if (unlikely(!rht_entry)) {
 		pr_err("%s: Invalid resource handle! (%d)\n",
 		       __func__, res_hndl);
@@ -881,7 +881,7 @@ static struct ctx_info *create_context(struct cxlflash_cfg *cfg,
 	}
 
 	ctx_info = (struct ctx_info *)tmp;
-	ctx_info->rht_lun = (struct llun_info **)(tmp + sizeof(*ctx_info));
+	ctx_info->rht_lun = (void **)(tmp + sizeof(*ctx_info));
 	ctx_info->rht_start = rht;
 	ctx_info->rht_perms = perms;
 
@@ -1878,7 +1878,7 @@ static int cxlflash_disk_verify(struct scsi_device *sdev,
 		goto out;
 	}
 
-	rht_entry = get_rhte(ctx_info, res_hndl, lli);
+	rht_entry = get_rhte(ctx_info, res_hndl, (void *)lli);
 	if (unlikely(!rht_entry)) {
 		pr_err("%s: Invalid resource handle! (%d)\n",
 		       __func__, res_hndl);
@@ -2003,7 +2003,7 @@ static int cxlflash_disk_direct_open(struct scsi_device *sdev, void *arg)
 		goto err1;
 	}
 
-	rht_entry = rhte_checkout(ctx_info, lli);
+	rht_entry = rhte_checkout(ctx_info, (void *)lli);
 	if (unlikely(!rht_entry)) {
 		pr_err("%s: too many opens for this context\n", __func__);
 		rc = -EMFILE;	/* too many opens  */
