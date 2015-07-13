@@ -133,11 +133,17 @@ static struct llun_info *lookup_local(struct cxlflash_cfg *cfg, u8 *wwid)
 static struct glun_info *lookup_global(u8 *wwid)
 {
 	struct glun_info *gli, *temp;
+	ulong lock_flags;
+
+	spin_lock_irqsave(&global.slock, lock_flags);
 
 	list_for_each_entry_safe(gli, temp, &global.gluns, list)
-		if (!memcmp(gli->wwid, wwid, DK_CXLFLASH_MANAGE_LUN_WWID_LEN))
+		if (!memcmp(gli->wwid, wwid, DK_CXLFLASH_MANAGE_LUN_WWID_LEN)) {
+			spin_unlock_irqrestore(&global.slock, lock_flags);
 			return gli;
+		}
 
+	spin_unlock_irqrestore(&global.slock, lock_flags);
 	return NULL;
 }
 
