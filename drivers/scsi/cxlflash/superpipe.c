@@ -1692,7 +1692,9 @@ retry:
 	switch (cfg->eeh_active) {
 	case EEH_STATE_ACTIVE:
 		pr_debug("%s: EEH Active, going to wait...\n", __func__);
-		rc = wait_event_interruptible(cfg->eeh_waitq, !cfg->eeh_active);
+		rc = wait_event_interruptible(cfg->eeh_waitq,
+					      cfg->eeh_active !=
+					      EEH_STATE_ACTIVE);
 		if (unlikely(rc))
 			goto out;
 		goto retry;

@@ -484,7 +484,7 @@ static int cxlflash_eh_device_reset_handler(struct scsi_cmnd *scp)
 			rc = FAILED;
 		break;
 	case EEH_STATE_ACTIVE:
-		wait_event(cfg->eeh_waitq, !cfg->eeh_active);
+		wait_event(cfg->eeh_waitq, cfg->eeh_active != EEH_STATE_ACTIVE);
 		break;
 	case EEH_STATE_FAILED:
 		break;
@@ -528,7 +528,7 @@ static int cxlflash_eh_host_reset_handler(struct scsi_cmnd *scp)
 			rc = FAILED;
 		break;
 	case EEH_STATE_ACTIVE:
-		wait_event(cfg->eeh_waitq, !cfg->eeh_active);
+		wait_event(cfg->eeh_waitq, cfg->eeh_active != EEH_STATE_ACTIVE);
 		break;
 	case EEH_STATE_FAILED:
 		break;
