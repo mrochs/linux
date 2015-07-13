@@ -649,10 +649,10 @@ static void rht_format1(struct sisl_rht_entry *rht_entry, u64 lun_id, u32 perm,
 	    (struct sisl_rht_entry_f1 *)rht_entry;
 	memset(rht_entry_f1, 0, sizeof(struct sisl_rht_entry_f1));
 	rht_entry_f1->fp = SISL_RHT_FP(1U, 0);
-	smp_wmb(); /* Make setting of format bit visible */
+	dma_wmb(); /* Make setting of format bit visible */
 
 	rht_entry_f1->lun_id = lun_id;
-	smp_wmb(); /* Make setting of LUN id visible */
+	dma_wmb(); /* Make setting of LUN id visible */
 
 	/*
 	 * Use a dummy RHT Format 1 entry to build the second dword
@@ -664,7 +664,7 @@ static void rht_format1(struct sisl_rht_entry *rht_entry, u64 lun_id, u32 perm,
 	dummy.port_sel = port_sel;
 	rht_entry_f1->dw = dummy.dw;
 
-	smp_wmb(); /* Make remaining RHT entry fields visible */
+	dma_wmb(); /* Make remaining RHT entry fields visible */
 }
 
 /**
@@ -786,13 +786,13 @@ int cxlflash_disk_release(struct scsi_device *sdev,
 		rht_entry_f1 = (struct sisl_rht_entry_f1 *)rht_entry;
 
 		rht_entry_f1->valid = 0;
-		smp_wmb(); /* Make revocation of RHT entry visible */
+		dma_wmb(); /* Make revocation of RHT entry visible */
 
 		rht_entry_f1->lun_id = 0;
-		smp_wmb(); /* Make clearing of LUN id visible */
+		dma_wmb(); /* Make clearing of LUN id visible */
 
 		rht_entry_f1->dw = 0;
-		smp_wmb(); /* Make RHT entry bottom-half clearing visible */
+		dma_wmb(); /* Make RHT entry bottom-half clearing visible */
 
 		cxlflash_afu_sync(afu, ctxid, res_hndl, AFU_HW_SYNC);
 		break;

@@ -556,13 +556,13 @@ static int grow_lxt(struct afu *afu,
 	 * The following sequence is prescribed in the SISlite spec
 	 * for syncing up with the AFU when adding LXT entries.
 	 */
-	smp_wmb(); /* Make LXT updates are visible */
+	dma_wmb(); /* Make LXT updates are visible */
 
 	rht_entry->lxt_start = lxt;
-	smp_wmb(); /* Make RHT entry's LXT table update visible */
+	dma_wmb(); /* Make RHT entry's LXT table update visible */
 
 	rht_entry->lxt_cnt = my_new_size;
-	smp_wmb(); /* Make RHT entry's LXT table size update visible */
+	dma_wmb(); /* Make RHT entry's LXT table size update visible */
 
 	cxlflash_afu_sync(afu, ctx_hndl_u, res_hndl_u, AFU_LW_SYNC);
 
@@ -634,10 +634,10 @@ static int shrink_lxt(struct afu *afu,
 	 * for syncing up with the AFU when removing LXT entries.
 	 */
 	rht_entry->lxt_cnt = my_new_size;
-	smp_wmb(); /* Make RHT entry's LXT table size update visible */
+	dma_wmb(); /* Make RHT entry's LXT table size update visible */
 
 	rht_entry->lxt_start = lxt;
-	smp_wmb(); /* Make RHT entry's LXT table update visible */
+	dma_wmb(); /* Make RHT entry's LXT table update visible */
 
 	cxlflash_afu_sync(afu, ctx_hndl_u, res_hndl_u, AFU_HW_SYNC);
 
@@ -993,13 +993,13 @@ static int clone_lxt(struct afu *afu,
 	 * The following sequence is prescribed in the SISlite spec
 	 * for syncing up with the AFU when adding LXT entries.
 	 */
-	smp_wmb(); /* Make LXT updates are visible */
+	dma_wmb(); /* Make LXT updates are visible */
 
 	rht_entry->lxt_start = lxt;
-	smp_wmb(); /* Make RHT entry's LXT table update visible */
+	dma_wmb(); /* Make RHT entry's LXT table update visible */
 
 	rht_entry->lxt_cnt = rht_entry_src->lxt_cnt;
-	smp_wmb(); /* Make RHT entry's LXT table size update visible */
+	dma_wmb(); /* Make RHT entry's LXT table size update visible */
 
 	cxlflash_afu_sync(afu, ctx_hndl_u, res_hndl_u, AFU_LW_SYNC);
 
