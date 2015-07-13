@@ -2100,6 +2100,12 @@ void cxlflash_wait_resp(struct afu *afu, struct afu_cmd *cmd)
  * the sync. This design point requires calling threads to not be on interrupt
  * context due to the possibility of sleeping during concurrent sync operations.
  *
+ * AFU sync operations should be gated during EEH recovery. When a recovery
+ * fails and an adapter is to be removed, sync requests can occur as part of
+ * cleaning up resources associated with an adapter prior to its removal. In
+ * this scenario, these requests are identified here and simply ignored (safe
+ * due to the AFU going away).
+ *
  * Return:
  *	0 on success
  *	-1 on failure
@@ -2107,10 +2113,16 @@ void cxlflash_wait_resp(struct afu *afu, struct afu_cmd *cmd)
 int cxlflash_afu_sync(struct afu *afu, ctx_hndl_t ctx_hndl_u,
 		      res_hndl_t res_hndl_u, u8 mode)
 {
+	struct cxlflash_cfg *cfg = afu->parent;
 	struct afu_cmd *cmd = NULL;
 	int rc = 0;
 	int retry_cnt = 0;
 	static DEFINE_MUTEX(sync_active);
+
+	if (cfg->eeh_active == EEH_STATE_FAILED) {
+		pr_debug("%s: Sync not required due to EEH state!\n", __func__);
+		return 0;
+	}
 
 	mutex_lock(&sync_active);
 retry:
