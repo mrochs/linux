@@ -154,7 +154,7 @@ struct llun_info {
 };
 
 struct lun_access {
-	struct llun_info *lli;
+	void *lli;
 	struct scsi_device *sdev;
 	struct list_head list;
 };

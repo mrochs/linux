@@ -336,7 +336,7 @@ struct ctx_info *get_context(struct cxlflash_cfg *cfg, u64 rctxid,
 	struct ctx_info *ctx_info = NULL;
 	struct lun_access *lun_access = NULL;
 	struct file *file = NULL;
-	struct llun_info *lli = (struct llun_info *)arg;
+	void *lli = arg;
 	u64 ctxid = DECODE_CTXID(rctxid);
 	bool found = false;
 	pid_t pid = current->tgid, ctxpid = 0;
