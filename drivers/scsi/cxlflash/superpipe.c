@@ -31,11 +31,11 @@
 static struct cxlflash_global global;
 
 /**
- * marshall_rele_to_resize() - translate release to resize structure
+ * marshal_rele_to_resize() - translate release to resize structure
  * @rele:	Source structure from which to translate/copy.
  * @resize:	Destination structure for the translate/copy.
  */
-static void marshall_rele_to_resize(struct dk_cxlflash_release *release,
+static void marshal_rele_to_resize(struct dk_cxlflash_release *release,
 				    struct dk_cxlflash_resize *resize)
 {
 	resize->hdr = release->hdr;
@@ -44,11 +44,11 @@ static void marshall_rele_to_resize(struct dk_cxlflash_release *release,
 }
 
 /**
- * marshall_det_to_rele() - translate detach to release structure
+ * marshal_det_to_rele() - translate detach to release structure
  * @detach:	Destination structure for the translate/copy.
  * @rele:	Source structure from which to translate/copy.
  */
-static void marshall_det_to_rele(struct dk_cxlflash_detach *detach,
+static void marshal_det_to_rele(struct dk_cxlflash_detach *detach,
 				 struct dk_cxlflash_release *release)
 {
 	release->hdr = detach->hdr;
@@ -750,7 +750,7 @@ int cxlflash_disk_release(struct scsi_device *sdev,
 	 */
 	switch (gli->mode) {
 	case MODE_VIRTUAL:
-		marshall_rele_to_resize(release, &size);
+		marshal_rele_to_resize(release, &size);
 		size.req_size = 0;
 		rc = cxlflash_vlun_resize(sdev, &size);
 		if (rc) {
@@ -920,7 +920,7 @@ static int cxlflash_disk_detach(struct scsi_device *sdev,
 
 	/* Cleanup outstanding resources tied to this LUN */
 	if (ctx_info->rht_out) {
-		marshall_det_to_rele(detach, &rel);
+		marshal_det_to_rele(detach, &rel);
 		for (i = 0; i < MAX_RHT_PER_CONTEXT; i++) {
 			if (ctx_info->rht_lun[i] == lli) {
 				rel.rsrc_handle = i;

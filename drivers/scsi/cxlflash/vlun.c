@@ -36,11 +36,11 @@ module_param_named(ws, ws, uint, 0);
 MODULE_PARM_DESC(ws, " 1 = Perform WRITE_SAME16 per chunk on VLUN shrink");
 
 /**
- * marshall_virt_to_resize() - translate uvirtual to resize structure
+ * marshal_virt_to_resize() - translate uvirtual to resize structure
  * @virt:	Source structure from which to translate/copy.
  * @resize:	Destination structure for the translate/copy.
  */
-static void marshall_virt_to_resize(struct dk_cxlflash_uvirtual *virt,
+static void marshal_virt_to_resize(struct dk_cxlflash_uvirtual *virt,
 				    struct dk_cxlflash_resize *resize)
 {
 	resize->hdr = virt->hdr;
@@ -51,11 +51,11 @@ static void marshall_virt_to_resize(struct dk_cxlflash_uvirtual *virt,
 }
 
 /**
- * marshall_clone_to_rele() - translate clone to release structure
+ * marshal_clone_to_rele() - translate clone to release structure
  * @clone:	Source structure from which to translate/copy.
  * @rele:	Destination structure for the translate/copy.
  */
-static void marshall_clone_to_rele(struct dk_cxlflash_clone *clone,
+static void marshal_clone_to_rele(struct dk_cxlflash_clone *clone,
 				   struct dk_cxlflash_release *release)
 {
 	release->hdr = clone->hdr;
@@ -904,7 +904,7 @@ int cxlflash_disk_virtual_open(struct scsi_device *sdev, void *arg)
 	/* format 0 & perms */
 
 	/* Resize even if requested size is 0 */
-	marshall_virt_to_resize(virt, &resize);
+	marshal_virt_to_resize(virt, &resize);
 	resize.rsrc_handle = rsrc_handle;
 	rc = cxlflash_vlun_resize(sdev, &resize);
 	if (rc) {
@@ -1143,7 +1143,7 @@ int cxlflash_disk_clone(struct scsi_device *sdev,
 			       &ctx_info_dst->rht_start[i],
 			       &ctx_info_src->rht_start[i]);
 		if (rc) {
-			marshall_clone_to_rele(clone, &release);
+			marshal_clone_to_rele(clone, &release);
 			for (j = 0; j < i; j++) {
 				release.rsrc_handle = j;
 				cxlflash_disk_release(sdev, &release);
