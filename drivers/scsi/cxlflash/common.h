@@ -119,6 +119,7 @@ struct cxlflash_cfg {
 	int last_lun_index[CXLFLASH_NUM_FC_PORTS];
 	int promote_lun_index;
 	struct list_head lluns; /* list of llun_info structs */
+	spinlock_t slock;
 
 	wait_queue_head_t tmf_waitq;
 	spinlock_t tmf_slock;

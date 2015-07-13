@@ -114,13 +114,18 @@ out:
 static struct llun_info *lookup_local(struct cxlflash_cfg *cfg, u8 *wwid)
 {
 	struct llun_info *lli, *temp;
+	ulong lock_flags;
+
+	spin_lock_irqsave(&cfg->slock, lock_flags);
 
 	list_for_each_entry_safe(lli, temp, &cfg->lluns, list)
 		if (!memcmp(lli->wwid, wwid, DK_CXLFLASH_MANAGE_LUN_WWID_LEN)) {
 			lli->newly_created = false;
+			spin_unlock_irqrestore(&cfg->slock, lock_flags);
 			return lli;
 		}
 
+	spin_unlock_irqrestore(&cfg->slock, lock_flags);
 	return NULL;
 }
 
@@ -180,7 +185,9 @@ static struct llun_info *lookup_lun(struct scsi_device *sdev, u8 *wwid)
 	gli = lookup_global(wwid);
 	if (gli) {
 		lli->parent = gli;
+		spin_lock_irqsave(&cfg->slock, lock_flags);
 		list_add(&lli->list, &cfg->lluns);
+		spin_unlock_irqrestore(&cfg->slock, lock_flags);
 		goto out;
 	}
 
@@ -192,7 +199,9 @@ static struct llun_info *lookup_lun(struct scsi_device *sdev, u8 *wwid)
 	}
 
 	lli->parent = gli;
+	spin_lock_irqsave(&cfg->slock, lock_flags);
 	list_add(&lli->list, &cfg->lluns);
+	spin_unlock_irqrestore(&cfg->slock, lock_flags);
 
 	spin_lock_irqsave(&global.slock, lock_flags);
 	list_add(&gli->list, &global.gluns);
@@ -210,11 +219,14 @@ out:
 void cxlflash_term_luns(struct cxlflash_cfg *cfg)
 {
 	struct llun_info *lli, *temp;
+	ulong lock_flags;
 
+	spin_lock_irqsave(&cfg->slock, lock_flags);
 	list_for_each_entry_safe(lli, temp, &cfg->lluns, list) {
 		list_del(&lli->list);
 		kfree(lli);
 	}
+	spin_unlock_irqrestore(&cfg->slock, lock_flags);
 }
 
 /**
