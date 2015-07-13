@@ -26,6 +26,7 @@
 
 #include "sislite.h"
 #include "common.h"
+#include "vlun.h"
 #include "superpipe.h"
 
 static struct cxlflash_global global;

@@ -25,6 +25,7 @@
 
 #include "sislite.h"
 #include "common.h"
+#include "vlun.h"
 #include "superpipe.h"
 
 static u32 ws;

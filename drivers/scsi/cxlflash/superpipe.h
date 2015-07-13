@@ -92,36 +92,6 @@ struct request_sense_data  {
 	uint8_t     field_ptrL;
 };
 
-struct ba_lun {
-	u64 lun_id;
-	u64 wwpn;
-	size_t lsize;		/* LUN size in number of LBAs             */
-	size_t lba_size;	/* LBA size in number of bytes            */
-	size_t au_size;		/* Allocation Unit size in number of LBAs */
-	void *ba_lun_handle;
-};
-
-struct ba_lun_info {
-	u64 *lun_alloc_map;
-	u32 lun_bmap_size;
-	u32 total_aus;
-	u64 free_aun_cnt;
-
-	/* indices to be used for elevator lookup of free map */
-	u32 free_low_idx;
-	u32 free_curr_idx;
-	u32 free_high_idx;
-
-	u8 *aun_clone_map;
-};
-
-/* Block Allocator */
-struct blka {
-	struct ba_lun ba_lun;
-	u64 nchunk;		/* number of chunks */
-	struct mutex mutex;
-};
-
 /* Global (entire driver, spans adapters) lun_info structure */
 struct glun_info {
 	u64 max_lba;		/* from read cap(16) */
@@ -134,22 +104,6 @@ struct glun_info {
 	spinlock_t slock;
 
 	struct blka blka;
-	struct list_head list;
-};
-
-/* Local (per-adapter) lun_info structure */
-struct llun_info {
-	u64 lun_id[CXLFLASH_NUM_FC_PORTS]; /* from REPORT_LUNS */
-	u32 lun_index;		/* Index in the lun table */
-	u32 host_no;		/* host_no from Scsi_host */
-	u32 port_sel;		/* What port to use for this LUN */
-	bool newly_created;	/* Whether the LUN was just discovered */
-	bool in_table;		/* Whether a LUN table entry was created */
-
-	u8 wwid[16];		/* Keep a duplicate copy here? */
-
-	struct glun_info *parent; /* Pointer to entry in global lun structure */
-	struct scsi_device *sdev;
 	struct list_head list;
 };
 
