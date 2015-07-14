@@ -64,21 +64,5 @@ struct blka {
 	struct mutex mutex;
 };
 
-/* Local (per-adapter) lun_info structure */
-struct llun_info {
-	u64 lun_id[CXLFLASH_NUM_FC_PORTS]; /* from REPORT_LUNS */
-	u32 lun_index;		/* Index in the lun table */
-	u32 host_no;		/* host_no from Scsi_host */
-	u32 port_sel;		/* What port to use for this LUN */
-	bool newly_created;	/* Whether the LUN was just discovered */
-	bool in_table;		/* Whether a LUN table entry was created */
-
-	u8 wwid[16];		/* Keep a duplicate copy here? */
-
-	struct glun_info *parent; /* Pointer to entry in global lun structure */
-	struct scsi_device *sdev;
-	struct list_head list;
-};
-
 #endif /* ifndef _CXLFLASH_SUPERPIPE_H */
 
