@@ -1655,8 +1655,9 @@ static int recover_context(struct cxlflash_cfg *cfg, struct ctx_info *ctx_info)
 	ctx_info->ctx = ctx;
 	ctx_info->file = file;
 
+	/* Put context back in table (note the reinit of the context list) */
 	spin_lock_irqsave(&cfg->ctx_tbl_slock, lock_flags);
-	list_del(&ctx_info->list);
+	list_del_init(&ctx_info->list);
 	cfg->ctx_tbl[ctxid] = ctx_info;
 	spin_unlock_irqrestore(&cfg->ctx_tbl_slock, lock_flags);
 	fd_install(fd, file);
