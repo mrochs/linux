@@ -819,17 +819,20 @@ out:
  *
  * Note that the rht_lun member of the context was cut from a single
  * allocation when the context was created and therefore does not need
- * to be explicitly freed.
+ * to be explicitly freed. Also note that we conditionally check for the
+ * existence of the context control map before clearing the RHT registers
+ * and context capbilities because it is possible to destroy a context
+ * while the context is in the error state (previous mapping was removed
+ * [so we don't have to worry about clearing] and context is waiting for
+ * a new mapping).
  */
 static void destroy_context(struct cxlflash_cfg *cfg,
 			    struct ctx_info *ctx_info)
 {
-	struct afu *afu = cfg->afu;
-
 	BUG_ON(!list_empty(&ctx_info->luns));
 
 	/* Clear RHT registers and drop all capabilities for this context */
-	if (afu->afu_map) {
+	if (ctx_info->ctrl_map) {
 		writeq_be(0, &ctx_info->ctrl_map->rht_start);
 		writeq_be(0, &ctx_info->ctrl_map->rht_cnt_id);
 		writeq_be(0, &ctx_info->ctrl_map->ctx_cap);
@@ -1328,6 +1331,7 @@ retry:
 			cfg->ctx_tbl[i] = NULL;
 			list_add(&ctx_info->list, &cfg->ctx_err_recovery);
 			ctx_info->err_recovery_active = true;
+			ctx_info->ctrl_map = NULL;
 			unmap_context(ctx_info);
 		}
 	}
