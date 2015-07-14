@@ -253,6 +253,146 @@ static void cmd_complete(struct afu_cmd *cmd)
 }
 
 /**
+ * context_reset() - timeout handler for AFU commands
+ * @cmd:	AFU command that timed out.
+ *
+ * Sends a reset to the AFU.
+ */
+static void context_reset(struct afu_cmd *cmd)
+{
+	int nretry = 0;
+	u64 rrin = 0x1;
+	u64 room = 0;
+	struct afu *afu = cmd->parent;
+	ulong lock_flags;
+
+	pr_debug("%s: cmd=%p\n", __func__, cmd);
+
+	spin_lock_irqsave(&cmd->slock, lock_flags);
+
+	/* Already completed? */
+	if (cmd->sa.host_use_b[0] & B_DONE) {
+		spin_unlock_irqrestore(&cmd->slock, lock_flags);
+		return;
+	}
+
+	cmd->sa.host_use_b[0] |= (B_DONE | B_ERROR | B_TIMEOUT);
+	spin_unlock_irqrestore(&cmd->slock, lock_flags);
+
+	/*
+	 * We really want to send this reset at all costs, so spread
+	 * out wait time on successive retries for available room.
+	 */
+	do {
+		room = readq_be(&afu->host_map->cmd_room);
+		atomic64_set(&afu->room, room);
+		if (room)
+			goto write_rrin;
+		udelay(nretry);
+	} while (nretry++ < MC_ROOM_RETRY_CNT);
+
+	pr_err("%s: no cmd_room to send reset\n", __func__);
+	return;
+
+write_rrin:
+	nretry = 0;
+	writeq_be(rrin, &afu->host_map->ioarrin);
+	do {
+		rrin = readq_be(&afu->host_map->ioarrin);
+		if (rrin != 0x1)
+			break;
+		/* Double delay each time */
+		udelay(2 ^ nretry);
+	} while (nretry++ < MC_ROOM_RETRY_CNT);
+}
+
+/**
+ * send_cmd() - sends an AFU command
+ * @afu:	AFU associated with the host.
+ * @cmd:	AFU command to send.
+ *
+ * Return:
+ *	0 on success
+ *	-1 on failure
+ */
+static int send_cmd(struct afu *afu, struct afu_cmd *cmd)
+{
+	struct cxlflash_cfg *cfg = afu->parent;
+	int nretry = 0;
+	int rc = 0;
+	u64 room;
+	long newval;
+
+	/*
+	 * This routine is used by critical users such an AFU sync and to
+	 * send a task management function (TMF). Thus we want to retry a
+	 * bit before returning an error. To avoid the performance penalty
+	 * of MMIO, we spread the update of 'room' over multiple commands.
+	 */
+retry:
+	newval = atomic64_dec_if_positive(&afu->room);
+	if (!newval) {
+		do {
+			room = readq_be(&afu->host_map->cmd_room);
+			atomic64_set(&afu->room, room);
+			if (room)
+				goto write_ioarrin;
+			udelay(nretry);
+		} while (nretry++ < MC_ROOM_RETRY_CNT);
+
+		pr_err("%s: no cmd_room to send 0x%X\n",
+		       __func__, cmd->rcb.cdb[0]);
+
+		goto no_room;
+	} else if (unlikely(newval < 0)) {
+		/* This should be rare. i.e. Only if two threads race and
+		 * decrement before the MMIO read is done. In this case
+		 * just benefit from the other thread having updated
+		 * afu->room.
+		 */
+		if (nretry++ < MC_ROOM_RETRY_CNT) {
+			udelay(nretry);
+			goto retry;
+		}
+
+		goto no_room;
+	}
+
+write_ioarrin:
+	writeq_be((u64)&cmd->rcb, &afu->host_map->ioarrin);
+out:
+	pr_devel("%s: cmd=%p len=%d ea=%p rc=%d\n", __func__, cmd,
+		 cmd->rcb.data_len, (void *)cmd->rcb.data_ea, rc);
+	return rc;
+
+no_room:
+	afu->read_room = true;
+	schedule_work(&cfg->work_q);
+	rc = SCSI_MLQUEUE_HOST_BUSY;
+	goto out;
+}
+
+/**
+ * wait_resp() - polls for a response or timeout to a sent AFU command
+ * @afu:	AFU associated with the host.
+ * @cmd:	AFU command that was sent.
+ */
+static void wait_resp(struct afu *afu, struct afu_cmd *cmd)
+{
+	ulong timeout = msecs_to_jiffies(cmd->rcb.timeout * 2 * 1000);
+
+	timeout = wait_for_completion_timeout(&cmd->cevent, timeout);
+	if (!timeout)
+		context_reset(cmd);
+
+	if (unlikely(cmd->sa.ioasc != 0))
+		pr_err("%s: CMD 0x%X failed, IOASC: flags 0x%X, afu_rc 0x%X, "
+		       "scsi_rc 0x%X, fc_rc 0x%X\n", __func__, cmd->rcb.cdb[0],
+		       cmd->sa.rc.flags, cmd->sa.rc.afu_rc, cmd->sa.rc.scsi_rc,
+		       cmd->sa.rc.fc_rc);
+}
+
+/**
  * send_tmf() - sends a Task Management Function (TMF)
  * @afu:	AFU to checkout from.
  * @scp:	SCSI command from stack.
@@ -308,7 +448,7 @@ static int send_tmf(struct afu *afu, struct scsi_cmnd *scp, u64 tmfcmd)
 	memcpy(cmd->rcb.cdb, &tmfcmd, sizeof(tmfcmd));
 
 	/* Send the command */
-	rc = cxlflash_send_cmd(afu, cmd);
+	rc = send_cmd(afu, cmd);
 	if (unlikely(rc)) {
 		cxlflash_cmd_checkin(cmd);
 		spin_lock_irqsave(&cfg->tmf_slock, lock_flags);
@@ -438,7 +578,7 @@ static int cxlflash_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *scp)
 	memcpy(cmd->rcb.cdb, scp->cmnd, sizeof(cmd->rcb.cdb));
 
 	/* Send the command */
-	rc = cxlflash_send_cmd(afu, cmd);
+	rc = send_cmd(afu, cmd);
 	if (unlikely(rc)) {
 		cxlflash_cmd_checkin(cmd);
 		scsi_dma_unmap(scp);
@@ -1633,60 +1773,6 @@ out:
 }
 
 /**
- * cxlflash_context_reset() - timeout handler for AFU commands
- * @cmd:	AFU command that timed out.
- *
- * Sends a reset to the AFU.
- */
-static void cxlflash_context_reset(struct afu_cmd *cmd)
-{
-	int nretry = 0;
-	u64 rrin = 0x1;
-	u64 room = 0;
-	struct afu *afu = cmd->parent;
-	ulong lock_flags;
-
-	pr_debug("%s: cmd=%p\n", __func__, cmd);
-
-	spin_lock_irqsave(&cmd->slock, lock_flags);
-
-	/* Already completed? */
-	if (cmd->sa.host_use_b[0] & B_DONE) {
-		spin_unlock_irqrestore(&cmd->slock, lock_flags);
-		return;
-	}
-
-	cmd->sa.host_use_b[0] |= (B_DONE | B_ERROR | B_TIMEOUT);
-	spin_unlock_irqrestore(&cmd->slock, lock_flags);
-
-	/*
-	 * We really want to send this reset at all costs, so spread
-	 * out wait time on successive retries for available room.
-	 */
-	do {
-		room = readq_be(&afu->host_map->cmd_room);
-		atomic64_set(&afu->room, room);
-		if (room)
-			goto write_rrin;
-		udelay(nretry);
-	} while (nretry++ < MC_ROOM_RETRY_CNT);
-
-	pr_err("%s: no cmd_room to send reset\n", __func__);
-	return;
-
-write_rrin:
-	nretry = 0;
-	writeq_be(rrin, &afu->host_map->ioarrin);
-	do {
-		rrin = readq_be(&afu->host_map->ioarrin);
-		if (rrin != 0x1)
-			break;
-		/* Double delay each time */
-		udelay(2 ^ nretry);
-	} while (nretry++ < MC_ROOM_RETRY_CNT);
-}
-
-/**
  * init_pcr() - initialize the provisioning and control registers
  * @cfg:	Internal structure associated with the host.
  *
@@ -2003,92 +2089,6 @@ err1:
 }
 
 /**
- * cxlflash_send_cmd() - sends an AFU command
- * @afu:	AFU associated with the host.
- * @cmd:	AFU command to send.
- *
- * Return:
- *	0 on success
- *	-1 on failure
- */
-int cxlflash_send_cmd(struct afu *afu, struct afu_cmd *cmd)
-{
-	struct cxlflash_cfg *cfg = afu->parent;
-	int nretry = 0;
-	int rc = 0;
-	u64 room;
-	long newval;
-
-	/*
-	 * This routine is used by critical users such an AFU sync and to
-	 * send a task management function (TMF). Thus we want to retry a
-	 * bit before returning an error. To avoid the performance penalty
-	 * of MMIO, we spread the update of 'room' over multiple commands.
-	 */
-retry:
-	newval = atomic64_dec_if_positive(&afu->room);
-	if (!newval) {
-		do {
-			room = readq_be(&afu->host_map->cmd_room);
-			atomic64_set(&afu->room, room);
-			if (room)
-				goto write_ioarrin;
-			udelay(nretry);
-		} while (nretry++ < MC_ROOM_RETRY_CNT);
-
-		pr_err("%s: no cmd_room to send 0x%X\n",
-		       __func__, cmd->rcb.cdb[0]);
-
-		goto no_room;
-	} else if (unlikely(newval < 0)) {
-		/* This should be rare. i.e. Only if two threads race and
-		 * decrement before the MMIO read is done. In this case
-		 * just benefit from the other thread having updated
-		 * afu->room.
-		 */
-		if (nretry++ < MC_ROOM_RETRY_CNT) {
-			udelay(nretry);
-			goto retry;
-		}
-
-		goto no_room;
-	}
-
-write_ioarrin:
-	writeq_be((u64)&cmd->rcb, &afu->host_map->ioarrin);
-out:
-	pr_devel("%s: cmd=%p len=%d ea=%p rc=%d\n", __func__, cmd,
-		 cmd->rcb.data_len, (void *)cmd->rcb.data_ea, rc);
-	return rc;
-
-no_room:
-	afu->read_room = true;
-	schedule_work(&cfg->work_q);
-	rc = SCSI_MLQUEUE_HOST_BUSY;
-	goto out;
-}
-
-/**
- * cxlflash_wait_resp() - polls for a response or timeout to a sent AFU command
- * @afu:	AFU associated with the host.
- * @cmd:	AFU command that was sent.
- */
-void cxlflash_wait_resp(struct afu *afu, struct afu_cmd *cmd)
-{
-	ulong timeout = msecs_to_jiffies(cmd->rcb.timeout * 2 * 1000);
-
-	timeout = wait_for_completion_timeout(&cmd->cevent, timeout);
-	if (!timeout)
-		cxlflash_context_reset(cmd);
-
-	if (unlikely(cmd->sa.ioasc != 0))
-		pr_err("%s: CMD 0x%X failed, IOASC: flags 0x%X, afu_rc 0x%X, "
-		       "scsi_rc 0x%X, fc_rc 0x%X\n", __func__, cmd->rcb.cdb[0],
-		       cmd->sa.rc.flags, cmd->sa.rc.afu_rc, cmd->sa.rc.scsi_rc,
-		       cmd->sa.rc.fc_rc);
-}
-
-/**
  * cxlflash_afu_sync() - builds and sends an AFU sync command
  * @afu:	AFU associated with the host.
  * @ctx_hndl_u:	Identifies context requesting sync.
@@ -2155,11 +2155,11 @@ retry:
 	*((u16 *)&cmd->rcb.cdb[2]) = swab16(ctx_hndl_u);
 	*((u32 *)&cmd->rcb.cdb[4]) = swab32(res_hndl_u);
 
-	rc = cxlflash_send_cmd(afu, cmd);
+	rc = send_cmd(afu, cmd);
 	if (unlikely(rc))
 		goto out;
 
-	cxlflash_wait_resp(afu, cmd);
+	wait_resp(afu, cmd);
 
 	/* set on timeout */
 	if (unlikely((cmd->sa.ioasc != 0) ||
