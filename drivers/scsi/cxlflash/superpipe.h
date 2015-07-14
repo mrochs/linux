@@ -124,7 +124,7 @@ struct llun_info {
 };
 
 struct lun_access {
-	void *lli;
+	struct llun_info *lli;
 	struct scsi_device *sdev;
 	struct list_head list;
 };
@@ -146,7 +146,7 @@ struct ctx_info {
 					     alloc/free on attach/detach */
 	u32 rht_out;		/* Number of checked out RHT entries */
 	u32 rht_perms;		/* User-defined permissions for RHT entries */
-	void **rht_lun;         /* Mapping of RHT entries to LUNs */
+	struct llun_info **rht_lun;       /* Mapping of RHT entries to LUNs */
 
 	struct cxl_ioctl_start_work work;
 	u64 ctxid;
@@ -183,9 +183,10 @@ int cxlflash_check_status(struct afu_cmd *);
 
 struct ctx_info *get_context(struct cxlflash_cfg *, u64, void *, enum ctx_ctrl);
 
-struct sisl_rht_entry *get_rhte(struct ctx_info *, res_hndl_t, void *);
+struct sisl_rht_entry *get_rhte(struct ctx_info *, res_hndl_t,
+				struct llun_info *);
 
-struct sisl_rht_entry *rhte_checkout(struct ctx_info *, void *);
+struct sisl_rht_entry *rhte_checkout(struct ctx_info *, struct llun_info *);
 void rhte_checkin(struct ctx_info *, struct sisl_rht_entry *);
 
 void cxlflash_ba_terminate(struct ba_lun *);

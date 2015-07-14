@@ -337,7 +337,7 @@ struct ctx_info *get_context(struct cxlflash_cfg *cfg, u64 rctxid,
 	struct ctx_info *ctx_info = NULL;
 	struct lun_access *lun_access = NULL;
 	struct file *file = NULL;
-	void *lli = arg;
+	struct llun_info *lli = arg;
 	u64 ctxid = DECODE_CTXID(rctxid);
 	bool found = false;
 	pid_t pid = current->tgid, ctxpid = 0;
@@ -554,7 +554,7 @@ out:
  * Return: Validated RHTE on success, NULL on failure
  */
 struct sisl_rht_entry *get_rhte(struct ctx_info *ctx_info, res_hndl_t res_hndl,
-				void *lli)
+				struct llun_info *lli)
 {
 	struct sisl_rht_entry *rhte = NULL;
 
@@ -596,7 +596,7 @@ out:
  * Return: Free RHTE on success, NULL on failure
  */
 struct sisl_rht_entry *rhte_checkout(struct ctx_info *ctx_info,
-				     void *lli)
+				     struct llun_info *lli)
 {
 	struct sisl_rht_entry *rht_entry = NULL;
 	int i;
@@ -752,7 +752,7 @@ int cxlflash_disk_release(struct scsi_device *sdev,
 		goto out;
 	}
 
-	rht_entry = get_rhte(ctx_info, res_hndl, (void *)lli);
+	rht_entry = get_rhte(ctx_info, res_hndl, lli);
 	if (unlikely(!rht_entry)) {
 		pr_err("%s: Invalid resource handle! (%d)\n",
 		       __func__, res_hndl);
@@ -882,7 +882,7 @@ static struct ctx_info *create_context(struct cxlflash_cfg *cfg,
 	}
 
 	ctx_info = (struct ctx_info *)tmp;
-	ctx_info->rht_lun = (void **)(tmp + sizeof(*ctx_info));
+	ctx_info->rht_lun = (struct llun_info **)(tmp + sizeof(*ctx_info));
 	ctx_info->rht_start = rht;
 	ctx_info->rht_perms = perms;
 
@@ -1879,7 +1879,7 @@ static int cxlflash_disk_verify(struct scsi_device *sdev,
 		goto out;
 	}
 
-	rht_entry = get_rhte(ctx_info, res_hndl, (void *)lli);
+	rht_entry = get_rhte(ctx_info, res_hndl, lli);
 	if (unlikely(!rht_entry)) {
 		pr_err("%s: Invalid resource handle! (%d)\n",
 		       __func__, res_hndl);
@@ -2004,7 +2004,7 @@ static int cxlflash_disk_direct_open(struct scsi_device *sdev, void *arg)
 		goto err1;
 	}
 
-	rht_entry = rhte_checkout(ctx_info, (void *)lli);
+	rht_entry = rhte_checkout(ctx_info, lli);
 	if (unlikely(!rht_entry)) {
 		pr_err("%s: too many opens for this context\n", __func__);
 		rc = -EMFILE;	/* too many opens  */
