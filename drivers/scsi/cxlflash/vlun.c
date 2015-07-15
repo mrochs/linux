@@ -425,6 +425,9 @@ static int write_same16(struct scsi_device *sdev,
 	u8 *sense_buf = NULL;
 	int rc = 0;
 	int result = 0;
+	int ws_limit = SISLITE_MAX_WS_BLOCKS;
+	u64 offset = lba;
+	int left = nblks;
 
 	memset(scsi_cmd, 0, sizeof(scsi_cmd));
 	cmd_buf = kzalloc(CMD_BUFSIZE, GFP_KERNEL);
@@ -434,20 +437,26 @@ static int write_same16(struct scsi_device *sdev,
 		goto out;
 	}
 
-	scsi_cmd[0] = WRITE_SAME_16;
-	put_unaligned_be64(lba, &scsi_cmd[2]);
-	put_unaligned_be32(nblks, &scsi_cmd[10]);
+	while (left > 0) {
 
-	pr_debug("%s: sending cmd(0x%x)\n", __func__, scsi_cmd[0]);
+		scsi_cmd[0] = WRITE_SAME_16;
+		put_unaligned_be64(offset, &scsi_cmd[2]);
+		put_unaligned_be32(ws_limit < left ? ws_limit : left,
+				   &scsi_cmd[10]);
 
-	result = scsi_execute(sdev, scsi_cmd, DMA_TO_DEVICE, cmd_buf,
-			      CMD_BUFSIZE, sense_buf,
-			      (MC_DISCOVERY_TIMEOUT*HZ), 5, 0, NULL);
+		left -= ws_limit;
+		offset += ws_limit;
 
-	if (result) {
-		pr_err("%s: command failed result=0x%x\n", __func__, result);
-		rc = -EIO;
-		goto out;
+		result = scsi_execute(sdev, scsi_cmd, DMA_TO_DEVICE, cmd_buf,
+				      CMD_BUFSIZE, sense_buf,
+				      (MC_DISCOVERY_TIMEOUT*HZ), 5, 0, NULL);
+
+		if (result) {
+			pr_err("%s: command failed for offset %lld"
+			      " result=0x%x\n", __func__, offset, result);
+			rc = -EIO;
+			goto out;
+		}
 	}
 
 out:
