@@ -152,8 +152,8 @@ struct ctx_info {
 	u64 ctxid;
 	int lfd;
 	pid_t pid;
-	atomic_t nrefs;	/* Number of active references, must be 0 for removal */
 	bool err_recovery_active;
+	struct mutex mutex; /* Context protection */
 	struct cxl_context *ctx;
 	struct list_head luns;	/* LUNs attached to this context */
 	const struct vm_operations_struct *cxl_mmap_vmops;
@@ -169,8 +169,12 @@ struct cxlflash_global {
 
 
 int cxlflash_vlun_resize(struct scsi_device *, struct dk_cxlflash_resize *);
+int _cxlflash_vlun_resize(struct scsi_device *, struct ctx_info *,
+			  struct dk_cxlflash_resize *);
 
 int cxlflash_disk_release(struct scsi_device *, struct dk_cxlflash_release *);
+int _cxlflash_disk_release(struct scsi_device *, struct ctx_info *,
+			   struct dk_cxlflash_release *);
 
 int cxlflash_disk_clone(struct scsi_device *, struct dk_cxlflash_clone *);
 

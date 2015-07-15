@@ -108,7 +108,7 @@ struct cxlflash_cfg {
 	struct pci_pool *cxlflash_cmd_pool;
 	struct pci_dev *parent_dev;
 
-	spinlock_t ctx_tbl_slock;
+	struct mutex ctx_tbl_list_mutex;
 	struct ctx_info *ctx_tbl[MAX_CONTEXT];
 	struct list_head ctx_err_recovery; /* contexts w/ recovery pending */
 	struct file_operations cxl_fops;

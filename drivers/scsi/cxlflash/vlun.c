@@ -675,8 +675,9 @@ out:
 }
 
 /**
- * cxlflash_vlun_resize() - changes the size of a virtual lun
+ * _cxlflash_vlun_resize() - changes the size of a virtual lun
  * @sdev:	SCSI device associated with LUN owning virtual LUN.
+ * @ctx_info:	Context owning resources.
  * @resize:	Resize ioctl data structure.
  *
  * On successful return, the user is informed of the new size (in blocks)
@@ -685,13 +686,15 @@ out:
  *
  * Return: 0 on success, -errno on failure
  */
-int cxlflash_vlun_resize(struct scsi_device *sdev,
-			 struct dk_cxlflash_resize *resize)
+int _cxlflash_vlun_resize(struct scsi_device *sdev,
+			  struct ctx_info *ctx_info,
+			  struct dk_cxlflash_resize *resize)
 {
 	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)sdev->host->hostdata;
 	struct llun_info *lli = sdev->hostdata;
 	struct glun_info *gli = lli->parent;
 	struct afu *afu = cfg->afu;
+	bool unlock_ctx = false;
 
 	res_hndl_t res_hndl = resize->rsrc_handle;
 	u64 new_size;
@@ -699,7 +702,6 @@ int cxlflash_vlun_resize(struct scsi_device *sdev,
 	u64 ctxid = DECODE_CTXID(resize->context_id),
 	    rctxid = resize->context_id;
 
-	struct ctx_info *ctx_info = NULL;
 	struct sisl_rht_entry *rht_entry;
 
 	int rc = 0;
@@ -722,12 +724,16 @@ int cxlflash_vlun_resize(struct scsi_device *sdev,
 
 	}
 
-	ctx_info = get_context(cfg, rctxid, lli, CTX_CTRL_ERR_FALLBACK);
-	if (unlikely(!ctx_info)) {
-		pr_err("%s: Invalid context! (%llu)\n",
-		       __func__, ctxid);
-		rc = -EINVAL;
-		goto out;
+	if (!ctx_info) {
+		ctx_info = get_context(cfg, rctxid, lli, CTX_CTRL_ERR_FALLBACK);
+		if (unlikely(!ctx_info)) {
+			pr_err("%s: Invalid context! (%llu)\n",
+			       __func__, ctxid);
+			rc = -EINVAL;
+			goto out;
+		}
+
+		unlock_ctx = true;
 	}
 
 	rht_entry = get_rhte(ctx_info, res_hndl, lli);
@@ -758,11 +764,17 @@ int cxlflash_vlun_resize(struct scsi_device *sdev,
 			     CXLFLASH_BLOCK_SIZE) - 1);
 
 out:
-	if (likely(ctx_info))
-		atomic_dec_if_positive(&ctx_info->nrefs);
+	if (unlock_ctx)
+		mutex_unlock(&ctx_info->mutex);
 	pr_debug("%s: resized to %lld returning rc=%d\n",
 		 __func__, resize->last_lba, rc);
 	return rc;
+}
+
+int cxlflash_vlun_resize(struct scsi_device *sdev,
+			 struct dk_cxlflash_resize *resize)
+{
+	return _cxlflash_vlun_resize(sdev, NULL, resize);
 }
 
 /**
@@ -916,7 +928,7 @@ int cxlflash_disk_virtual_open(struct scsi_device *sdev, void *arg)
 	/* Resize even if requested size is 0 */
 	marshal_virt_to_resize(virt, &resize);
 	resize.rsrc_handle = rsrc_handle;
-	rc = cxlflash_vlun_resize(sdev, &resize);
+	rc = _cxlflash_vlun_resize(sdev, ctx_info, &resize);
 	if (rc) {
 		pr_err("%s: resize failed rc %d\n", __func__, rc);
 		goto err2;
@@ -929,7 +941,7 @@ int cxlflash_disk_virtual_open(struct scsi_device *sdev, void *arg)
 
 out:
 	if (likely(ctx_info))
-		atomic_dec_if_positive(&ctx_info->nrefs);
+		mutex_unlock(&ctx_info->mutex);
 	pr_debug("%s: returning handle 0x%llx rc=%d llba %lld\n",
 		 __func__, rsrc_handle, rc, last_lba);
 	return rc;
@@ -1133,7 +1145,7 @@ int cxlflash_disk_clone(struct scsi_device *sdev,
 	 * cxlflash_vlun_resize. As such, LUN accounting needs to be taken into
 	 * account by attaching after each successful RHT entry clone. In the
 	 * event that a clone failure is experienced, the LUN detach is handled
-	 * via the cleanup performed by cxlflash_disk_release.
+	 * via the cleanup performed by _cxlflash_disk_release.
 	 */
 	for (i = 0; i < MAX_RHT_PER_CONTEXT; i++) {
 		if (ctx_info_src->rht_out == ctx_info_dst->rht_out)
@@ -1156,7 +1168,8 @@ int cxlflash_disk_clone(struct scsi_device *sdev,
 			marshal_clone_to_rele(clone, &release);
 			for (j = 0; j < i; j++) {
 				release.rsrc_handle = j;
-				cxlflash_disk_release(sdev, &release);
+				_cxlflash_disk_release(sdev, ctx_info_dst,
+						       &release);
 			}
 
 			/* Put back the one we failed on */
@@ -1173,10 +1186,10 @@ out_success:
 
 	/* fall through */
 out:
-	if (likely(ctx_info_src))
-		atomic_dec_if_positive(&ctx_info_src->nrefs);
-	if (likely(ctx_info_dst))
-		atomic_dec_if_positive(&ctx_info_dst->nrefs);
+	if (ctx_info_src)
+		mutex_unlock(&ctx_info_src->mutex);
+	if (ctx_info_dst)
+		mutex_unlock(&ctx_info_dst->mutex);
 	pr_debug("%s: returning rc=%d\n", __func__, rc);
 	return rc;
 

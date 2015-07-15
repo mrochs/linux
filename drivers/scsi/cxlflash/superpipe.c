@@ -317,7 +317,7 @@ static struct ctx_info *find_error_context(struct cxlflash_cfg *cfg, u64 rctxid,
 }
 
 /**
- * get_context() - obtains a validated context reference
+ * get_context() - obtains a validated and locked context reference
  * @cfg:	Internal structure associated with the host.
  * @rctxid:	Desired context (raw, undecoded format).
  * @arg:	LUN information or file associated with request.
@@ -339,9 +339,8 @@ struct ctx_info *get_context(struct cxlflash_cfg *cfg, u64 rctxid,
 	struct file *file = NULL;
 	struct llun_info *lli = arg;
 	u64 ctxid = DECODE_CTXID(rctxid);
-	bool found = false;
+	int rc;
 	pid_t pid = current->tgid, ctxpid = 0;
-	ulong flags = 0;
 
 	if (ctx_ctrl & CTX_CTRL_FILE) {
 		lli = NULL;
@@ -352,9 +351,12 @@ struct ctx_info *get_context(struct cxlflash_cfg *cfg, u64 rctxid,
 		pid = current->parent->tgid;
 
 	if (likely(ctxid < MAX_CONTEXT)) {
-		spin_lock_irqsave(&cfg->ctx_tbl_slock, flags);
-		ctx_info = cfg->ctx_tbl[ctxid];
+retry:
+		rc = mutex_lock_interruptible(&cfg->ctx_tbl_list_mutex);
+		if (rc)
+			goto out;
 
+		ctx_info = cfg->ctx_tbl[ctxid];
 		if (ctx_info)
 			if ((file && (ctx_info->file != file)) ||
 			    (!file && (ctx_info->ctxid != rctxid)))
@@ -363,17 +365,13 @@ struct ctx_info *get_context(struct cxlflash_cfg *cfg, u64 rctxid,
 		if ((ctx_ctrl & CTX_CTRL_ERR) ||
 		    (!ctx_info && (ctx_ctrl & CTX_CTRL_ERR_FALLBACK)))
 			ctx_info = find_error_context(cfg, rctxid, file);
-		if (unlikely(!ctx_info)) {
-			spin_unlock_irqrestore(&cfg->ctx_tbl_slock, flags);
+		mutex_unlock(&cfg->ctx_tbl_list_mutex);
+		if (!ctx_info)
 			goto out;
-		}
 
-		/*
-		 * Increment the reference count under lock so the context
-		 * is not yanked from under us on a removal thread.
-		 */
-		atomic_inc(&ctx_info->nrefs);
-		spin_unlock_irqrestore(&cfg->ctx_tbl_slock, flags);
+		rc = mutex_trylock(&ctx_info->mutex);
+		if (!rc)
+			goto retry;
 
 		ctxpid = ctx_info->pid;
 		if (likely(!(ctx_ctrl & CTX_CTRL_NOPID)))
@@ -382,25 +380,20 @@ struct ctx_info *get_context(struct cxlflash_cfg *cfg, u64 rctxid,
 
 		if (lli) {
 			list_for_each_entry(lun_access, &ctx_info->luns, list)
-				if (lun_access->lli == lli) {
-					found = true;
-					break;
-				}
-
-			if (!found)
-				goto denied;
+				if (lun_access->lli == lli)
+					goto out;
+			goto denied;
 		}
 	}
 
 out:
-	pr_debug("%s: rctxid=%016llX ctxinfo=%p ctxpid=%u pid=%u ctx_ctrl=%u "
-		 "found=%d\n", __func__, rctxid, ctx_info, ctxpid, pid,
-		 ctx_ctrl, found);
+	pr_debug("%s: rctxid=%016llX ctxinfo=%p ctxpid=%u pid=%u ctx_ctrl=%u\n",
+		 __func__, rctxid, ctx_info, ctxpid, pid, ctx_ctrl);
 
 	return ctx_info;
 
 denied:
-	atomic_dec_if_positive(&ctx_info->nrefs);
+	mutex_unlock(&ctx_info->mutex);
 	ctx_info = NULL;
 	goto out;
 }
@@ -714,8 +707,9 @@ void cxlflash_lun_detach(struct glun_info *gli)
 }
 
 /**
- * cxlflash_disk_release() - releases the specified resource entry
+ * _cxlflash_disk_release() - releases the specified resource entry
  * @sdev:	SCSI device associated with LUN.
+ * @ctx_info:	Context owning resources.
  * @release:	Release ioctl data structure.
  *
  * For LUN's in virtual mode, the virtual lun associated with the specified
@@ -723,13 +717,15 @@ void cxlflash_lun_detach(struct glun_info *gli)
  *
  * Return: 0 on success, -errno on failure
  */
-int cxlflash_disk_release(struct scsi_device *sdev,
-			  struct dk_cxlflash_release *release)
+int _cxlflash_disk_release(struct scsi_device *sdev,
+			   struct ctx_info *ctx_info,
+			   struct dk_cxlflash_release *release)
 {
 	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)sdev->host->hostdata;
 	struct llun_info *lli = sdev->hostdata;
 	struct glun_info *gli = lli->parent;
 	struct afu *afu = cfg->afu;
+	bool unlock_ctx = false;
 
 	struct dk_cxlflash_resize size;
 	res_hndl_t res_hndl = release->rsrc_handle;
@@ -738,18 +734,22 @@ int cxlflash_disk_release(struct scsi_device *sdev,
 	u64 ctxid = DECODE_CTXID(release->context_id),
 	    rctxid = release->context_id;
 
-	struct ctx_info *ctx_info = NULL;
 	struct sisl_rht_entry *rht_entry;
 	struct sisl_rht_entry_f1 *rht_entry_f1;
 
 	pr_debug("%s: ctxid=%llu res_hndl=0x%llx gli->mode=%u gli->users=%u\n",
 		 __func__, ctxid, release->rsrc_handle, gli->mode, gli->users);
 
-	ctx_info = get_context(cfg, rctxid, lli, CTX_CTRL_ERR_FALLBACK);
-	if (unlikely(!ctx_info)) {
-		pr_err("%s: Invalid context! (%llu)\n", __func__, ctxid);
-		rc = -EINVAL;
-		goto out;
+	if (!ctx_info) {
+		ctx_info = get_context(cfg, rctxid, lli, CTX_CTRL_ERR_FALLBACK);
+		if (unlikely(!ctx_info)) {
+			pr_err("%s: Invalid context! (%llu)\n",
+			       __func__, ctxid);
+			rc = -EINVAL;
+			goto out;
+		}
+
+		unlock_ctx = true;
 	}
 
 	rht_entry = get_rhte(ctx_info, res_hndl, lli);
@@ -771,7 +771,7 @@ int cxlflash_disk_release(struct scsi_device *sdev,
 	case MODE_VIRTUAL:
 		marshal_rele_to_resize(release, &size);
 		size.req_size = 0;
-		rc = cxlflash_vlun_resize(sdev, &size);
+		rc = _cxlflash_vlun_resize(sdev, ctx_info, &size);
 		if (rc) {
 			pr_err("%s: resize failed rc %d\n", __func__, rc);
 			goto out;
@@ -806,10 +806,16 @@ int cxlflash_disk_release(struct scsi_device *sdev,
 	cxlflash_lun_detach(gli);
 
 out:
-	if (likely(ctx_info))
-		atomic_dec_if_positive(&ctx_info->nrefs);
+	if (unlock_ctx)
+		mutex_unlock(&ctx_info->mutex);
 	pr_debug("%s: returning rc=%d\n", __func__, rc);
 	return rc;
+}
+
+int cxlflash_disk_release(struct scsi_device *sdev,
+			  struct dk_cxlflash_release *release)
+{
+	return _cxlflash_disk_release(sdev, NULL, release);
 }
 
 /**
@@ -855,6 +861,8 @@ static void destroy_context(struct cxlflash_cfg *cfg,
  * @file:	Previously obtained file associated with CXL context.
  * @perms:	User-specified permissions.
  *
+ * The context's mutex is locked when an allocated context is returned.
+ *
  * Return: Allocated context on success, NULL on failure
  */
 static struct ctx_info *create_context(struct cxlflash_cfg *cfg,
@@ -895,12 +903,12 @@ static struct ctx_info *create_context(struct cxlflash_cfg *cfg,
 	ctx_info->pid = current->tgid; /* tgid = pid */
 	ctx_info->ctx = ctx;
 	ctx_info->file = file;
+	mutex_init(&ctx_info->mutex);
 	INIT_LIST_HEAD(&ctx_info->luns);
 	INIT_LIST_HEAD(&ctx_info->list); /* initialize for list_empty() */
-	atomic_set(&ctx_info->nrefs, 1);
 
 	atomic_inc(&cfg->num_user_contexts);
-
+	mutex_lock(&ctx_info->mutex);
 out:
 	return ctx_info;
 
@@ -910,8 +918,9 @@ err:
 }
 
 /**
- * cxlflash_disk_detach() - detaches a LUN from a context
+ * _cxlflash_disk_detach() - detaches a LUN from a context
  * @sdev:	SCSI device associated with LUN.
+ * @ctx_info:	Context owning resources.
  * @detach:	Detach ioctl data structure.
  *
  * As part of the detach, all per-context resources associated with the LUN
@@ -920,29 +929,34 @@ err:
  *
  * Return: 0 on success, -errno on failure
  */
-static int cxlflash_disk_detach(struct scsi_device *sdev,
-				struct dk_cxlflash_detach *detach)
+static int _cxlflash_disk_detach(struct scsi_device *sdev,
+				 struct ctx_info *ctx_info,
+				 struct dk_cxlflash_detach *detach)
 {
 	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)sdev->host->hostdata;
 	struct llun_info *lli = sdev->hostdata;
 	struct lun_access *lun_access, *t;
 	struct dk_cxlflash_release rel;
-	struct ctx_info *ctx_info = NULL;
+	bool unlock_ctx = false;
 
 	int i;
 	int rc = 0;
 	int lfd;
 	u64 ctxid = DECODE_CTXID(detach->context_id),
 	    rctxid = detach->context_id;
-	ulong flags = 0;
 
 	pr_debug("%s: ctxid=%llu\n", __func__, ctxid);
 
-	ctx_info = get_context(cfg, rctxid, lli, CTX_CTRL_ERR_FALLBACK);
-	if (unlikely(!ctx_info)) {
-		pr_err("%s: Invalid context! (%llu)\n", __func__, ctxid);
-		rc = -EINVAL;
-		goto out;
+	if (!ctx_info) {
+		ctx_info = get_context(cfg, rctxid, lli, CTX_CTRL_ERR_FALLBACK);
+		if (unlikely(!ctx_info)) {
+			pr_err("%s: Invalid context! (%llu)\n",
+			       __func__, ctxid);
+			rc = -EINVAL;
+			goto out;
+		}
+
+		unlock_ctx = true;
 	}
 
 	/* Cleanup outstanding resources tied to this LUN */
@@ -951,7 +965,7 @@ static int cxlflash_disk_detach(struct scsi_device *sdev,
 		for (i = 0; i < MAX_RHT_PER_CONTEXT; i++) {
 			if (ctx_info->rht_lun[i] == lli) {
 				rel.rsrc_handle = i;
-				cxlflash_disk_release(sdev, &rel);
+				_cxlflash_disk_release(sdev, ctx_info, &rel);
 			}
 
 			/* No need to loop further if we're done */
@@ -971,23 +985,19 @@ static int cxlflash_disk_detach(struct scsi_device *sdev,
 
 	/* Tear down context following last LUN cleanup */
 	if (list_empty(&ctx_info->luns)) {
-		spin_lock_irqsave(&cfg->ctx_tbl_slock, flags);
+		mutex_lock(&cfg->ctx_tbl_list_mutex);
 
 		/* Might not have been in error list so conditionally remove */
 		if (!list_empty(&ctx_info->list))
 			list_del(&ctx_info->list);
 		cfg->ctx_tbl[ctxid] = NULL;
-		spin_unlock_irqrestore(&cfg->ctx_tbl_slock, flags);
-
-		while (atomic_read(&ctx_info->nrefs) > 1) {
-			pr_debug("%s: waiting on threads... (%d)\n",
-				 __func__, atomic_read(&ctx_info->nrefs));
-			cpu_relax();
-		}
+		mutex_unlock(&cfg->ctx_tbl_list_mutex);
+		mutex_unlock(&ctx_info->mutex);
 
 		lfd = ctx_info->lfd;
 		destroy_context(cfg, ctx_info);
 		ctx_info = NULL;
+		unlock_ctx = false;
 
 		/*
 		 * As a last step, clean up external resources when not
@@ -1002,10 +1012,16 @@ static int cxlflash_disk_detach(struct scsi_device *sdev,
 	}
 
 out:
-	if (likely(ctx_info))
-		atomic_dec_if_positive(&ctx_info->nrefs);
+	if (unlock_ctx)
+		mutex_unlock(&ctx_info->mutex);
 	pr_debug("%s: returning rc=%d\n", __func__, rc);
 	return rc;
+}
+
+static int cxlflash_disk_detach(struct scsi_device *sdev,
+				struct dk_cxlflash_detach *detach)
+{
+	return _cxlflash_disk_detach(sdev, NULL, detach);
 }
 
 /**
@@ -1076,6 +1092,7 @@ static int cxlflash_cxl_release(struct inode *inode, struct file *file)
 
 		pr_debug("%s: Another process owns context %d!\n",
 			 __func__, ctxid);
+		mutex_unlock(&ctx_info->mutex);
 		goto out;
 	}
 
@@ -1085,9 +1102,8 @@ static int cxlflash_cxl_release(struct inode *inode, struct file *file)
 	/* Reset the file descriptor to indicate we're on a close() thread */
 	ctx_info->lfd = -1;
 	detach.context_id = ctx_info->ctxid;
-	atomic_dec_if_positive(&ctx_info->nrefs); /* fix up reference count */
 	list_for_each_entry_safe(lun_access, t, &ctx_info->luns, list)
-		cxlflash_disk_detach(lun_access->sdev, &detach);
+		_cxlflash_disk_detach(lun_access->sdev, ctx_info, &detach);
 
 	/*
 	 * Don't reference lun_access, or t (or ctx_info for that matter, even
@@ -1098,8 +1114,6 @@ static int cxlflash_cxl_release(struct inode *inode, struct file *file)
 out_release:
 	cxl_fd_release(inode, file);
 out:
-	if (likely(ctx_info))
-		atomic_dec_if_positive(&ctx_info->nrefs);
 	pr_debug("%s: returning\n", __func__);
 	return 0;
 }
@@ -1214,7 +1228,7 @@ static int cxlflash_mmap_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 
 out:
 	if (likely(ctx_info))
-		atomic_dec_if_positive(&ctx_info->nrefs);
+		mutex_unlock(&ctx_info->mutex);
 	pr_debug("%s: returning rc=%d\n", __func__, rc);
 	return rc;
 
@@ -1277,7 +1291,7 @@ static int cxlflash_cxl_mmap(struct file *file, struct vm_area_struct *vma)
 
 out:
 	if (likely(ctx_info))
-		atomic_dec_if_positive(&ctx_info->nrefs);
+		mutex_unlock(&ctx_info->mutex);
 	return rc;
 }
 
@@ -1304,39 +1318,24 @@ static const struct file_operations cxlflash_cxl_fops = {
 int cxlflash_mark_contexts_error(struct cxlflash_cfg *cfg)
 {
 	int i, rc = 0;
-	ulong lock_flags;
 	struct ctx_info *ctx_info = NULL;
 
-	spin_lock_irqsave(&cfg->ctx_tbl_slock, lock_flags);
+	mutex_lock(&cfg->ctx_tbl_list_mutex);
 
 	for (i = 0; i < MAX_CONTEXT; i++) {
-retry:
 		ctx_info = cfg->ctx_tbl[i];
-
 		if (ctx_info) {
-			if (atomic_read(&ctx_info->nrefs) > 0) {
-				spin_unlock_irqrestore(&cfg->ctx_tbl_slock,
-						       lock_flags);
-				while (atomic_read(&ctx_info->nrefs) > 0) {
-					pr_debug("%s: waiting on threads...\n",
-						 __func__);
-					ssleep(1);
-				}
-
-				spin_lock_irqsave(&cfg->ctx_tbl_slock,
-						  lock_flags);
-				goto retry;
-			}
-
+			mutex_lock(&ctx_info->mutex);
 			cfg->ctx_tbl[i] = NULL;
 			list_add(&ctx_info->list, &cfg->ctx_err_recovery);
 			ctx_info->err_recovery_active = true;
 			ctx_info->ctrl_map = NULL;
 			unmap_context(ctx_info);
+			mutex_unlock(&ctx_info->mutex);
 		}
 	}
 
-	spin_unlock_irqrestore(&cfg->ctx_tbl_slock, lock_flags);
+	mutex_unlock(&cfg->ctx_tbl_list_mutex);
 	schedule();
 	return rc;
 }
@@ -1374,7 +1373,6 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 	u32 perms;
 	int ctxid = -1;
 	u64 rctxid = 0UL;
-	ulong lock_flags;
 	struct file *file;
 
 	struct cxl_context *ctx;
@@ -1494,9 +1492,9 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 	 * visible to user space and can't be undone safely on this thread.
 	 */
 	list_add(&lun_access->list, &ctx_info->luns);
-	spin_lock_irqsave(&cfg->ctx_tbl_slock, lock_flags);
+	mutex_lock(&cfg->ctx_tbl_list_mutex);
 	cfg->ctx_tbl[ctxid] = ctx_info;
-	spin_unlock_irqrestore(&cfg->ctx_tbl_slock, lock_flags);
+	mutex_unlock(&cfg->ctx_tbl_list_mutex);
 	fd_install(fd, file);
 
 out_attach:
@@ -1510,8 +1508,8 @@ out_attach:
 out:
 	attach->adap_fd = fd;
 
-	if (likely(ctx_info))
-		atomic_dec_if_positive(&ctx_info->nrefs);
+	if (ctx_info)
+		mutex_unlock(&ctx_info->mutex);
 
 	pr_debug("%s: returning ctxid=%d fd=%d bs=%lld rc=%d llba=%lld\n",
 		 __func__, ctxid, fd, attach->block_size, rc, attach->last_lba);
@@ -1608,7 +1606,6 @@ static int recover_context(struct cxlflash_cfg *cfg, struct ctx_info *ctx_info)
 	int rc = 0;
 	int old_fd, fd = -1;
 	int ctxid = -1;
-	ulong lock_flags;
 	struct file *file;
 	struct cxl_context *ctx;
 	struct afu *afu = cfg->afu;
@@ -1660,10 +1657,10 @@ static int recover_context(struct cxlflash_cfg *cfg, struct ctx_info *ctx_info)
 	ctx_info->file = file;
 
 	/* Put context back in table (note the reinit of the context list) */
-	spin_lock_irqsave(&cfg->ctx_tbl_slock, lock_flags);
+	mutex_lock(&cfg->ctx_tbl_list_mutex);
 	list_del_init(&ctx_info->list);
 	cfg->ctx_tbl[ctxid] = ctx_info;
-	spin_unlock_irqrestore(&cfg->ctx_tbl_slock, lock_flags);
+	mutex_unlock(&cfg->ctx_tbl_list_mutex);
 	fd_install(fd, file);
 
 	/* Release the original adapter fd and associated CXL resources */
@@ -1780,7 +1777,7 @@ retry:
 	reg = readq_be(&afu->ctrl_map->mbox_r);
 	if (reg == -1) {
 		pr_info("%s: MMIO read fail! Wait for recovery...\n", __func__);
-		atomic_dec_if_positive(&ctx_info->nrefs);
+		mutex_unlock(&ctx_info->mutex);
 		ctx_info = NULL;
 		ssleep(1);
 		rc = check_eeh(cfg);
@@ -1792,7 +1789,7 @@ retry:
 	pr_debug("%s: MMIO working, no recovery required!\n", __func__);
 out:
 	if (likely(ctx_info))
-		atomic_dec_if_positive(&ctx_info->nrefs);
+		mutex_unlock(&ctx_info->mutex);
 	return rc;
 }
 
@@ -1921,7 +1918,7 @@ static int cxlflash_disk_verify(struct scsi_device *sdev,
 
 out:
 	if (likely(ctx_info))
-		atomic_dec_if_positive(&ctx_info->nrefs);
+		mutex_unlock(&ctx_info->mutex);
 	pr_debug("%s: returning rc=%d llba=%lld\n",
 		 __func__, rc, verify->last_lba);
 	return rc;
@@ -2029,7 +2026,7 @@ static int cxlflash_disk_direct_open(struct scsi_device *sdev, void *arg)
 
 out:
 	if (likely(ctx_info))
-		atomic_dec_if_positive(&ctx_info->nrefs);
+		mutex_unlock(&ctx_info->mutex);
 	pr_debug("%s: returning handle 0x%llx rc=%d llba %lld\n",
 		 __func__, rsrc_handle, rc, last_lba);
 	return rc;
