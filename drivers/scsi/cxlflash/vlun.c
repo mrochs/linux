@@ -440,7 +440,7 @@ static int write_same16(struct scsi_device *sdev,
 
 	pr_debug("%s: sending cmd(0x%x)\n", __func__, scsi_cmd[0]);
 
-	result = scsi_execute(sdev, scsi_cmd, DMA_FROM_DEVICE, cmd_buf,
+	result = scsi_execute(sdev, scsi_cmd, DMA_TO_DEVICE, cmd_buf,
 			      CMD_BUFSIZE, sense_buf,
 			      (MC_DISCOVERY_TIMEOUT*HZ), 5, 0, NULL);
 
