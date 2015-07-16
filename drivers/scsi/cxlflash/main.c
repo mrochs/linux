@@ -455,9 +455,18 @@ static int cxlflash_eh_device_reset_handler(struct scsi_cmnd *scp)
 		 get_unaligned_be32(&((u32 *)scp->cmnd)[2]),
 		 get_unaligned_be32(&((u32 *)scp->cmnd)[3]));
 
-	rcr = send_tmf(afu, scp, TMF_LUN_RESET);
-	if (unlikely(rcr))
-		rc = FAILED;
+	switch (cfg->eeh_active) {
+	case EEH_STATE_NONE:
+		rcr = send_tmf(afu, scp, TMF_LUN_RESET);
+		if (unlikely(rcr))
+			rc = FAILED;
+		break;
+	case EEH_STATE_ACTIVE:
+		wait_event(cfg->eeh_waitq, cfg->eeh_active != EEH_STATE_ACTIVE);
+		break;
+	case EEH_STATE_FAILED:
+		break;
+	}
 
 	pr_debug("%s: returning rc=%d\n", __func__, rc);
 	return rc;
@@ -487,11 +496,20 @@ static int cxlflash_eh_host_reset_handler(struct scsi_cmnd *scp)
 		 get_unaligned_be32(&((u32 *)scp->cmnd)[2]),
 		 get_unaligned_be32(&((u32 *)scp->cmnd)[3]));
 
-	rcr = cxlflash_afu_reset(cfg);
-	if (rcr == 0)
-		rc = SUCCESS;
-	else
-		rc = FAILED;
+	switch (cfg->eeh_active) {
+	case EEH_STATE_NONE:
+		rcr = cxlflash_afu_reset(cfg);
+		if (rcr == 0)
+			rc = SUCCESS;
+		else
+			rc = FAILED;
+		break;
+	case EEH_STATE_ACTIVE:
+		wait_event(cfg->eeh_waitq, cfg->eeh_active != EEH_STATE_ACTIVE);
+		break;
+	case EEH_STATE_FAILED:
+		break;
+	}
 
 	pr_debug("%s: returning rc=%d\n", __func__, rc);
 	return rc;
@@ -1879,6 +1897,8 @@ static int init_afu(struct cxlflash_cfg *cfg)
 	struct afu *afu = cfg->afu;
 	struct device *dev = &cfg->dev->dev;
 
+	cxl_perst_reloads_same_image(cfg->cxl_afu, true);
+
 	rc = init_mc(cfg);
 	if (rc) {
 		dev_err(dev, "%s: call to init_mc failed, rc=%d!\n",
@@ -2021,6 +2041,12 @@ void cxlflash_wait_resp(struct afu *afu, struct afu_cmd *cmd)
  * the sync. This design point requires calling threads to not be on interrupt
  * context due to the possibility of sleeping during concurrent sync operations.
  *
+ * AFU sync operations should be gated during EEH recovery. When a recovery
+ * fails and an adapter is to be removed, sync requests can occur as part of
+ * cleaning up resources associated with an adapter prior to its removal. In
+ * this scenario, these requests are identified here and simply ignored (safe
+ * due to the AFU going away).
+ *
  * Return:
  *	0 on success
  *	-1 on failure
@@ -2028,10 +2054,16 @@ void cxlflash_wait_resp(struct afu *afu, struct afu_cmd *cmd)
 int cxlflash_afu_sync(struct afu *afu, ctx_hndl_t ctx_hndl_u,
 		      res_hndl_t res_hndl_u, u8 mode)
 {
+	struct cxlflash_cfg *cfg = afu->parent;
 	struct afu_cmd *cmd = NULL;
 	int rc = 0;
 	int retry_cnt = 0;
 	static DEFINE_MUTEX(sync_active);
+
+	if (cfg->eeh_active == EEH_STATE_FAILED) {
+		pr_debug("%s: Sync not required due to EEH state!\n", __func__);
+		return 0;
+	}
 
 	mutex_lock(&sync_active);
 retry:
@@ -2122,6 +2154,11 @@ static void cxlflash_worker_thread(struct work_struct *work)
 	int port;
 	ulong lock_flags;
 
+	/* Avoid MMIO if the device has failed */
+
+	if (cfg->eeh_active == EEH_STATE_FAILED)
+		return;
+
 	spin_lock_irqsave(cfg->host->host_lock, lock_flags);
 
 	if (cfg->lr_state == LINK_RESET_REQUIRED) {
@@ -2199,8 +2236,7 @@ static int cxlflash_probe(struct pci_dev *pdev,
 	cfg->init_state = INIT_STATE_NONE;
 	cfg->dev = pdev;
 	cfg->dev_id = (struct pci_device_id *)dev_id;
-	cfg->mcctx = NULL;
-	cfg->err_recovery_active = 0;
+	cfg->eeh_active = EEH_STATE_NONE;
 
 	init_waitqueue_head(&cfg->tmf_waitq);
 	init_waitqueue_head(&cfg->eeh_waitq);
@@ -2259,6 +2295,84 @@ out_remove:
 	goto out;
 }
 
+/**
+ * cxlflash_pci_error_detected() - called when a PCI error is detected
+ * @pdev:	PCI device struct.
+ * @state:	PCI channel state.
+ *
+ * Return: PCI_ERS_RESULT_NEED_RESET or PCI_ERS_RESULT_DISCONNECT
+ */
+static pci_ers_result_t cxlflash_pci_error_detected(struct pci_dev *pdev,
+						    pci_channel_state_t state)
+{
+	struct cxlflash_cfg *cfg = pci_get_drvdata(pdev);
+
+	pr_debug("%s: pdev=%p state=%u\n", __func__, pdev, state);
+
+	switch (state) {
+	case pci_channel_io_frozen:
+		cfg->eeh_active = EEH_STATE_ACTIVE;
+		udelay(100);
+
+		term_mc(cfg, UNDO_START);
+		stop_afu(cfg);
+
+		return PCI_ERS_RESULT_CAN_RECOVER;
+	case pci_channel_io_perm_failure:
+		cfg->eeh_active = EEH_STATE_FAILED;
+		wake_up_all(&cfg->eeh_waitq);
+		return PCI_ERS_RESULT_DISCONNECT;
+	default:
+		break;
+	}
+	return PCI_ERS_RESULT_NEED_RESET;
+}
+
+/**
+ * cxlflash_pci_slot_reset() - called when PCI slot has been reset
+ * @pdev:	PCI device struct.
+ *
+ * This routine is called by the pci error recovery code after the PCI
+ * slot has been reset, just before we should resume normal operations.
+ *
+ * Return: PCI_ERS_RESULT_RECOVERED or PCI_ERS_RESULT_DISCONNECT
+ */
+static pci_ers_result_t cxlflash_pci_slot_reset(struct pci_dev *pdev)
+{
+	int rc = 0;
+	struct cxlflash_cfg *cfg = pci_get_drvdata(pdev);
+
+	pr_debug("%s: pdev=%p\n", __func__, pdev);
+
+	rc = init_afu(cfg);
+	if (unlikely(rc)) {
+		pr_err("%s: EEH recovery failed! (%d)\n", __func__, rc);
+		return PCI_ERS_RESULT_DISCONNECT;
+	}
+
+	return PCI_ERS_RESULT_RECOVERED;
+}
+
+/**
+ * cxlflash_pci_resume() - called when normal operation can resume
+ * @pdev:	PCI device struct
+ */
+static void cxlflash_pci_resume(struct pci_dev *pdev)
+{
+	struct cxlflash_cfg *cfg = pci_get_drvdata(pdev);
+
+	pr_debug("%s: pdev=%p\n", __func__, pdev);
+
+	cfg->eeh_active = EEH_STATE_NONE;
+	wake_up_all(&cfg->eeh_waitq);
+}
+
+static const struct pci_error_handlers cxlflash_err_handler = {
+	.error_detected = cxlflash_pci_error_detected,
+	.slot_reset = cxlflash_pci_slot_reset,
+	.resume = cxlflash_pci_resume,
+};
+
 /*
  * PCI device structure
  */
@@ -2267,6 +2381,7 @@ static struct pci_driver cxlflash_driver = {
 	.id_table = cxlflash_pci_table,
 	.probe = cxlflash_probe,
 	.remove = cxlflash_remove,
+	.err_handler = &cxlflash_err_handler,
 };
 
 /**
