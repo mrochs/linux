@@ -403,40 +403,37 @@ denied:
  * @cfg:	Internal structure associated with the host.
  * @ctxi:	Context to attach.
  *
+ * Upon setting the context capabilities, they must be confirmed with
+ * a read back operation as the context might have been closed since
+ * the mailbox was unlocked. When this occurs, registration is failed.
+ *
  * Return: 0 on success, -errno on failure
  */
 static int afu_attach(struct cxlflash_cfg *cfg, struct ctx_info *ctxi)
 {
 	struct afu *afu = cfg->afu;
+	struct sisl_ctrl_map *ctrl_map = ctxi->ctrl_map;
 	int rc = 0;
-	u64 reg;
+	u64 val;
 
-	/* Restrict user to read/write cmds in translated mode */
-	(void)readq_be(&ctxi->ctrl_map->mbox_r);	/* unlock ctx_cap */
-	writeq_be((SISL_CTX_CAP_READ_CMD | SISL_CTX_CAP_WRITE_CMD),
-		  &ctxi->ctrl_map->ctx_cap);
-
-	reg = readq_be(&ctxi->ctrl_map->ctx_cap);
-
-	/* if the write failed, the ctx must have been
-	 * closed since the mbox read and the ctx_cap
-	 * register locked up. Fail the registration.
-	 */
-	if (reg != (SISL_CTX_CAP_READ_CMD | SISL_CTX_CAP_WRITE_CMD)) {
-		pr_err("%s: ctx may be closed reg=%llx\n", __func__, reg);
+	/* Unlock cap and restrict user to read/write cmds in translated mode */
+	readq_be(&ctrl_map->mbox_r);
+	val = (SISL_CTX_CAP_READ_CMD | SISL_CTX_CAP_WRITE_CMD);
+	writeq_be(val, &ctrl_map->ctx_cap);
+	val = readq_be(&ctrl_map->ctx_cap);
+	if (val != (SISL_CTX_CAP_READ_CMD | SISL_CTX_CAP_WRITE_CMD)) {
+		pr_err("%s: ctx may be closed val=%016llX\n", __func__, val);
 		rc = -EAGAIN;
 		goto out;
 	}
 
-	/* set up MMIO registers pointing to the RHT */
-	writeq_be((u64)ctxi->rht_start, &ctxi->ctrl_map->rht_start);
-	writeq_be(SISL_RHT_CNT_ID((u64)MAX_RHT_PER_CONTEXT,
-				  (u64)(afu->ctx_hndl)),
-		  &ctxi->ctrl_map->rht_cnt_id);
+	/* Set up MMIO registers pointing to the RHT */
+	writeq_be((u64)ctxi->rht_start, &ctrl_map->rht_start);
+	val = SISL_RHT_CNT_ID((u64)MAX_RHT_PER_CONTEXT, (u64)(afu->ctx_hndl));
+	writeq_be(val, &ctrl_map->rht_cnt_id);
 out:
 	pr_debug("%s: returning rc=%d\n", __func__, rc);
 	return rc;
-
 }
 
 /**
@@ -541,38 +538,34 @@ out:
 /**
  * get_rhte() - obtains validated resource handle table entry reference
  * @ctxi:	Context owning the resource handle.
- * @res_hndl:	Resource handle associated with entry.
+ * @rhndl:	Resource handle associated with entry.
  * @lli:	LUN associated with request.
  *
  * Return: Validated RHTE on success, NULL on failure
  */
-struct sisl_rht_entry *get_rhte(struct ctx_info *ctxi, res_hndl_t res_hndl,
+struct sisl_rht_entry *get_rhte(struct ctx_info *ctxi, res_hndl_t rhndl,
 				struct llun_info *lli)
 {
 	struct sisl_rht_entry *rhte = NULL;
 
 	if (unlikely(!ctxi->rht_start)) {
-		pr_err("%s: Context does not have an allocated RHT!\n",
-		       __func__);
+		pr_err("%s: Context does not have allocated RHT!\n", __func__);
 		goto out;
 	}
 
-	if (unlikely(res_hndl >= MAX_RHT_PER_CONTEXT)) {
-		pr_err("%s: Invalid resource handle! (%d)\n",
-		       __func__, res_hndl);
+	if (unlikely(rhndl >= MAX_RHT_PER_CONTEXT)) {
+		pr_err("%s: Bad resource handle! (%d)\n", __func__, rhndl);
 		goto out;
 	}
 
-	if (unlikely(ctxi->rht_lun[res_hndl] != lli)) {
-		pr_err("%s: Resource handle invalid for LUN! (%d)\n",
-		       __func__, res_hndl);
+	if (unlikely(ctxi->rht_lun[rhndl] != lli)) {
+		pr_err("%s: Bad resource handle LUN! (%d)\n", __func__, rhndl);
 		goto out;
 	}
 
-	rhte = &ctxi->rht_start[res_hndl];
+	rhte = &ctxi->rht_start[rhndl];
 	if (unlikely(rhte->nmask == 0)) {
-		pr_err("%s: Unopened resource handle! (%d)\n",
-		       __func__, res_hndl);
+		pr_err("%s: Unopened resource handle! (%d)\n", __func__, rhndl);
 		rhte = NULL;
 		goto out;
 	}
@@ -641,7 +634,7 @@ static void rht_format1(struct sisl_rht_entry *rhte, u64 lun_id, u32 perm,
 	struct sisl_rht_entry_f1 dummy = { 0 };
 	struct sisl_rht_entry_f1 *rhte_f1 = (struct sisl_rht_entry_f1 *)rhte;
 
-	memset(rhte_f1, 0, sizeof(struct sisl_rht_entry_f1));
+	memset(rhte_f1, 0, sizeof(*rhte_f1));
 	rhte_f1->fp = SISL_RHT_FP(1U, 0);
 	dma_wmb(); /* Make setting of format bit visible */
 
@@ -728,7 +721,7 @@ int _cxlflash_disk_release(struct scsi_device *sdev,
 	bool unlock_ctx = false;
 
 	struct dk_cxlflash_resize size;
-	res_hndl_t res_hndl = release->rsrc_handle;
+	res_hndl_t rhndl = release->rsrc_handle;
 
 	int rc = 0;
 	u64 ctxid = DECODE_CTXID(release->context_id),
@@ -737,14 +730,13 @@ int _cxlflash_disk_release(struct scsi_device *sdev,
 	struct sisl_rht_entry *rhte;
 	struct sisl_rht_entry_f1 *rhte_f1;
 
-	pr_debug("%s: ctxid=%llu res_hndl=0x%llx gli->mode=%u gli->users=%u\n",
+	pr_debug("%s: ctxid=%llu rhndl=0x%llx gli->mode=%u gli->users=%u\n",
 		 __func__, ctxid, release->rsrc_handle, gli->mode, gli->users);
 
 	if (!ctxi) {
 		ctxi = get_context(cfg, rctxid, lli, CTX_CTRL_ERR_FALLBACK);
 		if (unlikely(!ctxi)) {
-			pr_err("%s: Invalid context! (%llu)\n",
-			       __func__, ctxid);
+			pr_err("%s: Bad context! (%llu)\n", __func__, ctxid);
 			rc = -EINVAL;
 			goto out;
 		}
@@ -752,10 +744,9 @@ int _cxlflash_disk_release(struct scsi_device *sdev,
 		unlock_ctx = true;
 	}
 
-	rhte = get_rhte(ctxi, res_hndl, lli);
+	rhte = get_rhte(ctxi, rhndl, lli);
 	if (unlikely(!rhte)) {
-		pr_err("%s: Invalid resource handle! (%d)\n",
-		       __func__, res_hndl);
+		pr_err("%s: Bad resource handle! (%d)\n", __func__, rhndl);
 		rc = -EINVAL;
 		goto out;
 	}
@@ -795,7 +786,7 @@ int _cxlflash_disk_release(struct scsi_device *sdev,
 		rhte_f1->dw = 0;
 		dma_wmb(); /* Make RHT entry bottom-half clearing visible */
 
-		cxlflash_afu_sync(afu, ctxid, res_hndl, AFU_HW_SYNC);
+		cxlflash_afu_sync(afu, ctxid, rhndl, AFU_HW_SYNC);
 		break;
 	default:
 		BUG();
@@ -876,8 +867,8 @@ static struct ctx_info *create_context(struct cxlflash_cfg *cfg,
 	struct ctx_info *ctxi = NULL;
 	struct sisl_rht_entry *rhte;
 
-	size = ((MAX_RHT_PER_CONTEXT * sizeof(*ctxi->rht_lun)) +
-		sizeof(*ctxi));
+	size = (MAX_RHT_PER_CONTEXT * sizeof(*ctxi->rht_lun));
+	size += sizeof(*ctxi);
 
 	tmp = kzalloc(size, GFP_KERNEL);
 	if (unlikely(!tmp)) {
@@ -950,8 +941,7 @@ static int _cxlflash_disk_detach(struct scsi_device *sdev,
 	if (!ctxi) {
 		ctxi = get_context(cfg, rctxid, lli, CTX_CTRL_ERR_FALLBACK);
 		if (unlikely(!ctxi)) {
-			pr_err("%s: Invalid context! (%llu)\n",
-			       __func__, ctxid);
+			pr_err("%s: Bad context! (%llu)\n", __func__, ctxid);
 			rc = -EINVAL;
 			goto out;
 		}
@@ -1196,7 +1186,7 @@ static int cxlflash_mmap_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 
 	ctxi = get_context(cfg, ctxid, file, ctrl);
 	if (unlikely(!ctxi)) {
-		pr_err("%s: Invalid context! (%d)\n", __func__, ctxid);
+		pr_err("%s: Bad context! (%d)\n", __func__, ctxid);
 		goto err;
 	}
 
@@ -1267,13 +1257,12 @@ static int cxlflash_cxl_mmap(struct file *file, struct vm_area_struct *vma)
 
 	ctxi = get_context(cfg, ctxid, file, ctrl);
 	if (unlikely(!ctxi)) {
-		pr_err("%s: Invalid context! (%d)\n", __func__, ctxid);
+		pr_err("%s: Bad context! (%d)\n", __func__, ctxid);
 		rc = -EIO;
 		goto out;
 	}
 
-	pr_debug("%s: mmap(%d) for context %d\n",
-		 __func__, ctxi->lfd, ctxid);
+	pr_debug("%s: mmap(%d) for context %d\n", __func__, ctxi->lfd, ctxid);
 
 	rc = cxl_fd_mmap(file, vma);
 	if (likely(!rc)) {
@@ -1400,16 +1389,15 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 		rctxid = attach->context_id;
 		ctxi = get_context(cfg, rctxid, NULL, 0);
 		if (!ctxi) {
-			pr_err("%s: Invalid context! (%016llX)\n", __func__,
-			       rctxid);
+			pr_err("%s: Bad context! (%016llX)\n",
+			       __func__, rctxid);
 			rc = -EINVAL;
 			goto out;
 		}
 
 		list_for_each_entry(lun_access, &ctxi->luns, list)
 			if (lun_access->lli == lli) {
-				pr_err("%s: Context already attached!\n",
-				       __func__);
+				pr_err("%s: Already attached!\n", __func__);
 				rc = -EINVAL;
 				goto out;
 			}
@@ -1744,7 +1732,7 @@ retry:
 	/* Ensure that this process is attached to the context */
 	ctxi = get_context(cfg, rctxid, lli, CTX_CTRL_ERR_FALLBACK);
 	if (unlikely(!ctxi)) {
-		pr_err("%s: Invalid context! (%llu)\n", __func__, ctxid);
+		pr_err("%s: Bad context! (%llu)\n", __func__, ctxid);
 		rc = -EINVAL;
 		goto out;
 	}
@@ -1858,26 +1846,24 @@ static int cxlflash_disk_verify(struct scsi_device *sdev,
 	struct llun_info *lli = sdev->hostdata;
 	struct glun_info *gli = lli->parent;
 	struct sisl_rht_entry *rhte = NULL;
-	res_hndl_t res_hndl = verify->rsrc_handle;
+	res_hndl_t rhndl = verify->rsrc_handle;
 	u64 ctxid = DECODE_CTXID(verify->context_id),
 	    rctxid = verify->context_id;
 	u64 last_lba = 0;
 
-	pr_debug("%s: ctxid=%llu res_hndl=0x%llx, hint=0x%llx\n",
+	pr_debug("%s: ctxid=%llu rhndl=0x%llx, hint=0x%llx\n",
 		 __func__, ctxid, verify->rsrc_handle, verify->hint);
 
 	ctxi = get_context(cfg, rctxid, lli, 0);
 	if (unlikely(!ctxi)) {
-		pr_err("%s: Invalid context! (%llu)\n",
-		       __func__, ctxid);
+		pr_err("%s: Bad context! (%llu)\n", __func__, ctxid);
 		rc = -EINVAL;
 		goto out;
 	}
 
-	rhte = get_rhte(ctxi, res_hndl, lli);
+	rhte = get_rhte(ctxi, rhndl, lli);
 	if (unlikely(!rhte)) {
-		pr_err("%s: Invalid resource handle! (%d)\n",
-		       __func__, res_hndl);
+		pr_err("%s: Bad resource handle! (%d)\n", __func__, rhndl);
 		rc = -EINVAL;
 		goto out;
 	}
@@ -1900,8 +1886,9 @@ static int cxlflash_disk_verify(struct scsi_device *sdev,
 		last_lba = gli->max_lba;
 		break;
 	case MODE_VIRTUAL:
-		last_lba = (((rhte->lxt_cnt * MC_CHUNK_SIZE *
-			      gli->blk_len) / CXLFLASH_BLOCK_SIZE) - 1);
+		last_lba = (rhte->lxt_cnt * MC_CHUNK_SIZE * gli->blk_len);
+		last_lba /= CXLFLASH_BLOCK_SIZE;
+		last_lba--;
 		break;
 	default:
 		BUG();
@@ -1976,7 +1963,7 @@ static int cxlflash_disk_direct_open(struct scsi_device *sdev, void *arg)
 	u64 lun_size = 0;
 	u64 last_lba = 0;
 	u64 rsrc_handle = -1;
-	u32 port_sel = CHAN2PORT(sdev->channel);
+	u32 port = CHAN2PORT(sdev->channel);
 
 	int rc = 0;
 
@@ -1987,14 +1974,13 @@ static int cxlflash_disk_direct_open(struct scsi_device *sdev, void *arg)
 
 	rc = cxlflash_lun_attach(gli, MODE_PHYSICAL);
 	if (unlikely(rc)) {
-		pr_err("%s: Failed to attach to LUN! mode=%u\n",
-		       __func__, MODE_PHYSICAL);
+		pr_err("%s: Failed to attach to LUN! (PHYSICAL)\n", __func__);
 		goto out;
 	}
 
 	ctxi = get_context(cfg, rctxid, lli, 0);
 	if (unlikely(!ctxi)) {
-		pr_err("%s: Invalid context! (%llu)\n", __func__, ctxid);
+		pr_err("%s: Bad context! (%llu)\n", __func__, ctxid);
 		rc = -EINVAL;
 		goto err1;
 	}
@@ -2008,8 +1994,7 @@ static int cxlflash_disk_direct_open(struct scsi_device *sdev, void *arg)
 
 	rsrc_handle = (rhte - ctxi->rht_start);
 
-	rht_format1(rhte, lli->lun_id[sdev->channel],
-		    ctxi->rht_perms, port_sel);
+	rht_format1(rhte, lli->lun_id[sdev->channel], ctxi->rht_perms, port);
 	cxlflash_afu_sync(afu, ctxid, rsrc_handle, AFU_LW_SYNC);
 
 	last_lba = gli->max_lba;

@@ -468,8 +468,8 @@ out:
  * grow_lxt() - expands the translation table associated with the specified RHTE
  * @afu:	AFU associated with the host.
  * @sdev:	SCSI device associated with LUN.
- * @ctx_hndl_u:	Context ID of context owning the RHTE.
- * @res_hndl_u:	Resource handle associated with the RHTE.
+ * @ctxid:	Context ID of context owning the RHTE.
+ * @rhndl:	Resource handle associated with the RHTE.
  * @rhte:	Resource handle entry (RHTE).
  * @new_size:	Number of translation entries associated with RHTE.
  * @port_sel:	Port selection mask.
@@ -484,8 +484,8 @@ out:
  */
 static int grow_lxt(struct afu *afu,
 		    struct scsi_device *sdev,
-		    ctx_hndl_t ctx_hndl_u,
-		    res_hndl_t res_hndl_u,
+		    ctx_hndl_t ctxid,
+		    res_hndl_t rhndl,
 		    struct sisl_rht_entry *rhte,
 		    u64 *new_size)
 {
@@ -573,7 +573,7 @@ static int grow_lxt(struct afu *afu,
 	rhte->lxt_cnt = my_new_size;
 	dma_wmb(); /* Make RHT entry's LXT table size update visible */
 
-	cxlflash_afu_sync(afu, ctx_hndl_u, res_hndl_u, AFU_LW_SYNC);
+	cxlflash_afu_sync(afu, ctxid, rhndl, AFU_LW_SYNC);
 
 	/* free old lxt if reallocated */
 	if (lxt != lxt_old)
@@ -588,8 +588,8 @@ out:
  * shrink_lxt() - reduces translation table associated with the specified RHTE
  * @afu:	AFU associated with the host.
  * @sdev:	SCSI device associated with LUN.
- * @ctx_hndl_u:	Context ID of context owning the RHTE.
- * @res_hndl_u:	Resource handle associated with the RHTE.
+ * @ctxid:	Context ID of context owning the RHTE.
+ * @rhndl:	Resource handle associated with the RHTE.
  * @rhte:	Resource handle entry (RHTE).
  * @new_size:	Number of translation entries associated with RHTE.
  * @port_sel:	Port selection mask.
@@ -598,8 +598,8 @@ out:
  */
 static int shrink_lxt(struct afu *afu,
 		      struct scsi_device *sdev,
-		      ctx_hndl_t ctx_hndl_u,
-		      res_hndl_t res_hndl_u,
+		      ctx_hndl_t ctxid,
+		      res_hndl_t rhndl,
 		      struct sisl_rht_entry *rhte,
 		      u64 *new_size)
 {
@@ -648,7 +648,7 @@ static int shrink_lxt(struct afu *afu,
 	rhte->lxt_start = lxt;
 	dma_wmb(); /* Make RHT entry's LXT table update visible */
 
-	cxlflash_afu_sync(afu, ctx_hndl_u, res_hndl_u, AFU_HW_SYNC);
+	cxlflash_afu_sync(afu, ctxid, rhndl, AFU_HW_SYNC);
 
 	/* free LBAs allocated to freed chunks */
 	mutex_lock(&blka->mutex);
@@ -656,8 +656,8 @@ static int shrink_lxt(struct afu *afu,
 		/* Mask the higher 48 bits before shifting, even though
 		 * it is a noop
 		 */
-		aun = ((lxt_old[my_new_size + i].rlba_base &
-			SISL_ASTATUS_MASK) >> MC_CHUNK_SHIFT);
+		aun = (lxt_old[my_new_size + i].rlba_base & SISL_ASTATUS_MASK);
+		aun = (aun >> MC_CHUNK_SHIFT);
 		if (ws)
 			write_same16(sdev, aun, MC_CHUNK_SIZE);
 		ba_free(&blka->ba_lun, aun);
@@ -695,7 +695,7 @@ int _cxlflash_vlun_resize(struct scsi_device *sdev,
 	struct afu *afu = cfg->afu;
 	bool unlock_ctx = false;
 
-	res_hndl_t res_hndl = resize->rsrc_handle;
+	res_hndl_t rhndl = resize->rsrc_handle;
 	u64 new_size;
 	u64 nsectors;
 	u64 ctxid = DECODE_CTXID(resize->context_id),
@@ -711,7 +711,7 @@ int _cxlflash_vlun_resize(struct scsi_device *sdev,
 	nsectors = (resize->req_size * CXLFLASH_BLOCK_SIZE) / gli->blk_len;
 	new_size = (nsectors + MC_CHUNK_SIZE - 1) / MC_CHUNK_SIZE;
 
-	pr_debug("%s: ctxid=%llu res_hndl=0x%llx, req_size=0x%llx,"
+	pr_debug("%s: ctxid=%llu rhndl=0x%llx, req_size=0x%llx,"
 		 "new_size=%llx\n", __func__, ctxid, resize->rsrc_handle,
 		 resize->req_size, new_size);
 
@@ -726,8 +726,7 @@ int _cxlflash_vlun_resize(struct scsi_device *sdev,
 	if (!ctxi) {
 		ctxi = get_context(cfg, rctxid, lli, CTX_CTRL_ERR_FALLBACK);
 		if (unlikely(!ctxi)) {
-			pr_err("%s: Invalid context! (%llu)\n",
-			       __func__, ctxid);
+			pr_err("%s: Bad context! (%llu)\n", __func__, ctxid);
 			rc = -EINVAL;
 			goto out;
 		}
@@ -735,10 +734,9 @@ int _cxlflash_vlun_resize(struct scsi_device *sdev,
 		unlock_ctx = true;
 	}
 
-	rhte = get_rhte(ctxi, res_hndl, lli);
+	rhte = get_rhte(ctxi, rhndl, lli);
 	if (unlikely(!rhte)) {
-		pr_err("%s: Invalid resource handle! (%u)\n",
-		       __func__, res_hndl);
+		pr_err("%s: Bad resource handle! (%u)\n", __func__, rhndl);
 		rc = -EINVAL;
 		goto out;
 	}
@@ -747,20 +745,21 @@ int _cxlflash_vlun_resize(struct scsi_device *sdev,
 		rc = grow_lxt(afu,
 			      sdev,
 			      ctxid,
-			      res_hndl,
+			      rhndl,
 			      rhte,
 			      &new_size);
 	else if (new_size < rhte->lxt_cnt)
 		rc = shrink_lxt(afu,
 				sdev,
 				ctxid,
-				res_hndl,
+				rhndl,
 				rhte,
 				&new_size);
 
 	resize->hdr.return_flags = 0;
-	resize->last_lba = (((new_size * MC_CHUNK_SIZE * gli->blk_len) /
-			     CXLFLASH_BLOCK_SIZE) - 1);
+	resize->last_lba = (new_size * MC_CHUNK_SIZE * gli->blk_len);
+	resize->last_lba /= CXLFLASH_BLOCK_SIZE;
+	resize->last_lba--;
 
 out:
 	if (unlock_ctx)
@@ -898,15 +897,13 @@ int cxlflash_disk_virtual_open(struct scsi_device *sdev, void *arg)
 
 	rc = cxlflash_lun_attach(gli, MODE_VIRTUAL);
 	if (unlikely(rc)) {
-		pr_err("%s: Failed to attach to LUN! mode=%u\n",
-		       __func__, MODE_VIRTUAL);
+		pr_err("%s: Failed to attach to LUN! (VIRTUAL)\n", __func__);
 		goto out;
 	}
 
 	ctxi = get_context(cfg, rctxid, lli, 0);
 	if (unlikely(!ctxi)) {
-		pr_err("%s: Invalid context! (%llu)\n",
-		       __func__, ctxid);
+		pr_err("%s: Bad context! (%llu)\n", __func__, ctxid);
 		rc = -EINVAL;
 		goto err1;
 	}
@@ -956,8 +953,8 @@ err1:
  * clone_lxt() - copies translation tables from source to destination RHTE
  * @afu:	AFU associated with the host.
  * @blka:	Block allocator associated with LUN.
- * @ctx_hndl_u:	Context ID of context owning the RHTE.
- * @res_hndl_u:	Resource handle associated with the RHTE.
+ * @ctxid:	Context ID of context owning the RHTE.
+ * @rhndl:	Resource handle associated with the RHTE.
  * @rhte:	Destination resource handle entry (RHTE).
  * @rhte_src:	Source resource handle entry (RHTE).
  *
@@ -965,8 +962,8 @@ err1:
  */
 static int clone_lxt(struct afu *afu,
 		     struct blka *blka,
-		     ctx_hndl_t ctx_hndl_u,
-		     res_hndl_t res_hndl_u,
+		     ctx_hndl_t ctxid,
+		     res_hndl_t rhndl,
 		     struct sisl_rht_entry *rhte,
 		     struct sisl_rht_entry *rhte_src)
 {
@@ -1022,7 +1019,7 @@ static int clone_lxt(struct afu *afu,
 	rhte->lxt_cnt = rhte_src->lxt_cnt;
 	dma_wmb(); /* Make RHT entry's LXT table size update visible */
 
-	cxlflash_afu_sync(afu, ctx_hndl_u, res_hndl_u, AFU_LW_SYNC);
+	cxlflash_afu_sync(afu, ctxid, rhndl, AFU_LW_SYNC);
 
 	pr_debug("%s: returning\n", __func__);
 	return 0;
@@ -1083,8 +1080,8 @@ int cxlflash_disk_clone(struct scsi_device *sdev,
 	ctxi_src = get_context(cfg, rctxid_src, lli, CTX_CTRL_CLONE);
 	ctxi_dst = get_context(cfg, rctxid_dst, lli, 0);
 	if (unlikely(!ctxi_src || !ctxi_dst)) {
-		pr_err("%s: Invalid context! (%llu,%llu)\n",
-		       __func__, ctxid_src, ctxid_dst);
+		pr_err("%s: Bad context! (%llu,%llu)\n", __func__,
+		       ctxid_src, ctxid_dst);
 		rc = -EINVAL;
 		goto out;
 	}
