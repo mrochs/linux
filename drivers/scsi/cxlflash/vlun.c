@@ -28,14 +28,6 @@
 #include "vlun.h"
 #include "superpipe.h"
 
-static u32 ws;
-
-/*
- * This is a temporary module parameter
- */
-module_param_named(ws, ws, uint, 0);
-MODULE_PARM_DESC(ws, " 1 = Perform WRITE_SAME16 per chunk on VLUN shrink");
-
 /**
  * marshal_virt_to_resize() - translate uvirtual to resize structure
  * @virt:	Source structure from which to translate/copy.
@@ -658,8 +650,7 @@ static int shrink_lxt(struct afu *afu,
 		 */
 		aun = (lxt_old[my_new_size + i].rlba_base & SISL_ASTATUS_MASK);
 		aun = (aun >> MC_CHUNK_SHIFT);
-		if (ws)
-			write_same16(sdev, aun, MC_CHUNK_SIZE);
+		write_same16(sdev, aun, MC_CHUNK_SIZE);
 		ba_free(&blka->ba_lun, aun);
 	}
 	mutex_unlock(&blka->mutex);
