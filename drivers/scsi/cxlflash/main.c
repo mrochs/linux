@@ -848,6 +848,8 @@ static void cxlflash_remove(struct pci_dev *pdev)
 						    !cfg->tmf_active);
 	spin_unlock_irqrestore(&cfg->tmf_waitq.lock, lock_flags);
 
+	cxlflash_stop_term_user_contexts(cfg);
+
 	switch (cfg->init_state) {
 	case INIT_STATE_SCSI:
 		cxlflash_term_luns(cfg);
@@ -2241,6 +2243,16 @@ static int cxlflash_probe(struct pci_dev *pdev,
 
 	cfg->init_state = INIT_STATE_NONE;
 	cfg->dev = pdev;
+
+	/* The promoted LUNs move to the top of the LUN table. The rest stay
+	 * on the bottom half. The bottom half grows from the end
+	 * (index = 255), whereas the top half grows from the beginning
+	 * (index = 0).
+	 */
+	cfg->promote_lun_index  = 0;
+	cfg->last_lun_index[0] = CXLFLASH_NUM_VLUNS/2 - 1;
+	cfg->last_lun_index[1] = CXLFLASH_NUM_VLUNS/2 - 1;
+
 	cfg->dev_id = (struct pci_device_id *)dev_id;
 	cfg->eeh_active = EEH_STATE_NONE;
 

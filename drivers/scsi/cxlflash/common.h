@@ -114,6 +114,9 @@ struct cxlflash_cfg {
 
 	atomic_t num_user_contexts;
 
+	/* Parameters that are LUN table related */
+	int last_lun_index[CXLFLASH_NUM_FC_PORTS];
+	int promote_lun_index;
 	struct list_head lluns; /* list of llun_info structs */
 	spinlock_t slock;
 

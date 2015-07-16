@@ -15,6 +15,41 @@
 #ifndef _CXLFLASH_SUPERPIPE_H
 #define _CXLFLASH_SUPERPIPE_H
 
+/*----------------------------------------------------------------------------*/
+/* Types                                                                      */
+/*----------------------------------------------------------------------------*/
+
+#define MAX_AUN_CLONE_CNT    0xFF
+
+/*
+ * Terminology: use afu (and not adapter) to refer to the HW.
+ * Adapter is the entire slot and includes PSL out of which
+ * only the AFU is visible to user space.
+ */
+
+/* Chunk size parms: note sislite minimum chunk size is
+   0x10000 LBAs corresponding to a NMASK or 16.
+*/
+#define MC_RHT_NMASK      16	/* in bits */
+#define MC_CHUNK_SIZE     (1 << MC_RHT_NMASK)	/* in LBAs, see mclient.h */
+#define MC_CHUNK_SHIFT    MC_RHT_NMASK	/* shift to go from LBA to chunk# */
+#define LXT_LUNIDX_SHIFT  8	/* LXT entry, shift for LUN index */
+#define LXT_PERM_SHIFT    4	/* LXT entry, shift for permission bits */
+
+/* LXT tables are allocated dynamically in groups. This is done to
+   avoid a malloc/free overhead each time the LXT has to grow
+   or shrink.
+
+   Based on the current lxt_cnt (used), it is always possible to
+   know how many are allocated (used+free). The number of allocated
+   entries is not stored anywhere.
+
+   The LXT table is re-allocated whenever it needs to cross into
+   another group.
+*/
+#define LXT_GROUP_SIZE          8
+#define LXT_NUM_GROUPS(lxt_cnt) (((lxt_cnt) + 7)/8)	/* alloc'ed groups */
+
 #define MC_DISCOVERY_TIMEOUT 5  /* 5 secs */
 
 #define CHAN2PORT(_x)	((_x) + 1)
@@ -22,6 +57,7 @@
 
 enum lun_mode {
 	MODE_NONE = 0,
+	MODE_VIRTUAL,
 	MODE_PHYSICAL
 };
 
@@ -54,19 +90,21 @@ struct request_sense_data  {
 struct glun_info {
 	u64 max_lba;		/* from read cap(16) */
 	u32 blk_len;		/* from read cap(16) */
-	enum lun_mode mode;	/* NONE, PHYSICAL */
+	enum lun_mode mode;	/* NONE, VIRTUAL, PHYSICAL */
 	int users;		/* Number of users w/ references to LUN */
 
 	u8 wwid[16];
 
 	spinlock_t slock;
 
+	struct blka blka;
 	struct list_head list;
 };
 
 /* Local (per-adapter) lun_info structure */
 struct llun_info {
 	u64 lun_id[CXLFLASH_NUM_FC_PORTS]; /* from REPORT_LUNS */
+	u32 lun_index;		/* Index in the lun table */
 	u32 host_no;		/* host_no from Scsi_host */
 	u32 port_sel;		/* What port to use for this LUN */
 	bool newly_created;	/* Whether the LUN was just discovered */
@@ -124,9 +162,17 @@ struct cxlflash_global {
 };
 
 
+int cxlflash_vlun_resize(struct scsi_device *, struct dk_cxlflash_resize *);
+int _cxlflash_vlun_resize(struct scsi_device *, struct ctx_info *,
+			  struct dk_cxlflash_resize *);
+
 int cxlflash_disk_release(struct scsi_device *, struct dk_cxlflash_release *);
 int _cxlflash_disk_release(struct scsi_device *, struct ctx_info *,
 			   struct dk_cxlflash_release *);
+
+int cxlflash_disk_clone(struct scsi_device *, struct dk_cxlflash_clone *);
+
+int cxlflash_disk_virtual_open(struct scsi_device *, void *);
 
 int cxlflash_lun_attach(struct glun_info *, enum lun_mode);
 void cxlflash_lun_detach(struct glun_info *);
@@ -138,5 +184,7 @@ struct sisl_rht_entry *get_rhte(struct ctx_info *, res_hndl_t,
 
 struct sisl_rht_entry *rhte_checkout(struct ctx_info *, struct llun_info *);
 void rhte_checkin(struct ctx_info *, struct sisl_rht_entry *);
+
+void cxlflash_ba_terminate(struct ba_lun *);
 
 #endif /* ifndef _CXLFLASH_SUPERPIPE_H */
