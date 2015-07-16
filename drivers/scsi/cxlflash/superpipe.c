@@ -37,7 +37,7 @@ static struct cxlflash_global global;
  * @resize:	Destination structure for the translate/copy.
  */
 static void marshal_rele_to_resize(struct dk_cxlflash_release *release,
-				    struct dk_cxlflash_resize *resize)
+				   struct dk_cxlflash_resize *resize)
 {
 	resize->hdr = release->hdr;
 	resize->context_id = release->context_id;
@@ -50,7 +50,7 @@ static void marshal_rele_to_resize(struct dk_cxlflash_release *release,
  * @rele:	Source structure from which to translate/copy.
  */
 static void marshal_det_to_rele(struct dk_cxlflash_detach *detach,
-				 struct dk_cxlflash_release *release)
+				struct dk_cxlflash_release *release)
 {
 	release->hdr = detach->hdr;
 	release->context_id = detach->context_id;

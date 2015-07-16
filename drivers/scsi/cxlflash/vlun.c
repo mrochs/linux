@@ -42,7 +42,7 @@ MODULE_PARM_DESC(ws, " 1 = Perform WRITE_SAME16 per chunk on VLUN shrink");
  * @resize:	Destination structure for the translate/copy.
  */
 static void marshal_virt_to_resize(struct dk_cxlflash_uvirtual *virt,
-				    struct dk_cxlflash_resize *resize)
+				   struct dk_cxlflash_resize *resize)
 {
 	resize->hdr = virt->hdr;
 	resize->context_id = virt->context_id;
@@ -57,7 +57,7 @@ static void marshal_virt_to_resize(struct dk_cxlflash_uvirtual *virt,
  * @rele:	Destination structure for the translate/copy.
  */
 static void marshal_clone_to_rele(struct dk_cxlflash_clone *clone,
-				   struct dk_cxlflash_release *release)
+				  struct dk_cxlflash_release *release)
 {
 	release->hdr = clone->hdr;
 	release->context_id = clone->context_id_dst;
