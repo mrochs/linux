@@ -498,11 +498,15 @@ static int cxlflash_eh_host_reset_handler(struct scsi_cmnd *scp)
 
 	switch (cfg->eeh_active) {
 	case EEH_STATE_NONE:
+		cfg->eeh_active = EEH_STATE_FAILED;
+		cxlflash_mark_contexts_error(cfg);
 		rcr = cxlflash_afu_reset(cfg);
 		if (rcr == 0)
 			rc = SUCCESS;
 		else
 			rc = FAILED;
+		cfg->eeh_active = EEH_STATE_NONE;
+		wake_up_all(&cfg->eeh_waitq);
 		break;
 	case EEH_STATE_ACTIVE:
 		wait_event(cfg->eeh_waitq, cfg->eeh_active != EEH_STATE_ACTIVE);
@@ -697,6 +701,7 @@ static struct scsi_host_template driver_template = {
 	.module = THIS_MODULE,
 	.name = CXLFLASH_ADAPTER_NAME,
 	.info = cxlflash_driver_info,
+	.ioctl = cxlflash_ioctl,
 	.proc_name = CXLFLASH_NAME,
 	.queuecommand = cxlflash_queuecommand,
 	.eh_device_reset_handler = cxlflash_eh_device_reset_handler,
@@ -845,6 +850,7 @@ static void cxlflash_remove(struct pci_dev *pdev)
 
 	switch (cfg->init_state) {
 	case INIT_STATE_SCSI:
+		cxlflash_term_luns(cfg);
 		scsi_remove_host(cfg->host);
 		scsi_host_put(cfg->host);
 		/* Fall through */
@@ -1984,7 +1990,7 @@ retry:
 	} else if (unlikely(newval < 0)) {
 		/* This should be rare. i.e. Only if two threads race and
 		 * decrement before the MMIO read is done. In this case
-		 * just benefit from the other thread having updated 
+		 * just benefit from the other thread having updated
 		 * afu->room.
 		 */
 		if (nretry++ < MC_ROOM_RETRY_CNT) {
@@ -2244,6 +2250,11 @@ static int cxlflash_probe(struct pci_dev *pdev,
 	INIT_WORK(&cfg->work_q, cxlflash_worker_thread);
 	cfg->lr_state = LINK_RESET_INVALID;
 	cfg->lr_port = -1;
+	mutex_init(&cfg->ctx_tbl_list_mutex);
+	spin_lock_init(&cfg->slock);
+	INIT_LIST_HEAD(&cfg->ctx_err_recovery);
+	INIT_LIST_HEAD(&cfg->lluns);
+
 
 	pci_set_drvdata(pdev, cfg);
 
@@ -2305,6 +2316,7 @@ out_remove:
 static pci_ers_result_t cxlflash_pci_error_detected(struct pci_dev *pdev,
 						    pci_channel_state_t state)
 {
+	int rc = 0;
 	struct cxlflash_cfg *cfg = pci_get_drvdata(pdev);
 
 	pr_debug("%s: pdev=%p state=%u\n", __func__, pdev, state);
@@ -2313,6 +2325,11 @@ static pci_ers_result_t cxlflash_pci_error_detected(struct pci_dev *pdev,
 	case pci_channel_io_frozen:
 		cfg->eeh_active = EEH_STATE_ACTIVE;
 		udelay(100);
+
+		rc = cxlflash_mark_contexts_error(cfg);
+		if (unlikely(rc))
+			pr_err("%s: Failed to mark contexts in error!(rc=%d)\n",
+			       __func__, rc);
 
 		term_mc(cfg, UNDO_START);
 		stop_afu(cfg);
@@ -2394,6 +2411,8 @@ static int __init init_cxlflash(void)
 	pr_info("%s: IBM Power CXL Flash Adapter: %s\n",
 		__func__, CXLFLASH_DRIVER_DATE);
 
+	cxlflash_list_init();
+
 	return pci_register_driver(&cxlflash_driver);
 }
 
@@ -2402,6 +2421,8 @@ static int __init init_cxlflash(void)
  */
 static void __exit exit_cxlflash(void)
 {
+	cxlflash_list_terminate();
+
 	pci_unregister_driver(&cxlflash_driver);
 }
 
