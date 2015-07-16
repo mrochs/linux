@@ -676,7 +676,7 @@ out:
 /**
  * _cxlflash_vlun_resize() - changes the size of a virtual lun
  * @sdev:	SCSI device associated with LUN owning virtual LUN.
- * @ctx_info:	Context owning resources.
+ * @ctxi:	Context owning resources.
  * @resize:	Resize ioctl data structure.
  *
  * On successful return, the user is informed of the new size (in blocks)
@@ -686,7 +686,7 @@ out:
  * Return: 0 on success, -errno on failure
  */
 int _cxlflash_vlun_resize(struct scsi_device *sdev,
-			  struct ctx_info *ctx_info,
+			  struct ctx_info *ctxi,
 			  struct dk_cxlflash_resize *resize)
 {
 	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)sdev->host->hostdata;
@@ -723,9 +723,9 @@ int _cxlflash_vlun_resize(struct scsi_device *sdev,
 
 	}
 
-	if (!ctx_info) {
-		ctx_info = get_context(cfg, rctxid, lli, CTX_CTRL_ERR_FALLBACK);
-		if (unlikely(!ctx_info)) {
+	if (!ctxi) {
+		ctxi = get_context(cfg, rctxid, lli, CTX_CTRL_ERR_FALLBACK);
+		if (unlikely(!ctxi)) {
 			pr_err("%s: Invalid context! (%llu)\n",
 			       __func__, ctxid);
 			rc = -EINVAL;
@@ -735,7 +735,7 @@ int _cxlflash_vlun_resize(struct scsi_device *sdev,
 		unlock_ctx = true;
 	}
 
-	rhte = get_rhte(ctx_info, res_hndl, lli);
+	rhte = get_rhte(ctxi, res_hndl, lli);
 	if (unlikely(!rhte)) {
 		pr_err("%s: Invalid resource handle! (%u)\n",
 		       __func__, res_hndl);
@@ -764,7 +764,7 @@ int _cxlflash_vlun_resize(struct scsi_device *sdev,
 
 out:
 	if (unlock_ctx)
-		mutex_unlock(&ctx_info->mutex);
+		mutex_unlock(&ctxi->mutex);
 	pr_debug("%s: resized to %lld returning rc=%d\n",
 		 __func__, resize->last_lba, rc);
 	return rc;
@@ -873,7 +873,7 @@ int cxlflash_disk_virtual_open(struct scsi_device *sdev, void *arg)
 
 	int rc = 0;
 
-	struct ctx_info *ctx_info = NULL;
+	struct ctx_info *ctxi = NULL;
 	struct sisl_rht_entry *rhte = NULL;
 
 	pr_debug("%s: ctxid=%llu ls=0x%llx\n", __func__, ctxid, lun_size);
@@ -903,31 +903,31 @@ int cxlflash_disk_virtual_open(struct scsi_device *sdev, void *arg)
 		goto out;
 	}
 
-	ctx_info = get_context(cfg, rctxid, lli, 0);
-	if (unlikely(!ctx_info)) {
+	ctxi = get_context(cfg, rctxid, lli, 0);
+	if (unlikely(!ctxi)) {
 		pr_err("%s: Invalid context! (%llu)\n",
 		       __func__, ctxid);
 		rc = -EINVAL;
 		goto err1;
 	}
 
-	rhte = rhte_checkout(ctx_info, lli);
+	rhte = rhte_checkout(ctxi, lli);
 	if (unlikely(!rhte)) {
 		pr_err("%s: too many opens for this context\n", __func__);
 		rc = -EMFILE;	/* too many opens  */
 		goto err1;
 	}
 
-	rsrc_handle = (rhte - ctx_info->rht_start);
+	rsrc_handle = (rhte - ctxi->rht_start);
 
 	rhte->nmask = MC_RHT_NMASK;
-	rhte->fp = SISL_RHT_FP(0U, ctx_info->rht_perms);
+	rhte->fp = SISL_RHT_FP(0U, ctxi->rht_perms);
 	/* format 0 & perms */
 
 	/* Resize even if requested size is 0 */
 	marshal_virt_to_resize(virt, &resize);
 	resize.rsrc_handle = rsrc_handle;
-	rc = _cxlflash_vlun_resize(sdev, ctx_info, &resize);
+	rc = _cxlflash_vlun_resize(sdev, ctxi, &resize);
 	if (rc) {
 		pr_err("%s: resize failed rc %d\n", __func__, rc);
 		goto err2;
@@ -939,14 +939,14 @@ int cxlflash_disk_virtual_open(struct scsi_device *sdev, void *arg)
 	virt->rsrc_handle = rsrc_handle;
 
 out:
-	if (likely(ctx_info))
-		mutex_unlock(&ctx_info->mutex);
+	if (likely(ctxi))
+		mutex_unlock(&ctxi->mutex);
 	pr_debug("%s: returning handle 0x%llx rc=%d llba %lld\n",
 		 __func__, rsrc_handle, rc, last_lba);
 	return rc;
 
 err2:
-	rhte_checkin(ctx_info, rhte);
+	rhte_checkin(ctxi, rhte);
 err1:
 	cxlflash_lun_detach(gli);
 	goto out;
@@ -1050,8 +1050,8 @@ int cxlflash_disk_clone(struct scsi_device *sdev,
 	struct afu *afu = cfg->afu;
 	struct dk_cxlflash_release release = { { 0 }, 0 };
 
-	struct ctx_info *ctx_info_src = NULL,
-			*ctx_info_dst = NULL;
+	struct ctx_info *ctxi_src = NULL,
+			*ctxi_dst = NULL;
 	struct lun_access *lun_access_src, *lun_access_dst;
 	u32 perms;
 	u64 ctxid_src = DECODE_CTXID(clone->context_id_src),
@@ -1080,16 +1080,16 @@ int cxlflash_disk_clone(struct scsi_device *sdev,
 		goto out;
 	}
 
-	ctx_info_src = get_context(cfg, rctxid_src, lli, CTX_CTRL_CLONE);
-	ctx_info_dst = get_context(cfg, rctxid_dst, lli, 0);
-	if (unlikely(!ctx_info_src || !ctx_info_dst)) {
+	ctxi_src = get_context(cfg, rctxid_src, lli, CTX_CTRL_CLONE);
+	ctxi_dst = get_context(cfg, rctxid_dst, lli, 0);
+	if (unlikely(!ctxi_src || !ctxi_dst)) {
 		pr_err("%s: Invalid context! (%llu,%llu)\n",
 		       __func__, ctxid_src, ctxid_dst);
 		rc = -EINVAL;
 		goto out;
 	}
 
-	if (unlikely(adap_fd_src != ctx_info_src->lfd)) {
+	if (unlikely(adap_fd_src != ctxi_src->lfd)) {
 		pr_err("%s: Invalid source adapter fd! (%d)\n",
 		       __func__, adap_fd_src);
 		rc = -EINVAL;
@@ -1098,15 +1098,15 @@ int cxlflash_disk_clone(struct scsi_device *sdev,
 
 	/* Verify there is no open resource handle in the destination context */
 	for (i = 0; i < MAX_RHT_PER_CONTEXT; i++)
-		if (ctx_info_dst->rht_start[i].nmask != 0) {
+		if (ctxi_dst->rht_start[i].nmask != 0) {
 			rc = -EINVAL;
 			goto out;
 		}
 
 	/* Clone LUN access list */
-	list_for_each_entry(lun_access_src, &ctx_info_src->luns, list) {
+	list_for_each_entry(lun_access_src, &ctxi_src->luns, list) {
 		found = false;
-		list_for_each_entry(lun_access_dst, &ctx_info_dst->luns, list)
+		list_for_each_entry(lun_access_dst, &ctxi_dst->luns, list)
 			if (lun_access_dst->sdev == lun_access_src->sdev) {
 				found = true;
 				break;
@@ -1127,13 +1127,13 @@ int cxlflash_disk_clone(struct scsi_device *sdev,
 		}
 	}
 
-	if (unlikely(!ctx_info_src->rht_out)) {
+	if (unlikely(!ctxi_src->rht_out)) {
 		pr_err("%s: Nothing to clone!\n", __func__);
 		goto out_success;
 	}
 
 	/* User specified permission on attach */
-	perms = ctx_info_dst->rht_perms;
+	perms = ctxi_dst->rht_perms;
 
 	/*
 	 * Copy over checked-out RHT (and their associated LXT) entries by
@@ -1147,32 +1147,31 @@ int cxlflash_disk_clone(struct scsi_device *sdev,
 	 * via the cleanup performed by _cxlflash_disk_release.
 	 */
 	for (i = 0; i < MAX_RHT_PER_CONTEXT; i++) {
-		if (ctx_info_src->rht_out == ctx_info_dst->rht_out)
+		if (ctxi_src->rht_out == ctxi_dst->rht_out)
 			break;
-		if (ctx_info_src->rht_start[i].nmask == 0)
+		if (ctxi_src->rht_start[i].nmask == 0)
 			continue;
 
 		/* Consume a destination RHT entry */
-		ctx_info_dst->rht_out++;
-		ctx_info_dst->rht_start[i].nmask =
-		    ctx_info_src->rht_start[i].nmask;
-		ctx_info_dst->rht_start[i].fp =
-		    SISL_RHT_FP_CLONE(ctx_info_src->rht_start[i].fp, perms);
-		ctx_info_dst->rht_lun[i] = ctx_info_src->rht_lun[i];
+		ctxi_dst->rht_out++;
+		ctxi_dst->rht_start[i].nmask = ctxi_src->rht_start[i].nmask;
+		ctxi_dst->rht_start[i].fp =
+		    SISL_RHT_FP_CLONE(ctxi_src->rht_start[i].fp, perms);
+		ctxi_dst->rht_lun[i] = ctxi_src->rht_lun[i];
 
 		rc = clone_lxt(afu, blka, ctxid_dst, i,
-			       &ctx_info_dst->rht_start[i],
-			       &ctx_info_src->rht_start[i]);
+			       &ctxi_dst->rht_start[i],
+			       &ctxi_src->rht_start[i]);
 		if (rc) {
 			marshal_clone_to_rele(clone, &release);
 			for (j = 0; j < i; j++) {
 				release.rsrc_handle = j;
-				_cxlflash_disk_release(sdev, ctx_info_dst,
+				_cxlflash_disk_release(sdev, ctxi_dst,
 						       &release);
 			}
 
 			/* Put back the one we failed on */
-			rhte_checkin(ctx_info_dst, &ctx_info_dst->rht_start[i]);
+			rhte_checkin(ctxi_dst, &ctxi_dst->rht_start[i]);
 			goto err;
 		}
 
@@ -1180,15 +1179,15 @@ int cxlflash_disk_clone(struct scsi_device *sdev,
 	}
 
 out_success:
-	list_splice(&sidecar, &ctx_info_dst->luns);
+	list_splice(&sidecar, &ctxi_dst->luns);
 	sys_close(adap_fd_src);
 
 	/* fall through */
 out:
-	if (ctx_info_src)
-		mutex_unlock(&ctx_info_src->mutex);
-	if (ctx_info_dst)
-		mutex_unlock(&ctx_info_dst->mutex);
+	if (ctxi_src)
+		mutex_unlock(&ctxi_src->mutex);
+	if (ctxi_dst)
+		mutex_unlock(&ctxi_dst->mutex);
 	pr_debug("%s: returning rc=%d\n", __func__, rc);
 	return rc;
 
