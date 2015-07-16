@@ -591,46 +591,46 @@ out:
 struct sisl_rht_entry *rhte_checkout(struct ctx_info *ctx_info,
 				     struct llun_info *lli)
 {
-	struct sisl_rht_entry *rht_entry = NULL;
+	struct sisl_rht_entry *rhte = NULL;
 	int i;
 
 	/* Find a free RHT entry */
 	for (i = 0; i < MAX_RHT_PER_CONTEXT; i++)
 		if (ctx_info->rht_start[i].nmask == 0) {
-			rht_entry = &ctx_info->rht_start[i];
+			rhte = &ctx_info->rht_start[i];
 			ctx_info->rht_out++;
 			break;
 		}
 
-	if (likely(rht_entry))
+	if (likely(rhte))
 		ctx_info->rht_lun[i] = lli;
 
-	pr_debug("%s: returning rht_entry=%p (%d)\n", __func__, rht_entry, i);
-	return rht_entry;
+	pr_debug("%s: returning rhte=%p (%d)\n", __func__, rhte, i);
+	return rhte;
 }
 
 /**
  * rhte_checkin() - releases a resource handle table entry
  * @ctx_info:	Context owning the resource handle.
- * @rht_entry:	RHTE to release.
+ * @rhte:	RHTE to release.
  */
 void rhte_checkin(struct ctx_info *ctx_info,
-		  struct sisl_rht_entry *rht_entry)
+		  struct sisl_rht_entry *rhte)
 {
-	rht_entry->nmask = 0;
-	rht_entry->fp = 0;
+	rhte->nmask = 0;
+	rhte->fp = 0;
 	ctx_info->rht_out--;
-	ctx_info->rht_lun[rht_entry - ctx_info->rht_start] = NULL;
+	ctx_info->rht_lun[rhte - ctx_info->rht_start] = NULL;
 }
 
 /**
  * rhte_format1() - populates a RHTE for format 1
- * @rht_entry:	RHTE to populate.
+ * @rhte:	RHTE to populate.
  * @lun_id:	LUN ID of LUN associated with RHTE.
  * @perm:	Desired permissions for RHTE.
  * @port_sel:   Port selection mask
  */
-static void rht_format1(struct sisl_rht_entry *rht_entry, u64 lun_id, u32 perm,
+static void rht_format1(struct sisl_rht_entry *rhte, u64 lun_id, u32 perm,
 			u32 port_sel)
 {
 	/*
@@ -639,13 +639,13 @@ static void rht_format1(struct sisl_rht_entry *rht_entry, u64 lun_id, u32 perm,
 	 * SISLite specification.
 	 */
 	struct sisl_rht_entry_f1 dummy = { 0 };
-	struct sisl_rht_entry_f1 *rht_entry_f1 =
-	    (struct sisl_rht_entry_f1 *)rht_entry;
-	memset(rht_entry_f1, 0, sizeof(struct sisl_rht_entry_f1));
-	rht_entry_f1->fp = SISL_RHT_FP(1U, 0);
+	struct sisl_rht_entry_f1 *rhte_f1 = (struct sisl_rht_entry_f1 *)rhte;
+
+	memset(rhte_f1, 0, sizeof(struct sisl_rht_entry_f1));
+	rhte_f1->fp = SISL_RHT_FP(1U, 0);
 	dma_wmb(); /* Make setting of format bit visible */
 
-	rht_entry_f1->lun_id = lun_id;
+	rhte_f1->lun_id = lun_id;
 	dma_wmb(); /* Make setting of LUN id visible */
 
 	/*
@@ -656,7 +656,7 @@ static void rht_format1(struct sisl_rht_entry *rht_entry, u64 lun_id, u32 perm,
 	dummy.valid = 0x80;
 	dummy.fp = SISL_RHT_FP(1U, perm);
 	dummy.port_sel = port_sel;
-	rht_entry_f1->dw = dummy.dw;
+	rhte_f1->dw = dummy.dw;
 
 	dma_wmb(); /* Make remaining RHT entry fields visible */
 }
@@ -734,8 +734,8 @@ int _cxlflash_disk_release(struct scsi_device *sdev,
 	u64 ctxid = DECODE_CTXID(release->context_id),
 	    rctxid = release->context_id;
 
-	struct sisl_rht_entry *rht_entry;
-	struct sisl_rht_entry_f1 *rht_entry_f1;
+	struct sisl_rht_entry *rhte;
+	struct sisl_rht_entry_f1 *rhte_f1;
 
 	pr_debug("%s: ctxid=%llu res_hndl=0x%llx gli->mode=%u gli->users=%u\n",
 		 __func__, ctxid, release->rsrc_handle, gli->mode, gli->users);
@@ -752,8 +752,8 @@ int _cxlflash_disk_release(struct scsi_device *sdev,
 		unlock_ctx = true;
 	}
 
-	rht_entry = get_rhte(ctx_info, res_hndl, lli);
-	if (unlikely(!rht_entry)) {
+	rhte = get_rhte(ctx_info, res_hndl, lli);
+	if (unlikely(!rhte)) {
 		pr_err("%s: Invalid resource handle! (%d)\n",
 		       __func__, res_hndl);
 		rc = -EINVAL;
@@ -784,15 +784,15 @@ int _cxlflash_disk_release(struct scsi_device *sdev,
 		 * (physical LUN) using the synchronization sequence
 		 * defined in the SISLite specification.
 		 */
-		rht_entry_f1 = (struct sisl_rht_entry_f1 *)rht_entry;
+		rhte_f1 = (struct sisl_rht_entry_f1 *)rhte;
 
-		rht_entry_f1->valid = 0;
+		rhte_f1->valid = 0;
 		dma_wmb(); /* Make revocation of RHT entry visible */
 
-		rht_entry_f1->lun_id = 0;
+		rhte_f1->lun_id = 0;
 		dma_wmb(); /* Make clearing of LUN id visible */
 
-		rht_entry_f1->dw = 0;
+		rhte_f1->dw = 0;
 		dma_wmb(); /* Make RHT entry bottom-half clearing visible */
 
 		cxlflash_afu_sync(afu, ctxid, res_hndl, AFU_HW_SYNC);
@@ -802,7 +802,7 @@ int _cxlflash_disk_release(struct scsi_device *sdev,
 		goto out;
 	}
 
-	rhte_checkin(ctx_info, rht_entry);
+	rhte_checkin(ctx_info, rhte);
 	cxlflash_lun_detach(gli);
 
 out:
@@ -874,7 +874,7 @@ static struct ctx_info *create_context(struct cxlflash_cfg *cfg,
 	size_t size;
 	struct afu *afu = cfg->afu;
 	struct ctx_info *ctx_info = NULL;
-	struct sisl_rht_entry *rht;
+	struct sisl_rht_entry *rhte;
 
 	size = ((MAX_RHT_PER_CONTEXT * sizeof(*ctx_info->rht_lun)) +
 		sizeof(*ctx_info));
@@ -886,15 +886,15 @@ static struct ctx_info *create_context(struct cxlflash_cfg *cfg,
 		goto out;
 	}
 
-	rht = (struct sisl_rht_entry *)get_zeroed_page(GFP_KERNEL);
-	if (unlikely(!rht)) {
+	rhte = (struct sisl_rht_entry *)get_zeroed_page(GFP_KERNEL);
+	if (unlikely(!rhte)) {
 		pr_err("%s: Unable to allocate RHT!\n", __func__);
 		goto err;
 	}
 
 	ctx_info = (struct ctx_info *)tmp;
 	ctx_info->rht_lun = (struct llun_info **)(tmp + sizeof(*ctx_info));
-	ctx_info->rht_start = rht;
+	ctx_info->rht_start = rhte;
 	ctx_info->rht_perms = perms;
 
 	ctx_info->ctrl_map = &afu->afu_map->ctrls[ctxid].ctrl;
@@ -1864,7 +1864,7 @@ static int cxlflash_disk_verify(struct scsi_device *sdev,
 	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)sdev->host->hostdata;
 	struct llun_info *lli = sdev->hostdata;
 	struct glun_info *gli = lli->parent;
-	struct sisl_rht_entry *rht_entry = NULL;
+	struct sisl_rht_entry *rhte = NULL;
 	res_hndl_t res_hndl = verify->rsrc_handle;
 	u64 ctxid = DECODE_CTXID(verify->context_id),
 	    rctxid = verify->context_id;
@@ -1881,8 +1881,8 @@ static int cxlflash_disk_verify(struct scsi_device *sdev,
 		goto out;
 	}
 
-	rht_entry = get_rhte(ctx_info, res_hndl, lli);
-	if (unlikely(!rht_entry)) {
+	rhte = get_rhte(ctx_info, res_hndl, lli);
+	if (unlikely(!rhte)) {
 		pr_err("%s: Invalid resource handle! (%d)\n",
 		       __func__, res_hndl);
 		rc = -EINVAL;
@@ -1907,7 +1907,7 @@ static int cxlflash_disk_verify(struct scsi_device *sdev,
 		last_lba = gli->max_lba;
 		break;
 	case MODE_VIRTUAL:
-		last_lba = (((rht_entry->lxt_cnt * MC_CHUNK_SIZE *
+		last_lba = (((rhte->lxt_cnt * MC_CHUNK_SIZE *
 			      gli->blk_len) / CXLFLASH_BLOCK_SIZE) - 1);
 		break;
 	default:
@@ -1988,7 +1988,7 @@ static int cxlflash_disk_direct_open(struct scsi_device *sdev, void *arg)
 	int rc = 0;
 
 	struct ctx_info *ctx_info = NULL;
-	struct sisl_rht_entry *rht_entry = NULL;
+	struct sisl_rht_entry *rhte = NULL;
 
 	pr_debug("%s: ctxid=%llu ls=0x%llx\n", __func__, ctxid, lun_size);
 
@@ -2006,16 +2006,16 @@ static int cxlflash_disk_direct_open(struct scsi_device *sdev, void *arg)
 		goto err1;
 	}
 
-	rht_entry = rhte_checkout(ctx_info, lli);
-	if (unlikely(!rht_entry)) {
+	rhte = rhte_checkout(ctx_info, lli);
+	if (unlikely(!rhte)) {
 		pr_err("%s: too many opens for this context\n", __func__);
 		rc = -EMFILE;	/* too many opens  */
 		goto err1;
 	}
 
-	rsrc_handle = (rht_entry - ctx_info->rht_start);
+	rsrc_handle = (rhte - ctx_info->rht_start);
 
-	rht_format1(rht_entry, lli->lun_id[sdev->channel],
+	rht_format1(rhte, lli->lun_id[sdev->channel],
 		    ctx_info->rht_perms, port_sel);
 	cxlflash_afu_sync(afu, ctxid, rsrc_handle, AFU_LW_SYNC);
 

@@ -470,7 +470,7 @@ out:
  * @sdev:	SCSI device associated with LUN.
  * @ctx_hndl_u:	Context ID of context owning the RHTE.
  * @res_hndl_u:	Resource handle associated with the RHTE.
- * @rht_entry:	Resource handle entry (RHTE).
+ * @rhte:	Resource handle entry (RHTE).
  * @new_size:	Number of translation entries associated with RHTE.
  * @port_sel:	Port selection mask.
  *
@@ -486,7 +486,7 @@ static int grow_lxt(struct afu *afu,
 		    struct scsi_device *sdev,
 		    ctx_hndl_t ctx_hndl_u,
 		    res_hndl_t res_hndl_u,
-		    struct sisl_rht_entry *rht_entry,
+		    struct sisl_rht_entry *rhte,
 		    u64 *new_size)
 {
 	struct sisl_lxt_entry *lxt = NULL, *lxt_old = NULL;
@@ -496,7 +496,7 @@ static int grow_lxt(struct afu *afu,
 	u32 av_size;
 	u32 ngrps, ngrps_old;
 	u64 aun;		/* chunk# allocated by block allocator */
-	u64 delta = *new_size - rht_entry->lxt_cnt;
+	u64 delta = *new_size - rhte->lxt_cnt;
 	u64 my_new_size;
 	int i, rc = 0;
 
@@ -517,9 +517,9 @@ static int grow_lxt(struct afu *afu,
 	if (av_size < delta)
 		delta = av_size;
 
-	lxt_old = rht_entry->lxt_start;
-	ngrps_old = LXT_NUM_GROUPS(rht_entry->lxt_cnt);
-	ngrps = LXT_NUM_GROUPS(rht_entry->lxt_cnt + delta);
+	lxt_old = rhte->lxt_start;
+	ngrps_old = LXT_NUM_GROUPS(rhte->lxt_cnt);
+	ngrps = LXT_NUM_GROUPS(rhte->lxt_cnt + delta);
 
 	if (ngrps != ngrps_old) {
 		/* reallocate to fit new size */
@@ -532,16 +532,15 @@ static int grow_lxt(struct afu *afu,
 		}
 
 		/* copy over all old entries */
-		memcpy(lxt, lxt_old, (sizeof(*lxt) *
-					  rht_entry->lxt_cnt));
+		memcpy(lxt, lxt_old, (sizeof(*lxt) * rhte->lxt_cnt));
 	} else
 		lxt = lxt_old;
 
 	/* nothing can fail from now on */
-	my_new_size = rht_entry->lxt_cnt + delta;
+	my_new_size = rhte->lxt_cnt + delta;
 
 	/* add new entries to the end */
-	for (i = rht_entry->lxt_cnt; i < my_new_size; i++) {
+	for (i = rhte->lxt_cnt; i < my_new_size; i++) {
 		/*
 		 * Due to the earlier check of available space, ba_alloc
 		 * cannot fail here. If it did due to internal error,
@@ -568,10 +567,10 @@ static int grow_lxt(struct afu *afu,
 	 */
 	dma_wmb(); /* Make LXT updates are visible */
 
-	rht_entry->lxt_start = lxt;
+	rhte->lxt_start = lxt;
 	dma_wmb(); /* Make RHT entry's LXT table update visible */
 
-	rht_entry->lxt_cnt = my_new_size;
+	rhte->lxt_cnt = my_new_size;
 	dma_wmb(); /* Make RHT entry's LXT table size update visible */
 
 	cxlflash_afu_sync(afu, ctx_hndl_u, res_hndl_u, AFU_LW_SYNC);
@@ -591,7 +590,7 @@ out:
  * @sdev:	SCSI device associated with LUN.
  * @ctx_hndl_u:	Context ID of context owning the RHTE.
  * @res_hndl_u:	Resource handle associated with the RHTE.
- * @rht_entry:	Resource handle entry (RHTE).
+ * @rhte:	Resource handle entry (RHTE).
  * @new_size:	Number of translation entries associated with RHTE.
  * @port_sel:	Port selection mask.
  *
@@ -601,7 +600,7 @@ static int shrink_lxt(struct afu *afu,
 		      struct scsi_device *sdev,
 		      ctx_hndl_t ctx_hndl_u,
 		      res_hndl_t res_hndl_u,
-		      struct sisl_rht_entry *rht_entry,
+		      struct sisl_rht_entry *rhte,
 		      u64 *new_size)
 {
 	struct sisl_lxt_entry *lxt, *lxt_old;
@@ -610,13 +609,13 @@ static int shrink_lxt(struct afu *afu,
 	struct blka *blka = &gli->blka;
 	u32 ngrps, ngrps_old;
 	u64 aun;		/* chunk# allocated by block allocator */
-	u64 delta = rht_entry->lxt_cnt - *new_size;
+	u64 delta = rhte->lxt_cnt - *new_size;
 	u64 my_new_size;
 	int i, rc = 0;
 
-	lxt_old = rht_entry->lxt_start;
-	ngrps_old = LXT_NUM_GROUPS(rht_entry->lxt_cnt);
-	ngrps = LXT_NUM_GROUPS(rht_entry->lxt_cnt - delta);
+	lxt_old = rhte->lxt_start;
+	ngrps_old = LXT_NUM_GROUPS(rhte->lxt_cnt);
+	ngrps = LXT_NUM_GROUPS(rhte->lxt_cnt - delta);
 
 	if (ngrps != ngrps_old) {
 		/* reallocate to fit new size unless new size is 0 */
@@ -630,23 +629,23 @@ static int shrink_lxt(struct afu *afu,
 
 			/* copy over old entries that will remain */
 			memcpy(lxt, lxt_old,
-			       (sizeof(*lxt) * (rht_entry->lxt_cnt - delta)));
+			       (sizeof(*lxt) * (rhte->lxt_cnt - delta)));
 		} else
 			lxt = NULL;
 	} else
 		lxt = lxt_old;
 
 	/* nothing can fail from now on */
-	my_new_size = rht_entry->lxt_cnt - delta;
+	my_new_size = rhte->lxt_cnt - delta;
 
 	/*
 	 * The following sequence is prescribed in the SISlite spec
 	 * for syncing up with the AFU when removing LXT entries.
 	 */
-	rht_entry->lxt_cnt = my_new_size;
+	rhte->lxt_cnt = my_new_size;
 	dma_wmb(); /* Make RHT entry's LXT table size update visible */
 
-	rht_entry->lxt_start = lxt;
+	rhte->lxt_start = lxt;
 	dma_wmb(); /* Make RHT entry's LXT table update visible */
 
 	cxlflash_afu_sync(afu, ctx_hndl_u, res_hndl_u, AFU_HW_SYNC);
@@ -702,7 +701,7 @@ int _cxlflash_vlun_resize(struct scsi_device *sdev,
 	u64 ctxid = DECODE_CTXID(resize->context_id),
 	    rctxid = resize->context_id;
 
-	struct sisl_rht_entry *rht_entry;
+	struct sisl_rht_entry *rhte;
 
 	int rc = 0;
 
@@ -736,27 +735,27 @@ int _cxlflash_vlun_resize(struct scsi_device *sdev,
 		unlock_ctx = true;
 	}
 
-	rht_entry = get_rhte(ctx_info, res_hndl, lli);
-	if (unlikely(!rht_entry)) {
+	rhte = get_rhte(ctx_info, res_hndl, lli);
+	if (unlikely(!rhte)) {
 		pr_err("%s: Invalid resource handle! (%u)\n",
 		       __func__, res_hndl);
 		rc = -EINVAL;
 		goto out;
 	}
 
-	if (new_size > rht_entry->lxt_cnt)
+	if (new_size > rhte->lxt_cnt)
 		rc = grow_lxt(afu,
 			      sdev,
 			      ctxid,
 			      res_hndl,
-			      rht_entry,
+			      rhte,
 			      &new_size);
-	else if (new_size < rht_entry->lxt_cnt)
+	else if (new_size < rhte->lxt_cnt)
 		rc = shrink_lxt(afu,
 				sdev,
 				ctxid,
 				res_hndl,
-				rht_entry,
+				rhte,
 				&new_size);
 
 	resize->hdr.return_flags = 0;
@@ -875,7 +874,7 @@ int cxlflash_disk_virtual_open(struct scsi_device *sdev, void *arg)
 	int rc = 0;
 
 	struct ctx_info *ctx_info = NULL;
-	struct sisl_rht_entry *rht_entry = NULL;
+	struct sisl_rht_entry *rhte = NULL;
 
 	pr_debug("%s: ctxid=%llu ls=0x%llx\n", __func__, ctxid, lun_size);
 
@@ -912,17 +911,17 @@ int cxlflash_disk_virtual_open(struct scsi_device *sdev, void *arg)
 		goto err1;
 	}
 
-	rht_entry = rhte_checkout(ctx_info, lli);
-	if (unlikely(!rht_entry)) {
+	rhte = rhte_checkout(ctx_info, lli);
+	if (unlikely(!rhte)) {
 		pr_err("%s: too many opens for this context\n", __func__);
 		rc = -EMFILE;	/* too many opens  */
 		goto err1;
 	}
 
-	rsrc_handle = (rht_entry - ctx_info->rht_start);
+	rsrc_handle = (rhte - ctx_info->rht_start);
 
-	rht_entry->nmask = MC_RHT_NMASK;
-	rht_entry->fp = SISL_RHT_FP(0U, ctx_info->rht_perms);
+	rhte->nmask = MC_RHT_NMASK;
+	rhte->fp = SISL_RHT_FP(0U, ctx_info->rht_perms);
 	/* format 0 & perms */
 
 	/* Resize even if requested size is 0 */
@@ -947,7 +946,7 @@ out:
 	return rc;
 
 err2:
-	rhte_checkin(ctx_info, rht_entry);
+	rhte_checkin(ctx_info, rhte);
 err1:
 	cxlflash_lun_detach(gli);
 	goto out;
@@ -955,12 +954,12 @@ err1:
 
 /**
  * clone_lxt() - copies translation tables from source to destination RHTE
- * @afu:		AFU associated with the host.
- * @blka:		Block allocator associated with LUN.
- * @ctx_hndl_u:		Context ID of context owning the RHTE.
- * @res_hndl_u:		Resource handle associated with the RHTE.
- * @rht_entry:		Destination resource handle entry (RHTE).
- * @rht_entry_src:	Source resource handle entry (RHTE).
+ * @afu:	AFU associated with the host.
+ * @blka:	Block allocator associated with LUN.
+ * @ctx_hndl_u:	Context ID of context owning the RHTE.
+ * @res_hndl_u:	Resource handle associated with the RHTE.
+ * @rhte:	Destination resource handle entry (RHTE).
+ * @rhte_src:	Source resource handle entry (RHTE).
  *
  * Return: 0 on success, -errno on failure
  */
@@ -968,15 +967,15 @@ static int clone_lxt(struct afu *afu,
 		     struct blka *blka,
 		     ctx_hndl_t ctx_hndl_u,
 		     res_hndl_t res_hndl_u,
-		     struct sisl_rht_entry *rht_entry,
-		     struct sisl_rht_entry *rht_entry_src)
+		     struct sisl_rht_entry *rhte,
+		     struct sisl_rht_entry *rhte_src)
 {
 	struct sisl_lxt_entry *lxt;
 	u32 ngrps;
 	u64 aun;		/* chunk# allocated by block allocator */
 	int i, j;
 
-	ngrps = LXT_NUM_GROUPS(rht_entry_src->lxt_cnt);
+	ngrps = LXT_NUM_GROUPS(rhte_src->lxt_cnt);
 
 	if (ngrps) {
 		/* allocate new LXTs for clone */
@@ -986,12 +985,12 @@ static int clone_lxt(struct afu *afu,
 			return -ENOMEM;
 
 		/* copy over */
-		memcpy(lxt, rht_entry_src->lxt_start,
-		       (sizeof(*lxt) * rht_entry_src->lxt_cnt));
+		memcpy(lxt, rhte_src->lxt_start,
+		       (sizeof(*lxt) * rhte_src->lxt_cnt));
 
 		/* clone the LBAs in block allocator via ref_cnt */
 		mutex_lock(&blka->mutex);
-		for (i = 0; i < rht_entry_src->lxt_cnt; i++) {
+		for (i = 0; i < rhte_src->lxt_cnt; i++) {
 			aun = (lxt[i].rlba_base >> MC_CHUNK_SHIFT);
 			if (ba_clone(&blka->ba_lun, aun) == -1ULL) {
 				/* free the clones already made */
@@ -1017,10 +1016,10 @@ static int clone_lxt(struct afu *afu,
 	 */
 	dma_wmb(); /* Make LXT updates are visible */
 
-	rht_entry->lxt_start = lxt;
+	rhte->lxt_start = lxt;
 	dma_wmb(); /* Make RHT entry's LXT table update visible */
 
-	rht_entry->lxt_cnt = rht_entry_src->lxt_cnt;
+	rhte->lxt_cnt = rhte_src->lxt_cnt;
 	dma_wmb(); /* Make RHT entry's LXT table size update visible */
 
 	cxlflash_afu_sync(afu, ctx_hndl_u, res_hndl_u, AFU_LW_SYNC);
