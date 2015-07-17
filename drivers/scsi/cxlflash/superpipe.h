@@ -15,16 +15,6 @@
 #ifndef _CXLFLASH_SUPERPIPE_H
 #define _CXLFLASH_SUPERPIPE_H
 
-/*----------------------------------------------------------------------------*/
-/* Constants                                                                  */
-/*----------------------------------------------------------------------------*/
-
-#define SL_INI_SINI_MARKER      0x53494e49
-#define SL_INI_ELMD_MARKER      0x454c4d44
-/*----------------------------------------------------------------------------*/
-/* Types                                                                      */
-/*----------------------------------------------------------------------------*/
-
 #define MAX_AUN_CLONE_CNT    0xFF
 
 /*
@@ -67,7 +57,7 @@ enum lun_mode {
 	MODE_PHYSICAL
 };
 
-/* SCSI Defines                                                          */
+/* SCSI Defines */
 
 struct request_sense_data  {
 	uint8_t     err_code;        /* error class and code   */
