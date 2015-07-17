@@ -665,7 +665,11 @@ void cxlflash_lun_detach(struct glun_info *gli)
  * @release:	Release ioctl data structure.
  *
  * For LUN's in virtual mode, the virtual lun associated with the specified
- * resource handle is resized to 0 prior to releasing the RHTE.
+ * resource handle is resized to 0 prior to releasing the RHTE. Note that the
+ * AFU sync should _not_ be performed when the context is sitting on the error
+ * recovery list. A context on the error recovery list is not known to the AFU
+ * due to reset. When the context is recovered, it will be reattached and made
+ * known again to the AFU.
  *
  * Return: 0 on success, -errno on failure
  */
@@ -745,7 +749,8 @@ int _cxlflash_disk_release(struct scsi_device *sdev,
 		rhte_f1->dw = 0;
 		dma_wmb(); /* Make RHT entry bottom-half clearing visible */
 
-		cxlflash_afu_sync(afu, ctxid, rhndl, AFU_HW_SYNC);
+		if (!ctxi->err_recovery_active)
+			cxlflash_afu_sync(afu, ctxid, rhndl, AFU_HW_SYNC);
 		break;
 	default:
 		BUG();

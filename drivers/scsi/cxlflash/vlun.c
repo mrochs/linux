@@ -464,7 +464,6 @@ out:
  * @rhndl:	Resource handle associated with the RHTE.
  * @rhte:	Resource handle entry (RHTE).
  * @new_size:	Number of translation entries associated with RHTE.
- * @port_sel:	Port selection mask.
  *
  * By design, this routine employs a 'best attempt' allocation and will
  * truncate the requested size down if there is not sufficient space in
@@ -584,7 +583,7 @@ out:
  * @rhndl:	Resource handle associated with the RHTE.
  * @rhte:	Resource handle entry (RHTE).
  * @new_size:	Number of translation entries associated with RHTE.
- * @port_sel:	Port selection mask.
+ * @needs_sync:	AFU sync needed.
  *
  * Return: 0 on success, -errno on failure
  */
@@ -593,7 +592,8 @@ static int shrink_lxt(struct afu *afu,
 		      ctx_hndl_t ctxid,
 		      res_hndl_t rhndl,
 		      struct sisl_rht_entry *rhte,
-		      u64 *new_size)
+		      u64 *new_size,
+		      bool needs_sync)
 {
 	struct sisl_lxt_entry *lxt, *lxt_old;
 	struct llun_info *lli = sdev->hostdata;
@@ -640,7 +640,8 @@ static int shrink_lxt(struct afu *afu,
 	rhte->lxt_start = lxt;
 	dma_wmb(); /* Make RHT entry's LXT table update visible */
 
-	cxlflash_afu_sync(afu, ctxid, rhndl, AFU_HW_SYNC);
+	if (needs_sync)
+		cxlflash_afu_sync(afu, ctxid, rhndl, AFU_HW_SYNC);
 
 	/* free LBAs allocated to freed chunks */
 	mutex_lock(&blka->mutex);
@@ -672,7 +673,9 @@ out:
  *
  * On successful return, the user is informed of the new size (in blocks)
  * of the virtual lun in last LBA format. When the size of the virtual
- * lun is zero, the last LBA is reflected as -1.
+ * lun is zero, the last LBA is reflected as -1. See comment in the
+ * prologue for _cxlflash_disk_release() regarding AFU syncs and contexts
+ * on the error recovery list.
  *
  * Return: 0 on success, -errno on failure
  */
@@ -745,7 +748,8 @@ int _cxlflash_vlun_resize(struct scsi_device *sdev,
 				ctxid,
 				rhndl,
 				rhte,
-				&new_size);
+				&new_size,
+				!ctxi->err_recovery_active);
 
 	resize->hdr.return_flags = 0;
 	resize->last_lba = (new_size * MC_CHUNK_SIZE * gli->blk_len);
