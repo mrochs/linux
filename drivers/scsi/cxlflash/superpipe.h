@@ -173,8 +173,6 @@ int cxlflash_disk_virtual_open(struct scsi_device *, void *);
 int cxlflash_lun_attach(struct glun_info *, enum lun_mode);
 void cxlflash_lun_detach(struct glun_info *);
 
-int cxlflash_check_status(struct afu_cmd *);
-
 struct ctx_info *get_context(struct cxlflash_cfg *, u64, void *, enum ctx_ctrl);
 
 struct sisl_rht_entry *get_rhte(struct ctx_info *, res_hndl_t,
