@@ -2435,6 +2435,7 @@ static pci_ers_result_t cxlflash_pci_slot_reset(struct pci_dev *pdev)
 		pr_err("%s: EEH recovery failed! (%d)\n", __func__, rc);
 		return PCI_ERS_RESULT_DISCONNECT;
 	}
+	cxlflash_restore_luntable(cfg);
 
 	return PCI_ERS_RESULT_RECOVERED;
 }

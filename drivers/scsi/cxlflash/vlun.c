@@ -771,7 +771,50 @@ int cxlflash_vlun_resize(struct scsi_device *sdev,
 }
 
 /**
- * cxlflash_init_luntable() - write an entry in the LUN table
+ * cxlflash_restore_luntable() - Restore LUN table to prior state
+ * @cfg:	Internal structure associated with the host.
+ * @wwid:	WWID associated with LUN.
+ *
+ * Return: NONE
+ */
+void cxlflash_restore_luntable(struct cxlflash_cfg *cfg)
+{
+	struct llun_info *lli, *temp;
+	ulong lock_flags;
+	u32 chan;
+	struct afu *afu = cfg->afu;
+
+	spin_lock_irqsave(&cfg->slock, lock_flags);
+
+	list_for_each_entry_safe(lli, temp, &cfg->lluns, list) {
+		if (!lli->in_table)
+			continue;
+
+		if (lli->port_sel == BOTH_PORTS) {
+			writeq_be(lli->lun_id[0],
+				&afu->afu_map->global.fc_port[0]
+				[lli->lun_index]);
+			writeq_be(lli->lun_id[1],
+				&afu->afu_map->global.fc_port[1]
+				[lli->lun_index]);
+			pr_debug("%s: Virtual LUN on slot %d  id0=%llx, "
+				 "id1=%llx\n", __func__, lli->lun_index,
+				 lli->lun_id[0], lli->lun_id[1]);
+		} else {
+			chan = PORT2CHAN(lli->port_sel);
+			writeq_be(lli->lun_id[chan],
+				  &afu->afu_map->global.fc_port[chan]
+				  [lli->lun_index]);
+			pr_debug("%s: Virtual LUN on slot %d chan=%d, "
+				 "id=%llx\n", __func__, lli->lun_index, chan,
+				 lli->lun_id[chan]);
+		}
+	}
+
+	spin_unlock_irqrestore(&cfg->slock, lock_flags);
+}
+/**
+ * init_luntable() - write an entry in the LUN table
  * @cfg:        Internal structure associated with the host.
  * @lli:	Per adapter LUN information structure.
  *
@@ -781,11 +824,14 @@ int cxlflash_vlun_resize(struct scsi_device *sdev,
  *
  * Return: 0 on success, -errno on failure
  */
-int cxlflash_init_luntable(struct cxlflash_cfg *cfg, struct llun_info *lli)
+static int init_luntable(struct cxlflash_cfg *cfg, struct llun_info *lli)
 {
 	u32 chan;
 	int rc = 0;
 	struct afu *afu = cfg->afu;
+	ulong lock_flags;
+
+	spin_lock_irqsave(&cfg->slock, lock_flags);
 
 	if (lli->in_table)
 		goto out;
@@ -834,6 +880,7 @@ int cxlflash_init_luntable(struct cxlflash_cfg *cfg, struct llun_info *lli)
 
 	lli->in_table = true;
 out:
+	spin_unlock_irqrestore(&cfg->slock, lock_flags);
 	pr_debug("%s: returning rc=%d\n", __func__, rc);
 	return rc;
 }
@@ -874,10 +921,10 @@ int cxlflash_disk_virtual_open(struct scsi_device *sdev, void *arg)
 
 	if (gli->mode == MODE_NONE) {
 		/* Setup the LUN table on the first call */
-		rc = cxlflash_init_luntable(cfg, lli);
+		rc = init_luntable(cfg, lli);
 		if (rc) {
-			pr_err("%s: call to cxlflash_init_luntable failed "
-			       "rc=%d!\n", __func__, rc);
+			pr_err("%s: call to init_luntable failed rc=%d!\n",
+			       __func__, rc);
 			goto out;
 		}
 
