@@ -214,6 +214,26 @@ out:
 }
 
 /**
+ * lookup_local() - find a local LUN information structure by WWID
+ * @cfg:	Internal structure associated with the host.
+ * @wwid:	WWID associated with LUN.
+ *
+ * Return: Found local lun_info structure on success, NULL on failure
+ */
+static void reset_local(struct cxlflash_cfg *cfg)
+{
+	struct llun_info *lli, *temp;
+	ulong lock_flags;
+
+	spin_lock_irqsave(&cfg->slock, lock_flags);
+
+	list_for_each_entry_safe(lli, temp, &cfg->lluns, list)
+		lli->in_table = false;
+
+	spin_unlock_irqrestore(&cfg->slock, lock_flags);
+}
+
+/**
  * cxlflash_term_luns() - Delete all entries from local lun list, free.
  * @cfg:	Internal structure associated with the host.
  */
@@ -1266,6 +1286,8 @@ int cxlflash_mark_contexts_error(struct cxlflash_cfg *cfg)
 	int i, rc = 0;
 	struct ctx_info *ctxi = NULL;
 
+	reset_local(cfg);
+
 	mutex_lock(&cfg->ctx_tbl_list_mutex);
 
 	for (i = 0; i < MAX_CONTEXT; i++) {
@@ -1702,6 +1724,13 @@ retry:
 	}
 
 	if (ctxi->err_recovery_active) {
+		rc = cxlflash_init_luntable(cfg, lli);
+		if (unlikely(rc)) {
+			pr_err("%s: Init LUN table for LUN %d (rc=%d)\n",
+			       __func__, lli->lun_index, rc);
+			goto out;
+		}
+
 		rc = recover_context(cfg, ctxi);
 		if (unlikely(rc)) {
 			pr_err("%s: Recovery failed for context %llu (rc=%d)\n",

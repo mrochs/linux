@@ -771,7 +771,7 @@ int cxlflash_vlun_resize(struct scsi_device *sdev,
 }
 
 /**
- * init_lun_table() - write an entry in the LUN table
+ * cxlflash_init_luntable() - write an entry in the LUN table
  * @cfg:        Internal structure associated with the host.
  * @lli:	Per adapter LUN information structure.
  *
@@ -781,7 +781,7 @@ int cxlflash_vlun_resize(struct scsi_device *sdev,
  *
  * Return: 0 on success, -errno on failure
  */
-static int init_lun_table(struct cxlflash_cfg *cfg, struct llun_info *lli)
+int cxlflash_init_luntable(struct cxlflash_cfg *cfg, struct llun_info *lli)
 {
 	u32 chan;
 	int rc = 0;
@@ -874,10 +874,10 @@ int cxlflash_disk_virtual_open(struct scsi_device *sdev, void *arg)
 
 	if (gli->mode == MODE_NONE) {
 		/* Setup the LUN table on the first call */
-		rc = init_lun_table(cfg, lli);
+		rc = cxlflash_init_luntable(cfg, lli);
 		if (rc) {
-			pr_err("%s: call to init_lun_table failed rc=%d!\n",
-			       __func__, rc);
+			pr_err("%s: call to cxlflash_init_luntable failed "
+			       "rc=%d!\n", __func__, rc);
 			goto out;
 		}
 

@@ -183,4 +183,7 @@ void rhte_checkin(struct ctx_info *, struct sisl_rht_entry *);
 
 void cxlflash_ba_terminate(struct ba_lun *);
 
+int cxlflash_init_luntable(struct cxlflash_cfg *, struct llun_info *);
+
+
 #endif /* ifndef _CXLFLASH_SUPERPIPE_H */
