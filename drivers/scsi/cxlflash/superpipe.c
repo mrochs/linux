@@ -452,7 +452,9 @@ static int read_cap16(struct scsi_device *sdev, struct llun_info *lli)
 	u8 *sense_buf = NULL;
 	int rc = 0;
 	int result = 0;
+	int retry_cnt = 0;
 
+retry:
 	memset(scsi_cmd, 0, sizeof(scsi_cmd));
 	cmd_buf = kzalloc(CMD_BUFSIZE, GFP_KERNEL);
 	sense_buf = kzalloc(SCSI_SENSE_BUFFERSIZE, GFP_NOIO);
@@ -470,6 +472,35 @@ static int read_cap16(struct scsi_device *sdev, struct llun_info *lli)
 	result = scsi_execute(sdev, scsi_cmd, DMA_FROM_DEVICE, cmd_buf,
 			      CMD_BUFSIZE, sense_buf,
 			      (MC_DISCOVERY_TIMEOUT*HZ), 5, 0, NULL);
+
+	if (driver_byte(result) == DRIVER_SENSE) {
+		result &= ~(0xFF<<24); /* DRIVER_SENSE is not an error */
+		if (result & SAM_STAT_CHECK_CONDITION) {
+			struct scsi_sense_hdr sshdr;
+			scsi_normalize_sense(sense_buf, SCSI_SENSE_BUFFERSIZE,
+					    &sshdr);
+			switch (sshdr.sense_key) {
+			case NO_SENSE:
+			case RECOVERED_ERROR:
+				/* fall through */
+			case NOT_READY: 
+				result &= ~SAM_STAT_CHECK_CONDITION;
+				break;
+			case UNIT_ATTENTION:
+				switch (sshdr.asc) {
+				case 0x29: /* Power on Reset or Device Reset */
+					/* fall through */
+				case 0x2A: /* Device capacity changed */
+				case 0x3F: /* Report LUNs changed */
+					if (retry_cnt++ < MC_RETRY_CNT)
+						goto retry;
+				}
+				break;
+			default:
+				break;
+			}
+		}
+	}
 
 	if (result) {
 		pr_err("%s: command failed, result=0x%x\n", __func__, result);
