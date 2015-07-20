@@ -2085,6 +2085,8 @@ static int init_afu(struct cxlflash_cfg *cfg)
 	afu_err_intr_init(cfg->afu);
 	atomic64_set(&afu->room, readq_be(&afu->host_map->cmd_room));
 
+	/* Restore the LUN mappings */
+	cxlflash_restore_luntable(cfg);
 err1:
 	pr_debug("%s: returning rc=%d\n", __func__, rc);
 	return rc;
@@ -2434,7 +2436,6 @@ static pci_ers_result_t cxlflash_pci_slot_reset(struct pci_dev *pdev)
 		pr_err("%s: EEH recovery failed! (%d)\n", __func__, rc);
 		return PCI_ERS_RESULT_DISCONNECT;
 	}
-	cxlflash_restore_luntable(cfg);
 
 	return PCI_ERS_RESULT_RECOVERED;
 }
