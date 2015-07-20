@@ -22,6 +22,7 @@
 #include <scsi/scsi.h>
 #include <scsi/scsi_host.h>
 #include <scsi/scsi_cmnd.h>
+#include <scsi/scsi_eh.h>
 #include <uapi/scsi/cxlflash_ioctl.h>
 
 #include "sislite.h"
@@ -1748,22 +1749,24 @@ out:
 static int process_sense(struct scsi_device *sdev,
 			 struct dk_cxlflash_verify *verify)
 {
-	struct request_sense_data *sense_data = (struct request_sense_data *)
-		&verify->sense_data;
+	struct scsi_sense_hdr sshdr;
 	struct llun_info *lli = sdev->hostdata;
 	struct glun_info *gli = lli->parent;
 	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)sdev->host->hostdata;
 	u64 prev_lba = gli->max_lba;
 	int rc = 0;
 
-	switch (sense_data->sense_key) {
+	scsi_normalize_sense((const u8 *)&verify->sense_data,
+			     SCSI_SENSE_BUFFERSIZE, &sshdr);
+
+	switch (sshdr.sense_key) {
 	case NO_SENSE:
 	case RECOVERED_ERROR:
 		/* fall through */
 	case NOT_READY:
 		break;
 	case UNIT_ATTENTION:
-		switch (sense_data->add_sense_key) {
+		switch (sshdr.asc) {
 		case 0x29: /* Power on Reset or Device Reset */
 			/* fall through */
 		case 0x2A: /* Device settings/capacity changed */
@@ -1789,8 +1792,8 @@ static int process_sense(struct scsi_device *sdev,
 		rc = -EIO;
 		break;
 	}
-	pr_debug("%s: sense_key %x asc %x rc %d\n", __func__,
-		 sense_data->sense_key, sense_data->add_sense_key, rc);
+	pr_debug("%s: sense_key %x asc %x ascq %x rc %d\n", __func__,
+		 sshdr.sense_key, sshdr.asc, sshdr.ascq, rc);
 	return rc;
 }
 
