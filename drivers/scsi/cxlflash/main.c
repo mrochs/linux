@@ -1594,7 +1594,8 @@ static irqreturn_t cxlflash_rrq_irq(int irq, void *data)
 static irqreturn_t cxlflash_async_err_irq(int irq, void *data)
 {
 	struct afu *afu = (struct afu *)data;
-	struct cxlflash_cfg *cfg;
+	struct cxlflash_cfg *cfg = afu->parent;
+	struct device *dev = &cfg->dev->dev;
 	u64 reg_unmasked;
 	const struct asyc_intr_info *info;
 	struct sisl_global_map *global = &afu->afu_map->global;
@@ -1602,14 +1603,12 @@ static irqreturn_t cxlflash_async_err_irq(int irq, void *data)
 	u8 port;
 	int i;
 
-	cfg = afu->parent;
-
 	reg = readq_be(&global->regs.aintr_status);
 	reg_unmasked = (reg & SISL_ASTATUS_UNMASK);
 
 	if (reg_unmasked == 0) {
-		pr_err("%s: spurious interrupt, aintr_status 0x%016llX\n",
-		       __func__, reg);
+		dev_err(dev, "%s: spurious interrupt, aintr_status 0x%016llX\n",
+			__func__, reg);
 		goto out;
 	}
 
@@ -1624,8 +1623,8 @@ static irqreturn_t cxlflash_async_err_irq(int irq, void *data)
 
 		port = info->port;
 
-		pr_err("%s: FC Port %d -> %s, fc_status 0x%08llX\n",
-		       __func__, port, info->desc,
+		dev_err(dev, "%s: FC Port %d -> %s, fc_status 0x%08llX\n",
+			__func__, port, info->desc,
 		       readq_be(&global->fc_regs[port][FC_STATUS / 8]));
 
 		/*
@@ -1633,8 +1632,8 @@ static irqreturn_t cxlflash_async_err_irq(int irq, void *data)
 		 * again if cleared before or w/o a reset
 		 */
 		if (info->action & LINK_RESET) {
-			pr_err("%s: FC Port %d: resetting link\n",
-			       __func__, port);
+			dev_err(dev, "%s: FC Port %d: resetting link\n",
+				__func__, port);
 			cfg->lr_state = LINK_RESET_REQUIRED;
 			cfg->lr_port = port;
 			schedule_work(&cfg->work_q);
@@ -1648,8 +1647,8 @@ static irqreturn_t cxlflash_async_err_irq(int irq, void *data)
 			 * should be the same and tracing one is sufficient.
 			 */
 
-			pr_err("%s: fc %d: clearing fc_error 0x%08llX\n",
-			       __func__, port, reg);
+			dev_err(dev, "%s: fc %d: clearing fc_error 0x%08llX\n",
+				__func__, port, reg);
 
 			writeq_be(reg, &global->fc_regs[port][FC_ERROR / 8]);
 			writeq_be(0, &global->fc_regs[port][FC_ERRCAP / 8]);
@@ -1662,7 +1661,7 @@ static irqreturn_t cxlflash_async_err_irq(int irq, void *data)
 	}
 
 out:
-	pr_debug("%s: returning rc=%d, afu=%p\n", __func__, IRQ_HANDLED, afu);
+	dev_dbg(dev, "%s: returning IRQ_HANDLED, afu=%p\n", __func__, afu);
 	return IRQ_HANDLED;
 }
 
