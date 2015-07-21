@@ -1785,15 +1785,20 @@ out:
 static int process_sense(struct scsi_device *sdev,
 			 struct dk_cxlflash_verify *verify)
 {
-	struct scsi_sense_hdr sshdr;
 	struct llun_info *lli = sdev->hostdata;
 	struct glun_info *gli = lli->parent;
 	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)sdev->host->hostdata;
 	u64 prev_lba = gli->max_lba;
+	struct scsi_sense_hdr sshdr = { 0 };
 	int rc = 0;
 
-	scsi_normalize_sense((const u8 *)&verify->sense_data,
-			     SCSI_SENSE_BUFFERSIZE, &sshdr);
+	rc = scsi_normalize_sense((const u8 *)&verify->sense_data,
+				  DK_CXLFLASH_VERIFY_SENSE_LEN, &sshdr);
+	if (!rc) {
+		pr_err("%s: Failed for normalize sense data!\n", __func__);
+		rc = -EINVAL;
+		goto out;
+	}
 
 	switch (sshdr.sense_key) {
 	case NO_SENSE:
@@ -1828,6 +1833,7 @@ static int process_sense(struct scsi_device *sdev,
 		rc = -EIO;
 		break;
 	}
+out:
 	pr_debug("%s: sense_key %x asc %x ascq %x rc %d\n", __func__,
 		 sshdr.sense_key, sshdr.asc, sshdr.ascq, rc);
 	return rc;
@@ -1852,10 +1858,11 @@ static int cxlflash_disk_verify(struct scsi_device *sdev,
 	res_hndl_t rhndl = verify->rsrc_handle;
 	u64 ctxid = DECODE_CTXID(verify->context_id),
 	    rctxid = verify->context_id;
-	u64 last_lba = 0;
+	u64 last_lba = 0ULL;
 
-	pr_debug("%s: ctxid=%llu rhndl=0x%llx, hint=0x%llx\n",
-		 __func__, ctxid, verify->rsrc_handle, verify->hint);
+	pr_debug("%s: ctxid=%llu rhndl=%016llX, hint=%016llX, flags=%016llX\n",
+		 __func__, ctxid, verify->rsrc_handle, verify->hint,
+		 verify->hdr.flags);
 
 	ctxi = get_context(cfg, rctxid, lli, 0);
 	if (unlikely(!ctxi)) {
@@ -1889,7 +1896,8 @@ static int cxlflash_disk_verify(struct scsi_device *sdev,
 		last_lba = gli->max_lba;
 		break;
 	case MODE_VIRTUAL:
-		last_lba = (rhte->lxt_cnt * MC_CHUNK_SIZE * gli->blk_len);
+		/* Cast lxt_cnt to u64 for multiply to be treated as 64bit op */
+		last_lba = ((u64)rhte->lxt_cnt * MC_CHUNK_SIZE * gli->blk_len);
 		last_lba /= CXLFLASH_BLOCK_SIZE;
 		last_lba--;
 		break;
@@ -1902,7 +1910,7 @@ static int cxlflash_disk_verify(struct scsi_device *sdev,
 out:
 	if (likely(ctxi))
 		mutex_unlock(&ctxi->mutex);
-	pr_debug("%s: returning rc=%d llba=%lld\n",
+	pr_debug("%s: returning rc=%d llba=%llX\n",
 		 __func__, rc, verify->last_lba);
 	return rc;
 }
