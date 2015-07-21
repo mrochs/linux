@@ -191,7 +191,6 @@ static inline u64 lun_to_lunid(u64 lun)
 	return swab64(lun_id);
 }
 
-int cxlflash_afu_reset(struct cxlflash_cfg *);
 struct afu_cmd *cxlflash_cmd_checkout(struct afu *);
 void cxlflash_cmd_checkin(struct afu_cmd *);
 int cxlflash_afu_sync(struct afu *, ctx_hndl_t, res_hndl_t, u8);

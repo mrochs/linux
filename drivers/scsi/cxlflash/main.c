@@ -593,260 +593,6 @@ error:
 }
 
 /**
- * cxlflash_eh_device_reset_handler() - reset a single LUN
- * @scp:	SCSI command to send.
- *
- * Return:
- *	SUCCESS as defined in scsi/scsi.h
- *	FAILED as defined in scsi/scsi.h
- */
-static int cxlflash_eh_device_reset_handler(struct scsi_cmnd *scp)
-{
-	int rc = SUCCESS;
-	struct Scsi_Host *host = scp->device->host;
-	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)host->hostdata;
-	struct afu *afu = cfg->afu;
-	int rcr = 0;
-
-	pr_debug("%s: (scp=%p) %d/%d/%d/%llu "
-		 "cdb=(%08X-%08X-%08X-%08X)\n", __func__, scp,
-		 host->host_no, scp->device->channel,
-		 scp->device->id, scp->device->lun,
-		 get_unaligned_be32(&((u32 *)scp->cmnd)[0]),
-		 get_unaligned_be32(&((u32 *)scp->cmnd)[1]),
-		 get_unaligned_be32(&((u32 *)scp->cmnd)[2]),
-		 get_unaligned_be32(&((u32 *)scp->cmnd)[3]));
-
-	switch (cfg->eeh_active) {
-	case EEH_STATE_NONE:
-		rcr = send_tmf(afu, scp, TMF_LUN_RESET);
-		if (unlikely(rcr))
-			rc = FAILED;
-		break;
-	case EEH_STATE_ACTIVE:
-		wait_event(cfg->eeh_waitq, cfg->eeh_active != EEH_STATE_ACTIVE);
-		break;
-	case EEH_STATE_FAILED:
-		break;
-	}
-
-	pr_debug("%s: returning rc=%d\n", __func__, rc);
-	return rc;
-}
-
-/**
- * cxlflash_eh_host_reset_handler() - reset the host adapter
- * @scp:	SCSI command from stack identifying host.
- *
- * Return:
- *	SUCCESS as defined in scsi/scsi.h
- *	FAILED as defined in scsi/scsi.h
- */
-static int cxlflash_eh_host_reset_handler(struct scsi_cmnd *scp)
-{
-	int rc = SUCCESS;
-	int rcr = 0;
-	struct Scsi_Host *host = scp->device->host;
-	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)host->hostdata;
-
-	pr_debug("%s: (scp=%p) %d/%d/%d/%llu "
-		 "cdb=(%08X-%08X-%08X-%08X)\n", __func__, scp,
-		 host->host_no, scp->device->channel,
-		 scp->device->id, scp->device->lun,
-		 get_unaligned_be32(&((u32 *)scp->cmnd)[0]),
-		 get_unaligned_be32(&((u32 *)scp->cmnd)[1]),
-		 get_unaligned_be32(&((u32 *)scp->cmnd)[2]),
-		 get_unaligned_be32(&((u32 *)scp->cmnd)[3]));
-
-	switch (cfg->eeh_active) {
-	case EEH_STATE_NONE:
-		cfg->eeh_active = EEH_STATE_FAILED;
-		cxlflash_mark_contexts_error(cfg);
-		rcr = cxlflash_afu_reset(cfg);
-		if (rcr == 0)
-			rc = SUCCESS;
-		else
-			rc = FAILED;
-		cfg->eeh_active = EEH_STATE_NONE;
-		wake_up_all(&cfg->eeh_waitq);
-		break;
-	case EEH_STATE_ACTIVE:
-		wait_event(cfg->eeh_waitq, cfg->eeh_active != EEH_STATE_ACTIVE);
-		break;
-	case EEH_STATE_FAILED:
-		break;
-	}
-
-	pr_debug("%s: returning rc=%d\n", __func__, rc);
-	return rc;
-}
-
-/**
- * cxlflash_change_queue_depth() - change the queue depth for the device
- * @sdev:	SCSI device destined for queue depth change.
- * @qdepth:	Requested queue depth value to set.
- *
- * The requested queue depth is capped to the maximum supported value.
- *
- * Return: The actual queue depth set.
- */
-static int cxlflash_change_queue_depth(struct scsi_device *sdev, int qdepth)
-{
-
-	if (qdepth > CXLFLASH_MAX_CMDS_PER_LUN)
-		qdepth = CXLFLASH_MAX_CMDS_PER_LUN;
-
-	scsi_change_queue_depth(sdev, qdepth);
-	return sdev->queue_depth;
-}
-
-/**
- * cxlflash_show_port_status() - queries and presents the current port status
- * @port:	Desired port for status reporting.
- * @afu:	AFU owning the specified port.
- * @buf:	Buffer of length PAGE_SIZE to report back port status in ASCII.
- *
- * Return: The size of the ASCII string returned in @buf.
- */
-static ssize_t cxlflash_show_port_status(u32 port, struct afu *afu, char *buf)
-{
-	char *disp_status;
-	u64 status;
-	u64 *fc_regs;
-
-	if (port > NUM_FC_PORTS)
-		return 0;
-
-	fc_regs = &afu->afu_map->global.fc_regs[port][0];
-	status = readq_be(&fc_regs[FC_MTIP_STATUS / 8]);
-	status &= FC_MTIP_STATUS_MASK;
-
-	if (status == FC_MTIP_STATUS_ONLINE)
-		disp_status = "online";
-	else if (status == FC_MTIP_STATUS_OFFLINE)
-		disp_status = "offline";
-	else
-		disp_status = "unknown";
-
-	return scnprintf(buf, PAGE_SIZE, "%s\n", disp_status);
-}
-
-/**
- * port0_show() - queries and presents the current status of port 0
- * @dev:	Generic device associated with the host owning the port.
- * @attr:	Device attribute representing the port.
- * @buf:	Buffer of length PAGE_SIZE to report back port status in ASCII.
- *
- * Return: The size of the ASCII string returned in @buf.
- */
-static ssize_t port0_show(struct device *dev,
-			  struct device_attribute *attr,
-			  char *buf)
-{
-	struct Scsi_Host *shost = class_to_shost(dev);
-	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)shost->hostdata;
-	struct afu *afu = cfg->afu;
-
-	return cxlflash_show_port_status(0, afu, buf);
-}
-
-/**
- * port1_show() - queries and presents the current status of port 1
- * @dev:	Generic device associated with the host owning the port.
- * @attr:	Device attribute representing the port.
- * @buf:	Buffer of length PAGE_SIZE to report back port status in ASCII.
- *
- * Return: The size of the ASCII string returned in @buf.
- */
-static ssize_t port1_show(struct device *dev,
-			  struct device_attribute *attr,
-			  char *buf)
-{
-	struct Scsi_Host *shost = class_to_shost(dev);
-	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)shost->hostdata;
-	struct afu *afu = cfg->afu;
-
-	return cxlflash_show_port_status(1, afu, buf);
-}
-
-/**
- * lun_mode_show() - presents the current LUN mode of the host
- * @dev:	Generic device associated with the host.
- * @attr:	Device attribute representing the lun mode.
- * @buf:	Buffer of length PAGE_SIZE to report back the LUN mode in ASCII.
- *
- * Return: The size of the ASCII string returned in @buf.
- */
-static ssize_t lun_mode_show(struct device *dev,
-			     struct device_attribute *attr, char *buf)
-{
-	struct Scsi_Host *shost = class_to_shost(dev);
-	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)shost->hostdata;
-	struct afu *afu = cfg->afu;
-
-	return scnprintf(buf, PAGE_SIZE, "%u\n", afu->internal_lun);
-}
-
-/**
- * lun_mode_store() - sets the LUN mode of the host
- * @dev:	Generic device associated with the host.
- * @attr:	Device attribute representing the lun mode.
- * @buf:	Buffer of length PAGE_SIZE containing the LUN mode in ASCII.
- * @count:	Length of data resizing in @buf.
- *
- * The CXL Flash AFU supports a dummy LUN mode where the external
- * links and storage are not required. Space on the FPGA is used
- * to create 1 or 2 small LUNs which are presented to the system
- * as if they were a normal storage device. This feature is useful
- * during development and also provides manufacturing with a way
- * to test the AFU without an actual device.
- *
- * 0 = external LUN[s] (default)
- * 1 = internal LUN (1 x 64K, 512B blocks, id 0)
- * 2 = internal LUN (1 x 64K, 4K blocks, id 0)
- * 3 = internal LUN (2 x 32K, 512B blocks, ids 0,1)
- * 4 = internal LUN (2 x 32K, 4K blocks, ids 0,1)
- *
- * Return: The size of the ASCII string returned in @buf.
- */
-static ssize_t lun_mode_store(struct device *dev,
-			      struct device_attribute *attr,
-			      const char *buf, size_t count)
-{
-	struct Scsi_Host *shost = class_to_shost(dev);
-	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)shost->hostdata;
-	struct afu *afu = cfg->afu;
-	int rc;
-	u32 lun_mode;
-
-	rc = kstrtouint(buf, 10, &lun_mode);
-	if (!rc && (lun_mode < 5) && (lun_mode != afu->internal_lun)) {
-		afu->internal_lun = lun_mode;
-		cxlflash_afu_reset(cfg);
-		scsi_scan_host(cfg->host);
-	}
-
-	return count;
-}
-
-/**
- * mode_show() - presents the current mode of the device
- * @dev:	Generic device associated with the device.
- * @attr:	Device attribute representing the device mode.
- * @buf:	Buffer of length PAGE_SIZE to report back the dev mode in ASCII.
- *
- * Return: The size of the ASCII string returned in @buf.
- */
-static ssize_t mode_show(struct device *dev,
-			 struct device_attribute *attr, char *buf)
-{
-	struct scsi_device *sdev = to_scsi_device(dev);
-
-	return scnprintf(buf, PAGE_SIZE, "%s\n",
-			 sdev->hostdata ? "superpipe" : "legacy");
-}
-
-/**
  * cxlflash_wait_for_pci_err_recovery() - wait for error recovery during probe
  * @cfg:	Internal structure associated with the host.
  */
@@ -859,69 +605,6 @@ static void cxlflash_wait_for_pci_err_recovery(struct cxlflash_cfg *cfg)
 				   !pci_channel_offline(pdev),
 				   CXLFLASH_PCI_ERROR_RECOVERY_TIMEOUT);
 }
-
-/*
- * Host attributes
- */
-static DEVICE_ATTR_RO(port0);
-static DEVICE_ATTR_RO(port1);
-static DEVICE_ATTR_RW(lun_mode);
-
-static struct device_attribute *cxlflash_host_attrs[] = {
-	&dev_attr_port0,
-	&dev_attr_port1,
-	&dev_attr_lun_mode,
-	NULL
-};
-
-/*
- * Device attributes
- */
-static DEVICE_ATTR_RO(mode);
-
-static struct device_attribute *cxlflash_dev_attrs[] = {
-	&dev_attr_mode,
-	NULL
-};
-
-/*
- * Host template
- */
-static struct scsi_host_template driver_template = {
-	.module = THIS_MODULE,
-	.name = CXLFLASH_ADAPTER_NAME,
-	.info = cxlflash_driver_info,
-	.ioctl = cxlflash_ioctl,
-	.proc_name = CXLFLASH_NAME,
-	.queuecommand = cxlflash_queuecommand,
-	.eh_device_reset_handler = cxlflash_eh_device_reset_handler,
-	.eh_host_reset_handler = cxlflash_eh_host_reset_handler,
-	.change_queue_depth = cxlflash_change_queue_depth,
-	.cmd_per_lun = 16,
-	.can_queue = CXLFLASH_MAX_CMDS,
-	.this_id = -1,
-	.sg_tablesize = SG_NONE,	/* No scatter gather support. */
-	.max_sectors = CXLFLASH_MAX_SECTORS,
-	.use_clustering = ENABLE_CLUSTERING,
-	.shost_attrs = cxlflash_host_attrs,
-	.sdev_attrs = cxlflash_dev_attrs,
-};
-
-/*
- * Device dependent values
- */
-static struct dev_dependent_vals dev_corsa_vals = { CXLFLASH_MAX_SECTORS };
-
-/*
- * PCI device binding table
- */
-static struct pci_device_id cxlflash_pci_table[] = {
-	{PCI_VENDOR_ID_IBM, PCI_DEVICE_ID_IBM_CORSA,
-	 PCI_ANY_ID, PCI_ANY_ID, 0, 0, (kernel_ulong_t)&dev_corsa_vals},
-	{}
-};
-
-MODULE_DEVICE_TABLE(pci, cxlflash_pci_table);
 
 /**
  * free_mem() - free memory associated with the AFU
@@ -2178,14 +1861,14 @@ out:
 }
 
 /**
- * cxlflash_afu_reset() - resets the AFU
+ * afu_reset() - resets the AFU
  * @cfg:	Internal structure associated with the host.
  *
  * Return:
  *	0 on success
  *	A failure value from internal services.
  */
-int cxlflash_afu_reset(struct cxlflash_cfg *cfg)
+static int afu_reset(struct cxlflash_cfg *cfg)
 {
 	int rc = 0;
 	/* Stop the context before the reset. Since the context is
@@ -2199,6 +1882,323 @@ int cxlflash_afu_reset(struct cxlflash_cfg *cfg)
 	pr_debug("%s: returning rc=%d\n", __func__, rc);
 	return rc;
 }
+
+/**
+ * cxlflash_eh_device_reset_handler() - reset a single LUN
+ * @scp:	SCSI command to send.
+ *
+ * Return:
+ *	SUCCESS as defined in scsi/scsi.h
+ *	FAILED as defined in scsi/scsi.h
+ */
+static int cxlflash_eh_device_reset_handler(struct scsi_cmnd *scp)
+{
+	int rc = SUCCESS;
+	struct Scsi_Host *host = scp->device->host;
+	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)host->hostdata;
+	struct afu *afu = cfg->afu;
+	int rcr = 0;
+
+	pr_debug("%s: (scp=%p) %d/%d/%d/%llu "
+		 "cdb=(%08X-%08X-%08X-%08X)\n", __func__, scp,
+		 host->host_no, scp->device->channel,
+		 scp->device->id, scp->device->lun,
+		 get_unaligned_be32(&((u32 *)scp->cmnd)[0]),
+		 get_unaligned_be32(&((u32 *)scp->cmnd)[1]),
+		 get_unaligned_be32(&((u32 *)scp->cmnd)[2]),
+		 get_unaligned_be32(&((u32 *)scp->cmnd)[3]));
+
+	switch (cfg->eeh_active) {
+	case EEH_STATE_NONE:
+		rcr = send_tmf(afu, scp, TMF_LUN_RESET);
+		if (unlikely(rcr))
+			rc = FAILED;
+		break;
+	case EEH_STATE_ACTIVE:
+		wait_event(cfg->eeh_waitq, cfg->eeh_active != EEH_STATE_ACTIVE);
+		break;
+	case EEH_STATE_FAILED:
+		break;
+	}
+
+	pr_debug("%s: returning rc=%d\n", __func__, rc);
+	return rc;
+}
+
+/**
+ * cxlflash_eh_host_reset_handler() - reset the host adapter
+ * @scp:	SCSI command from stack identifying host.
+ *
+ * Return:
+ *	SUCCESS as defined in scsi/scsi.h
+ *	FAILED as defined in scsi/scsi.h
+ */
+static int cxlflash_eh_host_reset_handler(struct scsi_cmnd *scp)
+{
+	int rc = SUCCESS;
+	int rcr = 0;
+	struct Scsi_Host *host = scp->device->host;
+	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)host->hostdata;
+
+	pr_debug("%s: (scp=%p) %d/%d/%d/%llu "
+		 "cdb=(%08X-%08X-%08X-%08X)\n", __func__, scp,
+		 host->host_no, scp->device->channel,
+		 scp->device->id, scp->device->lun,
+		 get_unaligned_be32(&((u32 *)scp->cmnd)[0]),
+		 get_unaligned_be32(&((u32 *)scp->cmnd)[1]),
+		 get_unaligned_be32(&((u32 *)scp->cmnd)[2]),
+		 get_unaligned_be32(&((u32 *)scp->cmnd)[3]));
+
+	switch (cfg->eeh_active) {
+	case EEH_STATE_NONE:
+		cfg->eeh_active = EEH_STATE_FAILED;
+		cxlflash_mark_contexts_error(cfg);
+		rcr = afu_reset(cfg);
+		if (rcr == 0)
+			rc = SUCCESS;
+		else
+			rc = FAILED;
+		cfg->eeh_active = EEH_STATE_NONE;
+		wake_up_all(&cfg->eeh_waitq);
+		break;
+	case EEH_STATE_ACTIVE:
+		wait_event(cfg->eeh_waitq, cfg->eeh_active != EEH_STATE_ACTIVE);
+		break;
+	case EEH_STATE_FAILED:
+		break;
+	}
+
+	pr_debug("%s: returning rc=%d\n", __func__, rc);
+	return rc;
+}
+
+/**
+ * cxlflash_change_queue_depth() - change the queue depth for the device
+ * @sdev:	SCSI device destined for queue depth change.
+ * @qdepth:	Requested queue depth value to set.
+ *
+ * The requested queue depth is capped to the maximum supported value.
+ *
+ * Return: The actual queue depth set.
+ */
+static int cxlflash_change_queue_depth(struct scsi_device *sdev, int qdepth)
+{
+
+	if (qdepth > CXLFLASH_MAX_CMDS_PER_LUN)
+		qdepth = CXLFLASH_MAX_CMDS_PER_LUN;
+
+	scsi_change_queue_depth(sdev, qdepth);
+	return sdev->queue_depth;
+}
+
+/**
+ * cxlflash_show_port_status() - queries and presents the current port status
+ * @port:	Desired port for status reporting.
+ * @afu:	AFU owning the specified port.
+ * @buf:	Buffer of length PAGE_SIZE to report back port status in ASCII.
+ *
+ * Return: The size of the ASCII string returned in @buf.
+ */
+static ssize_t cxlflash_show_port_status(u32 port, struct afu *afu, char *buf)
+{
+	char *disp_status;
+	u64 status;
+	u64 *fc_regs;
+
+	if (port > NUM_FC_PORTS)
+		return 0;
+
+	fc_regs = &afu->afu_map->global.fc_regs[port][0];
+	status = readq_be(&fc_regs[FC_MTIP_STATUS / 8]);
+	status &= FC_MTIP_STATUS_MASK;
+
+	if (status == FC_MTIP_STATUS_ONLINE)
+		disp_status = "online";
+	else if (status == FC_MTIP_STATUS_OFFLINE)
+		disp_status = "offline";
+	else
+		disp_status = "unknown";
+
+	return scnprintf(buf, PAGE_SIZE, "%s\n", disp_status);
+}
+
+/**
+ * port0_show() - queries and presents the current status of port 0
+ * @dev:	Generic device associated with the host owning the port.
+ * @attr:	Device attribute representing the port.
+ * @buf:	Buffer of length PAGE_SIZE to report back port status in ASCII.
+ *
+ * Return: The size of the ASCII string returned in @buf.
+ */
+static ssize_t port0_show(struct device *dev,
+			  struct device_attribute *attr,
+			  char *buf)
+{
+	struct Scsi_Host *shost = class_to_shost(dev);
+	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)shost->hostdata;
+	struct afu *afu = cfg->afu;
+
+	return cxlflash_show_port_status(0, afu, buf);
+}
+
+/**
+ * port1_show() - queries and presents the current status of port 1
+ * @dev:	Generic device associated with the host owning the port.
+ * @attr:	Device attribute representing the port.
+ * @buf:	Buffer of length PAGE_SIZE to report back port status in ASCII.
+ *
+ * Return: The size of the ASCII string returned in @buf.
+ */
+static ssize_t port1_show(struct device *dev,
+			  struct device_attribute *attr,
+			  char *buf)
+{
+	struct Scsi_Host *shost = class_to_shost(dev);
+	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)shost->hostdata;
+	struct afu *afu = cfg->afu;
+
+	return cxlflash_show_port_status(1, afu, buf);
+}
+
+/**
+ * lun_mode_show() - presents the current LUN mode of the host
+ * @dev:	Generic device associated with the host.
+ * @attr:	Device attribute representing the lun mode.
+ * @buf:	Buffer of length PAGE_SIZE to report back the LUN mode in ASCII.
+ *
+ * Return: The size of the ASCII string returned in @buf.
+ */
+static ssize_t lun_mode_show(struct device *dev,
+			     struct device_attribute *attr, char *buf)
+{
+	struct Scsi_Host *shost = class_to_shost(dev);
+	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)shost->hostdata;
+	struct afu *afu = cfg->afu;
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", afu->internal_lun);
+}
+
+/**
+ * lun_mode_store() - sets the LUN mode of the host
+ * @dev:	Generic device associated with the host.
+ * @attr:	Device attribute representing the lun mode.
+ * @buf:	Buffer of length PAGE_SIZE containing the LUN mode in ASCII.
+ * @count:	Length of data resizing in @buf.
+ *
+ * The CXL Flash AFU supports a dummy LUN mode where the external
+ * links and storage are not required. Space on the FPGA is used
+ * to create 1 or 2 small LUNs which are presented to the system
+ * as if they were a normal storage device. This feature is useful
+ * during development and also provides manufacturing with a way
+ * to test the AFU without an actual device.
+ *
+ * 0 = external LUN[s] (default)
+ * 1 = internal LUN (1 x 64K, 512B blocks, id 0)
+ * 2 = internal LUN (1 x 64K, 4K blocks, id 0)
+ * 3 = internal LUN (2 x 32K, 512B blocks, ids 0,1)
+ * 4 = internal LUN (2 x 32K, 4K blocks, ids 0,1)
+ *
+ * Return: The size of the ASCII string returned in @buf.
+ */
+static ssize_t lun_mode_store(struct device *dev,
+			      struct device_attribute *attr,
+			      const char *buf, size_t count)
+{
+	struct Scsi_Host *shost = class_to_shost(dev);
+	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)shost->hostdata;
+	struct afu *afu = cfg->afu;
+	int rc;
+	u32 lun_mode;
+
+	rc = kstrtouint(buf, 10, &lun_mode);
+	if (!rc && (lun_mode < 5) && (lun_mode != afu->internal_lun)) {
+		afu->internal_lun = lun_mode;
+		afu_reset(cfg);
+		scsi_scan_host(cfg->host);
+	}
+
+	return count;
+}
+
+/**
+ * mode_show() - presents the current mode of the device
+ * @dev:	Generic device associated with the device.
+ * @attr:	Device attribute representing the device mode.
+ * @buf:	Buffer of length PAGE_SIZE to report back the dev mode in ASCII.
+ *
+ * Return: The size of the ASCII string returned in @buf.
+ */
+static ssize_t mode_show(struct device *dev,
+			 struct device_attribute *attr, char *buf)
+{
+	struct scsi_device *sdev = to_scsi_device(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%s\n",
+			 sdev->hostdata ? "superpipe" : "legacy");
+}
+
+/*
+ * Host attributes
+ */
+static DEVICE_ATTR_RO(port0);
+static DEVICE_ATTR_RO(port1);
+static DEVICE_ATTR_RW(lun_mode);
+
+static struct device_attribute *cxlflash_host_attrs[] = {
+	&dev_attr_port0,
+	&dev_attr_port1,
+	&dev_attr_lun_mode,
+	NULL
+};
+
+/*
+ * Device attributes
+ */
+static DEVICE_ATTR_RO(mode);
+
+static struct device_attribute *cxlflash_dev_attrs[] = {
+	&dev_attr_mode,
+	NULL
+};
+
+/*
+ * Host template
+ */
+static struct scsi_host_template driver_template = {
+	.module = THIS_MODULE,
+	.name = CXLFLASH_ADAPTER_NAME,
+	.info = cxlflash_driver_info,
+	.ioctl = cxlflash_ioctl,
+	.proc_name = CXLFLASH_NAME,
+	.queuecommand = cxlflash_queuecommand,
+	.eh_device_reset_handler = cxlflash_eh_device_reset_handler,
+	.eh_host_reset_handler = cxlflash_eh_host_reset_handler,
+	.change_queue_depth = cxlflash_change_queue_depth,
+	.cmd_per_lun = 16,
+	.can_queue = CXLFLASH_MAX_CMDS,
+	.this_id = -1,
+	.sg_tablesize = SG_NONE,	/* No scatter gather support. */
+	.max_sectors = CXLFLASH_MAX_SECTORS,
+	.use_clustering = ENABLE_CLUSTERING,
+	.shost_attrs = cxlflash_host_attrs,
+	.sdev_attrs = cxlflash_dev_attrs,
+};
+
+/*
+ * Device dependent values
+ */
+static struct dev_dependent_vals dev_corsa_vals = { CXLFLASH_MAX_SECTORS };
+
+/*
+ * PCI device binding table
+ */
+static struct pci_device_id cxlflash_pci_table[] = {
+	{PCI_VENDOR_ID_IBM, PCI_DEVICE_ID_IBM_CORSA,
+	 PCI_ANY_ID, PCI_ANY_ID, 0, 0, (kernel_ulong_t)&dev_corsa_vals},
+	{}
+};
+
+MODULE_DEVICE_TABLE(pci, cxlflash_pci_table);
 
 /**
  * cxlflash_worker_thread() - work thread handler for the AFU
