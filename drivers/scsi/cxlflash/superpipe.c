@@ -467,7 +467,8 @@ retry:
 	scsi_cmd[1] = SAI_READ_CAPACITY_16;	/* service action */
 	put_unaligned_be32(CMD_BUFSIZE, &scsi_cmd[10]);
 
-	pr_debug("%s: sending cmd(0x%x)\n", __func__, scsi_cmd[0]);
+	pr_debug("%s: %ssending cmd(0x%x)\n", __func__, retry_cnt ? "re" : "",
+		 scsi_cmd[0]);
 
 	result = scsi_execute(sdev, scsi_cmd, DMA_FROM_DEVICE, cmd_buf,
 			      CMD_BUFSIZE, sense_buf,
@@ -492,8 +493,12 @@ retry:
 					/* fall through */
 				case 0x2A: /* Device capacity changed */
 				case 0x3F: /* Report LUNs changed */
-					if (retry_cnt++ < MC_RETRY_CNT)
+					/* Retry the command once more */
+					if (retry_cnt++ < 1) {
+						kfree(cmd_buf);
+						kfree(sense_buf);
 						goto retry;
+					}
 				}
 				break;
 			default:
