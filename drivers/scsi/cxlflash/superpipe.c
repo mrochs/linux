@@ -1795,7 +1795,7 @@ static int process_sense(struct scsi_device *sdev,
 	rc = scsi_normalize_sense((const u8 *)&verify->sense_data,
 				  DK_CXLFLASH_VERIFY_SENSE_LEN, &sshdr);
 	if (!rc) {
-		pr_err("%s: Failed for normalize sense data!\n", __func__);
+		pr_err("%s: Failed to normalize sense data!\n", __func__);
 		rc = -EINVAL;
 		goto out;
 	}
@@ -1858,7 +1858,7 @@ static int cxlflash_disk_verify(struct scsi_device *sdev,
 	res_hndl_t rhndl = verify->rsrc_handle;
 	u64 ctxid = DECODE_CTXID(verify->context_id),
 	    rctxid = verify->context_id;
-	u64 last_lba = 0ULL;
+	u64 last_lba = 0;
 
 	pr_debug("%s: ctxid=%llu rhndl=%016llX, hint=%016llX, flags=%016llX\n",
 		 __func__, ctxid, verify->rsrc_handle, verify->hint,
