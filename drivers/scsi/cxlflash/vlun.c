@@ -452,6 +452,8 @@ static int write_same16(struct scsi_device *sdev,
 	}
 
 out:
+	kfree(cmd_buf);
+	kfree(sense_buf);
 	pr_debug("%s: returning rc=%d\n", __func__, rc);
 	return rc;
 }
