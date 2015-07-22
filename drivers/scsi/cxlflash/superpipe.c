@@ -1208,6 +1208,7 @@ static int cxlflash_mmap_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 
 		get_page(err_page);
 		vmf->page = err_page;
+		vma->vm_page_prot = pgprot_cached(vma->vm_page_prot);
 	}
 
 out:
