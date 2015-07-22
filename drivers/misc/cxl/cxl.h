@@ -318,8 +318,6 @@ static const cxl_p2n_reg_t CXL_PSL_WED_An     = {0x0A0};
 #define CXL_MAX_SLICES 4
 #define MAX_AFU_MMIO_REGS 3
 
-#define CXL_MODE_DEDICATED   0x1
-#define CXL_MODE_DIRECTED    0x2
 #define CXL_MODE_TIME_SLICED 0x4
 #define CXL_SUPPORTED_MODES (CXL_MODE_DEDICATED | CXL_MODE_DIRECTED)
 
@@ -364,6 +362,10 @@ struct cxl_afu {
 	struct mutex contexts_lock;
 	struct mutex spa_mutex;
 	spinlock_t afu_cntl_lock;
+
+	/* AFU error buffer fields and bin attribute for sysfs */
+	u64 eb_len, eb_offset;
+	struct bin_attribute attr_eb;
 
 	/*
 	 * Only the first part of the SPA is used for the process element
@@ -572,6 +574,9 @@ static inline void __iomem *_cxl_p2n_addr(struct cxl_afu *afu, cxl_p2n_reg_t reg
 	in_le32((afu)->afu_desc_mmio + (afu)->crs_offset + ((cr) * (afu)->crs_len) + (off))
 u16 cxl_afu_cr_read16(struct cxl_afu *afu, int cr, u64 off);
 u8 cxl_afu_cr_read8(struct cxl_afu *afu, int cr, u64 off);
+
+ssize_t cxl_afu_read_err_buffer(struct cxl_afu *afu, char *buf,
+				loff_t off, size_t count);
 
 
 struct cxl_calls {

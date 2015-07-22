@@ -57,8 +57,7 @@ struct pnv_ioda_pe {
 	/* "Base" iommu table, ie, 4K TCEs, 32-bit DMA */
 	int			tce32_seg;
 	int			tce32_segcount;
-	struct iommu_table	*tce32_table;
-	phys_addr_t		tce_inval_reg_phys;
+	struct iommu_table_group table_group;
 
 	/* 64-bit TCE bypass region */
 	bool			tce_bypass_enabled;
@@ -120,6 +119,7 @@ struct pnv_phb {
 	union {
 		struct {
 			struct iommu_table iommu_table;
+			struct iommu_table_group table_group;
 		} p5ioc2;
 
 		struct {
@@ -183,6 +183,12 @@ struct pnv_phb {
 			 * boot for resource allocation purposes
 			 */
 			struct list_head	pe_dma_list;
+
+			/* TCE cache invalidate registers (physical and
+			 * remapped)
+			 */
+			phys_addr_t		tce_inval_reg_phys;
+			__be64 __iomem		*tce_inval_reg;
 		} ioda;
 	};
 
@@ -197,6 +203,13 @@ struct pnv_phb {
 };
 
 extern struct pci_ops pnv_pci_ops;
+extern int pnv_tce_build(struct iommu_table *tbl, long index, long npages,
+		unsigned long uaddr, enum dma_data_direction direction,
+		struct dma_attrs *attrs);
+extern void pnv_tce_free(struct iommu_table *tbl, long index, long npages);
+extern int pnv_tce_xchg(struct iommu_table *tbl, long index,
+		unsigned long *hpa, enum dma_data_direction *direction);
+extern unsigned long pnv_tce_get(struct iommu_table *tbl, long index);
 
 void pnv_pci_dump_phb_diag_data(struct pci_controller *hose,
 				unsigned char *log_buff);
@@ -204,6 +217,13 @@ int pnv_pci_cfg_read(struct pci_dn *pdn,
 		     int where, int size, u32 *val);
 int pnv_pci_cfg_write(struct pci_dn *pdn,
 		      int where, int size, u32 val);
+extern struct iommu_table *pnv_pci_table_alloc(int nid);
+
+extern long pnv_pci_link_table_and_group(int node, int num,
+		struct iommu_table *tbl,
+		struct iommu_table_group *table_group);
+extern void pnv_pci_unlink_table_and_group(struct iommu_table *tbl,
+		struct iommu_table_group *table_group);
 extern void pnv_pci_setup_iommu_table(struct iommu_table *tbl,
 				      void *tce_mem, u64 tce_size,
 				      u64 dma_offset, unsigned page_shift);
@@ -216,9 +236,7 @@ extern void pnv_pci_reset_secondary_bus(struct pci_dev *dev);
 extern int pnv_eeh_phb_reset(struct pci_controller *hose, int option);
 
 extern void pnv_pci_dma_dev_setup(struct pci_dev *pdev);
-#ifdef CONFIG_PCI_MSI
 extern int pnv_setup_msi_irqs(struct pci_dev *pdev, int nvec, int type);
 extern void pnv_teardown_msi_irqs(struct pci_dev *pdev);
-#endif
 
 #endif /* __POWERNV_PCI_H */
