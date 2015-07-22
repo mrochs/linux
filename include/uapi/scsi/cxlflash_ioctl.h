@@ -52,11 +52,13 @@ struct dk_cxlflash_attach {
 	__u64 adap_fd;			/* Returned adapter file descriptor */
 	__u64 last_lba;			/* Returned last LBA on the device */
 	__u64 max_xfer;			/* Returned max transfer size, blocks */
+	__u64 reserved[8];		/* Reserved for future use */
 };
 
 struct dk_cxlflash_detach {
 	struct dk_cxlflash_hdr hdr;	/* Common fields */
 	__u64 context_id;		/* Context to detach */
+	__u64 reserved[8];		/* Reserved for future use */
 };
 
 struct dk_cxlflash_udirect {
@@ -64,6 +66,7 @@ struct dk_cxlflash_udirect {
 	__u64 context_id;		/* Context to own physical resources */
 	__u64 rsrc_handle;		/* Returned resource handle */
 	__u64 last_lba;			/* Returned last LBA on the device */
+	__u64 reserved[8];		/* Reserved for future use */
 };
 
 struct dk_cxlflash_uvirtual {
@@ -72,12 +75,14 @@ struct dk_cxlflash_uvirtual {
 	__u64 lun_size;			/* Requested size, in 4K blocks */
 	__u64 rsrc_handle;		/* Returned resource handle */
 	__u64 last_lba;			/* Returned last LBA of LUN */
+	__u64 reserved[8];		/* Reserved for future use */
 };
 
 struct dk_cxlflash_release {
 	struct dk_cxlflash_hdr hdr;	/* Common fields */
 	__u64 context_id;		/* Context owning resources */
 	__u64 rsrc_handle;		/* Resource handle to release */
+	__u64 reserved[8];		/* Reserved for future use */
 };
 
 struct dk_cxlflash_resize {
@@ -86,6 +91,7 @@ struct dk_cxlflash_resize {
 	__u64 rsrc_handle;		/* Resource handle of LUN to resize */
 	__u64 req_size;			/* New requested size, in 4K blocks */
 	__u64 last_lba;			/* Returned last LBA of LUN */
+	__u64 reserved[8];		/* Reserved for future use */
 };
 
 struct dk_cxlflash_clone {
@@ -93,6 +99,7 @@ struct dk_cxlflash_clone {
 	__u64 context_id_src;		/* Context to clone from */
 	__u64 context_id_dst;		/* Context to clone to */
 	__u64 adap_fd_src;		/* Source context adapter fd */
+	__u64 reserved[8];		/* Reserved for future use */
 };
 
 #define DK_CXLFLASH_VERIFY_SENSE_LEN	18
@@ -106,6 +113,7 @@ struct dk_cxlflash_verify {
 	__u64 last_lba;			/* Returned last LBA of device */
 	__u8 sense_data[DK_CXLFLASH_VERIFY_SENSE_LEN]; /* SCSI sense data */
 	__u8 pad[6];			/* Pad to next 8-byte boundary */
+	__u64 reserved[8];		/* Reserved for future use */
 };
 
 #define DK_CXLFLASH_RECOVER_AFU_CONTEXT_RESET	0x8000000000000000ULL
@@ -116,6 +124,7 @@ struct dk_cxlflash_recover_afu {
 	__u64 context_id;		/* Context to recover / updated ID */
 	__u64 mmio_size;		/* Returned size of MMIO area */
 	__u64 adap_fd;			/* Returned adapter file descriptor */
+	__u64 reserved[8];		/* Reserved for future use */
 };
 
 #define DK_CXLFLASH_MANAGE_LUN_WWID_LEN			16
@@ -126,6 +135,7 @@ struct dk_cxlflash_recover_afu {
 struct dk_cxlflash_manage_lun {
 	struct dk_cxlflash_hdr hdr;			/* Common fields */
 	__u8 wwid[DK_CXLFLASH_MANAGE_LUN_WWID_LEN];	/* Page83 WWID, NAA-6 */
+	__u64 reserved[8];				/* Rsvd, future use */
 };
 
 union cxlflash_ioctls {
