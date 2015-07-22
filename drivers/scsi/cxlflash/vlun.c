@@ -63,7 +63,7 @@ static void marshal_clone_to_rele(struct dk_cxlflash_clone *clone,
  */
 static int ba_init(struct ba_lun *ba_lun)
 {
-	struct ba_lun_info *lun_info = NULL;
+	struct ba_lun_info *bali = NULL;
 	int lun_size_au = 0, i = 0;
 	int last_word_underflow = 0;
 	u64 *lam;
@@ -80,65 +80,65 @@ static int ba_init(struct ba_lun *ba_lun)
 	}
 
 	/* Allocate lun information container */
-	lun_info = kzalloc(sizeof(struct ba_lun_info), GFP_KERNEL);
-	if (unlikely(!lun_info)) {
+	bali = kzalloc(sizeof(struct ba_lun_info), GFP_KERNEL);
+	if (unlikely(!bali)) {
 		pr_err("%s: Failed to allocate lun_info for lun_id %llX\n",
 		       __func__, ba_lun->lun_id);
 		return -ENOMEM;
 	}
 
-	lun_info->total_aus = lun_size_au;
-	lun_info->lun_bmap_size = lun_size_au / 64;
+	bali->total_aus = lun_size_au;
+	bali->lun_bmap_size = lun_size_au / 64;
 
 	if (lun_size_au % 64)
-		lun_info->lun_bmap_size++;
+		bali->lun_bmap_size++;
 
 	/* Allocate bitmap space */
-	lun_info->lun_alloc_map = kzalloc((lun_info->lun_bmap_size *
+	bali->lun_alloc_map = kzalloc((bali->lun_bmap_size *
 					   sizeof(u64)), GFP_KERNEL);
-	if (unlikely(!lun_info->lun_alloc_map)) {
+	if (unlikely(!bali->lun_alloc_map)) {
 		pr_err("%s: Failed to allocate lun allocation map: "
 		       "lun_id = %llX\n", __func__, ba_lun->lun_id);
-		kfree(lun_info);
+		kfree(bali);
 		return -ENOMEM;
 	}
 
 	/* Initialize the bit map size and set all bits to '1' */
-	lun_info->free_aun_cnt = lun_size_au;
+	bali->free_aun_cnt = lun_size_au;
 
-	for (i = 0; i < lun_info->lun_bmap_size; i++)
-		lun_info->lun_alloc_map[i] = 0xFFFFFFFFFFFFFFFFULL;
+	for (i = 0; i < bali->lun_bmap_size; i++)
+		bali->lun_alloc_map[i] = 0xFFFFFFFFFFFFFFFFULL;
 
 	/* If the last word not fully utilized, mark extra bits as allocated */
-	last_word_underflow = (lun_info->lun_bmap_size * 64) -
-	    lun_info->free_aun_cnt;
+	last_word_underflow = (bali->lun_bmap_size * 64) -
+	    bali->free_aun_cnt;
 	if (last_word_underflow > 0) {
-		lam = &lun_info->lun_alloc_map[lun_info->lun_bmap_size - 1];
+		lam = &bali->lun_alloc_map[bali->lun_bmap_size - 1];
 		for (i = (63 - last_word_underflow + 1); i < 64; i++)
 			clear_bit(i, (ulong *)lam);
 	}
 
 	/* Initialize high elevator index, low/curr already at 0 from kzalloc */
-	lun_info->free_high_idx = lun_info->lun_bmap_size;
+	bali->free_high_idx = bali->lun_bmap_size;
 
 	/* Allocate clone map */
-	lun_info->aun_clone_map = kzalloc((lun_info->total_aus *
+	bali->aun_clone_map = kzalloc((bali->total_aus *
 					   sizeof(u8)), GFP_KERNEL);
-	if (unlikely(!lun_info->aun_clone_map)) {
+	if (unlikely(!bali->aun_clone_map)) {
 		pr_err("%s: Failed to allocate clone map: lun_id = %llX\n",
 		       __func__, ba_lun->lun_id);
-		kfree(lun_info->lun_alloc_map);
-		kfree(lun_info);
+		kfree(bali->lun_alloc_map);
+		kfree(bali);
 		return -ENOMEM;
 	}
 
 	/* Pass the allocated lun info as a handle to the user */
-	ba_lun->ba_lun_handle = (void *)lun_info;
+	ba_lun->ba_lun_handle = (void *)bali;
 
 	pr_debug("%s: Successfully initialized the LUN: "
 		 "lun_id = %llX, bitmap size = %X, free_aun_cnt = %llX\n",
-		__func__, ba_lun->lun_id, lun_info->lun_bmap_size,
-		lun_info->free_aun_cnt);
+		__func__, ba_lun->lun_id, bali->lun_bmap_size,
+		bali->free_aun_cnt);
 	return 0;
 }
 
@@ -146,32 +146,32 @@ static int ba_init(struct ba_lun *ba_lun)
  * find_free_range() - locates a free bit within the block allocator
  * @low:	First word in block allocator to start search.
  * @high:	Last word in block allocator to search.
- * @lun_info:	LUN information structure owning the block allocator to search.
+ * @bali:	LUN information structure owning the block allocator to search.
  * @bit_word:	Passes back the word in the block allocator owning the free bit.
  *
  * Return: The bit position within the passed back word, -1 on failure
  */
 static int find_free_range(u32 low,
 			   u32 high,
-			   struct ba_lun_info *lun_info, int *bit_word)
+			   struct ba_lun_info *bali, int *bit_word)
 {
 	int i;
 	u64 bit_pos = -1;
 	ulong *lam, num_bits;
 
 	for (i = low; i < high; i++)
-		if (lun_info->lun_alloc_map[i] != 0) {
-			lam = (ulong *)&lun_info->lun_alloc_map[i];
+		if (bali->lun_alloc_map[i] != 0) {
+			lam = (ulong *)&bali->lun_alloc_map[i];
 			num_bits = (sizeof(*lam) * BITS_PER_BYTE);
 			bit_pos = find_first_bit(lam, num_bits);
 
 			pr_devel("%s: Found free bit %llX in lun "
 				 "map entry %llX at bitmap index = %X\n",
-				 __func__, bit_pos, lun_info->lun_alloc_map[i],
+				 __func__, bit_pos, bali->lun_alloc_map[i],
 				 i);
 
 			*bit_word = i;
-			lun_info->free_aun_cnt--;
+			bali->free_aun_cnt--;
 			clear_bit(bit_pos, lam);
 			break;
 		}
@@ -189,27 +189,27 @@ static u64 ba_alloc(struct ba_lun *ba_lun)
 {
 	u64 bit_pos = -1;
 	int bit_word = 0;
-	struct ba_lun_info *lun_info = NULL;
+	struct ba_lun_info *bali = NULL;
 
-	lun_info = (struct ba_lun_info *)ba_lun->ba_lun_handle;
+	bali = (struct ba_lun_info *)ba_lun->ba_lun_handle;
 
 	pr_debug("%s: Received block allocation request: "
 		 "lun_id = %llX, free_aun_cnt = %llX\n",
-		 __func__, ba_lun->lun_id, lun_info->free_aun_cnt);
+		 __func__, ba_lun->lun_id, bali->free_aun_cnt);
 
-	if (lun_info->free_aun_cnt == 0) {
+	if (bali->free_aun_cnt == 0) {
 		pr_err("%s: No space left on LUN: lun_id = %llX\n",
 		       __func__, ba_lun->lun_id);
 		return -1ULL;
 	}
 
 	/* Search to find a free entry, curr->high then low->curr */
-	bit_pos = find_free_range(lun_info->free_curr_idx,
-				  lun_info->free_high_idx, lun_info, &bit_word);
+	bit_pos = find_free_range(bali->free_curr_idx,
+				  bali->free_high_idx, bali, &bit_word);
 	if (bit_pos == -1) {
-		bit_pos = find_free_range(lun_info->free_low_idx,
-					  lun_info->free_curr_idx,
-					  lun_info, &bit_word);
+		bit_pos = find_free_range(bali->free_low_idx,
+					  bali->free_curr_idx,
+					  bali, &bit_word);
 		if (bit_pos == -1) {
 			pr_err("%s: Could not find an allocation unit on LUN: "
 			       "lun_id = %llX\n", __func__, ba_lun->lun_id);
@@ -219,14 +219,14 @@ static u64 ba_alloc(struct ba_lun *ba_lun)
 
 	/* Update the free_curr_idx */
 	if (bit_pos == 63)
-		lun_info->free_curr_idx = bit_word + 1;
+		bali->free_curr_idx = bit_word + 1;
 	else
-		lun_info->free_curr_idx = bit_word;
+		bali->free_curr_idx = bit_word;
 
 	pr_debug("%s: Allocating AU number %llX, on lun_id %llX, "
 		 "free_aun_cnt = %llX\n", __func__,
 		 ((bit_word * 64) + bit_pos), ba_lun->lun_id,
-		 lun_info->free_aun_cnt);
+		 bali->free_aun_cnt);
 
 	return (u64) ((bit_word * 64) + bit_pos);
 }
@@ -238,14 +238,14 @@ static u64 ba_alloc(struct ba_lun *ba_lun)
  *
  * Return: 0 on success, -1 on failure
  */
-static int validate_alloc(struct ba_lun_info *lun_info, u64 aun)
+static int validate_alloc(struct ba_lun_info *bali, u64 aun)
 {
 	int idx = 0, bit_pos = 0;
 
 	idx = aun / 64;
 	bit_pos = aun % 64;
 
-	if (test_bit(bit_pos, (ulong *)&lun_info->lun_alloc_map[idx]))
+	if (test_bit(bit_pos, (ulong *)&bali->lun_alloc_map[idx]))
 		return -1;
 
 	return 0;
@@ -261,11 +261,11 @@ static int validate_alloc(struct ba_lun_info *lun_info, u64 aun)
 static int ba_free(struct ba_lun *ba_lun, u64 to_free)
 {
 	int idx = 0, bit_pos = 0;
-	struct ba_lun_info *lun_info = NULL;
+	struct ba_lun_info *bali = NULL;
 
-	lun_info = (struct ba_lun_info *)ba_lun->ba_lun_handle;
+	bali = (struct ba_lun_info *)ba_lun->ba_lun_handle;
 
-	if (validate_alloc(lun_info, to_free)) {
+	if (validate_alloc(bali, to_free)) {
 		pr_err("%s: The AUN %llX is not allocated on lun_id %llX\n",
 		       __func__, to_free, ba_lun->lun_id);
 		return -1;
@@ -273,30 +273,30 @@ static int ba_free(struct ba_lun *ba_lun, u64 to_free)
 
 	pr_debug("%s: Received a request to free AU %llX on lun_id %llX, "
 		 "free_aun_cnt = %llX\n", __func__, to_free, ba_lun->lun_id,
-		 lun_info->free_aun_cnt);
+		 bali->free_aun_cnt);
 
-	if (lun_info->aun_clone_map[to_free] > 0) {
+	if (bali->aun_clone_map[to_free] > 0) {
 		pr_debug("%s: AUN %llX on lun_id %llX has been cloned. Clone "
 			 "count = %X\n", __func__, to_free, ba_lun->lun_id,
-			 lun_info->aun_clone_map[to_free]);
-		lun_info->aun_clone_map[to_free]--;
+			 bali->aun_clone_map[to_free]);
+		bali->aun_clone_map[to_free]--;
 		return 0;
 	}
 
 	idx = to_free / 64;
 	bit_pos = to_free % 64;
 
-	set_bit(bit_pos, (ulong *)&lun_info->lun_alloc_map[idx]);
-	lun_info->free_aun_cnt++;
+	set_bit(bit_pos, (ulong *)&bali->lun_alloc_map[idx]);
+	bali->free_aun_cnt++;
 
-	if (idx < lun_info->free_low_idx)
-		lun_info->free_low_idx = idx;
-	else if (idx > lun_info->free_high_idx)
-		lun_info->free_high_idx = idx;
+	if (idx < bali->free_low_idx)
+		bali->free_low_idx = idx;
+	else if (idx > bali->free_high_idx)
+		bali->free_high_idx = idx;
 
 	pr_debug("%s: Successfully freed AU at bit_pos %X, bit map index %X on "
 		 "lun_id %llX, free_aun_cnt = %llX\n", __func__, bit_pos, idx,
-		 ba_lun->lun_id, lun_info->free_aun_cnt);
+		 ba_lun->lun_id, bali->free_aun_cnt);
 
 	return 0;
 }
@@ -310,10 +310,10 @@ static int ba_free(struct ba_lun *ba_lun, u64 to_free)
  */
 static int ba_clone(struct ba_lun *ba_lun, u64 to_clone)
 {
-	struct ba_lun_info *lun_info =
+	struct ba_lun_info *bali =
 	    (struct ba_lun_info *)ba_lun->ba_lun_handle;
 
-	if (validate_alloc(lun_info, to_clone)) {
+	if (validate_alloc(bali, to_clone)) {
 		pr_err("%s: AUN %llX is not allocated on lun_id %llX\n",
 		       __func__, to_clone, ba_lun->lun_id);
 		return -1;
@@ -322,13 +322,13 @@ static int ba_clone(struct ba_lun *ba_lun, u64 to_clone)
 	pr_debug("%s: Received a request to clone AUN %llX on lun_id %llX\n",
 		 __func__, to_clone, ba_lun->lun_id);
 
-	if (lun_info->aun_clone_map[to_clone] == MAX_AUN_CLONE_CNT) {
+	if (bali->aun_clone_map[to_clone] == MAX_AUN_CLONE_CNT) {
 		pr_err("%s: AUN %llX on lun_id %llX hit max clones already\n",
 		       __func__, to_clone, ba_lun->lun_id);
 		return -1;
 	}
 
-	lun_info->aun_clone_map[to_clone]++;
+	bali->aun_clone_map[to_clone]++;
 
 	return 0;
 }
@@ -341,10 +341,10 @@ static int ba_clone(struct ba_lun *ba_lun, u64 to_clone)
  */
 static u64 ba_space(struct ba_lun *ba_lun)
 {
-	struct ba_lun_info *lun_info =
+	struct ba_lun_info *bali =
 	    (struct ba_lun_info *)ba_lun->ba_lun_handle;
 
-	return lun_info->free_aun_cnt;
+	return bali->free_aun_cnt;
 }
 
 /**
@@ -355,13 +355,13 @@ static u64 ba_space(struct ba_lun *ba_lun)
  */
 void cxlflash_ba_terminate(struct ba_lun *ba_lun)
 {
-	struct ba_lun_info *lun_info =
+	struct ba_lun_info *bali =
 	    (struct ba_lun_info *)ba_lun->ba_lun_handle;
 
-	if (lun_info) {
-		kfree(lun_info->aun_clone_map);
-		kfree(lun_info->lun_alloc_map);
-		kfree(lun_info);
+	if (bali) {
+		kfree(bali->aun_clone_map);
+		kfree(bali->lun_alloc_map);
+		kfree(bali);
 		ba_lun->ba_lun_handle = NULL;
 	}
 }
