@@ -34,7 +34,7 @@ MODULE_AUTHOR("Matthew R. Ochs <mrochs@linux.vnet.ibm.com>");
 MODULE_LICENSE("GPL");
 
 /**
- * cxlflash_cmd_checkout() - checks out an AFU command
+ * cmd_checkout() - checks out an AFU command
  * @afu:	AFU to checkout from.
  *
  * Commands are checked out in a round-robin fashion. Note that since
@@ -45,7 +45,7 @@ MODULE_LICENSE("GPL");
  *
  * Return: The checked out command or NULL when command pool is empty.
  */
-struct afu_cmd *cxlflash_cmd_checkout(struct afu *afu)
+static struct afu_cmd *cmd_checkout(struct afu *afu)
 {
 	int k, dec = CXLFLASH_NUM_CMDS;
 	struct afu_cmd *cmd;
@@ -68,7 +68,7 @@ struct afu_cmd *cxlflash_cmd_checkout(struct afu *afu)
 }
 
 /**
- * cxlflash_cmd_checkin() - checks in an AFU command
+ * cmd_checkin() - checks in an AFU command
  * @cmd:	AFU command to checkin.
  *
  * Safe to pass commands that have already been checked in. Several
@@ -77,7 +77,7 @@ struct afu_cmd *cxlflash_cmd_checkout(struct afu *afu)
  * to avoid clobbering values in the event that the command is checked
  * out right away.
  */
-void cxlflash_cmd_checkin(struct afu_cmd *cmd)
+static void cmd_checkin(struct afu_cmd *cmd)
 {
 	cmd->rcb.scp = NULL;
 	cmd->rcb.timeout = 0;
@@ -233,7 +233,7 @@ static void cmd_complete(struct afu_cmd *cmd)
 			scp->result = (DID_OK << 16);
 
 		cmd_is_tmf = cmd->cmd_tmf;
-		cxlflash_cmd_checkin(cmd); /* Don't use cmd after here */
+		cmd_checkin(cmd); /* Don't use cmd after here */
 
 		pr_debug_ratelimited("%s: calling scsi_done scp=%p result=%X "
 				     "ioasc=%d\n", __func__, scp, scp->result,
@@ -414,7 +414,7 @@ static int send_tmf(struct afu *afu, struct scsi_cmnd *scp, u64 tmfcmd)
 	int rc = 0;
 	ulong to;
 
-	cmd = cxlflash_cmd_checkout(afu);
+	cmd = cmd_checkout(afu);
 	if (unlikely(!cmd)) {
 		pr_err("%s: could not get a free command\n", __func__);
 		rc = SCSI_MLQUEUE_HOST_BUSY;
@@ -450,7 +450,7 @@ static int send_tmf(struct afu *afu, struct scsi_cmnd *scp, u64 tmfcmd)
 	/* Send the command */
 	rc = send_cmd(afu, cmd);
 	if (unlikely(rc)) {
-		cxlflash_cmd_checkin(cmd);
+		cmd_checkin(cmd);
 		spin_lock_irqsave(&cfg->tmf_slock, lock_flags);
 		cfg->tmf_active = false;
 		spin_unlock_irqrestore(&cfg->tmf_slock, lock_flags);
@@ -538,7 +538,7 @@ static int cxlflash_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *scp)
 		break;
 	}
 
-	cmd = cxlflash_cmd_checkout(afu);
+	cmd = cmd_checkout(afu);
 	if (unlikely(!cmd)) {
 		pr_err("%s: could not get a free command\n", __func__);
 		rc = SCSI_MLQUEUE_HOST_BUSY;
@@ -580,7 +580,7 @@ static int cxlflash_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *scp)
 	/* Send the command */
 	rc = send_cmd(afu, cmd);
 	if (unlikely(rc)) {
-		cxlflash_cmd_checkin(cmd);
+		cmd_checkin(cmd);
 		scsi_dma_unmap(scp);
 	}
 
@@ -1813,7 +1813,7 @@ int cxlflash_afu_sync(struct afu *afu, ctx_hndl_t ctx_hndl_u,
 
 	mutex_lock(&sync_active);
 retry:
-	cmd = cxlflash_cmd_checkout(afu);
+	cmd = cmd_checkout(afu);
 	if (unlikely(!cmd)) {
 		retry_cnt++;
 		udelay(1000 * retry_cnt);
@@ -1855,7 +1855,7 @@ retry:
 out:
 	mutex_unlock(&sync_active);
 	if (cmd)
-		cxlflash_cmd_checkin(cmd);
+		cmd_checkin(cmd);
 	pr_debug("%s: returning rc=%d\n", __func__, rc);
 	return rc;
 }
