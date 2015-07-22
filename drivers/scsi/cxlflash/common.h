@@ -104,8 +104,6 @@ struct cxlflash_cfg {
 	atomic_t scan_host_needed;
 
 	struct cxl_afu *cxl_afu;
-
-	struct pci_pool *cxlflash_cmd_pool;
 	struct pci_dev *parent_dev;
 
 	struct mutex ctx_tbl_list_mutex;
@@ -191,8 +189,6 @@ static inline u64 lun_to_lunid(u64 lun)
 	return swab64(lun_id);
 }
 
-struct afu_cmd *cxlflash_cmd_checkout(struct afu *);
-void cxlflash_cmd_checkin(struct afu_cmd *);
 int cxlflash_afu_sync(struct afu *, ctx_hndl_t, res_hndl_t, u8);
 void cxlflash_list_init(void);
 void cxlflash_list_terminate(void);
