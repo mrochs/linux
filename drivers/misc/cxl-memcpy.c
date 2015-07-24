@@ -355,6 +355,43 @@ struct file_operations cxl_memcpy_fops = {
 	.release        = device_afu_release,
 };
 
+#define MEMCPY_EVENT_TYPE_1 1
+
+struct memcpy_driver_event {
+	__u32 type;
+	__u32 flags;
+	__u64 info;
+};
+
+
+static bool memcpy_event_pending(struct cxl_context *cxl)
+{
+	printk("memcpy_event_pending called\n");
+
+	/* For testing */
+	return true;
+}
+
+static void memcpy_deliver_event(struct cxl_event *event,
+				 struct cxl_context *cxl, size_t max_size)
+{
+	struct memcpy_driver_event *memcpy_event =
+		(struct memcpy_driver_event *)&event->afu_driver_event;
+
+	printk("memcpy_deliver_event max_size: %zu\n", max_size);
+
+	event->header.size += sizeof(struct memcpy_driver_event);
+
+	memcpy_event->type = MEMCPY_EVENT_TYPE_1;
+	memcpy_event->flags = 0;
+	memcpy_event->info = 0x12345678;
+}
+
+static struct cxl_afu_driver_ops memcpy_driver_ops = {
+	.event_pending = memcpy_event_pending,
+	.deliver_event = memcpy_deliver_event,
+};
+
 static long device_ioctl_get_fd(struct pci_dev *dev,
 				struct cxl_memcpy_ioctl_get_fd __user *arg)
 {
@@ -381,6 +418,9 @@ static long device_ioctl_get_fd(struct pci_dev *dev,
 
 	/* Create and attach a new file descriptor */
 	file = cxl_get_fd(ctx, &cxl_memcpy_fops, &fd);
+
+	/* Hook up AFU driver specific events */
+	cxl_set_driver_ops(ctx, &memcpy_driver_ops);
 
 	rc = cxl_start_work(ctx, &work.work);
 	if (rc) {
