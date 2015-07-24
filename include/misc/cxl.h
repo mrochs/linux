@@ -210,4 +210,33 @@ ssize_t cxl_fd_read(struct file *file, char __user *buf, size_t count,
 void cxl_perst_reloads_same_image(struct cxl_afu *afu,
 				  bool perst_reloads_same_image);
 
+/*
+ * AFU driver ops allows an AFU driver to create their own events to pass to
+ * userspace through the file descriptor as a simpler alternative to overriding
+ * the read() and poll() calls that works with the generic cxl events. These
+ * events are given priority over the generic cxl events, so will be delivered
+ * first if multiple types of events are pending.
+ *
+ * even_pending() will be called by the cxl driver to check if an event is
+ * pending (e.g. in select/poll/read calls).
+ *
+ * deliver_event() will be called to fill out a cxl_event structure with the
+ * driver specific event. The header will already have the type and
+ * process_element fields filled in, and header.size will be set to
+ * sizeof(struct cxl_event_header). The AFU driver can extend that size up to
+ * max_size (which can be increased if necessary by reserving more space in the
+ * struct cxl_event_afu_driver_reserved definition).
+ *
+ * Both of these calls are made with a spin lock held, so they must not sleep.
+ */
+struct cxl_afu_driver_ops {
+	bool (*event_pending) (struct cxl_context *cxl);
+	void (*deliver_event) (struct cxl_event *event,
+			       struct cxl_context *cxl, size_t max_size);
+};
+
+/* Associate the above driver ops with a specific context */
+void cxl_set_driver_ops(struct cxl_context *ctx,
+			struct cxl_afu_driver_ops *ops);
+
 #endif /* _MISC_CXL_H */
