@@ -67,6 +67,7 @@ enum cxl_event_type {
 	CXL_EVENT_AFU_INTERRUPT = 1,
 	CXL_EVENT_DATA_STORAGE  = 2,
 	CXL_EVENT_AFU_ERROR     = 3,
+	CXL_EVENT_AFU_DRIVER    = 4,
 };
 
 struct cxl_event_header {
@@ -98,12 +99,24 @@ struct cxl_event_afu_error {
 	__u64 error;
 };
 
+struct cxl_event_afu_driver_reserved {
+	/*
+	 * Reserves space for AFU driver specific events. If an AFU driver
+	 * needs a larger buffer they should increase this to match so the cxl
+	 * driver will allocate enough space.
+	 *
+	 * This is not ABI. The contents will be, but that's up the AFU driver.
+	 */
+	__u64 reserved[4];
+};
+
 struct cxl_event {
 	struct cxl_event_header header;
 	union {
 		struct cxl_event_afu_interrupt irq;
 		struct cxl_event_data_storage fault;
 		struct cxl_event_afu_error afu_error;
+		struct cxl_event_afu_driver_reserved afu_driver_event;
 	};
 };
 
