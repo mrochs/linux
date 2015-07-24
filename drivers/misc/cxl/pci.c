@@ -1272,6 +1272,7 @@ static void cxl_remove(struct pci_dev *dev)
 	cxl_remove_adapter(adapter);
 }
 
+#ifdef CONFIG_CXL_EEH
 static pci_ers_result_t cxl_vphb_error_detected(struct cxl_afu *afu,
 						pci_channel_state_t state)
 {
@@ -1587,6 +1588,7 @@ static const struct pci_error_handlers cxl_err_handler = {
 	.slot_reset = cxl_pci_slot_reset,
 	.resume = cxl_pci_resume,
 };
+#endif /* CONFIG_CXL_EEH */
 
 
 struct pci_driver cxl_pci_driver = {
@@ -1595,5 +1597,7 @@ struct pci_driver cxl_pci_driver = {
 	.probe = cxl_probe,
 	.remove = cxl_remove,
 	.shutdown = cxl_remove,
+#ifdef CONFIG_CXL_EEH
 	.err_handler = &cxl_err_handler,
+#endif
 };

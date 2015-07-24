@@ -28,3 +28,13 @@ config CXL
 	  CAPI adapters are found in POWER8 based systems.
 
 	  If unsure, say N.
+
+config CXL_EEH
+	bool "EEH support for CXL"
+	depends on CXL && EEH
+	default y
+	help
+	  Select this option to enable EEH (Extended Error Handling) for
+	  IBM Coherent Accellerators (CXL).
+
+	  Unless you have a good reason, you should probably say Y.
