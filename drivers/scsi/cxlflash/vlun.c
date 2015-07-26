@@ -420,6 +420,7 @@ static int write_same16(struct scsi_device *sdev,
 	int ws_limit = SISLITE_MAX_WS_BLOCKS;
 	u64 offset = lba;
 	int left = nblks;
+	u32 timeout=sdev->request_queue->rq_timeout;
 
 	memset(scsi_cmd, 0, sizeof(scsi_cmd));
 	cmd_buf = kzalloc(CMD_BUFSIZE, GFP_KERNEL);
@@ -438,10 +439,9 @@ static int write_same16(struct scsi_device *sdev,
 
 		left -= ws_limit;
 		offset += ws_limit;
-
 		result = scsi_execute(sdev, scsi_cmd, DMA_TO_DEVICE, cmd_buf,
 				      CMD_BUFSIZE, sense_buf,
-				      (MC_DISCOVERY_TIMEOUT*HZ), 5, 0, NULL);
+				      timeout, 5, 0, NULL);
 
 		if (result) {
 			pr_err("%s: command failed for offset %lld"
