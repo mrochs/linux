@@ -784,6 +784,7 @@ void cxlflash_restore_luntable(struct cxlflash_cfg *cfg)
 	struct llun_info *lli, *temp;
 	ulong lock_flags;
 	u32 chan;
+	u32 lind;
 	struct afu *afu = cfg->afu;
 
 	spin_lock_irqsave(&cfg->slock, lock_flags);
@@ -792,23 +793,22 @@ void cxlflash_restore_luntable(struct cxlflash_cfg *cfg)
 		if (!lli->in_table)
 			continue;
 
+		lind = lli->lun_index;
+
 		if (lli->port_sel == BOTH_PORTS) {
 			writeq_be(lli->lun_id[0],
-				&afu->afu_map->global.fc_port[0]
-				[lli->lun_index]);
+				&afu->afu_map->global.fc_port[0][lind]);
 			writeq_be(lli->lun_id[1],
-				&afu->afu_map->global.fc_port[1]
-				[lli->lun_index]);
+				&afu->afu_map->global.fc_port[1][lind]);
 			pr_debug("%s: Virtual LUN on slot %d  id0=%llx, "
-				 "id1=%llx\n", __func__, lli->lun_index,
+				 "id1=%llx\n", __func__, lind,
 				 lli->lun_id[0], lli->lun_id[1]);
 		} else {
 			chan = PORT2CHAN(lli->port_sel);
 			writeq_be(lli->lun_id[chan],
-				  &afu->afu_map->global.fc_port[chan]
-				  [lli->lun_index]);
+				  &afu->afu_map->global.fc_port[chan][lind]);
 			pr_debug("%s: Virtual LUN on slot %d chan=%d, "
-				 "id=%llx\n", __func__, lli->lun_index, chan,
+				 "id=%llx\n", __func__, lind, chan,
 				 lli->lun_id[chan]);
 		}
 	}
@@ -829,6 +829,7 @@ void cxlflash_restore_luntable(struct cxlflash_cfg *cfg)
 static int init_luntable(struct cxlflash_cfg *cfg, struct llun_info *lli)
 {
 	u32 chan;
+	u32 lind;
 	int rc = 0;
 	struct afu *afu = cfg->afu;
 	ulong lock_flags;
@@ -849,17 +850,14 @@ static int init_luntable(struct cxlflash_cfg *cfg, struct llun_info *lli)
 			goto out;
 		}
 
-		lli->lun_index = cfg->promote_lun_index;
+		lind = lli->lun_index = cfg->promote_lun_index;
 		writeq_be(lli->lun_id[0],
-			  &afu->afu_map->global.fc_port[0]
-			  [cfg->promote_lun_index]);
+			  &afu->afu_map->global.fc_port[0][lind]);
 		writeq_be(lli->lun_id[1],
-			  &afu->afu_map->global.fc_port[1]
-			  [cfg->promote_lun_index]);
+			  &afu->afu_map->global.fc_port[1][lind]);
 		cfg->promote_lun_index++;
 		pr_debug("%s: Virtual LUN on slot %d  id0=%llx, id1=%llx\n",
-			 __func__, lli->lun_index, lli->lun_id[0],
-			 lli->lun_id[1]);
+			 __func__, lind, lli->lun_id[0], lli->lun_id[1]);
 	} else {
 		/*
 		 * If this LUN is visible only from one port, we will put
@@ -871,13 +869,12 @@ static int init_luntable(struct cxlflash_cfg *cfg, struct llun_info *lli)
 			goto out;
 		}
 
-		lli->lun_index = cfg->last_lun_index[chan];
+		lind = lli->lun_index = cfg->last_lun_index[chan];
 		writeq_be(lli->lun_id[chan],
-			  &afu->afu_map->global.fc_port[chan]
-			  [cfg->last_lun_index[chan]]);
+			  &afu->afu_map->global.fc_port[chan][lind]);
 		cfg->last_lun_index[chan]--;
 		pr_debug("%s: Virtual LUN on slot %d  chan=%d, id=%llx\n",
-			 __func__, lli->lun_index, chan, lli->lun_id[chan]);
+			 __func__, lind, chan, lli->lun_id[chan]);
 	}
 
 	lli->in_table = true;
