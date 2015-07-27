@@ -478,13 +478,14 @@ retry:
 		result &= ~(0xFF<<24); /* DRIVER_SENSE is not an error */
 		if (result & SAM_STAT_CHECK_CONDITION) {
 			struct scsi_sense_hdr sshdr;
+
 			scsi_normalize_sense(sense_buf, SCSI_SENSE_BUFFERSIZE,
 					    &sshdr);
 			switch (sshdr.sense_key) {
 			case NO_SENSE:
 			case RECOVERED_ERROR:
 				/* fall through */
-			case NOT_READY: 
+			case NOT_READY:
 				result &= ~SAM_STAT_CHECK_CONDITION;
 				break;
 			case UNIT_ATTENTION:
