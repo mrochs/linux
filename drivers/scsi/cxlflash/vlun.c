@@ -702,7 +702,7 @@ int _cxlflash_vlun_resize(struct scsi_device *sdev,
 	 * it from 4k to chunk size
 	 */
 	nsectors = (resize->req_size * CXLFLASH_BLOCK_SIZE) / gli->blk_len;
-	new_size = (nsectors + MC_CHUNK_SIZE - 1) / MC_CHUNK_SIZE;
+	new_size = DIV_ROUND_UP(nsectors, MC_CHUNK_SIZE);
 
 	pr_debug("%s: ctxid=%llu rhndl=0x%llx, req_size=0x%llx,"
 		 "new_size=%llx\n", __func__, ctxid, resize->rsrc_handle,
