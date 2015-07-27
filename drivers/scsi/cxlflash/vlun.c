@@ -403,13 +403,14 @@ static int init_ba(struct llun_info *lli)
  * @lba:	Logical block address to start write same.
  * @nblks:	Number of logical blocks to write same.
  *
- * Return: 0 on success, -1 on failure
+ * Return: 0 on success, -errno on failure
  */
 static int write_same16(struct scsi_device *sdev,
 			u64 lba,
 			u32 nblks)
 {
 	u8 scsi_cmd[MAX_COMMAND_SIZE];
+	u8 *buf = NULL;
 	u8 *cmd_buf = NULL;
 	u8 *sense_buf = NULL;
 	int rc = 0;
@@ -417,15 +418,17 @@ static int write_same16(struct scsi_device *sdev,
 	int ws_limit = SISLITE_MAX_WS_BLOCKS;
 	u64 offset = lba;
 	int left = nblks;
-	u32 timeout=sdev->request_queue->rq_timeout;
+	u32 tout = sdev->request_queue->rq_timeout;
 
 	memset(scsi_cmd, 0, sizeof(scsi_cmd));
-	cmd_buf = kzalloc(CMD_BUFSIZE, GFP_KERNEL);
-	sense_buf = kzalloc(SCSI_SENSE_BUFFERSIZE, GFP_NOIO);
-	if (!cmd_buf || !sense_buf) {
+	buf = kzalloc(CMD_BUFSIZE + SCSI_SENSE_BUFFERSIZE, GFP_KERNEL);
+	if (unlikely(!buf)) {
 		rc = -ENOMEM;
 		goto out;
 	}
+
+	cmd_buf = buf;
+	sense_buf = buf + CMD_BUFSIZE;
 
 	while (left > 0) {
 
@@ -437,9 +440,7 @@ static int write_same16(struct scsi_device *sdev,
 		left -= ws_limit;
 		offset += ws_limit;
 		result = scsi_execute(sdev, scsi_cmd, DMA_TO_DEVICE, cmd_buf,
-				      CMD_BUFSIZE, sense_buf,
-				      timeout, 5, 0, NULL);
-
+				      CMD_BUFSIZE, sense_buf, tout, 5, 0, NULL);
 		if (result) {
 			pr_err("%s: command failed for offset %lld"
 			      " result=0x%x\n", __func__, offset, result);
@@ -449,8 +450,7 @@ static int write_same16(struct scsi_device *sdev,
 	}
 
 out:
-	kfree(cmd_buf);
-	kfree(sense_buf);
+	kfree(buf);
 	pr_debug("%s: returning rc=%d\n", __func__, rc);
 	return rc;
 }
