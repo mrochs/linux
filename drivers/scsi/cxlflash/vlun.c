@@ -390,12 +390,9 @@ static int init_ba(struct llun_info *lli)
 	blka->nchunk = blka->ba_lun.lsize / MC_CHUNK_SIZE;
 
 	rc = ba_init(&blka->ba_lun);
-	if (rc) {
+	if (unlikely(rc))
 		pr_err("%s: cannot init block_alloc, rc=%d\n", __func__, rc);
-		goto init_ba_exit;
-	}
 
-init_ba_exit:
 	pr_debug("%s: returning rc=%d lli=%p\n", __func__, rc, lli);
 	return rc;
 }
