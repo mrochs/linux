@@ -1161,7 +1161,8 @@ out:
  * if so, installs the error page to 'notify' the user about the error state.
  * During normal operation, the fault is simply handled by the original fault
  * handler that was installed by CXL services as part of initializing the
- * adapter file descriptor.
+ * adapter file descriptor. The VMA's page protection bits are toggled to
+ * indicate cached/not-cached depending on the memory backing the fault.
  *
  * Return: 0 on success, VM_FAULT_SIGBUS on failure
  */
@@ -1194,9 +1195,10 @@ static int cxlflash_mmap_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 	pr_debug("%s: fault(%d) for context %d\n",
 		 __func__, ctxi->lfd, ctxid);
 
-	if (likely(!ctxi->err_recovery_active))
+	if (likely(!ctxi->err_recovery_active)) {
+		vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
 		rc = ctxi->cxl_mmap_vmops->fault(vma, vmf);
-	else {
+	} else {
 		pr_debug("%s: err recovery active, use err_page!\n", __func__);
 
 		err_page = get_err_page();
