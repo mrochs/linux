@@ -772,9 +772,6 @@ int cxlflash_vlun_resize(struct scsi_device *sdev,
 /**
  * cxlflash_restore_luntable() - Restore LUN table to prior state
  * @cfg:	Internal structure associated with the host.
- * @wwid:	WWID associated with LUN.
- *
- * Return: NONE
  */
 void cxlflash_restore_luntable(struct cxlflash_cfg *cfg)
 {
@@ -783,6 +780,7 @@ void cxlflash_restore_luntable(struct cxlflash_cfg *cfg)
 	u32 chan;
 	u32 lind;
 	struct afu *afu = cfg->afu;
+	struct sisl_global_map *agm = &afu->afu_map->global;
 
 	spin_lock_irqsave(&cfg->slock, lock_flags);
 
@@ -793,17 +791,14 @@ void cxlflash_restore_luntable(struct cxlflash_cfg *cfg)
 		lind = lli->lun_index;
 
 		if (lli->port_sel == BOTH_PORTS) {
-			writeq_be(lli->lun_id[0],
-				&afu->afu_map->global.fc_port[0][lind]);
-			writeq_be(lli->lun_id[1],
-				&afu->afu_map->global.fc_port[1][lind]);
+			writeq_be(lli->lun_id[0], &agm->fc_port[0][lind]);
+			writeq_be(lli->lun_id[1], &agm->fc_port[1][lind]);
 			pr_debug("%s: Virtual LUN on slot %d  id0=%llx, "
 				 "id1=%llx\n", __func__, lind,
 				 lli->lun_id[0], lli->lun_id[1]);
 		} else {
 			chan = PORT2CHAN(lli->port_sel);
-			writeq_be(lli->lun_id[chan],
-				  &afu->afu_map->global.fc_port[chan][lind]);
+			writeq_be(lli->lun_id[chan], &agm->fc_port[chan][lind]);
 			pr_debug("%s: Virtual LUN on slot %d chan=%d, "
 				 "id=%llx\n", __func__, lind, chan,
 				 lli->lun_id[chan]);
@@ -812,9 +807,10 @@ void cxlflash_restore_luntable(struct cxlflash_cfg *cfg)
 
 	spin_unlock_irqrestore(&cfg->slock, lock_flags);
 }
+
 /**
  * init_luntable() - write an entry in the LUN table
- * @cfg:        Internal structure associated with the host.
+ * @cfg:	Internal structure associated with the host.
  * @lli:	Per adapter LUN information structure.
  *
  * On successful return, a LUN table entry is created.
@@ -829,6 +825,7 @@ static int init_luntable(struct cxlflash_cfg *cfg, struct llun_info *lli)
 	u32 lind;
 	int rc = 0;
 	struct afu *afu = cfg->afu;
+	struct sisl_global_map *agm = &afu->afu_map->global;
 	ulong lock_flags;
 
 	spin_lock_irqsave(&cfg->slock, lock_flags);
@@ -848,10 +845,8 @@ static int init_luntable(struct cxlflash_cfg *cfg, struct llun_info *lli)
 		}
 
 		lind = lli->lun_index = cfg->promote_lun_index;
-		writeq_be(lli->lun_id[0],
-			  &afu->afu_map->global.fc_port[0][lind]);
-		writeq_be(lli->lun_id[1],
-			  &afu->afu_map->global.fc_port[1][lind]);
+		writeq_be(lli->lun_id[0], &agm->fc_port[0][lind]);
+		writeq_be(lli->lun_id[1], &agm->fc_port[1][lind]);
 		cfg->promote_lun_index++;
 		pr_debug("%s: Virtual LUN on slot %d  id0=%llx, id1=%llx\n",
 			 __func__, lind, lli->lun_id[0], lli->lun_id[1]);
@@ -867,8 +862,7 @@ static int init_luntable(struct cxlflash_cfg *cfg, struct llun_info *lli)
 		}
 
 		lind = lli->lun_index = cfg->last_lun_index[chan];
-		writeq_be(lli->lun_id[chan],
-			  &afu->afu_map->global.fc_port[chan][lind]);
+		writeq_be(lli->lun_id[chan], &agm->fc_port[chan][lind]);
 		cfg->last_lun_index[chan]--;
 		pr_debug("%s: Virtual LUN on slot %d  chan=%d, id=%llx\n",
 			 __func__, lind, chan, lli->lun_id[chan]);
