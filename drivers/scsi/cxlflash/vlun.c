@@ -409,9 +409,9 @@ static int write_same16(struct scsi_device *sdev,
 			u64 lba,
 			u32 nblks)
 {
-	u8 scsi_cmd[MAX_COMMAND_SIZE];
 	u8 *buf = NULL;
 	u8 *cmd_buf = NULL;
+	u8 *scsi_cmd = NULL;
 	u8 *sense_buf = NULL;
 	int rc = 0;
 	int result = 0;
@@ -419,16 +419,18 @@ static int write_same16(struct scsi_device *sdev,
 	u64 offset = lba;
 	int left = nblks;
 	u32 tout = sdev->request_queue->rq_timeout;
+	size_t size;
 
-	memset(scsi_cmd, 0, sizeof(scsi_cmd));
-	buf = kzalloc(CMD_BUFSIZE + SCSI_SENSE_BUFFERSIZE, GFP_KERNEL);
+	size = CMD_BUFSIZE + MAX_COMMAND_SIZE + SCSI_SENSE_BUFFERSIZE;
+	buf = kzalloc(size, GFP_KERNEL);
 	if (unlikely(!buf)) {
 		rc = -ENOMEM;
 		goto out;
 	}
 
 	cmd_buf = buf;
-	sense_buf = buf + CMD_BUFSIZE;
+	scsi_cmd = cmd_buf + CMD_BUFSIZE;
+	sense_buf = scsi_cmd + MAX_COMMAND_SIZE;
 
 	while (left > 0) {
 
