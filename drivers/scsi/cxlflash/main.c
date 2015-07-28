@@ -33,24 +33,6 @@ MODULE_AUTHOR("Manoj N. Kumar <manoj@linux.vnet.ibm.com>");
 MODULE_AUTHOR("Matthew R. Ochs <mrochs@linux.vnet.ibm.com>");
 MODULE_LICENSE("GPL");
 
-/* check if given command is a SCSI READ or SCSI WRITE command */
-#define SCSI_READ_CMD           0x1     /* any of SCSI READ commands */
-#define SCSI_WRITE_CMD          0x2     /* any of SCSI WRITE commands */
-#define SCSI_CMD_TYPE(opcode) \
-({	u8 op = opcode; u8 __type = 0;\
-	if (op == READ_6 || op == READ_10 || op == READ_12 || op == READ_16)\
-		__type = SCSI_READ_CMD;\
-	else if (op == WRITE_6 || op == WRITE_10 || op == WRITE_12 || \
-		op == WRITE_16)\
-		__type = SCSI_WRITE_CMD;\
-	__type;\
-})
-
-#define IS_SCSI_READ_WRITE(opcode) \
-({	u8 __type = SCSI_CMD_TYPE(opcode); \
-	(__type == SCSI_READ_CMD || __type == SCSI_WRITE_CMD) ? 1 : 0;\
-})
-
 /**
  * cmd_checkout() - checks out an AFU command
  * @afu:	AFU to checkout from.
@@ -503,6 +485,29 @@ static const char *cxlflash_driver_info(struct Scsi_Host *host)
 }
 
 /**
+ * is_scsi_read_write() - evaluates if a SCSI command is read or write
+ * @scp:	SCSI command to evaluate.
+ *
+ * Return: true or false
+ */
+static inline bool is_scsi_read_write(struct scsi_cmnd *scp)
+{
+	switch (scp->cmnd[0]) {
+	case READ_6:
+	case READ_10:
+	case READ_12:
+	case READ_16:
+	case WRITE_6:
+	case WRITE_10:
+	case WRITE_12:
+	case WRITE_16:
+		return true;
+	}
+
+	return false;
+}
+
+/**
  * cxlflash_queuecommand() - sends a mid-layer request
  * @host:	SCSI host associated with device.
  * @scp:	SCSI command to send.
@@ -534,14 +539,10 @@ static int cxlflash_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *scp)
 			     get_unaligned_be32(&((u32 *)scp->cmnd)[3]));
 
 	/* Fail all read/write commands when in operating superpipe mode */
-	if (scp->device->hostdata) {
-		if (IS_SCSI_READ_WRITE(scp->cmnd[0])) {
-			pr_debug_ratelimited("%s: LUN being used in superpipe "
-					     "mode. Operation not allowed!\n",
-					     __func__);
-			goto error;
-		}
-
+	if (scp->device->hostdata && is_scsi_read_write(scp)) {
+		pr_debug_ratelimited("%s: LUN being used in superpipe mode. "
+				     "Operation not allowed!\n", __func__);
+		goto error;
 	}
 
 	/* If a Task Management Function is active, wait for it to complete
