@@ -420,6 +420,8 @@ static int write_same16(struct scsi_device *sdev,
 	int left = nblks;
 	u32 tout = sdev->request_queue->rq_timeout;
 	size_t size;
+	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)sdev->host->hostdata;
+	struct device *dev = &cfg->dev->dev;
 
 	size = CMD_BUFSIZE + MAX_COMMAND_SIZE + SCSI_SENSE_BUFFERSIZE;
 	buf = kzalloc(size, GFP_KERNEL);
@@ -444,8 +446,8 @@ static int write_same16(struct scsi_device *sdev,
 		result = scsi_execute(sdev, scsi_cmd, DMA_TO_DEVICE, cmd_buf,
 				      CMD_BUFSIZE, sense_buf, tout, 5, 0, NULL);
 		if (result) {
-			pr_err("%s: command failed for offset %lld"
-			      " result=0x%x\n", __func__, offset, result);
+			dev_err(dev, "%s: command failed for offset %lld"
+				" result=0x%x\n", __func__, offset, result);
 			rc = -EIO;
 			goto out;
 		}
@@ -892,6 +894,7 @@ out:
 int cxlflash_disk_virtual_open(struct scsi_device *sdev, void *arg)
 {
 	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)sdev->host->hostdata;
+	struct device *dev = &cfg->dev->dev;
 	struct llun_info *lli = sdev->hostdata;
 	struct glun_info *gli = lli->parent;
 
@@ -915,15 +918,15 @@ int cxlflash_disk_virtual_open(struct scsi_device *sdev, void *arg)
 		/* Setup the LUN table on the first call */
 		rc = init_luntable(cfg, lli);
 		if (rc) {
-			pr_err("%s: call to init_luntable failed rc=%d!\n",
-			       __func__, rc);
+			dev_err(dev, "%s: call to init_luntable failed "
+				"rc=%d!\n", __func__, rc);
 			goto out;
 		}
 
 		rc = init_ba(lli);
 		if (rc) {
-			pr_err("%s: call to init_ba failed rc=%d!\n",
-			       __func__, rc);
+			dev_err(dev, "%s: call to init_ba failed rc=%d!\n",
+				__func__, rc);
 			rc = -ENOMEM;
 			goto out;
 		}
@@ -931,20 +934,21 @@ int cxlflash_disk_virtual_open(struct scsi_device *sdev, void *arg)
 
 	rc = cxlflash_lun_attach(gli, MODE_VIRTUAL);
 	if (unlikely(rc)) {
-		pr_err("%s: Failed to attach to LUN! (VIRTUAL)\n", __func__);
+		dev_err(dev, "%s: Failed to attach to LUN! (VIRTUAL)\n",
+			__func__);
 		goto out;
 	}
 
 	ctxi = get_context(cfg, rctxid, lli, 0);
 	if (unlikely(!ctxi)) {
-		pr_err("%s: Bad context! (%llu)\n", __func__, ctxid);
+		dev_err(dev, "%s: Bad context! (%llu)\n", __func__, ctxid);
 		rc = -EINVAL;
 		goto err1;
 	}
 
 	rhte = rhte_checkout(ctxi, lli);
 	if (unlikely(!rhte)) {
-		pr_err("%s: too many opens for this context\n", __func__);
+		dev_err(dev, "%s: too many opens for this context\n", __func__);
 		rc = -EMFILE;	/* too many opens  */
 		goto err1;
 	}
@@ -960,7 +964,7 @@ int cxlflash_disk_virtual_open(struct scsi_device *sdev, void *arg)
 	resize.rsrc_handle = rsrc_handle;
 	rc = _cxlflash_vlun_resize(sdev, ctxi, &resize);
 	if (rc) {
-		pr_err("%s: resize failed rc %d\n", __func__, rc);
+		dev_err(dev, "%s: resize failed rc %d\n", __func__, rc);
 		goto err2;
 	}
 	last_lba = resize.last_lba;

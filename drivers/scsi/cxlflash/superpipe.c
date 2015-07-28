@@ -1978,6 +1978,7 @@ static char *decode_ioctl(int cmd)
 static int cxlflash_disk_direct_open(struct scsi_device *sdev, void *arg)
 {
 	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)sdev->host->hostdata;
+	struct device *dev = &cfg->dev->dev;
 	struct afu *afu = cfg->afu;
 	struct llun_info *lli = sdev->hostdata;
 	struct glun_info *gli = lli->parent;
@@ -2000,20 +2001,21 @@ static int cxlflash_disk_direct_open(struct scsi_device *sdev, void *arg)
 
 	rc = cxlflash_lun_attach(gli, MODE_PHYSICAL);
 	if (unlikely(rc)) {
-		pr_err("%s: Failed to attach to LUN! (PHYSICAL)\n", __func__);
+		dev_err(dev, "%s: Failed to attach to LUN! (PHYSICAL)\n",
+			__func__);
 		goto out;
 	}
 
 	ctxi = get_context(cfg, rctxid, lli, 0);
 	if (unlikely(!ctxi)) {
-		pr_err("%s: Bad context! (%llu)\n", __func__, ctxid);
+		dev_err(dev, "%s: Bad context! (%llu)\n", __func__, ctxid);
 		rc = -EINVAL;
 		goto err1;
 	}
 
 	rhte = rhte_checkout(ctxi, lli);
 	if (unlikely(!rhte)) {
-		pr_err("%s: too many opens for this context\n", __func__);
+		dev_err(dev, "%s: too many opens for this context\n", __func__);
 		rc = -EMFILE;	/* too many opens  */
 		goto err1;
 	}
