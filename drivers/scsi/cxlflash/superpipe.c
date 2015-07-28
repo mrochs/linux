@@ -439,29 +439,35 @@ out:
 
 /**
  * read_cap16() - issues a SCSI READ_CAP16 command
- * @sdev:       SCSI device associated with LUN.
+ * @sdev:	SCSI device associated with LUN.
  * @lli:	LUN destined for capacity request.
  *
- * Return: 0 on success, -1 on failure
+ * Return: 0 on success, -errno on failure
  */
 static int read_cap16(struct scsi_device *sdev, struct llun_info *lli)
 {
 	struct glun_info *gli = lli->parent;
-	u8 scsi_cmd[MAX_COMMAND_SIZE];
+	u8 *buf = NULL;
 	u8 *cmd_buf = NULL;
+	u8 *scsi_cmd = NULL;
 	u8 *sense_buf = NULL;
 	int rc = 0;
 	int result = 0;
 	int retry_cnt = 0;
+	u32 tout = (MC_DISCOVERY_TIMEOUT * HZ);
+	size_t size;
 
+	size = CMD_BUFSIZE + MAX_COMMAND_SIZE + SCSI_SENSE_BUFFERSIZE;
 retry:
-	memset(scsi_cmd, 0, sizeof(scsi_cmd));
-	cmd_buf = kzalloc(CMD_BUFSIZE, GFP_KERNEL);
-	sense_buf = kzalloc(SCSI_SENSE_BUFFERSIZE, GFP_NOIO);
-	if (!cmd_buf || !sense_buf) {
+	buf = kzalloc(size, GFP_KERNEL);
+	if (unlikely(!buf)) {
 		rc = -ENOMEM;
 		goto out;
 	}
+
+	cmd_buf = buf;
+	scsi_cmd = cmd_buf + CMD_BUFSIZE;
+	sense_buf = scsi_cmd + MAX_COMMAND_SIZE;
 
 	scsi_cmd[0] = SERVICE_ACTION_IN_16;	/* read cap(16) */
 	scsi_cmd[1] = SAI_READ_CAPACITY_16;	/* service action */
@@ -471,8 +477,7 @@ retry:
 		 scsi_cmd[0]);
 
 	result = scsi_execute(sdev, scsi_cmd, DMA_FROM_DEVICE, cmd_buf,
-			      CMD_BUFSIZE, sense_buf,
-			      (MC_DISCOVERY_TIMEOUT*HZ), 5, 0, NULL);
+			      CMD_BUFSIZE, sense_buf, tout, 5, 0, NULL);
 
 	if (driver_byte(result) == DRIVER_SENSE) {
 		result &= ~(0xFF<<24); /* DRIVER_SENSE is not an error */
@@ -496,8 +501,7 @@ retry:
 				case 0x3F: /* Report LUNs changed */
 					/* Retry the command once more */
 					if (retry_cnt++ < 1) {
-						kfree(cmd_buf);
-						kfree(sense_buf);
+						kfree(buf);
 						goto retry;
 					}
 				}
@@ -525,8 +529,7 @@ retry:
 	spin_unlock(&gli->slock);
 
 out:
-	kfree(cmd_buf);
-	kfree(sense_buf);
+	kfree(buf);
 	pr_debug("%s: maxlba=%lld blklen=%d rc=%d\n", __func__,
 		 gli->max_lba, gli->blk_len, rc);
 	return rc;
