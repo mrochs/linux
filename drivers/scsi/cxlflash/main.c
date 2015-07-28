@@ -318,6 +318,7 @@ write_rrin:
 static int send_cmd(struct afu *afu, struct afu_cmd *cmd)
 {
 	struct cxlflash_cfg *cfg = afu->parent;
+	struct device *dev = &cfg->dev->dev;
 	int nretry = 0;
 	int rc = 0;
 	u64 room;
@@ -340,7 +341,7 @@ retry:
 			udelay(nretry);
 		} while (nretry++ < MC_ROOM_RETRY_CNT);
 
-		pr_err("%s: no cmd_room to send 0x%X\n",
+		dev_err(dev, "%s: no cmd_room to send 0x%X\n",
 		       __func__, cmd->rcb.cdb[0]);
 
 		goto no_room;
@@ -410,13 +411,14 @@ static int send_tmf(struct afu *afu, struct scsi_cmnd *scp, u64 tmfcmd)
 	short lflag = 0;
 	struct Scsi_Host *host = scp->device->host;
 	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)host->hostdata;
+	struct device *dev = &cfg->dev->dev;
 	ulong lock_flags;
 	int rc = 0;
 	ulong to;
 
 	cmd = cmd_checkout(afu);
 	if (unlikely(!cmd)) {
-		pr_err("%s: could not get a free command\n", __func__);
+		dev_err(dev, "%s: could not get a free command\n", __func__);
 		rc = SCSI_MLQUEUE_HOST_BUSY;
 		goto out;
 	}
@@ -465,7 +467,7 @@ static int send_tmf(struct afu *afu, struct scsi_cmnd *scp, u64 tmfcmd)
 						       to);
 	if (!to) {
 		cfg->tmf_active = false;
-		pr_err("%s: TMF timed out!\n", __func__);
+		dev_err(dev, "%s: TMF timed out!\n", __func__);
 		rc = -1;
 	}
 	spin_unlock_irqrestore(&cfg->tmf_slock, lock_flags);
@@ -520,7 +522,7 @@ static int cxlflash_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *scp)
 {
 	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)host->hostdata;
 	struct afu *afu = cfg->afu;
-	struct pci_dev *pdev = cfg->dev;
+	struct device *dev = &cfg->dev->dev;
 	struct afu_cmd *cmd;
 	u32 port_sel = scp->device->channel + 1;
 	int nseg, i, ncount;
@@ -570,7 +572,7 @@ static int cxlflash_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *scp)
 
 	cmd = cmd_checkout(afu);
 	if (unlikely(!cmd)) {
-		pr_err("%s: could not get a free command\n", __func__);
+		dev_err(dev, "%s: could not get a free command\n", __func__);
 		rc = SCSI_MLQUEUE_HOST_BUSY;
 		goto out;
 	}
@@ -592,7 +594,7 @@ static int cxlflash_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *scp)
 
 	nseg = scsi_dma_map(scp);
 	if (unlikely(nseg < 0)) {
-		dev_err(&pdev->dev, "%s: Fail DMA map! nseg=%d\n",
+		dev_err(dev, "%s: Fail DMA map! nseg=%d\n",
 			__func__, nseg);
 		rc = SCSI_MLQUEUE_HOST_BUSY;
 		goto out;
@@ -691,9 +693,10 @@ static void term_mc(struct cxlflash_cfg *cfg, enum undo_level level)
 {
 	int rc = 0;
 	struct afu *afu = cfg->afu;
+	struct device *dev = &cfg->dev->dev;
 
 	if (!afu || !cfg->mcctx) {
-		pr_err("%s: returning from term_mc with NULL afu or MC\n",
+		dev_err(dev, "%s: returning from term_mc with NULL afu or MC\n",
 		       __func__);
 		return;
 	}
@@ -789,6 +792,7 @@ static int alloc_mem(struct cxlflash_cfg *cfg)
 	int rc = 0;
 	int i;
 	char *buf = NULL;
+	struct device *dev = &cfg->dev->dev;
 
 	/* This allocation is about 12K, i.e. only 1 64k page
 	 * and upto 4 4k pages
@@ -796,8 +800,8 @@ static int alloc_mem(struct cxlflash_cfg *cfg)
 	cfg->afu = (void *)__get_free_pages(GFP_KERNEL | __GFP_ZERO,
 					    get_order(sizeof(struct afu)));
 	if (unlikely(!cfg->afu)) {
-		pr_err("%s: cannot get %d free pages\n",
-		       __func__, get_order(sizeof(struct afu)));
+		dev_err(dev, "%s: cannot get %d free pages\n",
+			__func__, get_order(sizeof(struct afu)));
 		rc = -ENOMEM;
 		goto out;
 	}
@@ -808,7 +812,8 @@ static int alloc_mem(struct cxlflash_cfg *cfg)
 		if (!((u64)buf & (PAGE_SIZE - 1))) {
 			buf = (void *)__get_free_page(GFP_KERNEL | __GFP_ZERO);
 			if (unlikely(!buf)) {
-				pr_err("%s: Allocate command buffers fail!\n",
+				dev_err(dev,
+					"%s: Allocate command buffers fail!\n",
 				       __func__);
 				rc = -ENOMEM;
 				free_mem(cfg);
@@ -1418,7 +1423,7 @@ static int read_vpd(struct cxlflash_cfg *cfg, u64 wwpn[])
 	/* Get the VPD data from the device */
 	vpd_size = pci_read_vpd(dev, 0, sizeof(vpd_data), vpd_data);
 	if (unlikely(vpd_size <= 0)) {
-		pr_err("%s: Unable to read VPD (size = %ld)\n",
+		dev_err(&dev->dev, "%s: Unable to read VPD (size = %ld)\n",
 		       __func__, vpd_size);
 		rc = -ENODEV;
 		goto out;
@@ -1428,7 +1433,8 @@ static int read_vpd(struct cxlflash_cfg *cfg, u64 wwpn[])
 	ro_start = pci_vpd_find_tag(vpd_data, 0, vpd_size,
 				    PCI_VPD_LRDT_RO_DATA);
 	if (unlikely(ro_start < 0)) {
-		pr_err("%s: VPD Read-only data not found\n", __func__);
+		dev_err(&dev->dev, "%s: VPD Read-only data not found\n",
+			__func__);
 		rc = -ENODEV;
 		goto out;
 	}
@@ -1457,8 +1463,8 @@ static int read_vpd(struct cxlflash_cfg *cfg, u64 wwpn[])
 
 		i = pci_vpd_find_info_keyword(vpd_data, i, j, wwpn_vpd_tags[k]);
 		if (unlikely(i < 0)) {
-			pr_err("%s: Port %d WWPN not found in VPD\n",
-			       __func__, k);
+			dev_err(&dev->dev, "%s: Port %d WWPN not found "
+				"in VPD\n", __func__, k);
 			rc = -ENODEV;
 			goto out;
 		}
@@ -1466,7 +1472,8 @@ static int read_vpd(struct cxlflash_cfg *cfg, u64 wwpn[])
 		j = pci_vpd_info_field_size(&vpd_data[i]);
 		i += PCI_VPD_INFO_FLD_HDR_SIZE;
 		if (unlikely((i + j > vpd_size) || (j != WWPN_LEN))) {
-			pr_err("%s: Port %d WWPN incomplete or VPD corrupt\n",
+			dev_err(&dev->dev, "%s: Port %d WWPN incomplete or "
+				"VPD corrupt\n",
 			       __func__, k);
 			rc = -ENODEV;
 			goto out;
@@ -1475,8 +1482,8 @@ static int read_vpd(struct cxlflash_cfg *cfg, u64 wwpn[])
 		memcpy(tmp_buf, &vpd_data[i], WWPN_LEN);
 		rc = kstrtoul(tmp_buf, WWPN_LEN, (ulong *)&wwpn[k]);
 		if (unlikely(rc)) {
-			pr_err("%s: Fail to convert port %d WWPN to integer\n",
-			       __func__, k);
+			dev_err(&dev->dev, "%s: Fail to convert port %d WWPN "
+				"to integer\n", __func__, k);
 			rc = -ENODEV;
 			goto out;
 		}
@@ -1533,6 +1540,7 @@ static void init_pcr(struct cxlflash_cfg *cfg)
 static int init_global(struct cxlflash_cfg *cfg)
 {
 	struct afu *afu = cfg->afu;
+	struct device *dev = &cfg->dev->dev;
 	u64 wwpn[NUM_FC_PORTS];	/* wwpn of AFU ports */
 	int i = 0, num_ports = 0;
 	int rc = 0;
@@ -1540,7 +1548,7 @@ static int init_global(struct cxlflash_cfg *cfg)
 
 	rc = read_vpd(cfg, &wwpn[0]);
 	if (rc) {
-		pr_err("%s: could not read vpd rc=%d\n", __func__, rc);
+		dev_err(dev, "%s: could not read vpd rc=%d\n", __func__, rc);
 		goto out;
 	}
 
@@ -1583,7 +1591,7 @@ static int init_global(struct cxlflash_cfg *cfg)
 		    afu_set_wwpn(afu, i,
 				 &afu->afu_map->global.fc_regs[i][0],
 				 wwpn[i])) {
-			pr_err("%s: failed to set WWPN on port %d\n",
+			dev_err(dev, "%s: failed to set WWPN on port %d\n",
 			       __func__, i);
 			rc = -EIO;
 			goto out;
@@ -1831,6 +1839,7 @@ int cxlflash_afu_sync(struct afu *afu, ctx_hndl_t ctx_hndl_u,
 		      res_hndl_t res_hndl_u, u8 mode)
 {
 	struct cxlflash_cfg *cfg = afu->parent;
+	struct device *dev = &cfg->dev->dev;
 	struct afu_cmd *cmd = NULL;
 	int rc = 0;
 	int retry_cnt = 0;
@@ -1849,7 +1858,7 @@ retry:
 		udelay(1000 * retry_cnt);
 		if (retry_cnt < MC_RETRY_CNT)
 			goto retry;
-		pr_err("%s: could not get a free command\n", __func__);
+		dev_err(dev, "%s: could not get a free command\n", __func__);
 		rc = -1;
 		goto out;
 	}
@@ -2244,6 +2253,7 @@ static void cxlflash_worker_thread(struct work_struct *work)
 	struct cxlflash_cfg *cfg = container_of(work, struct cxlflash_cfg,
 						work_q);
 	struct afu *afu = cfg->afu;
+	struct device *dev = &cfg->dev->dev;
 	int port;
 	ulong lock_flags;
 
@@ -2257,7 +2267,8 @@ static void cxlflash_worker_thread(struct work_struct *work)
 	if (cfg->lr_state == LINK_RESET_REQUIRED) {
 		port = cfg->lr_port;
 		if (port < 0)
-			pr_err("%s: invalid port index %d\n", __func__, port);
+			dev_err(dev, "%s: invalid port index %d\n",
+				__func__, port);
 		else {
 			spin_unlock_irqrestore(cfg->host->host_lock,
 					       lock_flags);
@@ -2364,7 +2375,7 @@ static int cxlflash_probe(struct pci_dev *pdev,
 	 */
 	phys_dev = cxl_get_phys_dev(pdev);
 	if (!dev_is_pci(phys_dev)) {
-		pr_err("%s: not a pci dev\n", __func__);
+		dev_err(&pdev->dev, "%s: not a pci dev\n", __func__);
 		rc = -ENODEV;
 		goto out_remove;
 	}
@@ -2418,6 +2429,7 @@ static pci_ers_result_t cxlflash_pci_error_detected(struct pci_dev *pdev,
 {
 	int rc = 0;
 	struct cxlflash_cfg *cfg = pci_get_drvdata(pdev);
+	struct device *dev = &cfg->dev->dev;
 
 	pr_debug("%s: pdev=%p state=%u\n", __func__, pdev, state);
 
@@ -2428,8 +2440,8 @@ static pci_ers_result_t cxlflash_pci_error_detected(struct pci_dev *pdev,
 
 		rc = cxlflash_mark_contexts_error(cfg);
 		if (unlikely(rc))
-			pr_err("%s: Failed to mark contexts in error!(rc=%d)\n",
-			       __func__, rc);
+			dev_err(dev, "%s: Failed to mark contexts in "
+				"error!(rc=%d)\n", __func__, rc);
 
 		term_mc(cfg, UNDO_START);
 		stop_afu(cfg);
@@ -2458,12 +2470,13 @@ static pci_ers_result_t cxlflash_pci_slot_reset(struct pci_dev *pdev)
 {
 	int rc = 0;
 	struct cxlflash_cfg *cfg = pci_get_drvdata(pdev);
+	struct device *dev = &cfg->dev->dev;
 
 	pr_debug("%s: pdev=%p\n", __func__, pdev);
 
 	rc = init_afu(cfg);
 	if (unlikely(rc)) {
-		pr_err("%s: EEH recovery failed! (%d)\n", __func__, rc);
+		dev_err(dev, "%s: EEH recovery failed! (%d)\n", __func__, rc);
 		return PCI_ERS_RESULT_DISCONNECT;
 	}
 
