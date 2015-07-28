@@ -15,8 +15,6 @@
 #ifndef _CXLFLASH_SUPERPIPE_H
 #define _CXLFLASH_SUPERPIPE_H
 
-#define MAX_AUN_CLONE_CNT    0xFF
-
 /*
  * Terminology: use afu (and not adapter) to refer to the HW.
  * Adapter is the entire slot and includes PSL out of which
@@ -26,25 +24,7 @@
 /* Chunk size parms: note sislite minimum chunk size is
    0x10000 LBAs corresponding to a NMASK or 16.
 */
-#define MC_RHT_NMASK      16	/* in bits */
 #define MC_CHUNK_SIZE     (1 << MC_RHT_NMASK)	/* in LBAs, see mclient.h */
-#define MC_CHUNK_SHIFT    MC_RHT_NMASK	/* shift to go from LBA to chunk# */
-#define LXT_LUNIDX_SHIFT  8	/* LXT entry, shift for LUN index */
-#define LXT_PERM_SHIFT    4	/* LXT entry, shift for permission bits */
-
-/* LXT tables are allocated dynamically in groups. This is done to
-   avoid a malloc/free overhead each time the LXT has to grow
-   or shrink.
-
-   Based on the current lxt_cnt (used), it is always possible to
-   know how many are allocated (used+free). The number of allocated
-   entries is not stored anywhere.
-
-   The LXT table is re-allocated whenever it needs to cross into
-   another group.
-*/
-#define LXT_GROUP_SIZE          8
-#define LXT_NUM_GROUPS(lxt_cnt) (((lxt_cnt) + 7)/8)	/* alloc'ed groups */
 
 #define MC_DISCOVERY_TIMEOUT 5  /* 5 secs */
 

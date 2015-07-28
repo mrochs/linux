@@ -20,6 +20,8 @@
 #define LXT_LUNIDX_SHIFT  8	/* LXT entry, shift for LUN index */
 #define LXT_PERM_SHIFT    4	/* LXT entry, shift for permission bits */
 
+#define MAX_AUN_CLONE_CNT 0xFF
+
 /* LXT tables are allocated dynamically in groups. This is done to
    avoid a malloc/free overhead each time the LXT has to grow
    or shrink.
