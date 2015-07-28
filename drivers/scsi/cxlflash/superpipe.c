@@ -366,11 +366,19 @@ retry:
 		if ((ctx_ctrl & CTX_CTRL_ERR) ||
 		    (!ctxi && (ctx_ctrl & CTX_CTRL_ERR_FALLBACK)))
 			ctxi = find_error_context(cfg, rctxid, file);
-		mutex_unlock(&cfg->ctx_tbl_list_mutex);
-		if (!ctxi)
+		if (!ctxi) {
+			mutex_unlock(&cfg->ctx_tbl_list_mutex);
 			goto out;
+		}
 
+		/*
+		 * Need to acquire ownership of the context while still under
+		 * the table/list lock to serialize with a remove thread. Use
+		 * the 'try' to avoid stalling the table/list lock for a single
+		 * context.
+		 */
 		rc = mutex_trylock(&ctxi->mutex);
+		mutex_unlock(&cfg->ctx_tbl_list_mutex);
 		if (!rc)
 			goto retry;
 
