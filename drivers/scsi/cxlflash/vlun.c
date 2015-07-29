@@ -441,16 +441,17 @@ static int write_same16(struct scsi_device *sdev,
 		put_unaligned_be32(ws_limit < left ? ws_limit : left,
 				   &scsi_cmd[10]);
 
-		left -= ws_limit;
-		offset += ws_limit;
 		result = scsi_execute(sdev, scsi_cmd, DMA_TO_DEVICE, cmd_buf,
 				      CMD_BUFSIZE, sense_buf, tout, 5, 0, NULL);
 		if (result) {
-			dev_err(dev, "%s: command failed for offset %lld"
-				" result=0x%x\n", __func__, offset, result);
+			dev_err_ratelimited(dev, "%s: command failed for "
+					    "offset %lld result=0x%x\n",
+					    __func__, offset, result);
 			rc = -EIO;
 			goto out;
 		}
+		left -= ws_limit;
+		offset += ws_limit;
 	}
 
 out:
