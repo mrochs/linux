@@ -99,7 +99,8 @@ enum ctx_ctrl {
 	CTX_CTRL_ERR		= (1 << 2),
 	CTX_CTRL_ERR_FALLBACK	= (1 << 3),
 	CTX_CTRL_NOPID		= (1 << 4),
-	CTX_CTRL_FILE		= (1 << 5)
+	CTX_CTRL_FILE		= (1 << 5),
+	CTX_CTRL_NOSLEEP	= (1 << 6)
 };
 
 #define ENCODE_CTXID(_ctx, _id)	(((((u64)_ctx) & 0xFFFFFFFF0) << 28) | _id)

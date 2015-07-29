@@ -353,9 +353,15 @@ struct ctx_info *get_context(struct cxlflash_cfg *cfg, u64 rctxid,
 
 	if (likely(ctxid < MAX_CONTEXT)) {
 retry:
-		rc = mutex_lock_interruptible(&cfg->ctx_tbl_list_mutex);
-		if (rc)
-			goto out;
+		if (ctx_ctrl & CTX_CTRL_NOSLEEP) {
+			rc = mutex_trylock(&cfg->ctx_tbl_list_mutex);
+			if (!rc)
+				goto retry;
+		} else {
+			rc = mutex_lock_interruptible(&cfg->ctx_tbl_list_mutex);
+			if (rc)
+				goto out;
+		}
 
 		ctxi = cfg->ctx_tbl[ctxid];
 		if (ctxi)
