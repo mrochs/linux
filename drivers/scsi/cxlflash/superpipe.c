@@ -1203,6 +1203,65 @@ int cxlflash_mark_contexts_error(struct cxlflash_cfg *cfg)
 	return rc;
 }
 
+/* XXX - temporary, these would need to move to cxlflash_ioctl.h */
+#define CXLFLASH_EVENT_TYPE_1 1
+struct cxlflash_driver_event {
+	__u32 type;
+	__u32 flags;
+	__u64 info;
+};
+
+static bool cxlflash_event_pending(struct cxl_context *cxl)
+{
+#if 0
+	struct cxlflash_cfg *cfg = container_of(file->f_op, struct cxlflash_cfg,
+						cxl_fops);
+	struct ctx_info *ctxi = NULL;
+	struct page *err_page = NULL;
+	enum ctx_ctrl ctrl = CTX_CTRL_ERR_FALLBACK | CTX_CTRL_FILE;
+	int rc = 0;
+	int ctxid;
+
+	ctxid = cxl_process_element(ctx);
+	if (unlikely(ctxid < 0)) {
+		pr_err("%s: Context %p was closed! (%d)\n",
+		       __func__, ctx, ctxid);
+		BUG(); /* XXX - remove me before submission */
+		goto err;
+	}
+
+	ctxi = get_context(cfg, ctxid, file, ctrl);
+	if (unlikely(!ctxi)) {
+		pr_err("%s: Bad context! (%d)\n", __func__, ctxid);
+		goto err;
+	}
+#endif
+	pr_info("%s: ENTER\n", __func__);
+
+	/* For testing */
+	return true;
+}
+
+static void cxlflash_deliver_event(struct cxl_event *event,
+				   struct cxl_context *cxl, size_t max_size)
+{
+	struct cxlflash_driver_event *cde =
+		(struct cxlflash_driver_event *)&event->afu_driver_event;
+
+	pr_info("%s: ENTER\n", __func__);
+
+	event->header.size += sizeof(*cde);
+
+	cde->type = CXLFLASH_EVENT_TYPE_1;
+	cde->flags = 0;
+	cde->info = 0x12345678;
+}
+
+static struct cxl_afu_driver_ops cxlflash_driver_ops = {
+	.event_pending = cxlflash_event_pending,
+	.deliver_event = cxlflash_deliver_event,
+};
+
 /*
  * Dummy NULL fops
  */
@@ -1409,6 +1468,7 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 	mutex_lock(&ctxi->mutex);
 	cfg->ctx_tbl[ctxid] = ctxi;
 	mutex_unlock(&cfg->ctx_tbl_list_mutex);
+	cxl_set_driver_ops(ctx, &cxlflash_driver_ops);
 	fd_install(fd, file);
 
 out_attach:
