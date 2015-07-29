@@ -1718,6 +1718,10 @@ out:
  * @sdev:	SCSI device associated with LUN.
  * @recover:	Recover ioctl data structure.
  *
+ * Only a single recovery is allowed at a time to avoid exhausting CXL
+ * resources (leading to recovery failure) in the event that we're up
+ * against the maximum number of contexts limit.
+ *
  * Because a user can detect an error condition before the kernel, it is
  * quite possible for this routine to act as the kernel's EEH detection
  * source (MMIO read of mbox_r). Because of this, there is a window of
@@ -1740,6 +1744,10 @@ static int cxlflash_afu_recover(struct scsi_device *sdev,
 	    rctxid = recover->context_id;
 	long reg;
 	int rc = 0;
+
+	rc = mutex_lock_interruptible(&cfg->ctx_recovery_mutex);
+	if (rc)
+		goto out;
 
 	pr_debug("%s: reason 0x%016llX rctxid=%016llX\n", __func__,
 		 recover->reason, rctxid);
@@ -1787,6 +1795,7 @@ retry:
 out:
 	if (likely(ctxi))
 		mutex_unlock(&ctxi->mutex);
+	mutex_unlock(&cfg->ctx_recovery_mutex);
 	return rc;
 }
 

@@ -2362,6 +2362,7 @@ static int cxlflash_probe(struct pci_dev *pdev,
 	cfg->lr_state = LINK_RESET_INVALID;
 	cfg->lr_port = -1;
 	mutex_init(&cfg->ctx_tbl_list_mutex);
+	mutex_init(&cfg->ctx_recovery_mutex);
 	spin_lock_init(&cfg->slock);
 	INIT_LIST_HEAD(&cfg->ctx_err_recovery);
 	INIT_LIST_HEAD(&cfg->lluns);
