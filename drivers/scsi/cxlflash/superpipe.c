@@ -1307,9 +1307,7 @@ static const struct file_operations cxlflash_cxl_fops = {
  * @cfg:	Internal structure associated with the host.
  *
  * A context is only moved over to the error list when there are no outstanding
- * references to it. This ensures that a running operation has completed. After
- * marking all contexts in error, the CPU is scheduled to allow user threads
- * time to respond to the freshly installed error page.
+ * references to it. This ensures that a running operation has completed.
  *
  * Return: 0 on success, -errno on failure
  */
@@ -1334,7 +1332,6 @@ int cxlflash_mark_contexts_error(struct cxlflash_cfg *cfg)
 	}
 
 	mutex_unlock(&cfg->ctx_tbl_list_mutex);
-	schedule();
 	return rc;
 }
 
