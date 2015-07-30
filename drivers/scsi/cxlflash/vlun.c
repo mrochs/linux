@@ -367,12 +367,12 @@ void cxlflash_ba_terminate(struct ba_lun *ba_lun)
 }
 
 /**
- * init_ba() - initializes and allocates a block allocator
+ * init_vlun() - initializes a LUN for virtual use
  * @lun_info:	LUN information structure that owns the block allocator.
  *
  * Return: 0 on success, -errno on failure
  */
-static int init_ba(struct llun_info *lli)
+static int init_vlun(struct llun_info *lli)
 {
 	int rc = 0;
 	struct glun_info *gli = lli->parent;
@@ -924,9 +924,9 @@ int cxlflash_disk_virtual_open(struct scsi_device *sdev, void *arg)
 			goto out;
 		}
 
-		rc = init_ba(lli);
+		rc = init_vlun(lli);
 		if (rc) {
-			dev_err(dev, "%s: call to init_ba failed rc=%d!\n",
+			dev_err(dev, "%s: call to init_vlun failed rc=%d!\n",
 				__func__, rc);
 			rc = -ENOMEM;
 			goto out;
