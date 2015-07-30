@@ -20,6 +20,10 @@
 #define LXT_LUNIDX_SHIFT  8	/* LXT entry, shift for LUN index */
 #define LXT_PERM_SHIFT    4	/* LXT entry, shift for permission bits */
 
+#define BITS_PER_LONG     64
+#define BPL               BITS_PER_LONG
+#define HIBIT             (BPL - 1)
+
 #define MAX_AUN_CLONE_CNT 0xFF
 
 /* LXT tables are allocated dynamically in groups. This is done to

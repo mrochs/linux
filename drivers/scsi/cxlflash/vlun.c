@@ -88,9 +88,9 @@ static int ba_init(struct ba_lun *ba_lun)
 	}
 
 	bali->total_aus = lun_size_au;
-	bali->lun_bmap_size = lun_size_au / 64;
+	bali->lun_bmap_size = lun_size_au / BPL;
 
-	if (lun_size_au % 64)
+	if (lun_size_au % BPL)
 		bali->lun_bmap_size++;
 
 	/* Allocate bitmap space */
@@ -110,11 +110,11 @@ static int ba_init(struct ba_lun *ba_lun)
 		bali->lun_alloc_map[i] = 0xFFFFFFFFFFFFFFFFULL;
 
 	/* If the last word not fully utilized, mark extra bits as allocated */
-	last_word_underflow = (bali->lun_bmap_size * 64) -
+	last_word_underflow = (bali->lun_bmap_size * BPL) -
 	    bali->free_aun_cnt;
 	if (last_word_underflow > 0) {
 		lam = &bali->lun_alloc_map[bali->lun_bmap_size - 1];
-		for (i = (63 - last_word_underflow + 1); i < 64; i++)
+		for (i = (HIBIT - last_word_underflow + 1); i < BPL; i++)
 			clear_bit(i, (ulong *)lam);
 	}
 
@@ -218,17 +218,17 @@ static u64 ba_alloc(struct ba_lun *ba_lun)
 	}
 
 	/* Update the free_curr_idx */
-	if (bit_pos == 63)
+	if (bit_pos == HIBIT)
 		bali->free_curr_idx = bit_word + 1;
 	else
 		bali->free_curr_idx = bit_word;
 
 	pr_debug("%s: Allocating AU number %llX, on lun_id %llX, "
 		 "free_aun_cnt = %llX\n", __func__,
-		 ((bit_word * 64) + bit_pos), ba_lun->lun_id,
+		 ((bit_word * BPL) + bit_pos), ba_lun->lun_id,
 		 bali->free_aun_cnt);
 
-	return (u64) ((bit_word * 64) + bit_pos);
+	return (u64) ((bit_word * BPL) + bit_pos);
 }
 
 /**
@@ -242,8 +242,8 @@ static int validate_alloc(struct ba_lun_info *bali, u64 aun)
 {
 	int idx = 0, bit_pos = 0;
 
-	idx = aun / 64;
-	bit_pos = aun % 64;
+	idx = aun / BPL;
+	bit_pos = aun % BPL;
 
 	if (test_bit(bit_pos, (ulong *)&bali->lun_alloc_map[idx]))
 		return -1;
@@ -283,8 +283,8 @@ static int ba_free(struct ba_lun *ba_lun, u64 to_free)
 		return 0;
 	}
 
-	idx = to_free / 64;
-	bit_pos = to_free % 64;
+	idx = to_free / BPL;
+	bit_pos = to_free % BPL;
 
 	set_bit(bit_pos, (ulong *)&bali->lun_alloc_map[idx]);
 	bali->free_aun_cnt++;
