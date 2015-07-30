@@ -302,7 +302,7 @@ static int ba_free(struct ba_lun *ba_lun, u64 to_free)
 }
 
 /**
- * ba_clone() - frees a block from the block allocator
+ * ba_clone() - Clone a chunk of the block allocation table
  * @ba_lun:	Block allocator from which to allocate a block.
  * @to_free:	Block to free.
  *
