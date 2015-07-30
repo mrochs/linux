@@ -97,6 +97,7 @@ struct ctx_info {
 	u64 ctxid;
 	int lfd;
 	pid_t pid;
+	bool detach_active;
 	bool err_recovery_active;
 	struct mutex mutex; /* Context protection */
 	struct cxl_context *ctx;

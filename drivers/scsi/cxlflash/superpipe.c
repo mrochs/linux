@@ -382,6 +382,9 @@ retry:
 		if (!rc)
 			goto retry;
 
+		if (ctxi->detach_active)
+			goto denied;
+
 		ctxpid = ctxi->pid;
 		if (likely(!(ctx_ctrl & CTX_CTRL_NOPID)))
 			if (pid != ctxpid)
@@ -988,7 +991,10 @@ static int _cxlflash_disk_detach(struct scsi_device *sdev,
 
 	/* Tear down context following last LUN cleanup */
 	if (list_empty(&ctxi->luns)) {
+		ctxi->detach_active = true;
+		mutex_unlock(&ctxi->mutex);
 		mutex_lock(&cfg->ctx_tbl_list_mutex);
+		mutex_lock(&ctxi->mutex);
 
 		/* Might not have been in error list so conditionally remove */
 		if (!list_empty(&ctxi->list))
@@ -1484,6 +1490,8 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 	/*
 	 * No error paths after this point. Once the fd is installed it's
 	 * visible to user space and can't be undone safely on this thread.
+	 * There is no need to worry about a deadlock here because no one
+	 * knows about us yet; we can be the only one holding our mutex.
 	 */
 	list_add(&lun_access->list, &ctxi->luns);
 	mutex_lock(&cfg->ctx_tbl_list_mutex);
@@ -1650,8 +1658,15 @@ static int recover_context(struct cxlflash_cfg *cfg, struct ctx_info *ctxi)
 	ctxi->ctx = ctx;
 	ctxi->file = file;
 
-	/* Put context back in table (note the reinit of the context list) */
+	/*
+	 * Put context back in table (note the reinit of the context list);
+	 * we must first drop the context's mutex and then acquire it in
+	 * order with the table/list mutex to avoid a deadlock - safe to do
+	 * here because no one can find us at this moment in time.
+	 */
+	mutex_unlock(&ctxi->mutex);
 	mutex_lock(&cfg->ctx_tbl_list_mutex);
+	mutex_lock(&ctxi->mutex);
 	list_del_init(&ctxi->list);
 	cfg->ctx_tbl[ctxid] = ctxi;
 	mutex_unlock(&cfg->ctx_tbl_list_mutex);
