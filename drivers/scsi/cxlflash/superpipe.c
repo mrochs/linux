@@ -621,10 +621,13 @@ struct sisl_rht_entry *rhte_checkout(struct ctx_info *ctxi,
 void rhte_checkin(struct ctx_info *ctxi,
 		  struct sisl_rht_entry *rhte)
 {
+	u32 rsrc_handle = rhte - ctxi->rht_start;
+
 	rhte->nmask = 0;
 	rhte->fp = 0;
 	ctxi->rht_out--;
-	ctxi->rht_lun[rhte - ctxi->rht_start] = NULL;
+	ctxi->rht_lun[rsrc_handle] = NULL;
+	ctxi->rht_needs_ws[rsrc_handle] = false;
 }
 
 /**
@@ -851,10 +854,11 @@ static void destroy_context(struct cxlflash_cfg *cfg,
 		writeq_be(0, &ctxi->ctrl_map->ctx_cap);
 	}
 
-	/* Free the RHT memory */
+	/*
+	 * Free the RHT memory and context; note that rht_lun and rht_needs_ws
+	 * were carved from the same memory as the context.
+	 * */
 	free_page((ulong)ctxi->rht_start);
-
-	/* Free the context; note that rht_lun was allocated at same time */
 	kfree(ctxi);
 	atomic_dec_if_positive(&cfg->num_user_contexts);
 }
@@ -884,6 +888,7 @@ static struct ctx_info *create_context(struct cxlflash_cfg *cfg,
 	struct sisl_rht_entry *rhte;
 
 	size = (MAX_RHT_PER_CONTEXT * sizeof(*ctxi->rht_lun));
+	size += (MAX_RHT_PER_CONTEXT * sizeof(*ctxi->rht_needs_ws));
 	size += sizeof(*ctxi);
 
 	tmp = kzalloc(size, GFP_KERNEL);
@@ -900,7 +905,10 @@ static struct ctx_info *create_context(struct cxlflash_cfg *cfg,
 	}
 
 	ctxi = (struct ctx_info *)tmp;
-	ctxi->rht_lun = (struct llun_info **)(tmp + sizeof(*ctxi));
+	tmp += sizeof(*ctxi);
+	ctxi->rht_lun = (struct llun_info **)tmp;
+	tmp += (MAX_RHT_PER_CONTEXT * sizeof(*ctxi->rht_lun));
+	ctxi->rht_needs_ws = (bool *)tmp;
 	ctxi->rht_start = rhte;
 	ctxi->rht_perms = perms;
 

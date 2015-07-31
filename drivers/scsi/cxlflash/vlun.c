@@ -605,6 +605,7 @@ static int shrink_lxt(struct afu *afu,
 	struct llun_info *lli = sdev->hostdata;
 	struct glun_info *gli = lli->parent;
 	struct blka *blka = &gli->blka;
+	bool needs_ws = ctxi->rht_needs_ws[rhndl];
 	u32 ngrps, ngrps_old;
 	u64 aun;		/* chunk# allocated by block allocator */
 	u64 delta = rhte->lxt_cnt - *new_size;
@@ -649,11 +650,14 @@ static int shrink_lxt(struct afu *afu,
 	if (needs_sync)
 		cxlflash_afu_sync(afu, ctxid, rhndl, AFU_HW_SYNC);
 
-	/* Mark the context as unavailable, so that we can release
-	 * the mutex safely.
-	 */
-	ctxi->unavail = true;
-	mutex_unlock(&ctxi->mutex);
+	if (needs_ws) {
+		/*
+		 * Mark the context as unavailable, so that we can release
+		 * the mutex safely.
+		 */
+		ctxi->unavail = true;
+		mutex_unlock(&ctxi->mutex);
+	}
 
 	/* free LBAs allocated to freed chunks */
 	mutex_lock(&blka->mutex);
@@ -663,14 +667,17 @@ static int shrink_lxt(struct afu *afu,
 		 */
 		aun = (lxt_old[my_new_size + i].rlba_base & SISL_ASTATUS_MASK);
 		aun = (aun >> MC_CHUNK_SHIFT);
-		write_same16(sdev, aun, MC_CHUNK_SIZE);
+		if (needs_ws)
+			write_same16(sdev, aun, MC_CHUNK_SIZE);
 		ba_free(&blka->ba_lun, aun);
 	}
 	mutex_unlock(&blka->mutex);
 
-	/* Make the context visible again */
-	mutex_lock(&ctxi->mutex);
-	ctxi->unavail = false;
+	if (needs_ws) {
+		/* Make the context visible again */
+		mutex_lock(&ctxi->mutex);
+		ctxi->unavail = false;
+	}
 
 	/* free old lxt if reallocated */
 	if (lxt != lxt_old)
@@ -982,6 +989,10 @@ int cxlflash_disk_virtual_open(struct scsi_device *sdev, void *arg)
 		goto err2;
 	}
 	last_lba = resize.last_lba;
+
+#define DK_CXLFLASH_UVIRTUAL_NEED_WRITE_SAME 0x8000000ULL
+	if (virt->hdr.flags & DK_CXLFLASH_UVIRTUAL_NEED_WRITE_SAME)
+		ctxi->rht_needs_ws[rsrc_handle] = true;
 
 	virt->hdr.return_flags = 0;
 	virt->last_lba = last_lba;
