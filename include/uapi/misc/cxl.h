@@ -53,7 +53,7 @@ struct cxl_afu_id {
 	__u64 reserved6;
 };
 
-/* ioctl numbers */
+/* ioctl numbers - see Documentation/ioctl/ioctl-number.txt for reservations */
 #define CXL_MAGIC 0xCA
 #define CXL_IOCTL_START_WORK		_IOW(CXL_MAGIC, 0x00, struct cxl_ioctl_start_work)
 #define CXL_IOCTL_GET_PROCESS_ELEMENT	_IOR(CXL_MAGIC, 0x01, __u32)
