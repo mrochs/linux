@@ -382,7 +382,7 @@ retry:
 		if (!rc)
 			goto retry;
 
-		if (ctxi->detach_active)
+		if (ctxi->unavail)
 			goto denied;
 
 		ctxpid = ctxi->pid;
@@ -991,7 +991,7 @@ static int _cxlflash_disk_detach(struct scsi_device *sdev,
 
 	/* Tear down context following last LUN cleanup */
 	if (list_empty(&ctxi->luns)) {
-		ctxi->detach_active = true;
+		ctxi->unavail = true;
 		mutex_unlock(&ctxi->mutex);
 		mutex_lock(&cfg->ctx_tbl_list_mutex);
 		mutex_lock(&ctxi->mutex);

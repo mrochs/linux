@@ -586,6 +586,7 @@ out:
  * @ctxid:	Context ID of context owning the RHTE.
  * @rhndl:	Resource handle associated with the RHTE.
  * @rhte:	Resource handle entry (RHTE).
+ * @ctxi:	Context owning resources.
  * @new_size:	Number of translation entries associated with RHTE.
  * @needs_sync:	AFU sync needed.
  *
@@ -596,6 +597,7 @@ static int shrink_lxt(struct afu *afu,
 		      ctx_hndl_t ctxid,
 		      res_hndl_t rhndl,
 		      struct sisl_rht_entry *rhte,
+		      struct ctx_info *ctxi,
 		      u64 *new_size,
 		      bool needs_sync)
 {
@@ -647,6 +649,12 @@ static int shrink_lxt(struct afu *afu,
 	if (needs_sync)
 		cxlflash_afu_sync(afu, ctxid, rhndl, AFU_HW_SYNC);
 
+	/* Mark the context as unavailable, so that we can release
+	 * the mutex safely.
+	 */
+	ctxi->unavail = true;
+	mutex_unlock(&ctxi->mutex);
+
 	/* free LBAs allocated to freed chunks */
 	mutex_lock(&blka->mutex);
 	for (i = delta - 1; i >= 0; i--) {
@@ -659,6 +667,10 @@ static int shrink_lxt(struct afu *afu,
 		ba_free(&blka->ba_lun, aun);
 	}
 	mutex_unlock(&blka->mutex);
+
+	/* Make the context visible again */
+	mutex_lock(&ctxi->mutex);
+	ctxi->unavail = false;
 
 	/* free old lxt if reallocated */
 	if (lxt != lxt_old)
@@ -752,6 +764,7 @@ int _cxlflash_vlun_resize(struct scsi_device *sdev,
 				ctxid,
 				rhndl,
 				rhte,
+				ctxi,
 				&new_size,
 				!ctxi->err_recovery_active);
 
