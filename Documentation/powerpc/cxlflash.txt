@@ -277,17 +277,16 @@ DK_CXLFLASH_CLONE
 
 DK_CXLFLASH_VERIFY
 ------------------
-    The DK_CXLFLASH_VERIFY ioctl is used to detect various changes such
-    as the capacity of the disk changing, the number of LUNs visible
-    changing, etc. In cases where the changes affect the application
-    (such as a LUN resize), the cxlflash driver will report the changed
-    state to the application.
+    This ioctl is used to detect various changes such as the capacity of
+    the disk changing, the number of LUNs visible changing, etc. In cases
+    where the changes affect the application (such as a LUN resize), the
+    cxlflash driver will report the changed state to the application.
 
 DK_CXLFLASH_RECOVER_AFU
 -----------------------
     This ioctl is used to drive recovery (if such an action is warranted)
-    by resetting the adapter. Any state associated with all the open
-    contexts, will be re-established.
+    of a specified user context. Any state associated with the user context
+    is re-established upon successful recovery.
 
 DK_CXLFLASH_MANAGE_LUN
 ----------------------
