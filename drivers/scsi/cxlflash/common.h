@@ -106,6 +106,7 @@ struct cxlflash_cfg {
 	struct cxl_afu *cxl_afu;
 	struct pci_dev *parent_dev;
 
+	atomic_t recovery_threads;
 	struct mutex ctx_recovery_mutex;
 	struct mutex ctx_tbl_list_mutex;
 	struct ctx_info *ctx_tbl[MAX_CONTEXT];

@@ -1767,6 +1767,7 @@ static int cxlflash_afu_recover(struct scsi_device *sdev,
 	long reg;
 	int rc = 0;
 
+	atomic_inc(&cfg->recovery_threads);
 	rc = mutex_lock_interruptible(&cfg->ctx_recovery_mutex);
 	if (rc)
 		goto out;
@@ -1784,10 +1785,22 @@ retry:
 	}
 
 	if (ctxi->err_recovery_active) {
+retry_recover:
 		rc = recover_context(cfg, ctxi);
 		if (unlikely(rc)) {
 			pr_err("%s: Recovery failed for context %llu (rc=%d)\n",
 			       __func__, ctxid, rc);
+			if ((rc == -ENOMEM) &&
+			    (atomic_read(&cfg->recovery_threads) > 1)) {
+				pr_debug("%s: Going to try again!\n", __func__);
+				mutex_unlock(&cfg->ctx_recovery_mutex);
+				msleep(100);
+				rc = mutex_lock_interruptible(&cfg->ctx_recovery_mutex);
+				if (rc)
+					goto out;
+				goto retry_recover;
+			}
+
 			goto out;
 		}
 
@@ -1818,6 +1831,7 @@ out:
 	if (likely(ctxi))
 		mutex_unlock(&ctxi->mutex);
 	mutex_unlock(&cfg->ctx_recovery_mutex);
+	atomic_dec_if_positive(&cfg->recovery_threads);
 	return rc;
 }
 
