@@ -761,16 +761,16 @@ static void cxlflash_remove(struct pci_dev *pdev)
 	case INIT_STATE_SCSI:
 		cxlflash_term_luns(cfg);
 		scsi_remove_host(cfg->host);
-		scsi_host_put(cfg->host);
 		/* Fall through */
 	case INIT_STATE_AFU:
+		cancel_work_sync(&cfg->work_q);
 		term_afu(cfg);
 	case INIT_STATE_PCI:
 		pci_release_regions(cfg->dev);
 		pci_disable_device(pdev);
 	case INIT_STATE_NONE:
-		flush_work(&cfg->work_q);
 		free_mem(cfg);
+		scsi_host_put(cfg->host);
 		break;
 	}
 
@@ -2337,6 +2337,7 @@ static int cxlflash_probe(struct pci_dev *pdev,
 		dev_err(&pdev->dev, "%s: call to scsi_host_alloc failed!\n",
 			__func__);
 		rc = -ENOMEM;
+		scsi_host_put(cfg->host);
 		goto out;
 	}
 
@@ -2366,7 +2367,6 @@ static int cxlflash_probe(struct pci_dev *pdev,
 	spin_lock_init(&cfg->slock);
 	INIT_LIST_HEAD(&cfg->ctx_err_recovery);
 	INIT_LIST_HEAD(&cfg->lluns);
-
 
 	pci_set_drvdata(pdev, cfg);
 
@@ -2399,7 +2399,6 @@ static int cxlflash_probe(struct pci_dev *pdev,
 		goto out_remove;
 	}
 	cfg->init_state = INIT_STATE_AFU;
-
 
 	rc = init_scsi(cfg);
 	if (rc) {
