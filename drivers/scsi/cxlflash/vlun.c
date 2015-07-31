@@ -990,7 +990,6 @@ int cxlflash_disk_virtual_open(struct scsi_device *sdev, void *arg)
 	}
 	last_lba = resize.last_lba;
 
-#define DK_CXLFLASH_UVIRTUAL_NEED_WRITE_SAME 0x8000000ULL
 	if (virt->hdr.flags & DK_CXLFLASH_UVIRTUAL_NEED_WRITE_SAME)
 		ctxi->rht_needs_ws[rsrc_handle] = true;
 
