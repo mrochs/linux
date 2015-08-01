@@ -1790,7 +1790,7 @@ retry_recover:
 		if (unlikely(rc)) {
 			pr_err("%s: Recovery failed for context %llu (rc=%d)\n",
 			       __func__, ctxid, rc);
-			if ((rc == -ENOMEM) &&
+			if ((rc == -ENODEV) &&
 			    (atomic_read(&cfg->recovery_threads) > 1)) {
 				pr_debug("%s: Going to try again!\n", __func__);
 				mutex_unlock(&cfg->ctx_recovery_mutex);
