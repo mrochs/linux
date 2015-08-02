@@ -1742,7 +1742,10 @@ out:
  *
  * Only a single recovery is allowed at a time to avoid exhausting CXL
  * resources (leading to recovery failure) in the event that we're up
- * against the maximum number of contexts limit.
+ * against the maximum number of contexts limit. For similar reasons,
+ * a context recovery is retried if there are multiple recoveries taking
+ * place at the same time and the failure was due to CXL services being
+ * unable to keep up.
  *
  * Because a user can detect an error condition before the kernel, it is
  * quite possible for this routine to act as the kernel's EEH detection
@@ -1762,13 +1765,14 @@ static int cxlflash_afu_recover(struct scsi_device *sdev,
 	struct llun_info *lli = sdev->hostdata;
 	struct afu *afu = cfg->afu;
 	struct ctx_info *ctxi = NULL;
+	struct mutex *mutex = &cfg->ctx_recovery_mutex;
 	u64 ctxid = DECODE_CTXID(recover->context_id),
 	    rctxid = recover->context_id;
 	long reg;
 	int rc = 0;
 
 	atomic_inc(&cfg->recovery_threads);
-	rc = mutex_lock_interruptible(&cfg->ctx_recovery_mutex);
+	rc = mutex_lock_interruptible(mutex);
 	if (rc)
 		goto out;
 
@@ -1793,9 +1797,9 @@ retry_recover:
 			if ((rc == -ENODEV) &&
 			    (atomic_read(&cfg->recovery_threads) > 1)) {
 				pr_debug("%s: Going to try again!\n", __func__);
-				mutex_unlock(&cfg->ctx_recovery_mutex);
+				mutex_unlock(mutex);
 				msleep(100);
-				rc = mutex_lock_interruptible(&cfg->ctx_recovery_mutex);
+				rc = mutex_lock_interruptible(mutex);
 				if (rc)
 					goto out;
 				goto retry_recover;
@@ -1830,7 +1834,7 @@ retry_recover:
 out:
 	if (likely(ctxi))
 		mutex_unlock(&ctxi->mutex);
-	mutex_unlock(&cfg->ctx_recovery_mutex);
+	mutex_unlock(mutex);
 	atomic_dec_if_positive(&cfg->recovery_threads);
 	return rc;
 }
