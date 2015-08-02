@@ -579,29 +579,27 @@ out:
  * shrink_lxt() - reduces translation table associated with the specified RHTE
  * @afu:	AFU associated with the host.
  * @sdev:	SCSI device associated with LUN.
- * @ctxid:	Context ID of context owning the RHTE.
  * @rhndl:	Resource handle associated with the RHTE.
  * @rhte:	Resource handle entry (RHTE).
  * @ctxi:	Context owning resources.
  * @new_size:	Number of translation entries associated with RHTE.
- * @needs_sync:	AFU sync needed.
  *
  * Return: 0 on success, -errno on failure
  */
 static int shrink_lxt(struct afu *afu,
 		      struct scsi_device *sdev,
-		      ctx_hndl_t ctxid,
 		      res_hndl_t rhndl,
 		      struct sisl_rht_entry *rhte,
 		      struct ctx_info *ctxi,
-		      u64 *new_size,
-		      bool needs_sync)
+		      u64 *new_size)
 {
 	struct sisl_lxt_entry *lxt, *lxt_old;
 	struct llun_info *lli = sdev->hostdata;
 	struct glun_info *gli = lli->parent;
 	struct blka *blka = &gli->blka;
+	ctx_hndl_t ctxid = DECODE_CTXID(ctxi->ctxid);
 	bool needs_ws = ctxi->rht_needs_ws[rhndl];
+	bool needs_sync = !ctxi->err_recovery_active;
 	u32 ngrps, ngrps_old;
 	u64 aun;		/* chunk# allocated by block allocator */
 	u64 delta = rhte->lxt_cnt - *new_size;
@@ -613,7 +611,7 @@ static int shrink_lxt(struct afu *afu,
 	ngrps = LXT_NUM_GROUPS(rhte->lxt_cnt - delta);
 
 	if (ngrps != ngrps_old) {
-		/* reallocate to fit new size unless new size is 0 */
+		/* Reallocate to fit new size unless new size is 0 */
 		if (ngrps) {
 			lxt = kzalloc((sizeof(*lxt) * LXT_GROUP_SIZE * ngrps),
 				      GFP_KERNEL);
@@ -622,7 +620,7 @@ static int shrink_lxt(struct afu *afu,
 				goto out;
 			}
 
-			/* copy over old entries that will remain */
+			/* Copy over old entries that will remain */
 			memcpy(lxt, lxt_old,
 			       (sizeof(*lxt) * (rhte->lxt_cnt - delta)));
 		} else
@@ -630,7 +628,7 @@ static int shrink_lxt(struct afu *afu,
 	} else
 		lxt = lxt_old;
 
-	/* nothing can fail from now on */
+	/* Nothing can fail from now on */
 	my_new_size = rhte->lxt_cnt - delta;
 
 	/*
@@ -655,7 +653,7 @@ static int shrink_lxt(struct afu *afu,
 		mutex_unlock(&ctxi->mutex);
 	}
 
-	/* free LBAs allocated to freed chunks */
+	/* Free LBAs allocated to freed chunks */
 	mutex_lock(&blka->mutex);
 	for (i = delta - 1; i >= 0; i--) {
 		/* Mask the higher 48 bits before shifting, even though
@@ -675,7 +673,7 @@ static int shrink_lxt(struct afu *afu,
 		ctxi->unavail = false;
 	}
 
-	/* free old lxt if reallocated */
+	/* Free old lxt if reallocated */
 	if (lxt != lxt_old)
 		kfree(lxt_old);
 	*new_size = my_new_size;
@@ -756,21 +754,9 @@ int _cxlflash_vlun_resize(struct scsi_device *sdev,
 	}
 
 	if (new_size > rhte->lxt_cnt)
-		rc = grow_lxt(afu,
-			      sdev,
-			      ctxid,
-			      rhndl,
-			      rhte,
-			      &new_size);
+		rc = grow_lxt(afu, sdev, ctxid, rhndl, rhte, &new_size);
 	else if (new_size < rhte->lxt_cnt)
-		rc = shrink_lxt(afu,
-				sdev,
-				ctxid,
-				rhndl,
-				rhte,
-				ctxi,
-				&new_size,
-				!ctxi->err_recovery_active);
+		rc = shrink_lxt(afu, sdev, rhndl, rhte, ctxi, &new_size);
 
 	resize->hdr.return_flags = 0;
 	resize->last_lba = (new_size * MC_CHUNK_SIZE * gli->blk_len);
