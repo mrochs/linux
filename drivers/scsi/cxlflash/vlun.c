@@ -94,8 +94,8 @@ static int ba_init(struct ba_lun *ba_lun)
 		bali->lun_bmap_size++;
 
 	/* Allocate bitmap space */
-	bali->lun_alloc_map = kzalloc((bali->lun_bmap_size *
-					   sizeof(u64)), GFP_KERNEL);
+	bali->lun_alloc_map = kzalloc((bali->lun_bmap_size * sizeof(u64)),
+				      GFP_KERNEL);
 	if (unlikely(!bali->lun_alloc_map)) {
 		pr_err("%s: Failed to allocate lun allocation map: "
 		       "lun_id = %llX\n", __func__, ba_lun->lun_id);
@@ -110,8 +110,7 @@ static int ba_init(struct ba_lun *ba_lun)
 		bali->lun_alloc_map[i] = 0xFFFFFFFFFFFFFFFFULL;
 
 	/* If the last word not fully utilized, mark extra bits as allocated */
-	last_word_underflow = (bali->lun_bmap_size * BPL) -
-	    bali->free_aun_cnt;
+	last_word_underflow = (bali->lun_bmap_size * BPL) - bali->free_aun_cnt;
 	if (last_word_underflow > 0) {
 		lam = &bali->lun_alloc_map[bali->lun_bmap_size - 1];
 		for (i = (HIBIT - last_word_underflow + 1); i < BPL; i++)
@@ -122,8 +121,8 @@ static int ba_init(struct ba_lun *ba_lun)
 	bali->free_high_idx = bali->lun_bmap_size;
 
 	/* Allocate clone map */
-	bali->aun_clone_map = kzalloc((bali->total_aus *
-					   sizeof(u8)), GFP_KERNEL);
+	bali->aun_clone_map = kzalloc((bali->total_aus * sizeof(u8)),
+				      GFP_KERNEL);
 	if (unlikely(!bali->aun_clone_map)) {
 		pr_err("%s: Failed to allocate clone map: lun_id = %llX\n",
 		       __func__, ba_lun->lun_id);
@@ -310,8 +309,7 @@ static int ba_free(struct ba_lun *ba_lun, u64 to_free)
  */
 static int ba_clone(struct ba_lun *ba_lun, u64 to_clone)
 {
-	struct ba_lun_info *bali =
-	    (struct ba_lun_info *)ba_lun->ba_lun_handle;
+	struct ba_lun_info *bali = (struct ba_lun_info *)ba_lun->ba_lun_handle;
 
 	if (validate_alloc(bali, to_clone)) {
 		pr_err("%s: AUN %llX is not allocated on lun_id %llX\n",
@@ -341,8 +339,7 @@ static int ba_clone(struct ba_lun *ba_lun, u64 to_clone)
  */
 static u64 ba_space(struct ba_lun *ba_lun)
 {
-	struct ba_lun_info *bali =
-	    (struct ba_lun_info *)ba_lun->ba_lun_handle;
+	struct ba_lun_info *bali = (struct ba_lun_info *)ba_lun->ba_lun_handle;
 
 	return bali->free_aun_cnt;
 }
@@ -355,8 +352,7 @@ static u64 ba_space(struct ba_lun *ba_lun)
  */
 void cxlflash_ba_terminate(struct ba_lun *ba_lun)
 {
-	struct ba_lun_info *bali =
-	    (struct ba_lun_info *)ba_lun->ba_lun_handle;
+	struct ba_lun_info *bali = (struct ba_lun_info *)ba_lun->ba_lun_handle;
 
 	if (bali) {
 		kfree(bali->aun_clone_map);
@@ -722,8 +718,9 @@ int _cxlflash_vlun_resize(struct scsi_device *sdev,
 
 	int rc = 0;
 
-	/* req_size is always assumed to be in 4k blocks. So we have to convert
-	 * it from 4k to chunk size
+	/*
+	 * The requested size (req_size) is always assumed to be in 4k blocks,
+	 * so we have to convert it here from 4k to chunk size.
 	 */
 	nsectors = (resize->req_size * CXLFLASH_BLOCK_SIZE) / gli->blk_len;
 	new_size = DIV_ROUND_UP(nsectors, MC_CHUNK_SIZE);
@@ -976,9 +973,9 @@ int cxlflash_disk_virtual_open(struct scsi_device *sdev, void *arg)
 
 	rsrc_handle = (rhte - ctxi->rht_start);
 
+	/* Populate RHT format 0 */
 	rhte->nmask = MC_RHT_NMASK;
 	rhte->fp = SISL_RHT_FP(0U, ctxi->rht_perms);
-	/* format 0 & perms */
 
 	/* Resize even if requested size is 0 */
 	marshal_virt_to_resize(virt, &resize);

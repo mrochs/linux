@@ -635,7 +635,7 @@ void rhte_checkin(struct ctx_info *ctxi,
  * @rhte:	RHTE to populate.
  * @lun_id:	LUN ID of LUN associated with RHTE.
  * @perm:	Desired permissions for RHTE.
- * @port_sel:   Port selection mask
+ * @port_sel:	Port selection mask
  */
 static void rht_format1(struct sisl_rht_entry *rhte, u64 lun_id, u32 perm,
 			u32 port_sel)
@@ -690,7 +690,7 @@ int cxlflash_lun_attach(struct glun_info *gli, enum lun_mode mode)
 	}
 
 	gli->users++;
-	BUG_ON(gli->users <= 0);
+	WARN_ON(gli->users <= 0);
 out:
 	pr_debug("%s: Returning rc=%d gli->mode=%u gli->users=%u\n",
 		 __func__, rc, gli->mode, gli->users);
@@ -705,11 +705,11 @@ out:
 void cxlflash_lun_detach(struct glun_info *gli)
 {
 	spin_lock(&gli->slock);
-	BUG_ON(gli->mode == MODE_NONE); /* XXX - remove me before submit */
+	WARN_ON(gli->mode == MODE_NONE);
 	if (--gli->users == 0)
 		gli->mode = MODE_NONE;
 	pr_debug("%s: gli->users=%u\n", __func__, gli->users);
-	BUG_ON(gli->users < 0);
+	WARN_ON(gli->users < 0);
 	spin_unlock(&gli->slock);
 }
 
@@ -808,7 +808,7 @@ int _cxlflash_disk_release(struct scsi_device *sdev,
 			cxlflash_afu_sync(afu, ctxid, rhndl, AFU_HW_SYNC);
 		break;
 	default:
-		BUG();
+		WARN(1, "Unsupported LUN mode!");
 		goto out;
 	}
 
@@ -845,7 +845,7 @@ int cxlflash_disk_release(struct scsi_device *sdev,
 static void destroy_context(struct cxlflash_cfg *cfg,
 			    struct ctx_info *ctxi)
 {
-	BUG_ON(!list_empty(&ctxi->luns));
+	WARN_ON(!list_empty(&ctxi->luns));
 
 	/* Clear RHT registers and drop all capabilities for this context */
 	if (ctxi->ctrl_map) {
@@ -1094,7 +1094,6 @@ static int cxlflash_cxl_release(struct inode *inode, struct file *file)
 	if (unlikely(ctxid < 0)) {
 		pr_err("%s: Context %p was closed! (%d)\n",
 		       __func__, ctx, ctxid);
-		BUG(); /* XXX - remove me before submission */
 		goto out;
 	}
 
@@ -1208,7 +1207,6 @@ static int cxlflash_mmap_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 	if (unlikely(ctxid < 0)) {
 		pr_err("%s: Context %p was closed! (%d)\n",
 		       __func__, ctx, ctxid);
-		BUG(); /* XXX - remove me before submission */
 		goto err;
 	}
 
@@ -1280,7 +1278,6 @@ static int cxlflash_cxl_mmap(struct file *file, struct vm_area_struct *vma)
 	if (unlikely(ctxid < 0)) {
 		pr_err("%s: Context %p was closed! (%d)\n",
 		       __func__, ctx, ctxid);
-		BUG(); /* XXX - remove me before submission */
 		rc = -EIO;
 		goto out;
 	}
@@ -1533,11 +1530,6 @@ err3:
 	destroy_context(cfg, ctxi);
 err2:
 	/*
-	 * XXX - look at collapsing this such that we don't need to override
-	 * the fops. Instead, we should be able to simplify some of this error
-	 * handling with the notion that CXL cleanup will be performed via the
-	 * release call that fput(file) makes.
-	 *
 	 * Here, we're overriding the fops with a dummy all-NULL fops because
 	 * fput() calls the release fop, which will cause us to mistakenly
 	 * call into the CXL code. Rather than try to add yet more complexity
@@ -1966,7 +1958,7 @@ static int cxlflash_disk_verify(struct scsi_device *sdev,
 		last_lba--;
 		break;
 	default:
-		BUG();
+		WARN(1, "Unsupported LUN mode!");
 	}
 
 	verify->last_lba = last_lba;

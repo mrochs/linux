@@ -312,8 +312,7 @@ write_rrin:
  * @cmd:	AFU command to send.
  *
  * Return:
- *	0 on success
- *	-1 on failure
+ *	0 on success or SCSI_MLQUEUE_HOST_BUSY
  */
 static int send_cmd(struct afu *afu, struct afu_cmd *cmd)
 {
@@ -400,8 +399,7 @@ static void wait_resp(struct afu *afu, struct afu_cmd *cmd)
  * @tmfcmd:	TMF command to send.
  *
  * Return:
- *	0 on success
- *	SCSI_MLQUEUE_HOST_BUSY when host is busy
+ *	0 on success or SCSI_MLQUEUE_HOST_BUSY
  */
 static int send_tmf(struct afu *afu, struct scsi_cmnd *scp, u64 tmfcmd)
 {
@@ -423,8 +421,7 @@ static int send_tmf(struct afu *afu, struct scsi_cmnd *scp, u64 tmfcmd)
 		goto out;
 	}
 
-	/* If a Task Management Function is active, do not send one more.
-	 */
+	/* When Task Management Function is active do not send another */
 	spin_lock_irqsave(&cfg->tmf_slock, lock_flags);
 	if (cfg->tmf_active)
 		wait_event_interruptible_lock_irq(cfg->tmf_waitq,
@@ -514,9 +511,7 @@ static inline bool is_scsi_read_write(struct scsi_cmnd *scp)
  * @host:	SCSI host associated with device.
  * @scp:	SCSI command to send.
  *
- * Return:
- *	0 on success
- *	SCSI_MLQUEUE_HOST_BUSY when host is busy
+ * Return: 0 on success or SCSI_MLQUEUE_HOST_BUSY
  */
 static int cxlflash_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *scp)
 {
@@ -547,7 +542,8 @@ static int cxlflash_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *scp)
 		goto error;
 	}
 
-	/* If a Task Management Function is active, wait for it to complete
+	/*
+	 * If a Task Management Function is active, wait for it to complete
 	 * before continuing with regular commands.
 	 */
 	spin_lock_irqsave(&cfg->tmf_slock, lock_flags);
@@ -761,7 +757,7 @@ static void cxlflash_remove(struct pci_dev *pdev)
 	case INIT_STATE_SCSI:
 		cxlflash_term_luns(cfg);
 		scsi_remove_host(cfg->host);
-		/* Fall through */
+		/* fall through */
 	case INIT_STATE_AFU:
 		cancel_work_sync(&cfg->work_q);
 		term_afu(cfg);
@@ -794,9 +790,7 @@ static int alloc_mem(struct cxlflash_cfg *cfg)
 	char *buf = NULL;
 	struct device *dev = &cfg->dev->dev;
 
-	/* This allocation is about 12K, i.e. only 1 64k page
-	 * and upto 4 4k pages
-	 */
+	/* AFU is ~12k, i.e. only one 64k page or up to four 4k pages */
 	cfg->afu = (void *)__get_free_pages(GFP_KERNEL | __GFP_ZERO,
 					    get_order(sizeof(struct afu)));
 	if (unlikely(!cfg->afu)) {
@@ -834,10 +828,7 @@ out:
  * init_pci() - initializes the host as a PCI device
  * @cfg:	Internal structure associated with the host.
  *
- * Return:
- *	0 on success
- *	-EIO on unable to communicate with device
- *	A return code from the PCI sub-routines
+ * Return: 0 on success, -errno on failure
  */
 static int init_pci(struct cxlflash_cfg *cfg)
 {
@@ -919,9 +910,7 @@ out_release_regions:
  * init_scsi() - adds the host to the SCSI stack and kicks off host scan
  * @cfg:	Internal structure associated with the host.
  *
- * Return:
- *	0 on success
- *	A return code from adding the host
+ * Return: 0 on success, -errno on failure
  */
 static int init_scsi(struct cxlflash_cfg *cfg)
 {
@@ -1330,10 +1319,10 @@ static irqreturn_t cxlflash_async_err_irq(int irq, void *data)
 		goto out;
 	}
 
-	/* it is OK to clear AFU status before FC_ERROR */
+	/* FYI, it is 'okay' to clear AFU status before FC_ERROR */
 	writeq_be(reg_unmasked, &global->regs.aintr_clear);
 
-	/* check each bit that is on */
+	/* Check each bit that is on */
 	for (i = 0; reg_unmasked; i++, reg_unmasked = (reg_unmasked >> 1)) {
 		info = find_ainfo(1ULL << i);
 		if (((reg_unmasked & 0x1) == 0) || !info)
@@ -1346,7 +1335,7 @@ static irqreturn_t cxlflash_async_err_irq(int irq, void *data)
 		       readq_be(&global->fc_regs[port][FC_STATUS / 8]));
 
 		/*
-		 * do link reset first, some OTHER errors will set FC_ERROR
+		 * Do link reset first, some OTHER errors will set FC_ERROR
 		 * again if cleared before or w/o a reset
 		 */
 		if (info->action & LINK_RESET) {
@@ -1361,7 +1350,7 @@ static irqreturn_t cxlflash_async_err_irq(int irq, void *data)
 			reg = readq_be(&global->fc_regs[port][FC_ERROR / 8]);
 
 			/*
-			 * since all errors are unmasked, FC_ERROR and FC_ERRCAP
+			 * Since all errors are unmasked, FC_ERROR and FC_ERRCAP
 			 * should be the same and tracing one is sufficient.
 			 */
 
@@ -1406,9 +1395,7 @@ static int start_context(struct cxlflash_cfg *cfg)
  * @cfg:	Internal structure associated with the host.
  * @wwpn:	Array of size NUM_FC_PORTS to pass back WWPNs
  *
- * Return:
- *	0 on success
- *	-ENODEV when VPD or WWPN keywords not found
+ * Return: 0 on success, -errno on failure
  */
 static int read_vpd(struct cxlflash_cfg *cfg, u64 wwpn[])
 {
@@ -1509,23 +1496,22 @@ static void init_pcr(struct cxlflash_cfg *cfg)
 
 	for (i = 0; i < MAX_CONTEXT; i++) {
 		ctrl_map = &afu->afu_map->ctrls[i].ctrl;
-		/* disrupt any clients that could be running */
+		/* Disrupt any clients that could be running */
 		/* e. g. clients that survived a master restart */
 		writeq_be(0, &ctrl_map->rht_start);
 		writeq_be(0, &ctrl_map->rht_cnt_id);
 		writeq_be(0, &ctrl_map->ctx_cap);
 	}
 
-	/* copy frequently used fields into afu */
+	/* Copy frequently used fields into afu */
 	afu->ctx_hndl = (u16) cxl_process_element(cfg->mcctx);
-	/* ctx_hndl is 16 bits in CAIA */
 	afu->host_map = &afu->afu_map->hosts[afu->ctx_hndl].host;
 	afu->ctrl_map = &afu->afu_map->ctrls[afu->ctx_hndl].ctrl;
 
 	/* Program the Endian Control for the master context */
 	writeq_be(SISL_ENDIAN_CTRL, &afu->host_map->endian_ctrl);
 
-	/* initialize cmd fields that never change */
+	/* Initialize cmd fields that never change */
 	for (i = 0; i < CXLFLASH_NUM_CMDS; i++) {
 		afu->cmd[i].rcb.ctx_id = afu->ctx_hndl;
 		afu->cmd[i].rcb.msi = SISL_MSI_RRQ_UPDATED;
@@ -1554,7 +1540,7 @@ static int init_global(struct cxlflash_cfg *cfg)
 
 	pr_debug("%s: wwpn0=0x%llX wwpn1=0x%llX\n", __func__, wwpn[0], wwpn[1]);
 
-	/* set up RRQ in AFU for master issued cmds */
+	/* Set up RRQ in AFU for master issued cmds */
 	writeq_be((u64) afu->hrrq_start, &afu->host_map->rrq_start);
 	writeq_be((u64) afu->hrrq_end, &afu->host_map->rrq_end);
 
@@ -1567,9 +1553,9 @@ static int init_global(struct cxlflash_cfg *cfg)
 	/* checker on if dual afu */
 	writeq_be(reg, &afu->afu_map->global.regs.afu_config);
 
-	/* global port select: select either port */
+	/* Global port select: select either port */
 	if (afu->internal_lun) {
-		/* only use port 0 */
+		/* Only use port 0 */
 		writeq_be(PORT0, &afu->afu_map->global.regs.afu_port_sel);
 		num_ports = NUM_FC_PORTS - 1;
 	} else {
@@ -1578,15 +1564,15 @@ static int init_global(struct cxlflash_cfg *cfg)
 	}
 
 	for (i = 0; i < num_ports; i++) {
-		/* unmask all errors (but they are still masked at AFU) */
+		/* Unmask all errors (but they are still masked at AFU) */
 		writeq_be(0, &afu->afu_map->global.fc_regs[i][FC_ERRMSK / 8]);
-		/* clear CRC error cnt & set a threshold */
+		/* Clear CRC error cnt & set a threshold */
 		(void)readq_be(&afu->afu_map->global.
 			       fc_regs[i][FC_CNT_CRCERR / 8]);
 		writeq_be(MC_CRC_THRESH, &afu->afu_map->global.fc_regs[i]
 			  [FC_CRC_THRESH / 8]);
 
-		/* set WWPNs. If already programmed, wwpn[i] is 0 */
+		/* Set WWPNs. If already programmed, wwpn[i] is 0 */
 		if (wwpn[i] != 0 &&
 		    afu_set_wwpn(afu, i,
 				 &afu->afu_map->global.fc_regs[i][0],
@@ -1600,10 +1586,9 @@ static int init_global(struct cxlflash_cfg *cfg)
 		 * offline/online transitions and a PLOGI
 		 */
 		msleep(100);
-
 	}
 
-	/* set up master's own CTX_CAP to allow real mode, host translation */
+	/* Set up master's own CTX_CAP to allow real mode, host translation */
 	/* tbls, afu cmds and read/write GSCSI cmds. */
 	/* First, unlock ctx_cap write by reading mbox */
 	(void)readq_be(&afu->ctrl_map->mbox_r);	/* unlock ctx_cap */
@@ -1611,7 +1596,7 @@ static int init_global(struct cxlflash_cfg *cfg)
 		   SISL_CTX_CAP_READ_CMD | SISL_CTX_CAP_WRITE_CMD |
 		   SISL_CTX_CAP_AFU_CMD | SISL_CTX_CAP_GSCSI_CMD),
 		  &afu->ctrl_map->ctx_cap);
-	/* init heartbeat */
+	/* Initialize heartbeat */
 	afu->hb = readq_be(&afu->afu_map->global.regs.afu_hb);
 
 out:
@@ -1640,12 +1625,10 @@ static int start_afu(struct cxlflash_cfg *cfg)
 
 	init_pcr(cfg);
 
-	/* After an AFU reset, we cannot trust the RRQ entries.
-	 * Start from a clean point.
-	 */
+	/* After an AFU reset, RRQ entries are stale, clear them */
 	memset(&afu->rrq_entry, 0, sizeof(afu->rrq_entry));
 
-	/* initialize RRQ pointers */
+	/* Initialize RRQ pointers */
 	afu->hrrq_start = &afu->rrq_entry[0];
 	afu->hrrq_end = &afu->rrq_entry[NUM_RRQ_ENTRY - 1];
 	afu->hrrq_curr = afu->hrrq_start;
@@ -1661,10 +1644,7 @@ static int start_afu(struct cxlflash_cfg *cfg)
  * init_mc() - create and register as the master context
  * @cfg:	Internal structure associated with the host.
  *
- * Return:
- *	0 on success
- *	-ENOMEM when unable to obtain a context from CXL services
- *	A failure value from CXL services.
+ * Return: 0 on success, -errno on failure
  */
 static int init_mc(struct cxlflash_cfg *cfg)
 {
@@ -1753,10 +1733,7 @@ out:
  * This routine is a higher level of control for configuring the
  * AFU on probe and reset paths.
  *
- * Return:
- *	0 on success
- *	-ENOMEM when unable to map the AFU MMIO space
- *	A failure value from internal services.
+ * Return: 0 on success, -errno on failure
  */
 static int init_afu(struct cxlflash_cfg *cfg)
 {
@@ -1776,8 +1753,7 @@ static int init_afu(struct cxlflash_cfg *cfg)
 		goto err1;
 	}
 
-	/* Map the entire MMIO space of the AFU.
-	 */
+	/* Map the entire MMIO space of the AFU */
 	afu->afu_map = cxl_psa_map(cfg->mcctx);
 	if (!afu->afu_map) {
 		rc = -ENOMEM;
@@ -1786,8 +1762,7 @@ static int init_afu(struct cxlflash_cfg *cfg)
 		goto err1;
 	}
 
-	/* don't byte reverse on reading afu_version, else the string form */
-	/*     will be backwards */
+	/* No byte reverse on reading afu_version or string will be backwards */
 	reg = afu->afu_map->global.regs.afu_version;
 	memcpy(afu->version, &reg, 8);
 	afu->interface_version =
@@ -1889,7 +1864,7 @@ retry:
 
 	wait_resp(afu, cmd);
 
-	/* set on timeout */
+	/* Set on timeout */
 	if (unlikely((cmd->sa.ioasc != 0) ||
 		     (cmd->sa.host_use_b[0] & B_ERROR)))
 		rc = -1;
@@ -1905,9 +1880,7 @@ out:
  * afu_reset() - resets the AFU
  * @cfg:	Internal structure associated with the host.
  *
- * Return:
- *	0 on success
- *	A failure value from internal services.
+ * Return: 0 on success, -errno on failure
  */
 static int afu_reset(struct cxlflash_cfg *cfg)
 {
@@ -2218,7 +2191,7 @@ static struct scsi_host_template driver_template = {
 	.cmd_per_lun = 16,
 	.can_queue = CXLFLASH_MAX_CMDS,
 	.this_id = -1,
-	.sg_tablesize = SG_NONE,	/* No scatter gather support. */
+	.sg_tablesize = SG_NONE,	/* No scatter gather support */
 	.max_sectors = CXLFLASH_MAX_SECTORS,
 	.use_clustering = ENABLE_CLUSTERING,
 	.shost_attrs = cxlflash_host_attrs,
@@ -2249,6 +2222,7 @@ MODULE_DEVICE_TABLE(pci, cxlflash_pci_table);
  * - Link reset which cannot be performed on interrupt context due to
  * blocking up to a few seconds
  * - Read AFU command room
+ * - Rescan the host
  */
 static void cxlflash_worker_thread(struct work_struct *work)
 {
@@ -2301,7 +2275,7 @@ static void cxlflash_worker_thread(struct work_struct *work)
  * @pdev:	PCI device associated with the host.
  * @dev_id:	PCI device id associated with device.
  *
- * Return: 0 on success / non-zero on failure
+ * Return: 0 on success, -errno on failure
  */
 static int cxlflash_probe(struct pci_dev *pdev,
 			  const struct pci_device_id *dev_id)
@@ -2346,7 +2320,8 @@ static int cxlflash_probe(struct pci_dev *pdev,
 	cfg->init_state = INIT_STATE_NONE;
 	cfg->dev = pdev;
 
-	/* The promoted LUNs move to the top of the LUN table. The rest stay
+	/*
+	 * The promoted LUNs move to the top of the LUN table. The rest stay
 	 * on the bottom half. The bottom half grows from the end
 	 * (index = 255), whereas the top half grows from the beginning
 	 * (index = 0).
@@ -2372,7 +2347,8 @@ static int cxlflash_probe(struct pci_dev *pdev,
 
 	pci_set_drvdata(pdev, cfg);
 
-	/* Use the special service provided to look up the physical
+	/*
+	 * Use the special service provided to look up the physical
 	 * PCI device, since we are called on the probe of the virtual
 	 * PCI host bus (vphb)
 	 */
@@ -2519,7 +2495,7 @@ static struct pci_driver cxlflash_driver = {
 /**
  * init_cxlflash() - module entry point
  *
- * Return: 0 on success / non-zero on failure
+ * Return: 0 on success, -errno on failure
  */
 static int __init init_cxlflash(void)
 {
