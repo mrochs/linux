@@ -97,13 +97,13 @@ struct cxlflash_cfg {
 	enum cxlflash_init_state init_state;
 	enum cxlflash_lr_state lr_state;
 	int lr_port;
+	atomic_t scan_host_needed;
 
 	struct cxl_afu *cxl_afu;
-
-	struct pci_pool *cxlflash_cmd_pool;
 	struct pci_dev *parent_dev;
 
 	wait_queue_head_t tmf_waitq;
+	spinlock_t tmf_slock;
 	bool tmf_active;
 	u8 err_recovery_active:1;
 };
@@ -171,11 +171,6 @@ static inline u64 lun_to_lunid(u64 lun)
 	return swab64(lun_id);
 }
 
-int cxlflash_send_cmd(struct afu *, struct afu_cmd *);
-void cxlflash_wait_resp(struct afu *, struct afu_cmd *);
-int cxlflash_afu_reset(struct cxlflash_cfg *);
-struct afu_cmd *cxlflash_cmd_checkout(struct afu *);
-void cxlflash_cmd_checkin(struct afu_cmd *);
 int cxlflash_afu_sync(struct afu *, ctx_hndl_t, res_hndl_t, u8);
 #endif /* ifndef _CXLFLASH_COMMON_H */
 
