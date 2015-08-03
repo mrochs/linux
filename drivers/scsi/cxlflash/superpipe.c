@@ -1527,7 +1527,9 @@ out:
 err4:
 	cxl_stop_context(ctx);
 err3:
+	mutex_unlock(&ctxi->mutex);
 	destroy_context(cfg, ctxi);
+	ctxi = NULL;
 err2:
 	/*
 	 * Here, we're overriding the fops with a dummy all-NULL fops because
