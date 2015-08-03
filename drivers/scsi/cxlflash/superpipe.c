@@ -27,9 +27,23 @@
 
 #include "sislite.h"
 #include "common.h"
+#include "vlun.h"
 #include "superpipe.h"
 
 static struct cxlflash_global global;
+
+/**
+ * marshal_rele_to_resize() - translate release to resize structure
+ * @rele:	Source structure from which to translate/copy.
+ * @resize:	Destination structure for the translate/copy.
+ */
+static void marshal_rele_to_resize(struct dk_cxlflash_release *release,
+				   struct dk_cxlflash_resize *resize)
+{
+	resize->hdr = release->hdr;
+	resize->context_id = release->context_id;
+	resize->rsrc_handle = release->rsrc_handle;
+}
 
 /**
  * marshal_det_to_rele() - translate detach to release structure
@@ -63,6 +77,7 @@ static struct llun_info *create_local(struct scsi_device *sdev, u8 *wwid)
 	lli->sdev = sdev;
 	lli->newly_created = true;
 	lli->host_no = sdev->host->host_no;
+	lli->in_table = false;
 
 	memcpy(lli->wwid, wwid, DK_CXLFLASH_MANAGE_LUN_WWID_LEN);
 out:
@@ -237,6 +252,7 @@ void cxlflash_list_terminate(void)
 	spin_lock_irqsave(&global.slock, flags);
 	list_for_each_entry_safe(gli, temp, &global.gluns, list) {
 		list_del(&gli->list);
+		cxlflash_ba_terminate(&gli->blka.ba_lun);
 		kfree(gli);
 	}
 
@@ -703,10 +719,12 @@ void cxlflash_lun_detach(struct glun_info *gli)
  * @ctxi:	Context owning resources.
  * @release:	Release ioctl data structure.
  *
- * Note that the AFU sync should _not_ be performed when the context is sitting
- * on the error recovery list. A context on the error recovery list is not known
- * to the AFU due to reset. When the context is recovered, it will be reattached
- * and made known again to the AFU.
+ * For LUN's in virtual mode, the virtual lun associated with the specified
+ * resource handle is resized to 0 prior to releasing the RHTE. Note that the
+ * AFU sync should _not_ be performed when the context is sitting on the error
+ * recovery list. A context on the error recovery list is not known to the AFU
+ * due to reset. When the context is recovered, it will be reattached and made
+ * known again to the AFU.
  *
  * Return: 0 on success, -errno on failure
  */
@@ -720,6 +738,7 @@ int _cxlflash_disk_release(struct scsi_device *sdev,
 	struct afu *afu = cfg->afu;
 	bool unlock_ctx = false;
 
+	struct dk_cxlflash_resize size;
 	res_hndl_t rhndl = release->rsrc_handle;
 
 	int rc = 0;
@@ -750,7 +769,24 @@ int _cxlflash_disk_release(struct scsi_device *sdev,
 		goto out;
 	}
 
+	/*
+	 * Resize to 0 for virtual LUNS by setting the size
+	 * to 0. This will clear LXT_START and LXT_CNT fields
+	 * in the RHT entry and properly sync with the AFU.
+	 *
+	 * Afterwards we clear the remaining fields.
+	 */
 	switch (gli->mode) {
+	case MODE_VIRTUAL:
+		marshal_rele_to_resize(release, &size);
+		size.req_size = 0;
+		rc = _cxlflash_vlun_resize(sdev, ctxi, &size);
+		if (rc) {
+			pr_err("%s: resize failed rc %d\n", __func__, rc);
+			goto out;
+		}
+
+		break;
 	case MODE_PHYSICAL:
 		/*
 		 * Clear the Format 1 RHT entry for direct access
@@ -1915,6 +1951,12 @@ static int cxlflash_disk_verify(struct scsi_device *sdev,
 	case MODE_PHYSICAL:
 		last_lba = gli->max_lba;
 		break;
+	case MODE_VIRTUAL:
+		/* Cast lxt_cnt to u64 for multiply to be treated as 64bit op */
+		last_lba = ((u64)rhte->lxt_cnt * MC_CHUNK_SIZE * gli->blk_len);
+		last_lba /= CXLFLASH_BLOCK_SIZE;
+		last_lba--;
+		break;
 	default:
 		WARN(1, "Unsupported LUN mode!");
 	}
@@ -1942,12 +1984,18 @@ static char *decode_ioctl(int cmd)
 		return __stringify_1(DK_CXLFLASH_ATTACH);
 	case DK_CXLFLASH_USER_DIRECT:
 		return __stringify_1(DK_CXLFLASH_USER_DIRECT);
+	case DK_CXLFLASH_USER_VIRTUAL:
+		return __stringify_1(DK_CXLFLASH_USER_VIRTUAL);
+	case DK_CXLFLASH_VLUN_RESIZE:
+		return __stringify_1(DK_CXLFLASH_VLUN_RESIZE);
 	case DK_CXLFLASH_RELEASE:
 		return __stringify_1(DK_CXLFLASH_RELEASE);
 	case DK_CXLFLASH_DETACH:
 		return __stringify_1(DK_CXLFLASH_DETACH);
 	case DK_CXLFLASH_VERIFY:
 		return __stringify_1(DK_CXLFLASH_VERIFY);
+	case DK_CXLFLASH_CLONE:
+		return __stringify_1(DK_CXLFLASH_CLONE);
 	case DK_CXLFLASH_RECOVER_AFU:
 		return __stringify_1(DK_CXLFLASH_RECOVER_AFU);
 	case DK_CXLFLASH_MANAGE_LUN:
@@ -2085,6 +2133,8 @@ int cxlflash_ioctl(struct scsi_device *sdev, int cmd, void __user *arg)
 {
 	typedef int (*sioctl) (struct scsi_device *, void *);
 
+	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)sdev->host->hostdata;
+	struct afu *afu = cfg->afu;
 	struct dk_cxlflash_hdr *hdr;
 	char buf[MAX_CXLFLASH_IOCTL_SZ];
 	size_t size = 0;
@@ -2100,19 +2150,38 @@ int cxlflash_ioctl(struct scsi_device *sdev, int cmd, void __user *arg)
 	} ioctl_tbl[] = {	/* NOTE: order matters here */
 	{sizeof(struct dk_cxlflash_attach), (sioctl)cxlflash_disk_attach},
 	{sizeof(struct dk_cxlflash_udirect), cxlflash_disk_direct_open},
+	{sizeof(struct dk_cxlflash_uvirtual), cxlflash_disk_virtual_open},
+	{sizeof(struct dk_cxlflash_resize), (sioctl)cxlflash_vlun_resize},
 	{sizeof(struct dk_cxlflash_release), (sioctl)cxlflash_disk_release},
 	{sizeof(struct dk_cxlflash_detach), (sioctl)cxlflash_disk_detach},
 	{sizeof(struct dk_cxlflash_verify), (sioctl)cxlflash_disk_verify},
+	{sizeof(struct dk_cxlflash_clone), (sioctl)cxlflash_disk_clone},
 	{sizeof(struct dk_cxlflash_recover_afu), (sioctl)cxlflash_afu_recover},
 	{sizeof(struct dk_cxlflash_manage_lun), (sioctl)cxlflash_manage_lun},
 	};
 
+	/* Restrict command set to physical support only for internal LUN */
+	if (afu->internal_lun)
+		switch (cmd) {
+		case DK_CXLFLASH_USER_VIRTUAL:
+		case DK_CXLFLASH_VLUN_RESIZE:
+		case DK_CXLFLASH_RELEASE:
+		case DK_CXLFLASH_CLONE:
+			pr_err("%s: %s not supported for lun_mode=%d\n",
+			       __func__, decode_ioctl(cmd), afu->internal_lun);
+			rc = -EINVAL;
+			goto cxlflash_ioctl_exit;
+		}
+
 	switch (cmd) {
 	case DK_CXLFLASH_ATTACH:
 	case DK_CXLFLASH_USER_DIRECT:
+	case DK_CXLFLASH_USER_VIRTUAL:
+	case DK_CXLFLASH_VLUN_RESIZE:
 	case DK_CXLFLASH_RELEASE:
 	case DK_CXLFLASH_DETACH:
 	case DK_CXLFLASH_VERIFY:
+	case DK_CXLFLASH_CLONE:
 	case DK_CXLFLASH_RECOVER_AFU:
 		pr_debug("%s: %s (%08X) on dev(%d/%d/%d/%llu)\n", __func__,
 			 decode_ioctl(cmd), cmd, shost->host_no, sdev->channel,
