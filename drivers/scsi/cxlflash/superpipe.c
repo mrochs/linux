@@ -1763,6 +1763,7 @@ static int cxlflash_afu_recover(struct scsi_device *sdev,
 	u64 ctxid = DECODE_CTXID(recover->context_id),
 	    rctxid = recover->context_id;
 	long reg;
+	int lretry = 20; /* up to 2 seconds */
 	int rc = 0;
 
 	atomic_inc(&cfg->recovery_threads);
@@ -1789,7 +1790,8 @@ retry_recover:
 			pr_err("%s: Recovery failed for context %llu (rc=%d)\n",
 			       __func__, ctxid, rc);
 			if ((rc == -ENODEV) &&
-			    (atomic_read(&cfg->recovery_threads) > 1)) {
+			    ((atomic_read(&cfg->recovery_threads) > 1) ||
+			     (lretry--))) {
 				pr_debug("%s: Going to try again!\n", __func__);
 				mutex_unlock(mutex);
 				msleep(100);
