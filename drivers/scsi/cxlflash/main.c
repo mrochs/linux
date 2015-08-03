@@ -484,6 +484,29 @@ static const char *cxlflash_driver_info(struct Scsi_Host *host)
 }
 
 /**
+ * is_scsi_read_write() - evaluates if a SCSI command is read or write
+ * @scp:	SCSI command to evaluate.
+ *
+ * Return: true or false
+ */
+static inline bool is_scsi_read_write(struct scsi_cmnd *scp)
+{
+	switch (scp->cmnd[0]) {
+	case READ_6:
+	case READ_10:
+	case READ_12:
+	case READ_16:
+	case WRITE_6:
+	case WRITE_10:
+	case WRITE_12:
+	case WRITE_16:
+		return true;
+	}
+
+	return false;
+}
+
+/**
  * cxlflash_queuecommand() - sends a mid-layer request
  * @host:	SCSI host associated with device.
  * @scp:	SCSI command to send.
@@ -512,6 +535,13 @@ static int cxlflash_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *scp)
 			     get_unaligned_be32(&((u32 *)scp->cmnd)[2]),
 			     get_unaligned_be32(&((u32 *)scp->cmnd)[3]));
 
+	/* Fail all read/write commands when in operating superpipe mode */
+	if (scp->device->hostdata && is_scsi_read_write(scp)) {
+		pr_debug_ratelimited("%s: LUN being used in superpipe mode. "
+				     "Operation not allowed!\n", __func__);
+		goto error;
+	}
+
 	/*
 	 * If a Task Management Function is active, wait for it to complete
 	 * before continuing with regular commands.
@@ -531,7 +561,7 @@ static int cxlflash_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *scp)
 		goto out;
 	case EEH_STATE_FAILED:
 		pr_debug_ratelimited("%s: device has failed!\n", __func__);
-		goto out;
+		goto error;
 	case EEH_STATE_NONE:
 		break;
 	}
@@ -584,6 +614,10 @@ static int cxlflash_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *scp)
 
 out:
 	return rc;
+error:
+	scp->result = (DID_NO_CONNECT << 16);
+	scp->scsi_done(scp);
+	return 0;
 }
 
 /**
@@ -717,9 +751,11 @@ static void cxlflash_remove(struct pci_dev *pdev)
 						  cfg->tmf_slock);
 	spin_unlock_irqrestore(&cfg->tmf_slock, lock_flags);
 
+	cxlflash_stop_term_user_contexts(cfg);
 
 	switch (cfg->init_state) {
 	case INIT_STATE_SCSI:
+		cxlflash_term_luns(cfg);
 		scsi_remove_host(cfg->host);
 		/* fall through */
 	case INIT_STATE_AFU:
@@ -1928,6 +1964,7 @@ static int cxlflash_eh_host_reset_handler(struct scsi_cmnd *scp)
 	switch (cfg->eeh_active) {
 	case EEH_STATE_NONE:
 		cfg->eeh_active = EEH_STATE_FAILED;
+		cxlflash_mark_contexts_error(cfg);
 		rcr = afu_reset(cfg);
 		if (rcr == 0)
 			rc = SUCCESS;
@@ -2143,6 +2180,7 @@ static struct scsi_host_template driver_template = {
 	.module = THIS_MODULE,
 	.name = CXLFLASH_ADAPTER_NAME,
 	.info = cxlflash_driver_info,
+	.ioctl = cxlflash_ioctl,
 	.proc_name = CXLFLASH_NAME,
 	.queuecommand = cxlflash_queuecommand,
 	.eh_device_reset_handler = cxlflash_eh_device_reset_handler,
@@ -2280,9 +2318,8 @@ static int cxlflash_probe(struct pci_dev *pdev,
 	cfg->init_state = INIT_STATE_NONE;
 	cfg->dev = pdev;
 
-	cfg->eeh_active = EEH_STATE_NONE;
 	cfg->dev_id = (struct pci_device_id *)dev_id;
-
+	cfg->eeh_active = EEH_STATE_NONE;
 
 	init_waitqueue_head(&cfg->tmf_waitq);
 	init_waitqueue_head(&cfg->eeh_waitq);
@@ -2290,6 +2327,11 @@ static int cxlflash_probe(struct pci_dev *pdev,
 	INIT_WORK(&cfg->work_q, cxlflash_worker_thread);
 	cfg->lr_state = LINK_RESET_INVALID;
 	cfg->lr_port = -1;
+	mutex_init(&cfg->ctx_tbl_list_mutex);
+	mutex_init(&cfg->ctx_recovery_mutex);
+	spin_lock_init(&cfg->slock);
+	INIT_LIST_HEAD(&cfg->ctx_err_recovery);
+	INIT_LIST_HEAD(&cfg->lluns);
 
 	pci_set_drvdata(pdev, cfg);
 
@@ -2351,7 +2393,9 @@ out_remove:
 static pci_ers_result_t cxlflash_pci_error_detected(struct pci_dev *pdev,
 						    pci_channel_state_t state)
 {
+	int rc = 0;
 	struct cxlflash_cfg *cfg = pci_get_drvdata(pdev);
+	struct device *dev = &cfg->dev->dev;
 
 	pr_debug("%s: pdev=%p state=%u\n", __func__, pdev, state);
 
@@ -2359,6 +2403,11 @@ static pci_ers_result_t cxlflash_pci_error_detected(struct pci_dev *pdev,
 	case pci_channel_io_frozen:
 		cfg->eeh_active = EEH_STATE_ACTIVE;
 		udelay(100);
+
+		rc = cxlflash_mark_contexts_error(cfg);
+		if (unlikely(rc))
+			dev_err(dev, "%s: Failed to mark contexts in "
+				"error!(rc=%d)\n", __func__, rc);
 
 		term_mc(cfg, UNDO_START);
 		stop_afu(cfg);
@@ -2441,6 +2490,8 @@ static int __init init_cxlflash(void)
 	pr_info("%s: IBM Power CXL Flash Adapter: %s\n",
 		__func__, CXLFLASH_DRIVER_DATE);
 
+	cxlflash_list_init();
+
 	return pci_register_driver(&cxlflash_driver);
 }
 
@@ -2449,6 +2500,8 @@ static int __init init_cxlflash(void)
  */
 static void __exit exit_cxlflash(void)
 {
+	cxlflash_list_terminate();
+
 	pci_unregister_driver(&cxlflash_driver);
 }
 
