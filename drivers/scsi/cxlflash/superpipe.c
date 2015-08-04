@@ -670,7 +670,7 @@ static void rht_format1(struct sisl_rht_entry *rhte, u64 lun_id, u32 perm,
 
 /**
  * cxlflash_lun_attach() - attaches a user to a LUN and manages the LUN's mode
- * @lli:	LUN to attach.
+ * @gli:	LUN to attach.
  * @mode:	Desired mode of the LUN.
  *
  * Return: 0 on success, -errno on failure
@@ -700,14 +700,22 @@ out:
 
 /**
  * cxlflash_lun_detach() - detaches a user from a LUN and resets the LUN's mode
- * @lli:	LUN to detach.
+ * @gli:	LUN to detach.
+ *
+ * When resetting the mode, terminate block allocation resources as they
+ * are no longer required (service is safe to call even when block allocation
+ * resources were not present - such as when transitioning from physical mode).
+ * These resources will be reallocated when needed (subsequent transition to
+ * virtual mode).
  */
 void cxlflash_lun_detach(struct glun_info *gli)
 {
 	spin_lock(&gli->slock);
 	WARN_ON(gli->mode == MODE_NONE);
-	if (--gli->users == 0)
+	if (--gli->users == 0) {
 		gli->mode = MODE_NONE;
+		cxlflash_ba_terminate(&gli->blka.ba_lun);
+	}
 	pr_debug("%s: gli->users=%u\n", __func__, gli->users);
 	WARN_ON(gli->users < 0);
 	spin_unlock(&gli->slock);
