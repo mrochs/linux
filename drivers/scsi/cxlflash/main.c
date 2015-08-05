@@ -1966,6 +1966,7 @@ static int cxlflash_eh_host_reset_handler(struct scsi_cmnd *scp)
 	switch (cfg->eeh_active) {
 	case EEH_STATE_NONE:
 		cfg->eeh_active = EEH_STATE_FAILED;
+		scsi_block_requests(cfg->host);
 		cxlflash_mark_contexts_error(cfg);
 		rcr = afu_reset(cfg);
 		if (rcr == 0)
@@ -1974,6 +1975,7 @@ static int cxlflash_eh_host_reset_handler(struct scsi_cmnd *scp)
 			rc = FAILED;
 		cfg->eeh_active = EEH_STATE_NONE;
 		wake_up_all(&cfg->eeh_waitq);
+		scsi_unblock_requests(cfg->host);
 		break;
 	case EEH_STATE_ACTIVE:
 		wait_event(cfg->eeh_waitq, cfg->eeh_active != EEH_STATE_ACTIVE);
@@ -2414,6 +2416,9 @@ static pci_ers_result_t cxlflash_pci_error_detected(struct pci_dev *pdev,
 	switch (state) {
 	case pci_channel_io_frozen:
 		cfg->eeh_active = EEH_STATE_ACTIVE;
+
+		/* Turn off legacy I/O */
+		scsi_block_requests(cfg->host);
 		udelay(100);
 
 		rc = cxlflash_mark_contexts_error(cfg);
@@ -2428,6 +2433,7 @@ static pci_ers_result_t cxlflash_pci_error_detected(struct pci_dev *pdev,
 	case pci_channel_io_perm_failure:
 		cfg->eeh_active = EEH_STATE_FAILED;
 		wake_up_all(&cfg->eeh_waitq);
+		scsi_unblock_requests(cfg->host);
 		return PCI_ERS_RESULT_DISCONNECT;
 	default:
 		break;
@@ -2473,6 +2479,7 @@ static void cxlflash_pci_resume(struct pci_dev *pdev)
 
 	cfg->eeh_active = EEH_STATE_NONE;
 	wake_up_all(&cfg->eeh_waitq);
+	scsi_unblock_requests(cfg->host);
 }
 
 static const struct pci_error_handlers cxlflash_err_handler = {
