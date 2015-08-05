@@ -1742,9 +1742,7 @@ static int init_afu(struct cxlflash_cfg *cfg)
 	struct afu *afu = cfg->afu;
 	struct device *dev = &cfg->dev->dev;
 
-#ifdef CONFIG_CXL_EEH
 	cxl_perst_reloads_same_image(cfg->cxl_afu, true);
-#endif
 
 	rc = init_mc(cfg);
 	if (rc) {
