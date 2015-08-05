@@ -2417,8 +2417,6 @@ static pci_ers_result_t cxlflash_pci_error_detected(struct pci_dev *pdev,
 
 		/* Turn off legacy I/O */
 		scsi_block_requests(cfg->host);
-		udelay(100);
-
 		rc = cxlflash_mark_contexts_error(cfg);
 		if (unlikely(rc))
 			dev_err(dev, "%s: Failed to mark contexts in "
