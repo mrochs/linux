@@ -853,10 +853,12 @@ int cxlflash_disk_release(struct scsi_device *sdev,
 static void destroy_context(struct cxlflash_cfg *cfg,
 			    struct ctx_info *ctxi)
 {
+	struct afu *afu = cfg->afu;
+
 	WARN_ON(!list_empty(&ctxi->luns));
 
 	/* Clear RHT registers and drop all capabilities for this context */
-	if (ctxi->ctrl_map) {
+	if (afu->afu_map && ctxi->ctrl_map) {
 		writeq_be(0, &ctxi->ctrl_map->rht_start);
 		writeq_be(0, &ctxi->ctrl_map->rht_cnt_id);
 		writeq_be(0, &ctxi->ctrl_map->ctx_cap);
