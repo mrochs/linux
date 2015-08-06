@@ -1823,8 +1823,8 @@ retry:
 	cmd->rcb.cdb[1] = mode;
 
 	/* The cdb is aligned, no unaligned accessors required */
-	*((u16 *)&cmd->rcb.cdb[2]) = swab16(ctx_hndl_u);
-	*((u32 *)&cmd->rcb.cdb[4]) = swab32(res_hndl_u);
+	*((u16 *)&cmd->rcb.cdb[2]) = be16_to_cpu(ctx_hndl_u);
+	*((u32 *)&cmd->rcb.cdb[4]) = be32_to_cpu(res_hndl_u);
 
 	rc = send_cmd(afu, cmd);
 	if (unlikely(rc))

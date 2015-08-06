@@ -188,7 +188,7 @@ static inline u64 lun_to_lunid(u64 lun)
 	u64 lun_id;
 
 	int_to_scsilun(lun, (struct scsi_lun *)&lun_id);
-	return swab64(lun_id);
+	return be64_to_cpu(lun_id);
 }
 
 int cxlflash_afu_sync(struct afu *, ctx_hndl_t, res_hndl_t, u8);

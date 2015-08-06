@@ -535,8 +535,8 @@ retry:
 	 * as the buffer is allocated on an aligned boundary.
 	 */
 	spin_lock(&gli->slock);
-	gli->max_lba = swab64(*((u64 *)&cmd_buf[0]));
-	gli->blk_len = swab32(*((u32 *)&cmd_buf[8]));
+	gli->max_lba = be64_to_cpu(*((u64 *)&cmd_buf[0]));
+	gli->blk_len = be32_to_cpu(*((u32 *)&cmd_buf[8]));
 	spin_unlock(&gli->slock);
 
 out:
