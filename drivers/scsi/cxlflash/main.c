@@ -484,29 +484,6 @@ static const char *cxlflash_driver_info(struct Scsi_Host *host)
 }
 
 /**
- * is_scsi_read_write() - evaluates if a SCSI command is read or write
- * @scp:	SCSI command to evaluate.
- *
- * Return: true or false
- */
-static inline bool is_scsi_read_write(struct scsi_cmnd *scp)
-{
-	switch (scp->cmnd[0]) {
-	case READ_6:
-	case READ_10:
-	case READ_12:
-	case READ_16:
-	case WRITE_6:
-	case WRITE_10:
-	case WRITE_12:
-	case WRITE_16:
-		return true;
-	}
-
-	return false;
-}
-
-/**
  * cxlflash_queuecommand() - sends a mid-layer request
  * @host:	SCSI host associated with device.
  * @scp:	SCSI command to send.
@@ -534,13 +511,6 @@ static int cxlflash_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *scp)
 			     get_unaligned_be32(&((u32 *)scp->cmnd)[1]),
 			     get_unaligned_be32(&((u32 *)scp->cmnd)[2]),
 			     get_unaligned_be32(&((u32 *)scp->cmnd)[3]));
-
-	/* Fail all read/write commands when in operating superpipe mode */
-	if (scp->device->hostdata && is_scsi_read_write(scp)) {
-		pr_debug_ratelimited("%s: LUN being used in superpipe mode. "
-				     "Operation not allowed!\n", __func__);
-		goto error;
-	}
 
 	/*
 	 * If a Task Management Function is active, wait for it to complete
