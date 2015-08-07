@@ -524,15 +524,15 @@ static int cxlflash_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *scp)
 	}
 	spin_unlock_irqrestore(&cfg->tmf_slock, lock_flags);
 
-	switch (cfg->eeh_active) {
-	case EEH_STATE_ACTIVE:
-		pr_debug_ratelimited("%s: BUSY w/ EEH Recovery!\n", __func__);
+	switch (cfg->state) {
+	case STATE_LIMBO:
+		pr_debug_ratelimited("%s: device in limbo!\n", __func__);
 		rc = SCSI_MLQUEUE_HOST_BUSY;
 		goto out;
-	case EEH_STATE_FAILED:
+	case STATE_FAILTERM:
 		pr_debug_ratelimited("%s: device has failed!\n", __func__);
 		goto error;
-	case EEH_STATE_NONE:
+	default:
 		break;
 	}
 
@@ -599,7 +599,7 @@ static void cxlflash_wait_for_pci_err_recovery(struct cxlflash_cfg *cfg)
 	struct pci_dev *pdev = cfg->dev;
 
 	if (pci_channel_offline(pdev))
-		wait_event_timeout(cfg->eeh_waitq,
+		wait_event_timeout(cfg->limbo_waitq,
 				   !pci_channel_offline(pdev),
 				   CXLFLASH_PCI_ERROR_RECOVERY_TIMEOUT);
 }
@@ -721,6 +721,7 @@ static void cxlflash_remove(struct pci_dev *pdev)
 						  cfg->tmf_slock);
 	spin_unlock_irqrestore(&cfg->tmf_slock, lock_flags);
 
+	cfg->state = STATE_FAILTERM;
 	cxlflash_stop_term_user_contexts(cfg);
 
 	switch (cfg->init_state) {
@@ -1770,11 +1771,11 @@ err1:
  * the sync. This design point requires calling threads to not be on interrupt
  * context due to the possibility of sleeping during concurrent sync operations.
  *
- * AFU sync operations should be gated during EEH recovery. When a recovery
- * fails and an adapter is to be removed, sync requests can occur as part of
- * cleaning up resources associated with an adapter prior to its removal. In
- * this scenario, these requests are identified here and simply ignored (safe
- * due to the AFU going away).
+ * AFU sync operations are only necessary and allowed when the device is
+ * operating normally. When not operating normally, sync requests can occur as
+ * part of * cleaning up resources associated with an adapter prior to its
+ * removal. In this scenario, these requests are simply ignored (safe due to the
+ * AFU going away).
  *
  * Return:
  *	0 on success
@@ -1790,8 +1791,8 @@ int cxlflash_afu_sync(struct afu *afu, ctx_hndl_t ctx_hndl_u,
 	int retry_cnt = 0;
 	static DEFINE_MUTEX(sync_active);
 
-	if (cfg->eeh_active == EEH_STATE_FAILED) {
-		pr_debug("%s: Sync not required due to EEH state!\n", __func__);
+	if (cfg->state != STATE_NORMAL) {
+		pr_debug("%s: Sync not required! (%u)\n", __func__, cfg->state);
 		return 0;
 	}
 
@@ -1890,16 +1891,19 @@ static int cxlflash_eh_device_reset_handler(struct scsi_cmnd *scp)
 		 get_unaligned_be32(&((u32 *)scp->cmnd)[2]),
 		 get_unaligned_be32(&((u32 *)scp->cmnd)[3]));
 
-	switch (cfg->eeh_active) {
-	case EEH_STATE_NONE:
+	switch (cfg->state) {
+	case STATE_NORMAL:
 		rcr = send_tmf(afu, scp, TMF_LUN_RESET);
 		if (unlikely(rcr))
 			rc = FAILED;
 		break;
-	case EEH_STATE_ACTIVE:
-		wait_event(cfg->eeh_waitq, cfg->eeh_active != EEH_STATE_ACTIVE);
-		break;
-	case EEH_STATE_FAILED:
+	case STATE_LIMBO:
+		wait_event(cfg->limbo_waitq, cfg->state != STATE_LIMBO);
+		if (cfg->state == STATE_NORMAL)
+			break;
+		/* fall through */
+	default:
+		rc = FAILED;
 		break;
 	}
 
@@ -1931,24 +1935,25 @@ static int cxlflash_eh_host_reset_handler(struct scsi_cmnd *scp)
 		 get_unaligned_be32(&((u32 *)scp->cmnd)[2]),
 		 get_unaligned_be32(&((u32 *)scp->cmnd)[3]));
 
-	switch (cfg->eeh_active) {
-	case EEH_STATE_NONE:
-		cfg->eeh_active = EEH_STATE_FAILED;
+	switch (cfg->state) {
+	case STATE_NORMAL:
+		cfg->state = STATE_LIMBO;
 		scsi_block_requests(cfg->host);
 		cxlflash_mark_contexts_error(cfg);
 		rcr = afu_reset(cfg);
-		if (rcr == 0)
-			rc = SUCCESS;
-		else
+		if (!rcr)
 			rc = FAILED;
-		cfg->eeh_active = EEH_STATE_NONE;
-		wake_up_all(&cfg->eeh_waitq);
+		cfg->state = STATE_NORMAL;
+		wake_up_all(&cfg->limbo_waitq);
 		scsi_unblock_requests(cfg->host);
 		break;
-	case EEH_STATE_ACTIVE:
-		wait_event(cfg->eeh_waitq, cfg->eeh_active != EEH_STATE_ACTIVE);
-		break;
-	case EEH_STATE_FAILED:
+	case STATE_LIMBO:
+		wait_event(cfg->limbo_waitq, cfg->state != STATE_LIMBO);
+		if (cfg->state == STATE_NORMAL)
+			break;
+		/* fall through */
+	default:
+		rc = FAILED;
 		break;
 	}
 
@@ -2205,7 +2210,7 @@ static void cxlflash_worker_thread(struct work_struct *work)
 
 	/* Avoid MMIO if the device has failed */
 
-	if (cfg->eeh_active == EEH_STATE_FAILED)
+	if (cfg->state != STATE_NORMAL)
 		return;
 
 	spin_lock_irqsave(cfg->host->host_lock, lock_flags);
@@ -2301,10 +2306,9 @@ static int cxlflash_probe(struct pci_dev *pdev,
 	cfg->last_lun_index[1] = CXLFLASH_NUM_VLUNS/2 - 1;
 
 	cfg->dev_id = (struct pci_device_id *)dev_id;
-	cfg->eeh_active = EEH_STATE_NONE;
 
 	init_waitqueue_head(&cfg->tmf_waitq);
-	init_waitqueue_head(&cfg->eeh_waitq);
+	init_waitqueue_head(&cfg->limbo_waitq);
 
 	INIT_WORK(&cfg->work_q, cxlflash_worker_thread);
 	cfg->lr_state = LINK_RESET_INVALID;
@@ -2383,22 +2387,21 @@ static pci_ers_result_t cxlflash_pci_error_detected(struct pci_dev *pdev,
 
 	switch (state) {
 	case pci_channel_io_frozen:
-		cfg->eeh_active = EEH_STATE_ACTIVE;
+		cfg->state = STATE_LIMBO;
 
 		/* Turn off legacy I/O */
 		scsi_block_requests(cfg->host);
 		rc = cxlflash_mark_contexts_error(cfg);
 		if (unlikely(rc))
-			dev_err(dev, "%s: Failed to mark contexts in "
-				"error!(rc=%d)\n", __func__, rc);
-
+			dev_err(dev, "%s: Failed to mark user contexts!(%d)\n",
+				__func__, rc);
 		term_mc(cfg, UNDO_START);
 		stop_afu(cfg);
 
-		return PCI_ERS_RESULT_CAN_RECOVER;
+		return PCI_ERS_RESULT_NEED_RESET;
 	case pci_channel_io_perm_failure:
-		cfg->eeh_active = EEH_STATE_FAILED;
-		wake_up_all(&cfg->eeh_waitq);
+		cfg->state = STATE_FAILTERM;
+		wake_up_all(&cfg->limbo_waitq);
 		scsi_unblock_requests(cfg->host);
 		return PCI_ERS_RESULT_DISCONNECT;
 	default:
@@ -2443,8 +2446,8 @@ static void cxlflash_pci_resume(struct pci_dev *pdev)
 
 	pr_debug("%s: pdev=%p\n", __func__, pdev);
 
-	cfg->eeh_active = EEH_STATE_NONE;
-	wake_up_all(&cfg->eeh_waitq);
+	cfg->state = STATE_NORMAL;
+	wake_up_all(&cfg->limbo_waitq);
 	scsi_unblock_requests(cfg->host);
 }
 

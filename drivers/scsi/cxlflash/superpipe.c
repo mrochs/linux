@@ -276,7 +276,6 @@ void cxlflash_stop_term_user_contexts(struct cxlflash_cfg *cfg)
 {
 	int i, found;
 
-	cfg->eeh_active = EEH_STATE_FAILED;
 	cxlflash_mark_contexts_error(cfg);
 
 	while (true) {
@@ -292,7 +291,7 @@ void cxlflash_stop_term_user_contexts(struct cxlflash_cfg *cfg)
 			return;
 
 		pr_debug("%s: Wait for user context to quiesce...\n", __func__);
-		wake_up_all(&cfg->eeh_waitq);
+		wake_up_all(&cfg->limbo_waitq);
 		ssleep(1);
 	}
 }
@@ -1704,35 +1703,33 @@ err1:
 }
 
 /**
- * check_eeh() - checks and responds to the current EEH state
+ * check_state() - checks and responds to the current adapter state
  * @cfg:	Internal structure associated with the host.
  *
  * This routine can block and should only be used on process context.
- * Note that when waking up from waiting on the EEH event to clear,
- * the state must be checked again in case another EEH has occurred or
- * the previous event failed recovery.
+ * Note that when waking up from waiting in limbo, the state is unknown
+ * and must be checked again before proceeding.
  *
  * Return: 0 on success, -errno on failure
  */
-static int check_eeh(struct cxlflash_cfg *cfg)
+static int check_state(struct cxlflash_cfg *cfg)
 {
 	int rc = 0;
 
 retry:
-	switch (cfg->eeh_active) {
-	case EEH_STATE_ACTIVE:
-		pr_debug("%s: EEH Active, going to wait...\n", __func__);
-		rc = wait_event_interruptible(cfg->eeh_waitq,
-					      cfg->eeh_active !=
-					      EEH_STATE_ACTIVE);
+	switch (cfg->state) {
+	case STATE_LIMBO:
+		pr_debug("%s: Limbo, going to wait...\n", __func__);
+		rc = wait_event_interruptible(cfg->limbo_waitq,
+					      cfg->state != STATE_LIMBO);
 		if (unlikely(rc))
 			goto out;
 		goto retry;
-	case EEH_STATE_FAILED:
-		pr_debug("%s: EEH Failed\n", __func__);
+	case STATE_FAILTERM:
+		pr_debug("%s: Failed/Terminating!\n", __func__);
 		rc = -ENODEV;
 		goto out;
-	case EEH_STATE_NONE:
+	default:
 		break;
 	}
 out:
@@ -1755,10 +1752,10 @@ out:
  * quite possible for this routine to act as the kernel's EEH detection
  * source (MMIO read of mbox_r). Because of this, there is a window of
  * time where an EEH might have been detected but not yet 'serviced'
- * (callback invoked, causing the EEH state to flip). To avoid looping
- * in this routine during that window, a 1 second sleep is in place
- * between the time the MMIO failure is detected and the time a wait
- * on the EEH wait queue is attempted.
+ * (callback invoked, causing the device to enter limbo state). To avoid
+ * looping in this routine during that window, a 1 second sleep is in place
+ * between the time the MMIO failure is detected and the time a wait on the
+ * limbo wait queue is attempted via check_state().
  *
  * Return: 0 on success, -errno on failure
  */
@@ -1830,7 +1827,7 @@ retry_recover:
 		mutex_unlock(&ctxi->mutex);
 		ctxi = NULL;
 		ssleep(1);
-		rc = check_eeh(cfg);
+		rc = check_state(cfg);
 		if (unlikely(rc))
 			goto out;
 		goto retry;
@@ -2102,9 +2099,9 @@ err1:
  * @sdev:	SCSI device associated with LUN.
  * @cmd:	IOCTL command.
  *
- * Handles common fencing operations that are valid for multiple ioctls. In
- * the event of an EEH failure, allow through ioctls that are cleanup oriented
- * in nature.
+ * Handles common fencing operations that are valid for multiple ioctls. Always
+ * allow through ioctls that are cleanup oriented in nature, even when operating
+ * in a failed/terminating state.
  *
  * Return: 0 on success, -errno on failure
  */
@@ -2120,8 +2117,8 @@ static int ioctl_common(struct scsi_device *sdev, int cmd)
 		goto out;
 	}
 
-	rc = check_eeh(cfg);
-	if (unlikely(rc) && (cfg->eeh_active == EEH_STATE_FAILED)) {
+	rc = check_state(cfg);
+	if (unlikely(rc) && (cfg->state == STATE_FAILTERM)) {
 		switch (cmd) {
 		case DK_CXLFLASH_VLUN_RESIZE:
 		case DK_CXLFLASH_RELEASE:
