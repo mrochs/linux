@@ -1773,9 +1773,9 @@ err1:
  *
  * AFU sync operations are only necessary and allowed when the device is
  * operating normally. When not operating normally, sync requests can occur as
- * part of * cleaning up resources associated with an adapter prior to its
- * removal. In this scenario, these requests are simply ignored (safe due to the
- * AFU going away).
+ * part of cleaning up resources associated with an adapter prior to removal.
+ * In this scenario, these requests are simply ignored (safe due to the AFU
+ * going away).
  *
  * Return:
  *	0 on success
