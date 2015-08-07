@@ -1736,14 +1736,13 @@ static int init_afu(struct cxlflash_cfg *cfg)
 	memcpy(afu->version, &reg, 8);
 	afu->interface_version =
 	    readq_be(&afu->afu_map->global.regs.interface_version);
-	if (afu->interface_version+1 == 0) {
+	if ((afu->interface_version + 1) == 0) {
 		pr_err("Back level AFU, please upgrade. AFU version %s "
 		       "interface version 0x%llx\n", afu->version,
 		       afu->interface_version);
 		rc = -EINVAL;
 		goto err1;
-	}
-	else 
+	} else
 		pr_debug("%s: afu version %s, interface version 0x%llX\n",
 			 __func__, afu->version, afu->interface_version);
 
