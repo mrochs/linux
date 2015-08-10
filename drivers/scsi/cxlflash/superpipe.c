@@ -101,6 +101,7 @@ static struct glun_info *create_global(struct scsi_device *sdev, u8 *wwid)
 		goto out;
 	}
 
+	mutex_init(&gli->mutex);
 	memcpy(gli->wwid, wwid, DK_CXLFLASH_MANAGE_LUN_WWID_LEN);
 out:
 	return gli;
@@ -533,10 +534,10 @@ retry:
 	 * note that we don't need to worry about unaligned access
 	 * as the buffer is allocated on an aligned boundary.
 	 */
-	spin_lock(&gli->slock);
+	mutex_lock(&gli->mutex);
 	gli->max_lba = be64_to_cpu(*((u64 *)&cmd_buf[0]));
 	gli->blk_len = be32_to_cpu(*((u32 *)&cmd_buf[8]));
-	spin_unlock(&gli->slock);
+	mutex_unlock(&gli->mutex);
 
 out:
 	kfree(buf);
@@ -671,12 +672,16 @@ static void rht_format1(struct sisl_rht_entry *rhte, u64 lun_id, u32 perm,
  * cxlflash_lun_attach() - attaches a user to a LUN and manages the LUN's mode
  * @gli:	LUN to attach.
  * @mode:	Desired mode of the LUN.
+ * @locked:	Mutex status on current thread.
  *
  * Return: 0 on success, -errno on failure
  */
-int cxlflash_lun_attach(struct glun_info *gli, enum lun_mode mode)
+int cxlflash_lun_attach(struct glun_info *gli, enum lun_mode mode, bool locked)
 {
 	int rc = 0;
+
+	if (!locked)
+		mutex_lock(&gli->mutex);
 
 	if (gli->mode == MODE_NONE)
 		gli->mode = mode;
@@ -692,6 +697,8 @@ int cxlflash_lun_attach(struct glun_info *gli, enum lun_mode mode)
 out:
 	pr_debug("%s: Returning rc=%d gli->mode=%u gli->users=%u\n",
 		 __func__, rc, gli->mode, gli->users);
+	if (!locked)
+		mutex_unlock(&gli->mutex);
 	return rc;
 }
 
@@ -707,7 +714,7 @@ out:
  */
 void cxlflash_lun_detach(struct glun_info *gli)
 {
-	spin_lock(&gli->slock);
+	mutex_lock(&gli->mutex);
 	WARN_ON(gli->mode == MODE_NONE);
 	if (--gli->users == 0) {
 		gli->mode = MODE_NONE;
@@ -715,7 +722,7 @@ void cxlflash_lun_detach(struct glun_info *gli)
 	}
 	pr_debug("%s: gli->users=%u\n", __func__, gli->users);
 	WARN_ON(gli->users < 0);
-	spin_unlock(&gli->slock);
+	mutex_unlock(&gli->mutex);
 }
 
 /**
@@ -2049,9 +2056,7 @@ static int cxlflash_disk_direct_open(struct scsi_device *sdev, void *arg)
 
 	pr_debug("%s: ctxid=%llu ls=0x%llx\n", __func__, ctxid, lun_size);
 
-	spin_lock(&gli->slock);
-	rc = cxlflash_lun_attach(gli, MODE_PHYSICAL);
-	spin_unlock(&gli->slock);
+	rc = cxlflash_lun_attach(gli, MODE_PHYSICAL, false);
 	if (unlikely(rc)) {
 		dev_err(dev, "%s: Failed to attach to LUN! (PHYSICAL)\n",
 			__func__);

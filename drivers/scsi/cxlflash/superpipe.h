@@ -46,7 +46,7 @@ struct glun_info {
 
 	u8 wwid[16];
 
-	spinlock_t slock;
+	struct mutex mutex;
 
 	struct blka blka;
 	struct list_head list;
@@ -127,7 +127,7 @@ int cxlflash_disk_clone(struct scsi_device *, struct dk_cxlflash_clone *);
 
 int cxlflash_disk_virtual_open(struct scsi_device *, void *);
 
-int cxlflash_lun_attach(struct glun_info *, enum lun_mode);
+int cxlflash_lun_attach(struct glun_info *, enum lun_mode, bool);
 void cxlflash_lun_detach(struct glun_info *);
 
 struct ctx_info *get_context(struct cxlflash_cfg *, u64, void *, enum ctx_ctrl);

@@ -918,15 +918,14 @@ int cxlflash_disk_virtual_open(struct scsi_device *sdev, void *arg)
 
 	pr_debug("%s: ctxid=%llu ls=0x%llx\n", __func__, ctxid, lun_size);
 
-	spin_lock(&gli->slock);
+	mutex_lock(&gli->mutex);
 	if (gli->mode == MODE_NONE) {
-		/* Setup the LUN table on the first call */
+		/* Setup the LUN table and block allocator on first call */
 		rc = init_luntable(cfg, lli);
 		if (rc) {
 			dev_err(dev, "%s: call to init_luntable failed "
 				"rc=%d!\n", __func__, rc);
-			spin_unlock(&gli->slock);
-			goto out;
+			goto err0;
 		}
 
 		rc = init_vlun(lli);
@@ -934,19 +933,17 @@ int cxlflash_disk_virtual_open(struct scsi_device *sdev, void *arg)
 			dev_err(dev, "%s: call to init_vlun failed rc=%d!\n",
 				__func__, rc);
 			rc = -ENOMEM;
-			spin_unlock(&gli->slock);
-			goto out;
+			goto err0;
 		}
 	}
 
-	rc = cxlflash_lun_attach(gli, MODE_VIRTUAL);
+	rc = cxlflash_lun_attach(gli, MODE_VIRTUAL, true);
 	if (unlikely(rc)) {
 		dev_err(dev, "%s: Failed to attach to LUN! (VIRTUAL)\n",
 			__func__);
-		spin_unlock(&gli->slock);
-		goto out;
+		goto err0;
 	}
-	spin_unlock(&gli->slock);
+	mutex_unlock(&gli->mutex);
 
 	ctxi = get_context(cfg, rctxid, lli, 0);
 	if (unlikely(!ctxi)) {
@@ -996,6 +993,11 @@ err2:
 	rhte_checkin(ctxi, rhte);
 err1:
 	cxlflash_lun_detach(gli);
+	goto out;
+err0:
+	/* Special common cleanup prior to succesful LUN attach */
+	cxlflash_ba_terminate(&gli->blka.ba_lun);
+	mutex_unlock(&gli->mutex);
 	goto out;
 }
 
@@ -1222,7 +1224,7 @@ int cxlflash_disk_clone(struct scsi_device *sdev,
 			goto err;
 		}
 
-		cxlflash_lun_attach(gli, gli->mode);
+		cxlflash_lun_attach(gli, gli->mode, false);
 	}
 
 out_success:
