@@ -61,8 +61,6 @@ struct dk_cxlflash_detach {
 	__u64 reserved[8];		/* Reserved for future use */
 };
 
-#define DK_CXLFLASH_UVIRTUAL_NEED_WRITE_SAME	0x8000000000000000ULL
-
 struct dk_cxlflash_udirect {
 	struct dk_cxlflash_hdr hdr;	/* Common fields */
 	__u64 context_id;		/* Context to own physical resources */
@@ -70,6 +68,8 @@ struct dk_cxlflash_udirect {
 	__u64 last_lba;			/* Returned last LBA on the device */
 	__u64 reserved[8];		/* Reserved for future use */
 };
+
+#define DK_CXLFLASH_UVIRTUAL_NEED_WRITE_SAME	0x8000000000000000ULL
 
 struct dk_cxlflash_uvirtual {
 	struct dk_cxlflash_hdr hdr;	/* Common fields */
