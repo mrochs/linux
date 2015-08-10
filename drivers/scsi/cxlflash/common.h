@@ -116,6 +116,9 @@ struct cxlflash_cfg {
 
 	atomic_t num_user_contexts;
 
+	/* Parameters that are LUN table related */
+	int last_lun_index[CXLFLASH_NUM_FC_PORTS];
+	int promote_lun_index;
 	struct list_head lluns; /* list of llun_info structs */
 	spinlock_t slock;
 
@@ -200,6 +203,7 @@ int cxlflash_ioctl(struct scsi_device *, int, void __user *);
 void cxlflash_stop_term_user_contexts(struct cxlflash_cfg *);
 int cxlflash_mark_contexts_error(struct cxlflash_cfg *);
 void cxlflash_term_luns(struct cxlflash_cfg *);
+void cxlflash_restore_luntable(struct cxlflash_cfg *);
 
 #endif /* ifndef _CXLFLASH_COMMON_H */
 

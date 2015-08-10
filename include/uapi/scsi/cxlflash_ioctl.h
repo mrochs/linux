@@ -69,10 +69,38 @@ struct dk_cxlflash_udirect {
 	__u64 reserved[8];		/* Reserved for future use */
 };
 
+#define DK_CXLFLASH_UVIRTUAL_NEED_WRITE_SAME	0x8000000000000000ULL
+
+struct dk_cxlflash_uvirtual {
+	struct dk_cxlflash_hdr hdr;	/* Common fields */
+	__u64 context_id;		/* Context to own virtual resources */
+	__u64 lun_size;			/* Requested size, in 4K blocks */
+	__u64 rsrc_handle;		/* Returned resource handle */
+	__u64 last_lba;			/* Returned last LBA of LUN */
+	__u64 reserved[8];		/* Reserved for future use */
+};
+
 struct dk_cxlflash_release {
 	struct dk_cxlflash_hdr hdr;	/* Common fields */
 	__u64 context_id;		/* Context owning resources */
 	__u64 rsrc_handle;		/* Resource handle to release */
+	__u64 reserved[8];		/* Reserved for future use */
+};
+
+struct dk_cxlflash_resize {
+	struct dk_cxlflash_hdr hdr;	/* Common fields */
+	__u64 context_id;		/* Context owning resources */
+	__u64 rsrc_handle;		/* Resource handle of LUN to resize */
+	__u64 req_size;			/* New requested size, in 4K blocks */
+	__u64 last_lba;			/* Returned last LBA of LUN */
+	__u64 reserved[8];		/* Reserved for future use */
+};
+
+struct dk_cxlflash_clone {
+	struct dk_cxlflash_hdr hdr;	/* Common fields */
+	__u64 context_id_src;		/* Context to clone from */
+	__u64 context_id_dst;		/* Context to clone to */
+	__u64 adap_fd_src;		/* Source context adapter fd */
 	__u64 reserved[8];		/* Reserved for future use */
 };
 
@@ -116,7 +144,10 @@ union cxlflash_ioctls {
 	struct dk_cxlflash_attach attach;
 	struct dk_cxlflash_detach detach;
 	struct dk_cxlflash_udirect udirect;
+	struct dk_cxlflash_uvirtual uvirtual;
 	struct dk_cxlflash_release release;
+	struct dk_cxlflash_resize resize;
+	struct dk_cxlflash_clone clone;
 	struct dk_cxlflash_verify verify;
 	struct dk_cxlflash_recover_afu recover_afu;
 	struct dk_cxlflash_manage_lun manage_lun;
@@ -130,9 +161,12 @@ union cxlflash_ioctls {
 
 #define DK_CXLFLASH_ATTACH		CXL_IOWR(0x80, dk_cxlflash_attach)
 #define DK_CXLFLASH_USER_DIRECT		CXL_IOWR(0x81, dk_cxlflash_udirect)
+#define DK_CXLFLASH_USER_VIRTUAL	CXL_IOWR(0x82, dk_cxlflash_uvirtual)
+#define DK_CXLFLASH_VLUN_RESIZE		CXL_IOWR(0x83, dk_cxlflash_resize)
 #define DK_CXLFLASH_RELEASE		CXL_IOWR(0x84, dk_cxlflash_release)
 #define DK_CXLFLASH_DETACH		CXL_IOWR(0x85, dk_cxlflash_detach)
 #define DK_CXLFLASH_VERIFY		CXL_IOWR(0x86, dk_cxlflash_verify)
+#define DK_CXLFLASH_CLONE		CXL_IOWR(0x87, dk_cxlflash_clone)
 #define DK_CXLFLASH_RECOVER_AFU		CXL_IOWR(0x88, dk_cxlflash_recover_afu)
 #define DK_CXLFLASH_MANAGE_LUN		CXL_IOWR(0x89, dk_cxlflash_manage_lun)
 
