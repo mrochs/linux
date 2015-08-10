@@ -678,7 +678,6 @@ int cxlflash_lun_attach(struct glun_info *gli, enum lun_mode mode)
 {
 	int rc = 0;
 
-	spin_lock(&gli->slock);
 	if (gli->mode == MODE_NONE)
 		gli->mode = mode;
 	else if (gli->mode != mode) {
@@ -693,7 +692,6 @@ int cxlflash_lun_attach(struct glun_info *gli, enum lun_mode mode)
 out:
 	pr_debug("%s: Returning rc=%d gli->mode=%u gli->users=%u\n",
 		 __func__, rc, gli->mode, gli->users);
-	spin_unlock(&gli->slock);
 	return rc;
 }
 
@@ -2051,7 +2049,9 @@ static int cxlflash_disk_direct_open(struct scsi_device *sdev, void *arg)
 
 	pr_debug("%s: ctxid=%llu ls=0x%llx\n", __func__, ctxid, lun_size);
 
+	spin_lock(&gli->slock);
 	rc = cxlflash_lun_attach(gli, MODE_PHYSICAL);
+	spin_unlock(&gli->slock);
 	if (unlikely(rc)) {
 		dev_err(dev, "%s: Failed to attach to LUN! (PHYSICAL)\n",
 			__func__);

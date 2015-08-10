@@ -918,12 +918,14 @@ int cxlflash_disk_virtual_open(struct scsi_device *sdev, void *arg)
 
 	pr_debug("%s: ctxid=%llu ls=0x%llx\n", __func__, ctxid, lun_size);
 
+	spin_lock(&gli->slock);
 	if (gli->mode == MODE_NONE) {
 		/* Setup the LUN table on the first call */
 		rc = init_luntable(cfg, lli);
 		if (rc) {
 			dev_err(dev, "%s: call to init_luntable failed "
 				"rc=%d!\n", __func__, rc);
+			spin_unlock(&gli->slock);
 			goto out;
 		}
 
@@ -932,6 +934,7 @@ int cxlflash_disk_virtual_open(struct scsi_device *sdev, void *arg)
 			dev_err(dev, "%s: call to init_vlun failed rc=%d!\n",
 				__func__, rc);
 			rc = -ENOMEM;
+			spin_unlock(&gli->slock);
 			goto out;
 		}
 	}
@@ -940,8 +943,10 @@ int cxlflash_disk_virtual_open(struct scsi_device *sdev, void *arg)
 	if (unlikely(rc)) {
 		dev_err(dev, "%s: Failed to attach to LUN! (VIRTUAL)\n",
 			__func__);
+		spin_unlock(&gli->slock);
 		goto out;
 	}
+	spin_unlock(&gli->slock);
 
 	ctxi = get_context(cfg, rctxid, lli, 0);
 	if (unlikely(!ctxi)) {
