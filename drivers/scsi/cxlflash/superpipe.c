@@ -864,7 +864,7 @@ static void destroy_context(struct cxlflash_cfg *cfg,
 	/*
 	 * Free the RHT memory and context; note that rht_lun and rht_needs_ws
 	 * were carved from the same memory as the context.
-	 * */
+	 */
 	free_page((ulong)ctxi->rht_start);
 	kfree(ctxi);
 	atomic_dec_if_positive(&cfg->num_user_contexts);
