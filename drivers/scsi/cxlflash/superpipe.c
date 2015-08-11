@@ -57,7 +57,7 @@ static void marshal_det_to_rele(struct dk_cxlflash_detach *detach,
 }
 
 /**
- * cxlflash_free_errpage() - frees resources associated with global LUN list
+ * cxlflash_free_errpage() - frees resources associated with global error page
  */
 void cxlflash_free_errpage(void)
 {

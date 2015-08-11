@@ -74,9 +74,11 @@ out:
 }
 
 /**
- * refresh_local() - find a local LUN information structure by WWID
+ * refresh_local() - find and update local LUN information structure by WWID
  * @cfg:	Internal structure associated with the host.
  * @wwid:	WWID associated with LUN.
+ *
+ * When the LUN is found, mark it by updating it's newly_created field.
  *
  * Return: Found local lun_info structure on success, NULL on failure
  * If a LUN with the WWID is found in the list, refresh it's state.
