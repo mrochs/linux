@@ -1907,7 +1907,7 @@ int cxlflash_ioctl(struct scsi_device *sdev, int cmd, void __user *arg)
 	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)sdev->host->hostdata;
 	struct afu *afu = cfg->afu;
 	struct dk_cxlflash_hdr *hdr;
-	char buf[MAX_CXLFLASH_IOCTL_SZ];
+	char buf[sizeof(union cxlflash_ioctls)];
 	size_t size = 0;
 	bool known_ioctl = false;
 	int idx;
