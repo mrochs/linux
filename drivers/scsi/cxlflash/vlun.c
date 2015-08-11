@@ -108,11 +108,12 @@ static int ba_init(struct ba_lun *ba_lun)
 		bali->lun_alloc_map[i] = 0xFFFFFFFFFFFFFFFFULL;
 
 	/* If the last word not fully utilized, mark extra bits as allocated */
-	last_word_underflow = (bali->lun_bmap_size * BITS_PER_LONG)
-		- bali->free_aun_cnt;
+	last_word_underflow = (bali->lun_bmap_size * BITS_PER_LONG);
+	last_word_underflow -= bali->free_aun_cnt;
 	if (last_word_underflow > 0) {
 		lam = &bali->lun_alloc_map[bali->lun_bmap_size - 1];
-		for (i = (HIBIT - last_word_underflow + 1); i < BITS_PER_LONG;
+		for (i = (HIBIT - last_word_underflow + 1);
+		     i < BITS_PER_LONG;
 		     i++)
 			clear_bit(i, (ulong *)lam);
 	}
@@ -420,8 +421,10 @@ static int write_same16(struct scsi_device *sdev,
 
 	size = CMD_BUFSIZE;
 	cmd_buf = kzalloc(size, GFP_KERNEL);
+
 	size = MAX_COMMAND_SIZE;
 	scsi_cmd = kzalloc(size, GFP_KERNEL);
+
 	size = SCSI_SENSE_BUFFERSIZE;
 	sense_buf = kzalloc(size, GFP_KERNEL);
 	if (unlikely(!cmd_buf || !scsi_cmd || !sense_buf)) {
@@ -1244,4 +1247,3 @@ err:
 		kfree(lun_access_src);
 	goto out;
 }
-
