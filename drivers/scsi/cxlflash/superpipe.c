@@ -182,12 +182,11 @@ retry:
 		 * the table/list lock to serialize with a remove thread. Use
 		 * the 'try' to avoid stalling the table/list lock for a single
 		 * context.
+		 *
+		 * Note: lock order is cfg->ctx_tbl_list_mutex -> ctxi->mutex;
+		 * therefore release ctx_tbl_list_mutex before retrying.
 		 */
 		rc = mutex_trylock(&ctxi->mutex);
-
-		/* Lock order is cfg->ctx_tbl_list_mutex -> ctxi->mutex.
-		 * Release ctx_tbl_list_mutex before retrying.
-		 */
 		mutex_unlock(&cfg->ctx_tbl_list_mutex);
 		if (!rc)
 			goto retry;
