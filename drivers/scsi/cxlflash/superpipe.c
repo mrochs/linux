@@ -873,6 +873,8 @@ static void destroy_context(struct cxlflash_cfg *cfg,
 	 * were carved from the same memory as the context.
 	 */
 	free_page((ulong)ctxi->rht_start);
+	kfree(ctxi->rht_lun);
+	kfree(ctxi->rht_needs_ws);
 	kfree(ctxi);
 	atomic_dec_if_positive(&cfg->num_user_contexts);
 }
