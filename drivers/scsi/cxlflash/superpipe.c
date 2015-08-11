@@ -896,17 +896,24 @@ static struct ctx_info *create_context(struct cxlflash_cfg *cfg,
 				       u32 perms)
 {
 	char *tmp = NULL;
+	char *lun = NULL;
+	char *ws = NULL;
 	size_t size;
 	struct afu *afu = cfg->afu;
 	struct ctx_info *ctxi = NULL;
 	struct sisl_rht_entry *rhte;
 
-	size = (MAX_RHT_PER_CONTEXT * sizeof(*ctxi->rht_lun));
-	size += (MAX_RHT_PER_CONTEXT * sizeof(*ctxi->rht_needs_ws));
-	size += sizeof(*ctxi);
+	size = sizeof(*ctxi);
 
 	tmp = kzalloc(size, GFP_KERNEL);
-	if (unlikely(!tmp)) {
+
+	size = (MAX_RHT_PER_CONTEXT * sizeof(*ctxi->rht_lun));
+	lun = kzalloc(size, GFP_KERNEL);
+
+	size = (MAX_RHT_PER_CONTEXT * sizeof(*ctxi->rht_needs_ws));
+	ws = kzalloc(size, GFP_KERNEL);
+
+	if (unlikely(!tmp || !lun || !ws)) {
 		pr_err("%s: Unable to allocate context! (%ld)\n",
 		       __func__, size);
 		goto out;
@@ -919,10 +926,11 @@ static struct ctx_info *create_context(struct cxlflash_cfg *cfg,
 	}
 
 	ctxi = (struct ctx_info *)tmp;
-	tmp += sizeof(*ctxi);
-	ctxi->rht_lun = (struct llun_info **)tmp;
-	tmp += (MAX_RHT_PER_CONTEXT * sizeof(*ctxi->rht_lun));
-	ctxi->rht_needs_ws = (bool *)tmp;
+
+	ctxi->rht_lun = (struct llun_info **)lun;
+
+	ctxi->rht_needs_ws = (bool *)ws;
+
 	ctxi->rht_start = rhte;
 	ctxi->rht_perms = perms;
 
@@ -943,6 +951,8 @@ out:
 
 err:
 	kfree(tmp);
+	kfree(ws);
+	kfree(lun);
 	goto out;
 }
 
