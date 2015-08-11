@@ -458,7 +458,6 @@ out:
 static int read_cap16(struct scsi_device *sdev, struct llun_info *lli)
 {
 	struct glun_info *gli = lli->parent;
-	u8 *buf = NULL;
 	u8 *cmd_buf = NULL;
 	u8 *scsi_cmd = NULL;
 	u8 *sense_buf = NULL;
@@ -468,17 +467,17 @@ static int read_cap16(struct scsi_device *sdev, struct llun_info *lli)
 	u32 tout = (MC_DISCOVERY_TIMEOUT * HZ);
 	size_t size;
 
-	size = CMD_BUFSIZE + MAX_COMMAND_SIZE + SCSI_SENSE_BUFFERSIZE;
 retry:
-	buf = kzalloc(size, GFP_KERNEL);
-	if (unlikely(!buf)) {
+	size = CMD_BUFSIZE;
+	cmd_buf = kzalloc(size, GFP_KERNEL);
+	size = MAX_COMMAND_SIZE;
+	scsi_cmd = kzalloc(size, GFP_KERNEL);
+	size = SCSI_SENSE_BUFFERSIZE;
+	sense_buf = kzalloc(size, GFP_KERNEL);
+	if (unlikely(!cmd_buf || !scsi_cmd || !sense_buf)) {
 		rc = -ENOMEM;
 		goto out;
 	}
-
-	cmd_buf = buf;
-	scsi_cmd = cmd_buf + CMD_BUFSIZE;
-	sense_buf = scsi_cmd + MAX_COMMAND_SIZE;
 
 	scsi_cmd[0] = SERVICE_ACTION_IN_16;	/* read cap(16) */
 	scsi_cmd[1] = SAI_READ_CAPACITY_16;	/* service action */
@@ -512,7 +511,9 @@ retry:
 				case 0x3F: /* Report LUNs changed */
 					/* Retry the command once more */
 					if (retry_cnt++ < 1) {
-						kfree(buf);
+						kfree(cmd_buf);
+						kfree(scsi_cmd);
+						kfree(sense_buf);
 						goto retry;
 					}
 				}
@@ -540,7 +541,10 @@ retry:
 	mutex_unlock(&gli->mutex);
 
 out:
-	kfree(buf);
+	kfree(cmd_buf);
+	kfree(scsi_cmd);
+	kfree(sense_buf);
+
 	pr_debug("%s: maxlba=%lld blklen=%d rc=%d\n", __func__,
 		 gli->max_lba, gli->blk_len, rc);
 	return rc;

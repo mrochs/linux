@@ -408,7 +408,6 @@ static int write_same16(struct scsi_device *sdev,
 			u64 lba,
 			u32 nblks)
 {
-	u8 *buf = NULL;
 	u8 *cmd_buf = NULL;
 	u8 *scsi_cmd = NULL;
 	u8 *sense_buf = NULL;
@@ -422,16 +421,16 @@ static int write_same16(struct scsi_device *sdev,
 	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)sdev->host->hostdata;
 	struct device *dev = &cfg->dev->dev;
 
-	size = CMD_BUFSIZE + MAX_COMMAND_SIZE + SCSI_SENSE_BUFFERSIZE;
-	buf = kzalloc(size, GFP_KERNEL);
-	if (unlikely(!buf)) {
+	size = CMD_BUFSIZE;
+	cmd_buf = kzalloc(size, GFP_KERNEL);
+	size = MAX_COMMAND_SIZE;
+	scsi_cmd = kzalloc(size, GFP_KERNEL);
+	size = SCSI_SENSE_BUFFERSIZE;
+	sense_buf = kzalloc(size, GFP_KERNEL);
+	if (unlikely(!cmd_buf || !scsi_cmd || !sense_buf)) {
 		rc = -ENOMEM;
 		goto out;
 	}
-
-	cmd_buf = buf;
-	scsi_cmd = cmd_buf + CMD_BUFSIZE;
-	sense_buf = scsi_cmd + MAX_COMMAND_SIZE;
 
 	while (left > 0) {
 
@@ -454,7 +453,9 @@ static int write_same16(struct scsi_device *sdev,
 	}
 
 out:
-	kfree(buf);
+	kfree(cmd_buf);
+	kfree(scsi_cmd);
+	kfree(sense_buf);
 	pr_debug("%s: returning rc=%d\n", __func__, rc);
 	return rc;
 }
