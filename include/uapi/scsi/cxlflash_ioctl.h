@@ -161,14 +161,14 @@ union cxlflash_ioctls {
 
 #define DK_CXLFLASH_ATTACH		CXL_IOWR(0x80, dk_cxlflash_attach)
 #define DK_CXLFLASH_USER_DIRECT		CXL_IOWR(0x81, dk_cxlflash_udirect)
-#define DK_CXLFLASH_USER_VIRTUAL	CXL_IOWR(0x82, dk_cxlflash_uvirtual)
-#define DK_CXLFLASH_VLUN_RESIZE		CXL_IOWR(0x83, dk_cxlflash_resize)
-#define DK_CXLFLASH_RELEASE		CXL_IOWR(0x84, dk_cxlflash_release)
-#define DK_CXLFLASH_DETACH		CXL_IOWR(0x85, dk_cxlflash_detach)
-#define DK_CXLFLASH_VERIFY		CXL_IOWR(0x86, dk_cxlflash_verify)
-#define DK_CXLFLASH_VLUN_CLONE		CXL_IOWR(0x87, dk_cxlflash_clone)
+#define DK_CXLFLASH_RELEASE		CXL_IOWR(0x82, dk_cxlflash_release)
+#define DK_CXLFLASH_DETACH		CXL_IOWR(0x83, dk_cxlflash_detach)
+#define DK_CXLFLASH_VERIFY		CXL_IOWR(0x84, dk_cxlflash_verify)
+#define DK_CXLFLASH_RECOVER_AFU		CXL_IOWR(0x85, dk_cxlflash_recover_afu)
+#define DK_CXLFLASH_MANAGE_LUN		CXL_IOWR(0x86, dk_cxlflash_manage_lun)
+#define DK_CXLFLASH_USER_VIRTUAL	CXL_IOWR(0x87, dk_cxlflash_uvirtual)
+#define DK_CXLFLASH_VLUN_RESIZE		CXL_IOWR(0x88, dk_cxlflash_resize)
+#define DK_CXLFLASH_VLUN_CLONE		CXL_IOWR(0x89, dk_cxlflash_clone)
 #define DK_CXLFLASH_CLONE		DK_CXLFLASH_VLUN_CLONE
-#define DK_CXLFLASH_RECOVER_AFU		CXL_IOWR(0x88, dk_cxlflash_recover_afu)
-#define DK_CXLFLASH_MANAGE_LUN		CXL_IOWR(0x89, dk_cxlflash_manage_lun)
 
 #endif /* ifndef _CXLFLASH_IOCTL_H */

@@ -1921,22 +1921,22 @@ int cxlflash_ioctl(struct scsi_device *sdev, int cmd, void __user *arg)
 	} ioctl_tbl[] = {	/* NOTE: order matters here */
 	{sizeof(struct dk_cxlflash_attach), (sioctl)cxlflash_disk_attach},
 	{sizeof(struct dk_cxlflash_udirect), cxlflash_disk_direct_open},
-	{sizeof(struct dk_cxlflash_uvirtual), cxlflash_disk_virtual_open},
-	{sizeof(struct dk_cxlflash_resize), (sioctl)cxlflash_vlun_resize},
 	{sizeof(struct dk_cxlflash_release), (sioctl)cxlflash_disk_release},
 	{sizeof(struct dk_cxlflash_detach), (sioctl)cxlflash_disk_detach},
 	{sizeof(struct dk_cxlflash_verify), (sioctl)cxlflash_disk_verify},
-	{sizeof(struct dk_cxlflash_clone), (sioctl)cxlflash_disk_clone},
 	{sizeof(struct dk_cxlflash_recover_afu), (sioctl)cxlflash_afu_recover},
 	{sizeof(struct dk_cxlflash_manage_lun), (sioctl)cxlflash_manage_lun},
+	{sizeof(struct dk_cxlflash_uvirtual), cxlflash_disk_virtual_open},
+	{sizeof(struct dk_cxlflash_resize), (sioctl)cxlflash_vlun_resize},
+	{sizeof(struct dk_cxlflash_clone), (sioctl)cxlflash_disk_clone},
 	};
 
 	/* Restrict command set to physical support only for internal LUN */
 	if (afu->internal_lun)
 		switch (cmd) {
+		case DK_CXLFLASH_RELEASE:
 		case DK_CXLFLASH_USER_VIRTUAL:
 		case DK_CXLFLASH_VLUN_RESIZE:
-		case DK_CXLFLASH_RELEASE:
 		case DK_CXLFLASH_VLUN_CLONE:
 			pr_err("%s: %s not supported for lun_mode=%d\n",
 			       __func__, decode_ioctl(cmd), afu->internal_lun);
@@ -1947,13 +1947,13 @@ int cxlflash_ioctl(struct scsi_device *sdev, int cmd, void __user *arg)
 	switch (cmd) {
 	case DK_CXLFLASH_ATTACH:
 	case DK_CXLFLASH_USER_DIRECT:
-	case DK_CXLFLASH_USER_VIRTUAL:
-	case DK_CXLFLASH_VLUN_RESIZE:
 	case DK_CXLFLASH_RELEASE:
 	case DK_CXLFLASH_DETACH:
 	case DK_CXLFLASH_VERIFY:
-	case DK_CXLFLASH_VLUN_CLONE:
 	case DK_CXLFLASH_RECOVER_AFU:
+	case DK_CXLFLASH_USER_VIRTUAL:
+	case DK_CXLFLASH_VLUN_RESIZE:
+	case DK_CXLFLASH_VLUN_CLONE:
 		pr_debug("%s: %s (%08X) on dev(%d/%d/%d/%llu)\n", __func__,
 			 decode_ioctl(cmd), cmd, shost->host_no, sdev->channel,
 			 sdev->id, sdev->lun);
