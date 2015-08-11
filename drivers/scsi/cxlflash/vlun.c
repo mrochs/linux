@@ -415,18 +415,12 @@ static int write_same16(struct scsi_device *sdev,
 	u64 offset = lba;
 	int left = nblks;
 	u32 tout = sdev->request_queue->rq_timeout;
-	size_t size;
 	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)sdev->host->hostdata;
 	struct device *dev = &cfg->dev->dev;
 
-	size = CMD_BUFSIZE;
-	cmd_buf = kzalloc(size, GFP_KERNEL);
-
-	size = MAX_COMMAND_SIZE;
-	scsi_cmd = kzalloc(size, GFP_KERNEL);
-
-	size = SCSI_SENSE_BUFFERSIZE;
-	sense_buf = kzalloc(size, GFP_KERNEL);
+	cmd_buf = kzalloc(CMD_BUFSIZE, GFP_KERNEL);
+	scsi_cmd = kzalloc(MAX_COMMAND_SIZE, GFP_KERNEL);
+	sense_buf = kzalloc(SCSI_SENSE_BUFFERSIZE, GFP_KERNEL);
 	if (unlikely(!cmd_buf || !scsi_cmd || !sense_buf)) {
 		rc = -ENOMEM;
 		goto out;

@@ -275,15 +275,11 @@ static int read_cap16(struct scsi_device *sdev, struct llun_info *lli)
 	int result = 0;
 	int retry_cnt = 0;
 	u32 tout = (MC_DISCOVERY_TIMEOUT * HZ);
-	size_t size;
 
 retry:
-	size = CMD_BUFSIZE;
-	cmd_buf = kzalloc(size, GFP_KERNEL);
-	size = MAX_COMMAND_SIZE;
-	scsi_cmd = kzalloc(size, GFP_KERNEL);
-	size = SCSI_SENSE_BUFFERSIZE;
-	sense_buf = kzalloc(size, GFP_KERNEL);
+	cmd_buf = kzalloc(CMD_BUFSIZE, GFP_KERNEL);
+	scsi_cmd = kzalloc(MAX_COMMAND_SIZE, GFP_KERNEL);
+	sense_buf = kzalloc(SCSI_SENSE_BUFFERSIZE, GFP_KERNEL);
 	if (unlikely(!cmd_buf || !scsi_cmd || !sense_buf)) {
 		rc = -ENOMEM;
 		goto out;
@@ -682,13 +678,10 @@ static void destroy_context(struct cxlflash_cfg *cfg,
 		writeq_be(0, &ctxi->ctrl_map->ctx_cap);
 	}
 
-	/*
-	 * Free the RHT memory and context; note that rht_lun and rht_needs_ws
-	 * were carved from the same memory as the context.
-	 */
+	/* Free memory associated with context */
 	free_page((ulong)ctxi->rht_start);
-	kfree(ctxi->rht_lun);
 	kfree(ctxi->rht_needs_ws);
+	kfree(ctxi->rht_lun);
 	kfree(ctxi);
 	atomic_dec_if_positive(&cfg->num_user_contexts);
 }
@@ -711,27 +704,17 @@ static struct ctx_info *create_context(struct cxlflash_cfg *cfg,
 				       int adap_fd, struct file *file,
 				       u32 perms)
 {
-	char *tmp = NULL;
-	char *lun = NULL;
-	char *ws = NULL;
-	size_t size;
 	struct afu *afu = cfg->afu;
 	struct ctx_info *ctxi = NULL;
+	struct llun_info **lli = NULL;
+	bool *ws = NULL;
 	struct sisl_rht_entry *rhte;
 
-	size = sizeof(*ctxi);
-
-	tmp = kzalloc(size, GFP_KERNEL);
-
-	size = (MAX_RHT_PER_CONTEXT * sizeof(*ctxi->rht_lun));
-	lun = kzalloc(size, GFP_KERNEL);
-
-	size = (MAX_RHT_PER_CONTEXT * sizeof(*ctxi->rht_needs_ws));
-	ws = kzalloc(size, GFP_KERNEL);
-
-	if (unlikely(!tmp || !lun || !ws)) {
-		pr_err("%s: Unable to allocate context! (%ld)\n",
-		       __func__, size);
+	ctxi = kzalloc(sizeof(*ctxi), GFP_KERNEL);
+	lli = kzalloc((MAX_RHT_PER_CONTEXT * sizeof(*lli)), GFP_KERNEL);
+	ws = kzalloc((MAX_RHT_PER_CONTEXT * sizeof(*ws)), GFP_KERNEL);
+	if (unlikely(!ctxi || !lli || !ws)) {
+		pr_err("%s: Unable to allocate context!\n", __func__);
 		goto out;
 	}
 
@@ -741,12 +724,8 @@ static struct ctx_info *create_context(struct cxlflash_cfg *cfg,
 		goto err;
 	}
 
-	ctxi = (struct ctx_info *)tmp;
-
-	ctxi->rht_lun = (struct llun_info **)lun;
-
-	ctxi->rht_needs_ws = (bool *)ws;
-
+	ctxi->rht_lun = lli;
+	ctxi->rht_needs_ws = ws;
 	ctxi->rht_start = rhte;
 	ctxi->rht_perms = perms;
 
@@ -766,9 +745,10 @@ out:
 	return ctxi;
 
 err:
-	kfree(tmp);
 	kfree(ws);
-	kfree(lun);
+	kfree(lli);
+	kfree(ctxi);
+	ctxi = NULL;
 	goto out;
 }
 
