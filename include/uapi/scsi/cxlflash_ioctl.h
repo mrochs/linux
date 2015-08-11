@@ -166,7 +166,8 @@ union cxlflash_ioctls {
 #define DK_CXLFLASH_RELEASE		CXL_IOWR(0x84, dk_cxlflash_release)
 #define DK_CXLFLASH_DETACH		CXL_IOWR(0x85, dk_cxlflash_detach)
 #define DK_CXLFLASH_VERIFY		CXL_IOWR(0x86, dk_cxlflash_verify)
-#define DK_CXLFLASH_CLONE		CXL_IOWR(0x87, dk_cxlflash_clone)
+#define DK_CXLFLASH_VLUN_CLONE		CXL_IOWR(0x87, dk_cxlflash_clone)
+#define DK_CXLFLASH_CLONE		DK_CXLFLASH_VLUN_CLONE
 #define DK_CXLFLASH_RECOVER_AFU		CXL_IOWR(0x88, dk_cxlflash_recover_afu)
 #define DK_CXLFLASH_MANAGE_LUN		CXL_IOWR(0x89, dk_cxlflash_manage_lun)
 
