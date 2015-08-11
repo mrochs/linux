@@ -83,13 +83,13 @@ out:
 }
 
 /**
- * lookup_local() - find a local LUN information structure by WWID
+ * refresh_local() - find a local LUN information structure by WWID
  * @cfg:	Internal structure associated with the host.
  * @wwid:	WWID associated with LUN.
  *
  * Return: Found local lun_info structure on success, NULL on failure
  */
-static struct llun_info *lookup_local(struct cxlflash_cfg *cfg, u8 *wwid)
+static struct llun_info *refresh_local(struct cxlflash_cfg *cfg, u8 *wwid)
 {
 	struct llun_info *lli, *temp;
 
@@ -141,7 +141,7 @@ static struct llun_info *find_and_create_lun(struct scsi_device *sdev, u8 *wwid)
 	if (unlikely(!wwid))
 		goto out;
 
-	lli = lookup_local(cfg, wwid);
+	lli = refresh_local(cfg, wwid);
 	if (lli)
 		goto out;
 
