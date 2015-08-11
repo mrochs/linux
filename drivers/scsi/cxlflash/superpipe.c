@@ -14,7 +14,6 @@
 
 #include <linux/delay.h>
 #include <linux/file.h>
-#include <linux/moduleparam.h>
 #include <linux/syscalls.h>
 #include <misc/cxl.h>
 #include <asm/unaligned.h>

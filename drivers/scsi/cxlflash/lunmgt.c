@@ -12,17 +12,10 @@
  * 2 of the License, or (at your option) any later version.
  */
 
-#include <linux/delay.h>
-#include <linux/file.h>
-#include <linux/moduleparam.h>
-#include <linux/syscalls.h>
 #include <misc/cxl.h>
 #include <asm/unaligned.h>
 
-#include <scsi/scsi.h>
 #include <scsi/scsi_host.h>
-#include <scsi/scsi_cmnd.h>
-#include <scsi/scsi_eh.h>
 #include <uapi/scsi/cxlflash_ioctl.h>
 
 #include "sislite.h"
@@ -262,4 +255,3 @@ out:
 	pr_debug("%s: returning rc=%d\n", __func__, rc);
 	return rc;
 }
-
