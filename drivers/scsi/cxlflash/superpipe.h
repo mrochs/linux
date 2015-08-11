@@ -109,7 +109,7 @@ struct ctx_info {
 };
 
 struct cxlflash_global {
-	spinlock_t slock;
+	struct mutex mutex;
 	struct list_head gluns;/* list of glun_info structs */
 	struct page *err_page; /* One page of all 0xF for error notification */
 };

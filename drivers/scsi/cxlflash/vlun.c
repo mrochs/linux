@@ -29,6 +29,8 @@
 #include "vlun.h"
 #include "superpipe.h"
 
+extern struct cxlflash_global global;
+
 /**
  * marshal_virt_to_resize() - translate uvirtual to resize structure
  * @virt:	Source structure from which to translate/copy.
@@ -788,13 +790,12 @@ int cxlflash_vlun_resize(struct scsi_device *sdev,
 void cxlflash_restore_luntable(struct cxlflash_cfg *cfg)
 {
 	struct llun_info *lli, *temp;
-	ulong lock_flags;
 	u32 chan;
 	u32 lind;
 	struct afu *afu = cfg->afu;
 	struct sisl_global_map *agm = &afu->afu_map->global;
 
-	spin_lock_irqsave(&cfg->slock, lock_flags);
+	mutex_lock(&global.mutex);
 
 	list_for_each_entry_safe(lli, temp, &cfg->lluns, list) {
 		if (!lli->in_table)
@@ -817,7 +818,7 @@ void cxlflash_restore_luntable(struct cxlflash_cfg *cfg)
 		}
 	}
 
-	spin_unlock_irqrestore(&cfg->slock, lock_flags);
+	mutex_unlock(&global.mutex);
 }
 
 /**
@@ -838,9 +839,8 @@ static int init_luntable(struct cxlflash_cfg *cfg, struct llun_info *lli)
 	int rc = 0;
 	struct afu *afu = cfg->afu;
 	struct sisl_global_map *agm = &afu->afu_map->global;
-	ulong lock_flags;
 
-	spin_lock_irqsave(&cfg->slock, lock_flags);
+	mutex_lock(&global.mutex);
 
 	if (lli->in_table)
 		goto out;
@@ -882,7 +882,7 @@ static int init_luntable(struct cxlflash_cfg *cfg, struct llun_info *lli)
 
 	lli->in_table = true;
 out:
-	spin_unlock_irqrestore(&cfg->slock, lock_flags);
+	mutex_unlock(&global.mutex);
 	pr_debug("%s: returning rc=%d\n", __func__, rc);
 	return rc;
 }

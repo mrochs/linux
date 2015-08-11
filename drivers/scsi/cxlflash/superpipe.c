@@ -62,14 +62,13 @@ static void marshal_det_to_rele(struct dk_cxlflash_detach *detach,
  */
 void cxlflash_free_errpage(void)
 {
-	ulong flags = 0;
 
-	spin_lock_irqsave(&global.slock, flags);
+	mutex_lock(&global.mutex);
 	if (global.err_page) {
 		__free_page(global.err_page);
 		global.err_page = NULL;
 	}
-	spin_unlock_irqrestore(&global.slock, flags);
+	mutex_unlock(&global.mutex);
 }
 
 /**
@@ -986,7 +985,6 @@ static void unmap_context(struct ctx_info *ctxi)
 static struct page *get_err_page(void)
 {
 	struct page *err_page = global.err_page;
-	ulong flags = 0;
 
 	if (unlikely(!err_page)) {
 		err_page = alloc_page(GFP_KERNEL);
@@ -998,14 +996,14 @@ static struct page *get_err_page(void)
 		memset(page_address(err_page), -1, PAGE_SIZE);
 
 		/* Serialize update w/ other threads to avoid a leak */
-		spin_lock_irqsave(&global.slock, flags);
+		mutex_lock(&global.mutex);
 		if (likely(!global.err_page))
 			global.err_page = err_page;
 		else {
 			__free_page(err_page);
 			err_page = global.err_page;
 		}
-		spin_unlock_irqrestore(&global.slock, flags);
+		mutex_unlock(&global.mutex);
 	}
 
 out:

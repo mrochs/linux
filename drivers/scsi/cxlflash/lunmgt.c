@@ -92,18 +92,13 @@ out:
 static struct llun_info *lookup_local(struct cxlflash_cfg *cfg, u8 *wwid)
 {
 	struct llun_info *lli, *temp;
-	ulong lock_flags;
-
-	spin_lock_irqsave(&cfg->slock, lock_flags);
 
 	list_for_each_entry_safe(lli, temp, &cfg->lluns, list)
 		if (!memcmp(lli->wwid, wwid, DK_CXLFLASH_MANAGE_LUN_WWID_LEN)) {
 			lli->newly_created = false;
-			spin_unlock_irqrestore(&cfg->slock, lock_flags);
 			return lli;
 		}
 
-	spin_unlock_irqrestore(&cfg->slock, lock_flags);
 	return NULL;
 }
 
@@ -116,17 +111,11 @@ static struct llun_info *lookup_local(struct cxlflash_cfg *cfg, u8 *wwid)
 static struct glun_info *lookup_global(u8 *wwid)
 {
 	struct glun_info *gli, *temp;
-	ulong lock_flags;
-
-	spin_lock_irqsave(&global.slock, lock_flags);
 
 	list_for_each_entry_safe(gli, temp, &global.gluns, list)
-		if (!memcmp(gli->wwid, wwid, DK_CXLFLASH_MANAGE_LUN_WWID_LEN)) {
-			spin_unlock_irqrestore(&global.slock, lock_flags);
+		if (!memcmp(gli->wwid, wwid, DK_CXLFLASH_MANAGE_LUN_WWID_LEN))
 			return gli;
-		}
 
-	spin_unlock_irqrestore(&global.slock, lock_flags);
 	return NULL;
 }
 
@@ -147,8 +136,8 @@ static struct llun_info *find_and_create_lun(struct scsi_device *sdev, u8 *wwid)
 	struct glun_info *gli = NULL;
 	struct Scsi_Host *shost = sdev->host;
 	struct cxlflash_cfg *cfg = shost_priv(shost);
-	ulong lock_flags;
 
+	mutex_lock(&global.mutex);
 	if (unlikely(!wwid))
 		goto out;
 
@@ -163,9 +152,7 @@ static struct llun_info *find_and_create_lun(struct scsi_device *sdev, u8 *wwid)
 	gli = lookup_global(wwid);
 	if (gli) {
 		lli->parent = gli;
-		spin_lock_irqsave(&cfg->slock, lock_flags);
 		list_add(&lli->list, &cfg->lluns);
-		spin_unlock_irqrestore(&cfg->slock, lock_flags);
 		goto out;
 	}
 
@@ -177,15 +164,12 @@ static struct llun_info *find_and_create_lun(struct scsi_device *sdev, u8 *wwid)
 	}
 
 	lli->parent = gli;
-	spin_lock_irqsave(&cfg->slock, lock_flags);
 	list_add(&lli->list, &cfg->lluns);
-	spin_unlock_irqrestore(&cfg->slock, lock_flags);
 
-	spin_lock_irqsave(&global.slock, lock_flags);
 	list_add(&gli->list, &global.gluns);
-	spin_unlock_irqrestore(&global.slock, lock_flags);
 
 out:
+	mutex_unlock(&global.mutex);
 	pr_debug("%s: returning %p\n", __func__, lli);
 	return lli;
 }
@@ -197,14 +181,13 @@ out:
 void cxlflash_term_luns(struct cxlflash_cfg *cfg)
 {
 	struct llun_info *lli, *temp;
-	ulong lock_flags;
 
-	spin_lock_irqsave(&cfg->slock, lock_flags);
+	mutex_lock(&global.mutex);
 	list_for_each_entry_safe(lli, temp, &cfg->lluns, list) {
 		list_del(&lli->list);
 		kfree(lli);
 	}
-	spin_unlock_irqrestore(&cfg->slock, lock_flags);
+	mutex_unlock(&global.mutex);
 }
 
 /**
@@ -213,7 +196,7 @@ void cxlflash_term_luns(struct cxlflash_cfg *cfg)
 void cxlflash_list_init(void)
 {
 	INIT_LIST_HEAD(&global.gluns);
-	spin_lock_init(&global.slock);
+	mutex_init(&global.mutex);
 	global.err_page = NULL;
 }
 
@@ -223,15 +206,14 @@ void cxlflash_list_init(void)
 void cxlflash_list_terminate(void)
 {
 	struct glun_info *gli, *temp;
-	ulong flags = 0;
 
-	spin_lock_irqsave(&global.slock, flags);
+	mutex_lock(&global.mutex);
 	list_for_each_entry_safe(gli, temp, &global.gluns, list) {
 		list_del(&gli->list);
 		cxlflash_ba_terminate(&gli->blka.ba_lun);
 		kfree(gli);
 	}
-	spin_unlock_irqrestore(&global.slock, flags);
+	mutex_unlock(&global.mutex);
 }
 
 /**
