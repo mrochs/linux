@@ -1948,9 +1948,11 @@ static int cxlflash_eh_host_reset_handler(struct scsi_cmnd *scp)
 		scsi_block_requests(cfg->host);
 		cxlflash_mark_contexts_error(cfg);
 		rcr = afu_reset(cfg);
-		if (rcr)
+		if (rcr) {
 			rc = FAILED;
-		cfg->state = STATE_NORMAL;
+			cfg->state = STATE_FAILTERM;
+		} else
+			cfg->state = STATE_NORMAL;
 		wake_up_all(&cfg->limbo_waitq);
 		scsi_unblock_requests(cfg->host);
 		break;
