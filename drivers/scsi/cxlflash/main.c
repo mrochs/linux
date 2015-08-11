@@ -531,7 +531,10 @@ static int cxlflash_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *scp)
 		goto out;
 	case STATE_FAILTERM:
 		pr_debug_ratelimited("%s: device has failed!\n", __func__);
-		goto error;
+		scp->result = (DID_NO_CONNECT << 16);
+		scp->scsi_done(scp);
+		rc = 0;
+		goto out;
 	default:
 		break;
 	}
@@ -584,10 +587,6 @@ static int cxlflash_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *scp)
 
 out:
 	return rc;
-error:
-	scp->result = (DID_NO_CONNECT << 16);
-	scp->scsi_done(scp);
-	return 0;
 }
 
 /**
