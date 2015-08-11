@@ -30,7 +30,7 @@
 #include "vlun.h"
 #include "superpipe.h"
 
-static struct cxlflash_global global;
+struct cxlflash_global global;
 
 /**
  * marshal_rele_to_resize() - translate release to resize structure
@@ -58,205 +58,13 @@ static void marshal_det_to_rele(struct dk_cxlflash_detach *detach,
 }
 
 /**
- * create_local() - allocate and initialize a local LUN information structure
- * @sdev:	SCSI device associated with LUN.
- * @wwid:	World Wide Node Name for LUN.
- *
- * Return: Allocated local llun_info structure on success, NULL on failure
+ * cxlflash_free_errpage() - frees resources associated with global LUN list
  */
-static struct llun_info *create_local(struct scsi_device *sdev, u8 *wwid)
+void cxlflash_free_errpage(void)
 {
-	struct llun_info *lli = NULL;
-
-	lli = kzalloc(sizeof(*lli), GFP_KERNEL);
-	if (unlikely(!lli)) {
-		pr_err("%s: could not allocate lli\n", __func__);
-		goto out;
-	}
-
-	lli->sdev = sdev;
-	lli->newly_created = true;
-	lli->host_no = sdev->host->host_no;
-	lli->in_table = false;
-
-	memcpy(lli->wwid, wwid, DK_CXLFLASH_MANAGE_LUN_WWID_LEN);
-out:
-	return lli;
-}
-
-/**
- * create_global() - allocate and initialize a global LUN information structure
- * @sdev:	SCSI device associated with LUN.
- * @wwid:	World Wide Node Name for LUN.
- *
- * Return: Allocated global glun_info structure on success, NULL on failure
- */
-static struct glun_info *create_global(struct scsi_device *sdev, u8 *wwid)
-{
-	struct glun_info *gli = NULL;
-
-	gli = kzalloc(sizeof(*gli), GFP_KERNEL);
-	if (unlikely(!gli)) {
-		pr_err("%s: could not allocate gli\n", __func__);
-		goto out;
-	}
-
-	mutex_init(&gli->mutex);
-	memcpy(gli->wwid, wwid, DK_CXLFLASH_MANAGE_LUN_WWID_LEN);
-out:
-	return gli;
-}
-
-/**
- * lookup_local() - find a local LUN information structure by WWID
- * @cfg:	Internal structure associated with the host.
- * @wwid:	WWID associated with LUN.
- *
- * Return: Found local lun_info structure on success, NULL on failure
- */
-static struct llun_info *lookup_local(struct cxlflash_cfg *cfg, u8 *wwid)
-{
-	struct llun_info *lli, *temp;
-	ulong lock_flags;
-
-	spin_lock_irqsave(&cfg->slock, lock_flags);
-
-	list_for_each_entry_safe(lli, temp, &cfg->lluns, list)
-		if (!memcmp(lli->wwid, wwid, DK_CXLFLASH_MANAGE_LUN_WWID_LEN)) {
-			lli->newly_created = false;
-			spin_unlock_irqrestore(&cfg->slock, lock_flags);
-			return lli;
-		}
-
-	spin_unlock_irqrestore(&cfg->slock, lock_flags);
-	return NULL;
-}
-
-/**
- * lookup_global() - find a global LUN information structure by WWID
- * @wwid:	WWID associated with LUN.
- *
- * Return: Found global lun_info structure on success, NULL on failure
- */
-static struct glun_info *lookup_global(u8 *wwid)
-{
-	struct glun_info *gli, *temp;
-	ulong lock_flags;
-
-	spin_lock_irqsave(&global.slock, lock_flags);
-
-	list_for_each_entry_safe(gli, temp, &global.gluns, list)
-		if (!memcmp(gli->wwid, wwid, DK_CXLFLASH_MANAGE_LUN_WWID_LEN)) {
-			spin_unlock_irqrestore(&global.slock, lock_flags);
-			return gli;
-		}
-
-	spin_unlock_irqrestore(&global.slock, lock_flags);
-	return NULL;
-}
-
-/**
- * lookup_lun() - find or create a local LUN information structure
- * @sdev:	SCSI device associated with LUN.
- * @wwid:	WWID associated with LUN.
- *
- * When a local LUN is not found and a global LUN is also not found, both
- * a global LUN and local LUN are created. The global LUN is added to the
- * global list and the local LUN is returned.
- *
- * Return: Found/Allocated local lun_info structure on success, NULL on failure
- */
-static struct llun_info *lookup_lun(struct scsi_device *sdev, u8 *wwid)
-{
-	struct llun_info *lli = NULL;
-	struct glun_info *gli = NULL;
-	struct Scsi_Host *shost = sdev->host;
-	struct cxlflash_cfg *cfg = shost_priv(shost);
-	ulong lock_flags;
-
-	if (unlikely(!wwid))
-		goto out;
-
-	lli = lookup_local(cfg, wwid);
-	if (lli)
-		goto out;
-
-	lli = create_local(sdev, wwid);
-	if (unlikely(!lli))
-		goto out;
-
-	gli = lookup_global(wwid);
-	if (gli) {
-		lli->parent = gli;
-		spin_lock_irqsave(&cfg->slock, lock_flags);
-		list_add(&lli->list, &cfg->lluns);
-		spin_unlock_irqrestore(&cfg->slock, lock_flags);
-		goto out;
-	}
-
-	gli = create_global(sdev, wwid);
-	if (unlikely(!gli)) {
-		kfree(lli);
-		lli = NULL;
-		goto out;
-	}
-
-	lli->parent = gli;
-	spin_lock_irqsave(&cfg->slock, lock_flags);
-	list_add(&lli->list, &cfg->lluns);
-	spin_unlock_irqrestore(&cfg->slock, lock_flags);
-
-	spin_lock_irqsave(&global.slock, lock_flags);
-	list_add(&gli->list, &global.gluns);
-	spin_unlock_irqrestore(&global.slock, lock_flags);
-
-out:
-	pr_debug("%s: returning %p\n", __func__, lli);
-	return lli;
-}
-
-/**
- * cxlflash_term_luns() - Delete all entries from local lun list, free.
- * @cfg:	Internal structure associated with the host.
- */
-void cxlflash_term_luns(struct cxlflash_cfg *cfg)
-{
-	struct llun_info *lli, *temp;
-	ulong lock_flags;
-
-	spin_lock_irqsave(&cfg->slock, lock_flags);
-	list_for_each_entry_safe(lli, temp, &cfg->lluns, list) {
-		list_del(&lli->list);
-		kfree(lli);
-	}
-	spin_unlock_irqrestore(&cfg->slock, lock_flags);
-}
-
-/**
- * cxlflash_list_init() - initializes the global LUN list
- */
-void cxlflash_list_init(void)
-{
-	INIT_LIST_HEAD(&global.gluns);
-	spin_lock_init(&global.slock);
-	global.err_page = NULL;
-}
-
-/**
- * cxlflash_list_terminate() - frees resources associated with global LUN list
- */
-void cxlflash_list_terminate(void)
-{
-	struct glun_info *gli, *temp;
 	ulong flags = 0;
 
 	spin_lock_irqsave(&global.slock, flags);
-	list_for_each_entry_safe(gli, temp, &global.gluns, list) {
-		list_del(&gli->list);
-		cxlflash_ba_terminate(&gli->blka.ba_lun);
-		kfree(gli);
-	}
-
 	if (global.err_page) {
 		__free_page(global.err_page);
 		global.err_page = NULL;
@@ -1577,55 +1385,6 @@ err1:
 err0:
 	kfree(lun_access);
 	goto out;
-}
-
-/**
- * cxlflash_manage_lun() - handles lun management activities
- * @sdev:	SCSI device associated with LUN.
- * @manage:	Manage ioctl data structure.
- *
- * This routine is used to notify the driver about a LUN's WWID and associate
- * SCSI devices (sdev) with a global LUN instance. Additionally it serves to
- * change a LUN's operating mode: legacy or superpipe.
- *
- * Return: 0 on success, -errno on failure
- */
-static int cxlflash_manage_lun(struct scsi_device *sdev,
-			       struct dk_cxlflash_manage_lun *manage)
-{
-	int rc = 0;
-	struct llun_info *lli = NULL;
-	u64 flags = manage->hdr.flags;
-	u32 chan = sdev->channel;
-
-	lli = lookup_lun(sdev, manage->wwid);
-	pr_debug("%s: ENTER: WWID = %016llX%016llX, flags = %016llX li = %p\n",
-		 __func__, get_unaligned_le64(&manage->wwid[0]),
-		 get_unaligned_le64(&manage->wwid[8]),
-		 manage->hdr.flags, lli);
-	if (unlikely(!lli)) {
-		rc = -ENOMEM;
-		goto out;
-	}
-
-	if (flags & DK_CXLFLASH_MANAGE_LUN_ENABLE_SUPERPIPE) {
-		if (lli->newly_created)
-			lli->port_sel = CHAN2PORT(chan);
-		else
-			lli->port_sel = BOTH_PORTS;
-		/* Store off lun in unpacked, AFU-friendly format */
-		lli->lun_id[chan] = lun_to_lunid(sdev->lun);
-		sdev->hostdata = lli;
-	} else if (flags & DK_CXLFLASH_MANAGE_LUN_DISABLE_SUPERPIPE) {
-		if (lli->parent->mode != MODE_NONE)
-			rc = -EBUSY;
-		else
-			sdev->hostdata = NULL;
-	}
-
-out:
-	pr_debug("%s: returning rc=%d\n", __func__, rc);
-	return rc;
 }
 
 /**

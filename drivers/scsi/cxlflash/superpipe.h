@@ -114,7 +114,6 @@ struct cxlflash_global {
 	struct page *err_page; /* One page of all 0xF for error notification */
 };
 
-
 int cxlflash_vlun_resize(struct scsi_device *, struct dk_cxlflash_resize *);
 int _cxlflash_vlun_resize(struct scsi_device *, struct ctx_info *,
 			  struct dk_cxlflash_resize *);
@@ -140,6 +139,7 @@ void rhte_checkin(struct ctx_info *, struct sisl_rht_entry *);
 
 void cxlflash_ba_terminate(struct ba_lun *);
 
+int cxlflash_manage_lun(struct scsi_device *, struct dk_cxlflash_manage_lun *);
 
 
 #endif /* ifndef _CXLFLASH_SUPERPIPE_H */
