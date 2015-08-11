@@ -29,8 +29,6 @@
 #include "vlun.h"
 #include "superpipe.h"
 
-extern struct cxlflash_global global;
-
 /**
  * marshal_virt_to_resize() - translate uvirtual to resize structure
  * @virt:	Source structure from which to translate/copy.
@@ -216,7 +214,7 @@ static u64 ba_alloc(struct ba_lun *ba_lun)
 					  bali, &bit_word);
 		if (bit_pos == -1) {
 			pr_debug("%s: Could not find an allocation unit on LUN:"
-			         " lun_id = %llX\n", __func__, ba_lun->lun_id);
+				 " lun_id = %llX\n", __func__, ba_lun->lun_id);
 			return -1ULL;
 		}
 	}
@@ -271,7 +269,7 @@ static int ba_free(struct ba_lun *ba_lun, u64 to_free)
 
 	if (validate_alloc(bali, to_free)) {
 		pr_debug("%s: The AUN %llX is not allocated on lun_id %llX\n",
-		         __func__, to_free, ba_lun->lun_id);
+			 __func__, to_free, ba_lun->lun_id);
 		return -1;
 	}
 
@@ -318,7 +316,7 @@ static int ba_clone(struct ba_lun *ba_lun, u64 to_clone)
 
 	if (validate_alloc(bali, to_clone)) {
 		pr_debug("%s: AUN %llX is not allocated on lun_id %llX\n",
-		         __func__, to_clone, ba_lun->lun_id);
+			 __func__, to_clone, ba_lun->lun_id);
 		return -1;
 	}
 
@@ -327,7 +325,7 @@ static int ba_clone(struct ba_lun *ba_lun, u64 to_clone)
 
 	if (bali->aun_clone_map[to_clone] == MAX_AUN_CLONE_CNT) {
 		pr_debug("%s: AUN %llX on lun_id %llX hit max clones already\n",
-		         __func__, to_clone, ba_lun->lun_id);
+			 __func__, to_clone, ba_lun->lun_id);
 		return -1;
 	}
 
@@ -547,7 +545,7 @@ static int grow_lxt(struct afu *afu,
 		aun = ba_alloc(&blka->ba_lun);
 		if ((aun == -1ULL) || (aun >= blka->nchunk))
 			pr_debug("%s: ba_alloc error: allocated chunk# %llX, "
-			         "max %llX\n", __func__, aun, blka->nchunk - 1);
+				 "max %llX\n", __func__, aun, blka->nchunk - 1);
 
 		/* select both ports, use r/w perms from RHT */
 		lxt[i].rlba_base = ((aun << MC_CHUNK_SHIFT) |
@@ -735,7 +733,7 @@ int _cxlflash_vlun_resize(struct scsi_device *sdev,
 
 	if (unlikely(gli->mode != MODE_VIRTUAL)) {
 		pr_debug("%s: LUN mode does not support resize! (%d)\n",
-		         __func__, gli->mode);
+			 __func__, gli->mode);
 		rc = -EINVAL;
 		goto out;
 
@@ -1129,7 +1127,7 @@ int cxlflash_disk_clone(struct scsi_device *sdev,
 	if (unlikely(gli->mode != MODE_VIRTUAL)) {
 		rc = -EINVAL;
 		pr_debug("%s: Clone not supported on physical LUNs! (%d)\n",
-		         __func__, gli->mode);
+			 __func__, gli->mode);
 		goto out;
 	}
 
@@ -1137,14 +1135,14 @@ int cxlflash_disk_clone(struct scsi_device *sdev,
 	ctxi_dst = get_context(cfg, rctxid_dst, lli, 0);
 	if (unlikely(!ctxi_src || !ctxi_dst)) {
 		pr_debug("%s: Bad context! (%llu,%llu)\n", __func__,
-		         ctxid_src, ctxid_dst);
+			 ctxid_src, ctxid_dst);
 		rc = -EINVAL;
 		goto out;
 	}
 
 	if (unlikely(adap_fd_src != ctxi_src->lfd)) {
 		pr_debug("%s: Invalid source adapter fd! (%d)\n",
-		         __func__, adap_fd_src);
+			 __func__, adap_fd_src);
 		rc = -EINVAL;
 		goto out;
 	}

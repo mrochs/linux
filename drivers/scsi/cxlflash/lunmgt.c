@@ -30,8 +30,6 @@
 #include "vlun.h"
 #include "superpipe.h"
 
-extern struct cxlflash_global global;
-
 /**
  * create_local() - allocate and initialize a local LUN information structure
  * @sdev:	SCSI device associated with LUN.

@@ -15,6 +15,8 @@
 #ifndef _CXLFLASH_VLUN_H
 #define _CXLFLASH_VLUN_H
 
+extern struct cxlflash_global global;
+
 #define MC_RHT_NMASK      16	/* in bits */
 #define MC_CHUNK_SHIFT    MC_RHT_NMASK	/* shift to go from LBA to chunk# */
 
@@ -22,26 +24,26 @@
 
 #define MAX_AUN_CLONE_CNT 0xFF
 
-/* 
+/*
  * +-------+-------+-------+-------+-------+-------+-------+---+---+
  * | RLBA_BASE                                     |LUN_IDX| P |SEL|
  * +-------+-------+-------+-------+-------+-------+-------+---+---+
  *
  * The LXT Entry contains the physical LBA where the chunk starts (RLBA_BASE).
- * AFU ORes the low order bits from the virtual LBA (offset into the chunk) with
- * RLBA_BASE. The result is the physical LBA to be sent to storage.
+ * AFU ORes the low order bits from the virtual LBA (offset into the chunk)
+ * with RLBA_BASE. The result is the physical LBA to be sent to storage.
  * The LXT Entry also contains an index to a LUN TBL and a bitmask of which
- * outgoing (FC) * ports can be selected. The port select bit-mask is ANDed 
+ * outgoing (FC) * ports can be selected. The port select bit-mask is ANDed
  * with a global port select bit-mask maintained by the driver.
  * In addition, it has permission bits that are ANDed with the
  * RHT permissions to arrive at the final permissions for the chunk.
  *
- * LXT tables are allocated dynamically in groups. This is done to avoid 
- * a malloc/free overhead each time the LXT has to grow or shrink.  
+ * LXT tables are allocated dynamically in groups. This is done to avoid
+ * a malloc/free overhead each time the LXT has to grow or shrink.
  *
- * Based on the current lxt_cnt (used), it is always possible to know 
- * how many are allocated (used+free). The number of allocated entries is 
- * not stored anywhere.  
+ * Based on the current lxt_cnt (used), it is always possible to know
+ * how many are allocated (used+free). The number of allocated entries is
+ * not stored anywhere.
  *
  * The LXT table is re-allocated whenever it needs to cross into another group.
 */
