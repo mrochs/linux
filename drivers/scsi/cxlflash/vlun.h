@@ -40,15 +40,6 @@
 #define LXT_GROUP_SIZE          8
 #define LXT_NUM_GROUPS(lxt_cnt) (((lxt_cnt) + 7)/8)	/* alloc'ed groups */
 
-struct ba_lun {
-	u64 lun_id;
-	u64 wwpn;
-	size_t lsize;		/* LUN size in number of LBAs             */
-	size_t lba_size;	/* LBA size in number of bytes            */
-	size_t au_size;		/* Allocation Unit size in number of LBAs */
-	void *ba_lun_handle;
-};
-
 struct ba_lun_info {
 	u64 *lun_alloc_map;
 	u32 lun_bmap_size;
@@ -61,6 +52,15 @@ struct ba_lun_info {
 	u32 free_high_idx;
 
 	u8 *aun_clone_map;
+};
+
+struct ba_lun {
+	u64 lun_id;
+	u64 wwpn;
+	size_t lsize;		/* LUN size in number of LBAs             */
+	size_t lba_size;	/* LBA size in number of bytes            */
+	size_t au_size;		/* Allocation Unit size in number of LBAs */
+	struct ba_lun_info *ba_lun_handle;
 };
 
 /* Block Allocator */

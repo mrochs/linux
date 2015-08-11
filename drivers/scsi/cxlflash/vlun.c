@@ -132,7 +132,7 @@ static int ba_init(struct ba_lun *ba_lun)
 	}
 
 	/* Pass the allocated lun info as a handle to the user */
-	ba_lun->ba_lun_handle = (void *)bali;
+	ba_lun->ba_lun_handle = bali;
 
 	pr_debug("%s: Successfully initialized the LUN: "
 		 "lun_id = %llX, bitmap size = %X, free_aun_cnt = %llX\n",
@@ -190,7 +190,7 @@ static u64 ba_alloc(struct ba_lun *ba_lun)
 	int bit_word = 0;
 	struct ba_lun_info *bali = NULL;
 
-	bali = (struct ba_lun_info *)ba_lun->ba_lun_handle;
+	bali = ba_lun->ba_lun_handle;
 
 	pr_debug("%s: Received block allocation request: "
 		 "lun_id = %llX, free_aun_cnt = %llX\n",
@@ -262,7 +262,7 @@ static int ba_free(struct ba_lun *ba_lun, u64 to_free)
 	int idx = 0, bit_pos = 0;
 	struct ba_lun_info *bali = NULL;
 
-	bali = (struct ba_lun_info *)ba_lun->ba_lun_handle;
+	bali = ba_lun->ba_lun_handle;
 
 	if (validate_alloc(bali, to_free)) {
 		pr_err("%s: The AUN %llX is not allocated on lun_id %llX\n",
@@ -309,7 +309,7 @@ static int ba_free(struct ba_lun *ba_lun, u64 to_free)
  */
 static int ba_clone(struct ba_lun *ba_lun, u64 to_clone)
 {
-	struct ba_lun_info *bali = (struct ba_lun_info *)ba_lun->ba_lun_handle;
+	struct ba_lun_info *bali = ba_lun->ba_lun_handle;
 
 	if (validate_alloc(bali, to_clone)) {
 		pr_err("%s: AUN %llX is not allocated on lun_id %llX\n",
@@ -339,7 +339,7 @@ static int ba_clone(struct ba_lun *ba_lun, u64 to_clone)
  */
 static u64 ba_space(struct ba_lun *ba_lun)
 {
-	struct ba_lun_info *bali = (struct ba_lun_info *)ba_lun->ba_lun_handle;
+	struct ba_lun_info *bali = ba_lun->ba_lun_handle;
 
 	return bali->free_aun_cnt;
 }
@@ -352,7 +352,7 @@ static u64 ba_space(struct ba_lun *ba_lun)
  */
 void cxlflash_ba_terminate(struct ba_lun *ba_lun)
 {
-	struct ba_lun_info *bali = (struct ba_lun_info *)ba_lun->ba_lun_handle;
+	struct ba_lun_info *bali = ba_lun->ba_lun_handle;
 
 	if (bali) {
 		kfree(bali->aun_clone_map);
