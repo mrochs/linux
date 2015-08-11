@@ -185,6 +185,10 @@ retry:
 		 * context.
 		 */
 		rc = mutex_trylock(&ctxi->mutex);
+
+		/* Lock order is cfg->ctx_tbl_list_mutex -> ctxi->mutex.
+		 * Release ctx_tbl_list_mutex before retrying.
+		 */
 		mutex_unlock(&cfg->ctx_tbl_list_mutex);
 		if (!rc)
 			goto retry;
