@@ -397,24 +397,22 @@ struct cxlflash_afu_map {
 	};
 };
 
-/* 
- * LXT - LBA Translation Table.
- * LXT control blocks 
+/*
+ * LXT - LBA Translation Table
+ * LXT control blocks
  */
-
 struct sisl_lxt_entry {
 	u64 rlba_base;	/* bits 0:47 is base
-				 * b48:55 is lun index
-				 * b58:59 is write & read perms
-				 * (if no perm, afu_rc=0x15)
-				 * b60:63 is port_sel mask
-				 */
-
+			 * b48:55 is lun index
+			 * b58:59 is write & read perms
+			 * (if no perm, afu_rc=0x15)
+			 * b60:63 is port_sel mask
+			 */
 };
 
-/* 
- * RHT - Resource Handle Table.
- * Per the SISlite spec, RHT entries are to be 16-byte aligned 
+/*
+ * RHT - Resource Handle Table
+ * Per the SISlite spec, RHT entries are to be 16-byte aligned
  */
 struct sisl_rht_entry {
 	struct sisl_lxt_entry *lxt_start;
