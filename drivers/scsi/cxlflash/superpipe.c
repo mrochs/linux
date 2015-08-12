@@ -2052,6 +2052,12 @@ int cxlflash_ioctl(struct scsi_device *sdev, int cmd, void __user *arg)
 		goto cxlflash_ioctl_exit;
 	}
 
+	if (hdr->rsvd[0] || hdr->rsvd[1] || hdr->rsvd[2] || hdr->return_flags) {
+		dev_dbg(dev, "%s: Reserved/rflags populated!\n", __func__);
+		rc = -EINVAL;
+		goto cxlflash_ioctl_exit;
+	}
+
 	rc = do_ioctl(sdev, (void *)&buf);
 	if (likely(!rc))
 		if (unlikely(copy_to_user(arg, &buf, size))) {
