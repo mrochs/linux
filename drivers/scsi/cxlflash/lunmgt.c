@@ -124,7 +124,7 @@ static struct glun_info *lookup_global(u8 *wwid)
  * The block allocation map is shared across all adapters (i.e. associated
  * wih the global list). Since different attributes are associated with
  * the per adapter and global entries, allocate two separate structures for each
- * LUN (one local, one global). 
+ * LUN (one local, one global).
  *
  * Keep a pointer back from the local to the global entry.
  *
