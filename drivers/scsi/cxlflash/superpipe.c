@@ -1531,16 +1531,16 @@ retry:
 		rc = wait_event_interruptible(cfg->limbo_waitq,
 					      cfg->state != STATE_LIMBO);
 		if (unlikely(rc))
-			goto out;
+			break;
 		goto retry;
 	case STATE_FAILTERM:
 		dev_dbg(dev, "%s: Failed/Terminating!\n", __func__);
 		rc = -ENODEV;
-		goto out;
+		break;
 	default:
 		break;
 	}
-out:
+
 	return rc;
 }
 
