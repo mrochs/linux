@@ -192,7 +192,7 @@ static inline u64 lun_to_lunid(u64 lun)
 
 int cxlflash_afu_sync(struct afu *, ctx_hndl_t, res_hndl_t, u8);
 void cxlflash_list_init(void);
-void cxlflash_list_terminate(void);
+void cxlflash_term_global_luns(void);
 void cxlflash_free_errpage(void);
 int cxlflash_ioctl(struct scsi_device *, int, void __user *);
 void cxlflash_stop_term_user_contexts(struct cxlflash_cfg *);

@@ -201,9 +201,9 @@ void cxlflash_list_init(void)
 }
 
 /**
- * cxlflash_list_terminate() - frees resources associated with global LUN list
+ * cxlflash_term_global_luns() - frees resources associated with global LUN list
  */
-void cxlflash_list_terminate(void)
+void cxlflash_term_global_luns(void)
 {
 	struct glun_info *gli, *temp;
 
