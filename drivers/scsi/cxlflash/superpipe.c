@@ -228,14 +228,15 @@ denied:
 }
 
 /**
- * put_context() - Release the context, retrieved with get_context().
- * For now it just handles releasing the mutex.
+ * put_context() - release a context that was retrieved from get_context()
+ * @ctxi:	Context to release.
+ *
+ * For now, releasing the context equates to unlocking it's mutex.
  */
 void put_context(struct ctx_info *ctxi)
 {
 	mutex_unlock(&ctxi->mutex);
 }
-
 
 /**
  * afu_attach() - attach a context to the AFU
