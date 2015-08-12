@@ -397,7 +397,10 @@ struct cxlflash_afu_map {
 	};
 };
 
-/* LBA translation control blocks */
+/* 
+ * LXT - LBA Translation Table.
+ * LXT control blocks 
+ */
 
 struct sisl_lxt_entry {
 	u64 rlba_base;	/* bits 0:47 is base
@@ -409,7 +412,10 @@ struct sisl_lxt_entry {
 
 };
 
-/* Per the SISlite spec, RHT entries are to be 16-byte aligned */
+/* 
+ * RHT - Resource Handle Table.
+ * Per the SISlite spec, RHT entries are to be 16-byte aligned 
+ */
 struct sisl_rht_entry {
 	struct sisl_lxt_entry *lxt_start;
 	u32 lxt_cnt;

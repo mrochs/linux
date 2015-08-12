@@ -17,6 +17,7 @@
 
 extern struct cxlflash_global global;
 
+/* RHT - Resource Handle Table */
 #define MC_RHT_NMASK      16	/* in bits */
 #define MC_CHUNK_SHIFT    MC_RHT_NMASK	/* shift to go from LBA to chunk# */
 
@@ -25,6 +26,8 @@ extern struct cxlflash_global global;
 #define MAX_AUN_CLONE_CNT 0xFF
 
 /*
+ * LXT - LBA Translation Table
+ *
  * +-------+-------+-------+-------+-------+-------+-------+---+---+
  * | RLBA_BASE                                     |LUN_IDX| P |SEL|
  * +-------+-------+-------+-------+-------+-------+-------+---+---+
