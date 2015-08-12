@@ -228,6 +228,16 @@ denied:
 }
 
 /**
+ * put_context() - Release the context, retrieved with get_context().
+ * For now it just handles releasing the mutex.
+ */
+void put_context(struct ctx_info *ctxi)
+{
+	mutex_unlock(&ctxi->mutex);
+}
+
+
+/**
  * afu_attach() - attach a context to the AFU
  * @cfg:	Internal structure associated with the host.
  * @ctxi:	Context to attach.
@@ -574,7 +584,7 @@ int _cxlflash_disk_release(struct scsi_device *sdev,
 	struct llun_info *lli = sdev->hostdata;
 	struct glun_info *gli = lli->parent;
 	struct afu *afu = cfg->afu;
-	bool unlock_ctx = false;
+	bool put_ctx = false;
 
 	struct dk_cxlflash_resize size;
 	res_hndl_t rhndl = release->rsrc_handle;
@@ -598,7 +608,7 @@ int _cxlflash_disk_release(struct scsi_device *sdev,
 			goto out;
 		}
 
-		unlock_ctx = true;
+		put_ctx = true;
 	}
 
 	rhte = get_rhte(ctxi, rhndl, lli);
@@ -656,8 +666,8 @@ int _cxlflash_disk_release(struct scsi_device *sdev,
 	cxlflash_lun_detach(gli);
 
 out:
-	if (unlock_ctx)
-		mutex_unlock(&ctxi->mutex);
+	if (put_ctx)
+		put_context(ctxi);
 	dev_dbg(dev, "%s: returning rc=%d\n", __func__, rc);
 	return rc;
 }
@@ -792,7 +802,7 @@ static int _cxlflash_disk_detach(struct scsi_device *sdev,
 	struct llun_info *lli = sdev->hostdata;
 	struct lun_access *lun_access, *t;
 	struct dk_cxlflash_release rel;
-	bool unlock_ctx = false;
+	bool put_ctx = false;
 
 	int i;
 	int rc = 0;
@@ -811,7 +821,7 @@ static int _cxlflash_disk_detach(struct scsi_device *sdev,
 			goto out;
 		}
 
-		unlock_ctx = true;
+		put_ctx = true;
 	}
 
 	/* Cleanup outstanding resources tied to this LUN */
@@ -855,7 +865,7 @@ static int _cxlflash_disk_detach(struct scsi_device *sdev,
 		lfd = ctxi->lfd;
 		destroy_context(cfg, ctxi);
 		ctxi = NULL;
-		unlock_ctx = false;
+		put_ctx = false;
 
 		/*
 		 * As a last step, clean up external resources when not
@@ -870,8 +880,8 @@ static int _cxlflash_disk_detach(struct scsi_device *sdev,
 	}
 
 out:
-	if (unlock_ctx)
-		mutex_unlock(&ctxi->mutex);
+	if (put_ctx)
+		put_context(ctxi);
 	dev_dbg(dev, "%s: returning rc=%d\n", __func__, rc);
 	return rc;
 }
@@ -950,7 +960,7 @@ static int cxlflash_cxl_release(struct inode *inode, struct file *file)
 
 		dev_dbg(dev, "%s: Another process owns context %d!\n",
 			__func__, ctxid);
-		mutex_unlock(&ctxi->mutex);
+		put_context(ctxi);
 		goto out;
 	}
 
@@ -1083,7 +1093,7 @@ static int cxlflash_mmap_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 
 out:
 	if (likely(ctxi))
-		mutex_unlock(&ctxi->mutex);
+		put_context(ctxi);
 	dev_dbg(dev, "%s: returning rc=%d\n", __func__, rc);
 	return rc;
 
@@ -1146,7 +1156,7 @@ static int cxlflash_cxl_mmap(struct file *file, struct vm_area_struct *vma)
 
 out:
 	if (likely(ctxi))
-		mutex_unlock(&ctxi->mutex);
+		put_context(ctxi);
 	return rc;
 }
 
@@ -1351,7 +1361,7 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 	 * knows about us yet; we can be the only one holding our mutex.
 	 */
 	list_add(&lun_access->list, &ctxi->luns);
-	mutex_unlock(&ctxi->mutex);
+	put_context(ctxi);
 	mutex_lock(&cfg->ctx_tbl_list_mutex);
 	mutex_lock(&ctxi->mutex);
 	cfg->ctx_tbl[ctxid] = ctxi;
@@ -1370,7 +1380,7 @@ out:
 	attach->adap_fd = fd;
 
 	if (ctxi)
-		mutex_unlock(&ctxi->mutex);
+		put_context(ctxi);
 
 	dev_dbg(dev, "%s: returning ctxid=%d fd=%d bs=%lld rc=%d llba=%lld\n",
 		__func__, ctxid, fd, attach->block_size, rc, attach->last_lba);
@@ -1379,7 +1389,7 @@ out:
 err4:
 	cxl_stop_context(ctx);
 err3:
-	mutex_unlock(&ctxi->mutex);
+	put_context(ctxi);
 	destroy_context(cfg, ctxi);
 	ctxi = NULL;
 err2:
@@ -1637,7 +1647,7 @@ retry_recover:
 	dev_dbg(dev, "%s: MMIO working, no recovery required!\n", __func__);
 out:
 	if (likely(ctxi))
-		mutex_unlock(&ctxi->mutex);
+		put_context(ctxi);
 	mutex_unlock(mutex);
 	atomic_dec_if_positive(&cfg->recovery_threads);
 	return rc;
@@ -1780,7 +1790,7 @@ static int cxlflash_disk_verify(struct scsi_device *sdev,
 
 out:
 	if (likely(ctxi))
-		mutex_unlock(&ctxi->mutex);
+		put_context(ctxi);
 	dev_dbg(dev, "%s: returning rc=%d llba=%llX\n",
 		__func__, rc, verify->last_lba);
 	return rc;
@@ -1888,7 +1898,7 @@ static int cxlflash_disk_direct_open(struct scsi_device *sdev, void *arg)
 
 out:
 	if (likely(ctxi))
-		mutex_unlock(&ctxi->mutex);
+		put_context(ctxi);
 	dev_dbg(dev, "%s: returning handle 0x%llx rc=%d llba %lld\n",
 		__func__, rsrc_handle, rc, last_lba);
 	return rc;

@@ -130,6 +130,7 @@ int cxlflash_lun_attach(struct glun_info *, enum lun_mode, bool);
 void cxlflash_lun_detach(struct glun_info *);
 
 struct ctx_info *get_context(struct cxlflash_cfg *, u64, void *, enum ctx_ctrl);
+void put_context(struct ctx_info *);
 
 struct sisl_rht_entry *get_rhte(struct ctx_info *, res_hndl_t,
 				struct llun_info *);

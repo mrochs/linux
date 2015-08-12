@@ -702,7 +702,7 @@ int _cxlflash_vlun_resize(struct scsi_device *sdev,
 	struct llun_info *lli = sdev->hostdata;
 	struct glun_info *gli = lli->parent;
 	struct afu *afu = cfg->afu;
-	bool unlock_ctx = false;
+	bool put_ctx = false;
 
 	res_hndl_t rhndl = resize->rsrc_handle;
 	u64 new_size;
@@ -741,7 +741,7 @@ int _cxlflash_vlun_resize(struct scsi_device *sdev,
 			goto out;
 		}
 
-		unlock_ctx = true;
+		put_ctx = true;
 	}
 
 	rhte = get_rhte(ctxi, rhndl, lli);
@@ -762,8 +762,8 @@ int _cxlflash_vlun_resize(struct scsi_device *sdev,
 	resize->last_lba--;
 
 out:
-	if (unlock_ctx)
-		mutex_unlock(&ctxi->mutex);
+	if (put_ctx)
+		put_context(ctxi);
 	pr_debug("%s: resized to %lld returning rc=%d\n",
 		 __func__, resize->last_lba, rc);
 	return rc;
@@ -980,7 +980,7 @@ int cxlflash_disk_virtual_open(struct scsi_device *sdev, void *arg)
 
 out:
 	if (likely(ctxi))
-		mutex_unlock(&ctxi->mutex);
+		put_context(ctxi);
 	pr_debug("%s: returning handle 0x%llx rc=%d llba %lld\n",
 		 __func__, rsrc_handle, rc, last_lba);
 	return rc;
@@ -1230,9 +1230,9 @@ out_success:
 	/* fall through */
 out:
 	if (ctxi_src)
-		mutex_unlock(&ctxi_src->mutex);
+		put_context(ctxi_src);
 	if (ctxi_dst)
-		mutex_unlock(&ctxi_dst->mutex);
+		put_context(ctxi_dst);
 	pr_debug("%s: returning rc=%d\n", __func__, rc);
 	return rc;
 
