@@ -503,14 +503,14 @@ static int cxlflash_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *scp)
 	short lflag = 0;
 	int rc = 0;
 
-	pr_debug_ratelimited("%s: (scp=%p) %d/%d/%d/%llu "
-			     "cdb=(%08X-%08X-%08X-%08X)\n",
-			     __func__, scp, host->host_no, scp->device->channel,
-			     scp->device->id, scp->device->lun,
-			     get_unaligned_be32(&((u32 *)scp->cmnd)[0]),
-			     get_unaligned_be32(&((u32 *)scp->cmnd)[1]),
-			     get_unaligned_be32(&((u32 *)scp->cmnd)[2]),
-			     get_unaligned_be32(&((u32 *)scp->cmnd)[3]));
+	dev_dbg_ratelimited(dev, "%s: (scp=%p) %d/%d/%d/%llu "
+			    "cdb=(%08X-%08X-%08X-%08X)\n",
+			    __func__, scp, host->host_no, scp->device->channel,
+			    scp->device->id, scp->device->lun,
+			    get_unaligned_be32(&((u32 *)scp->cmnd)[0]),
+			    get_unaligned_be32(&((u32 *)scp->cmnd)[1]),
+			    get_unaligned_be32(&((u32 *)scp->cmnd)[2]),
+			    get_unaligned_be32(&((u32 *)scp->cmnd)[3]));
 
 	/*
 	 * If a Task Management Function is active, wait for it to complete
@@ -526,11 +526,11 @@ static int cxlflash_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *scp)
 
 	switch (cfg->state) {
 	case STATE_LIMBO:
-		pr_debug_ratelimited("%s: device in limbo!\n", __func__);
+		dev_dbg_ratelimited(dev, "%s: device in limbo!\n", __func__);
 		rc = SCSI_MLQUEUE_HOST_BUSY;
 		goto out;
 	case STATE_FAILTERM:
-		pr_debug_ratelimited("%s: device has failed!\n", __func__);
+		dev_dbg_ratelimited(dev, "%s: device has failed!\n", __func__);
 		scp->result = (DID_NO_CONNECT << 16);
 		scp->scsi_done(scp);
 		rc = 0;
@@ -586,6 +586,7 @@ static int cxlflash_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *scp)
 	}
 
 out:
+	pr_devel("%s: returning rc=%d\n", __func__, rc);
 	return rc;
 }
 
