@@ -158,38 +158,42 @@ struct ctx_info *get_context(struct cxlflash_cfg *cfg, u64 rctxid,
 		pid = current->parent->tgid;
 
 	if (likely(ctxid < MAX_CONTEXT)) {
-retry:
-		rc = mutex_lock_interruptible(&cfg->ctx_tbl_list_mutex);
-		if (rc)
-			goto out;
+		while (true) {
+			rc = mutex_lock_interruptible(&cfg->ctx_tbl_list_mutex);
+			if (rc)
+				goto out;
 
-		ctxi = cfg->ctx_tbl[ctxid];
-		if (ctxi)
-			if ((file && (ctxi->file != file)) ||
-			    (!file && (ctxi->ctxid != rctxid)))
-				ctxi = NULL;
+			ctxi = cfg->ctx_tbl[ctxid];
+			if (ctxi)
+				if ((file && (ctxi->file != file)) ||
+				    (!file && (ctxi->ctxid != rctxid)))
+					ctxi = NULL;
 
-		if ((ctx_ctrl & CTX_CTRL_ERR) ||
-		    (!ctxi && (ctx_ctrl & CTX_CTRL_ERR_FALLBACK)))
-			ctxi = find_error_context(cfg, rctxid, file);
-		if (!ctxi) {
+			if ((ctx_ctrl & CTX_CTRL_ERR) ||
+			    (!ctxi && (ctx_ctrl & CTX_CTRL_ERR_FALLBACK)))
+				ctxi = find_error_context(cfg, rctxid, file);
+			if (!ctxi) {
+				mutex_unlock(&cfg->ctx_tbl_list_mutex);
+				goto out;
+			}
+
+			/*
+			 * Need to acquire ownership of the context while still
+			 * under the table/list lock to serialize with a remove
+			 * thread. Use the 'try' to avoid stalling the
+			 * table/list lock for a single context.
+			 *
+			 * Note that the lock order is:
+			 *
+			 *	cfg->ctx_tbl_list_mutex -> ctxi->mutex
+			 *
+			 * Therefore release ctx_tbl_list_mutex before retrying.
+			 */
+			rc = mutex_trylock(&ctxi->mutex);
 			mutex_unlock(&cfg->ctx_tbl_list_mutex);
-			goto out;
+			if (rc)
+				break; /* got the context's lock! */
 		}
-
-		/*
-		 * Need to acquire ownership of the context while still under
-		 * the table/list lock to serialize with a remove thread. Use
-		 * the 'try' to avoid stalling the table/list lock for a single
-		 * context.
-		 *
-		 * Note: lock order is cfg->ctx_tbl_list_mutex -> ctxi->mutex;
-		 * therefore release ctx_tbl_list_mutex before retrying.
-		 */
-		rc = mutex_trylock(&ctxi->mutex);
-		mutex_unlock(&cfg->ctx_tbl_list_mutex);
-		if (!rc)
-			goto retry;
 
 		if (ctxi->unavail)
 			goto denied;
