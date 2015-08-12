@@ -86,4 +86,3 @@ struct blka {
 };
 
 #endif /* ifndef _CXLFLASH_SUPERPIPE_H */
-

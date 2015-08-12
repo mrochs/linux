@@ -201,4 +201,3 @@ void cxlflash_term_local_luns(struct cxlflash_cfg *);
 void cxlflash_restore_luntable(struct cxlflash_cfg *);
 
 #endif /* ifndef _CXLFLASH_COMMON_H */
-
