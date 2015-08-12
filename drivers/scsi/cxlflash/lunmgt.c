@@ -79,6 +79,7 @@ out:
  * @wwid:	WWID associated with LUN.
  *
  * Return: Found local lun_info structure on success, NULL on failure
+ * If a LUN with the WWID is found in the list, refresh it's state.
  */
 static struct llun_info *refresh_local(struct cxlflash_cfg *cfg, u8 *wwid)
 {
@@ -111,13 +112,19 @@ static struct glun_info *lookup_global(u8 *wwid)
 }
 
 /**
- * lookup_lun() - find or create a local LUN information structure
+ * find_and_create_lun() - find or create a local LUN information structure
  * @sdev:	SCSI device associated with LUN.
  * @wwid:	WWID associated with LUN.
  *
- * When a local LUN is not found and a global LUN is also not found, both
- * a global LUN and local LUN are created. The global LUN is added to the
- * global list and the local LUN is returned.
+ * The LUN is kept both in a local list (per adapter) and in a global list
+ * (across all adapters). Certain attributes of the LUN are local to the
+ * adapter (such as index, port selection mask etc.).
+ * The block allocation map is shared across all adapters (i.e. associated
+ * wih the global list). Since different attributes are associated with
+ * the per adapter and global entries, allocate two separate structures for each
+ * LUN (one local, one global). 
+ *
+ * Keep a pointer back from the local to the global entry.
  *
  * Return: Found/Allocated local lun_info structure on success, NULL on failure
  */
