@@ -21,6 +21,8 @@
  * Structure and flag definitions CXL Flash superpipe ioctls
  */
 
+#define DK_CXLFLASH_VERSION_0	0
+
 struct dk_cxlflash_hdr {
 	__u16 version;			/* Version data */
 	__u16 rsvd[3];			/* Reserved for future use */
@@ -154,7 +156,6 @@ union cxlflash_ioctls {
 };
 
 #define MAX_CXLFLASH_IOCTL_SZ	(sizeof(union cxlflash_ioctls))
-
 
 #define CXL_MAGIC 0xCA
 #define CXL_IOWR(_n, _s)	_IOWR(CXL_MAGIC, _n, struct _s)

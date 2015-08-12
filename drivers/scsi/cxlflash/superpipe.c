@@ -2034,7 +2034,7 @@ int cxlflash_ioctl(struct scsi_device *sdev, int cmd, void __user *arg)
 	}
 
 	hdr = (struct dk_cxlflash_hdr *)&buf;
-	if (hdr->version != 0) {
+	if (hdr->version != DK_CXLFLASH_VERSION_0) {
 		dev_dbg(dev, "%s: Version %u not supported for %s\n",
 			__func__, hdr->version, decode_ioctl(cmd));
 		rc = -EINVAL;
