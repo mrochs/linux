@@ -725,7 +725,7 @@ static void cxlflash_remove(struct pci_dev *pdev)
 
 	switch (cfg->init_state) {
 	case INIT_STATE_SCSI:
-		cxlflash_term_luns(cfg);
+		cxlflash_term_local_luns(cfg);
 		scsi_remove_host(cfg->host);
 		/* fall through */
 	case INIT_STATE_AFU:

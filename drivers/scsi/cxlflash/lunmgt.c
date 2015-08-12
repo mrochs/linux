@@ -175,10 +175,10 @@ out:
 }
 
 /**
- * cxlflash_term_luns() - Delete all entries from local lun list, free.
+ * cxlflash_term_local_luns() - Delete all entries from local lun list, free.
  * @cfg:	Internal structure associated with the host.
  */
-void cxlflash_term_luns(struct cxlflash_cfg *cfg)
+void cxlflash_term_local_luns(struct cxlflash_cfg *cfg)
 {
 	struct llun_info *lli, *temp;
 

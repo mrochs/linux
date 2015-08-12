@@ -197,7 +197,7 @@ void cxlflash_free_errpage(void);
 int cxlflash_ioctl(struct scsi_device *, int, void __user *);
 void cxlflash_stop_term_user_contexts(struct cxlflash_cfg *);
 int cxlflash_mark_contexts_error(struct cxlflash_cfg *);
-void cxlflash_term_luns(struct cxlflash_cfg *);
+void cxlflash_term_local_luns(struct cxlflash_cfg *);
 void cxlflash_restore_luntable(struct cxlflash_cfg *);
 
 #endif /* ifndef _CXLFLASH_COMMON_H */
