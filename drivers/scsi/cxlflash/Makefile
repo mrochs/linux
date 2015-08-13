@@ -1,4 +1,4 @@
 obj-$(CONFIG_CXLFLASH) += cxlflash.o
-cxlflash-y += main.o superpipe.o vlun.o lunmgt.o
+cxlflash-y += main.o superpipe.o lunmgt.o vlun.o
 
 #ccflags-y += -g
