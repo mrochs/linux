@@ -164,7 +164,7 @@ DK_CXLFLASH_ATTACH
         - These tokens are only valid for the process under which they
           were created. The child of a forked process cannot continue
           to use the context id or file descriptor created by its parent
-          (see DK_CXLFLASH_CLONE for further details).
+          (see DK_CXLFLASH_VLUN_CLONE for further details).
 
         - These tokens are only valid for the lifetime of the context and
           the process under which they were created. Once either is
@@ -254,8 +254,8 @@ DK_CXLFLASH_DETACH
     success, all "tokens" which had been provided to the user from the
     DK_CXLFLASH_ATTACH onward are no longer valid.
 
-DK_CXLFLASH_CLONE
------------------
+DK_CXLFLASH_VLUN_CLONE
+----------------------
     This ioctl is responsible for cloning a previously created
     context to a more recently created context. It exists solely to
     support maintaining user space access to storage after a process
@@ -282,15 +282,14 @@ DK_CXLFLASH_VERIFY
     where the changes affect the application (such as a LUN resize), the
     cxlflash driver will report the changed state to the application.
 
-    The user calls in when they want to validate that a LUN hasn’t been
+    The user calls in when they want to validate that a LUN hasn't been
     changed in response to a check condition. As the user is operating out
     of band from the kernel, they will see these types of events without
-    the kernel's knowledge. When encountered, the user’s architected
+    the kernel's knowledge. When encountered, the user's architected
     behavior is to call in to this ioctl, indicating what they want to
     verify and passing along any appropriate information. For now, only
     verifying a LUN change (ie: size different) with sense data is
     supported.
-
 
 DK_CXLFLASH_RECOVER_AFU
 -----------------------
@@ -300,7 +299,7 @@ DK_CXLFLASH_RECOVER_AFU
 
     User contexts are put into an error condition when the device needs to
     be reset or is terminating. Users are notified of this error condition
-    by seeing all 0xF’s on an MMIO read. Upon encountering this, the
+    by seeing all 0xF's on an MMIO read. Upon encountering this, the
     architected behavior for a user is to call into this ioctl to recover
     their context. A user may also call into this ioctl at any time to
     check if the device is operating normally. If a failure is returned
