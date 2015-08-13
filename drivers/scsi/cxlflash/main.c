@@ -127,7 +127,7 @@ static void process_cmd_err(struct afu_cmd *cmd, struct scsi_cmnd *scp)
 	}
 
 	pr_debug("%s: cmd failed afu_rc=%d scsi_rc=%d fc_rc=%d "
-		 "afu_extra=0x%X, scsi_entra=0x%X, fc_extra=0x%X\n",
+		 "afu_extra=0x%X, scsi_extra=0x%X, fc_extra=0x%X\n",
 		 __func__, ioasa->rc.afu_rc, ioasa->rc.scsi_rc,
 		 ioasa->rc.fc_rc, ioasa->afu_extra, ioasa->scsi_extra,
 		 ioasa->fc_extra);
@@ -1468,7 +1468,7 @@ static void init_pcr(struct cxlflash_cfg *cfg)
 	for (i = 0; i < MAX_CONTEXT; i++) {
 		ctrl_map = &afu->afu_map->ctrls[i].ctrl;
 		/* Disrupt any clients that could be running */
-		/* e. g. clients that survived a master restart */
+		/* e.g. clients that survived a master restart */
 		writeq_be(0, &ctrl_map->rht_start);
 		writeq_be(0, &ctrl_map->rht_cnt_id);
 		writeq_be(0, &ctrl_map->ctx_cap);
@@ -1560,7 +1560,7 @@ static int init_global(struct cxlflash_cfg *cfg)
 	}
 
 	/* Set up master's own CTX_CAP to allow real mode, host translation */
-	/* tbls, afu cmds and read/write GSCSI cmds. */
+	/* tables, afu cmds and read/write GSCSI cmds. */
 	/* First, unlock ctx_cap write by reading mbox */
 	(void)readq_be(&afu->ctrl_map->mbox_r);	/* unlock ctx_cap */
 	writeq_be((SISL_CTX_CAP_REAL_MODE | SISL_CTX_CAP_HOST_XLATE |
@@ -1774,7 +1774,7 @@ err1:
  * @mode:	Type of sync to issue (lightweight, heavyweight, global).
  *
  * The AFU can only take 1 sync command at a time. This routine enforces this
- * limitation by using a mutex to provide exlusive access to the AFU during
+ * limitation by using a mutex to provide exclusive access to the AFU during
  * the sync. This design point requires calling threads to not be on interrupt
  * context due to the possibility of sleeping during concurrent sync operations.
  *
@@ -2061,7 +2061,7 @@ static ssize_t port1_show(struct device *dev,
 /**
  * lun_mode_show() - presents the current LUN mode of the host
  * @dev:	Generic device associated with the host.
- * @attr:	Device attribute representing the lun mode.
+ * @attr:	Device attribute representing the LUN mode.
  * @buf:	Buffer of length PAGE_SIZE to report back the LUN mode in ASCII.
  *
  * Return: The size of the ASCII string returned in @buf.
@@ -2079,7 +2079,7 @@ static ssize_t lun_mode_show(struct device *dev,
 /**
  * lun_mode_store() - sets the LUN mode of the host
  * @dev:	Generic device associated with the host.
- * @attr:	Device attribute representing the lun mode.
+ * @attr:	Device attribute representing the LUN mode.
  * @buf:	Buffer of length PAGE_SIZE containing the LUN mode in ASCII.
  * @count:	Length of data resizing in @buf.
  *

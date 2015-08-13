@@ -76,7 +76,7 @@ void cxlflash_free_errpage(void)
  *
  * When the host needs to go down, all users must be quiesced and their
  * memory freed. This is accomplished by putting the contexts in error
- * state which will notify the user and let them 'drive' the teardown.
+ * state which will notify the user and let them 'drive' the tear down.
  * Meanwhile, this routine camps until all user contexts have been removed.
  */
 void cxlflash_stop_term_user_contexts(struct cxlflash_cfg *cfg)
@@ -128,7 +128,7 @@ static struct ctx_info *find_error_context(struct cxlflash_cfg *cfg, u64 rctxid,
 /**
  * get_context() - obtains a validated and locked context reference
  * @cfg:	Internal structure associated with the host.
- * @rctxid:	Desired context (raw, undecoded format).
+ * @rctxid:	Desired context (raw, un-decoded format).
  * @arg:	LUN information or file associated with request.
  * @ctx_ctrl:	Control information to 'steer' desired lookup.
  *
@@ -567,7 +567,7 @@ void cxlflash_lun_detach(struct glun_info *gli)
  * @ctxi:	Context owning resources.
  * @release:	Release ioctl data structure.
  *
- * For LUN's in virtual mode, the virtual lun associated with the specified
+ * For LUNs in virtual mode, the virtual LUN associated with the specified
  * resource handle is resized to 0 prior to releasing the RHTE. Note that the
  * AFU sync should _not_ be performed when the context is sitting on the error
  * recovery list. A context on the error recovery list is not known to the AFU
@@ -688,7 +688,7 @@ int cxlflash_disk_release(struct scsi_device *sdev,
  * allocation when the context was created and therefore does not need
  * to be explicitly freed. Also note that we conditionally check for the
  * existence of the context control map before clearing the RHT registers
- * and context capbilities because it is possible to destroy a context
+ * and context capabilities because it is possible to destroy a context
  * while the context is in the error state (previous mapping was removed
  * [so we don't have to worry about clearing] and context is waiting for
  * a new mapping).
@@ -870,7 +870,7 @@ static int _cxlflash_disk_detach(struct scsi_device *sdev,
 
 		/*
 		 * As a last step, clean up external resources when not
-		 * already on an external cleanup thread, ie: close(adap_fd).
+		 * already on an external cleanup thread, i.e.: close(adap_fd).
 		 *
 		 * NOTE: this will free up the context from the CXL services,
 		 * allowing it to dole out the same context_id on a future
@@ -895,7 +895,7 @@ static int cxlflash_disk_detach(struct scsi_device *sdev,
 
 /**
  * cxlflash_cxl_release() - release handler for adapter file descriptor
- * @inode:	Filesystem inode associated with fd.
+ * @inode:	File-system inode associated with fd.
  * @file:	File installed with adapter file descriptor.
  *
  * This routine is the release handler for the fops registered with
