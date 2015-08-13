@@ -1211,6 +1211,41 @@ static const struct file_operations null_fops = {
 };
 
 /**
+ * check_state() - checks and responds to the current adapter state
+ * @cfg:	Internal structure associated with the host.
+ *
+ * This routine can block and should only be used on process context.
+ * Note that when waking up from waiting in limbo, the state is unknown
+ * and must be checked again before proceeding.
+ *
+ * Return: 0 on success, -errno on failure
+ */
+static int check_state(struct cxlflash_cfg *cfg)
+{
+	struct device *dev = &cfg->dev->dev;
+	int rc = 0;
+
+retry:
+	switch (cfg->state) {
+	case STATE_LIMBO:
+		dev_dbg(dev, "%s: Limbo, going to wait...\n", __func__);
+		rc = wait_event_interruptible(cfg->limbo_waitq,
+					      cfg->state != STATE_LIMBO);
+		if (unlikely(rc))
+			break;
+		goto retry;
+	case STATE_FAILTERM:
+		dev_dbg(dev, "%s: Failed/Terminating!\n", __func__);
+		rc = -ENODEV;
+		break;
+	default:
+		break;
+	}
+
+	return rc;
+}
+
+/**
  * cxlflash_disk_attach() - attach a LUN to a context
  * @sdev:	SCSI device associated with LUN.
  * @attach:	Attach ioctl data structure.
@@ -1336,6 +1371,12 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 		dev_err(dev, "%s: Failed to create context! (%d)\n",
 			__func__, ctxid);
 		goto err2;
+	}
+
+	rc = check_state(cfg);
+	if (unlikely(rc)) {
+		pr_debug("%s: Gone to failed state rc=%d\n", __func__, rc);
+		goto err3;
 	}
 
 	work = &ctxi->work;
@@ -1508,41 +1549,6 @@ err2:
 err1:
 	cxl_release_context(ctx);
 	goto out;
-}
-
-/**
- * check_state() - checks and responds to the current adapter state
- * @cfg:	Internal structure associated with the host.
- *
- * This routine can block and should only be used on process context.
- * Note that when waking up from waiting in limbo, the state is unknown
- * and must be checked again before proceeding.
- *
- * Return: 0 on success, -errno on failure
- */
-static int check_state(struct cxlflash_cfg *cfg)
-{
-	struct device *dev = &cfg->dev->dev;
-	int rc = 0;
-
-retry:
-	switch (cfg->state) {
-	case STATE_LIMBO:
-		dev_dbg(dev, "%s: Limbo, going to wait...\n", __func__);
-		rc = wait_event_interruptible(cfg->limbo_waitq,
-					      cfg->state != STATE_LIMBO);
-		if (unlikely(rc))
-			break;
-		goto retry;
-	case STATE_FAILTERM:
-		dev_dbg(dev, "%s: Failed/Terminating!\n", __func__);
-		rc = -ENODEV;
-		break;
-	default:
-		break;
-	}
-
-	return rc;
 }
 
 /**
