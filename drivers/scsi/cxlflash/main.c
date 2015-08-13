@@ -23,6 +23,7 @@
 
 #include <scsi/scsi_cmnd.h>
 #include <scsi/scsi_host.h>
+#include <uapi/scsi/cxlflash_ioctl.h>
 
 #include "main.h"
 #include "sislite.h"
@@ -2119,6 +2120,20 @@ static ssize_t lun_mode_store(struct device *dev,
 }
 
 /**
+ * ioctl_version_show() - presents the current ioctl version of the host
+ * @dev:	Generic device associated with the host.
+ * @attr:	Device attribute representing the ioctl version.
+ * @buf:	Buffer of length PAGE_SIZE to report back the ioctl version.
+ *
+ * Return: The size of the ASCII string returned in @buf.
+ */
+static ssize_t ioctl_version_show(struct device *dev,
+				  struct device_attribute *attr, char *buf)
+{
+	return scnprintf(buf, PAGE_SIZE, "%u\n", DK_CXLFLASH_VERSION_0);
+}
+
+/**
  * mode_show() - presents the current mode of the device
  * @dev:	Generic device associated with the device.
  * @attr:	Device attribute representing the device mode.
@@ -2141,11 +2156,13 @@ static ssize_t mode_show(struct device *dev,
 static DEVICE_ATTR_RO(port0);
 static DEVICE_ATTR_RO(port1);
 static DEVICE_ATTR_RW(lun_mode);
+static DEVICE_ATTR_RO(ioctl_version);
 
 static struct device_attribute *cxlflash_host_attrs[] = {
 	&dev_attr_port0,
 	&dev_attr_port1,
 	&dev_attr_lun_mode,
+	&dev_attr_ioctl_version,
 	NULL
 };
 
