@@ -142,5 +142,4 @@ void cxlflash_ba_terminate(struct ba_lun *);
 
 int cxlflash_manage_lun(struct scsi_device *, struct dk_cxlflash_manage_lun *);
 
-
 #endif /* ifndef _CXLFLASH_SUPERPIPE_H */
