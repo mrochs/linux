@@ -15,8 +15,6 @@
 #ifndef _CXLFLASH_VLUN_H
 #define _CXLFLASH_VLUN_H
 
-extern struct cxlflash_global global;
-
 /* RHT - Resource Handle Table */
 #define MC_RHT_NMASK      16	/* in bits */
 #define MC_CHUNK_SHIFT    MC_RHT_NMASK	/* shift to go from LBA to chunk# */

@@ -15,6 +15,8 @@
 #ifndef _CXLFLASH_SUPERPIPE_H
 #define _CXLFLASH_SUPERPIPE_H
 
+extern struct cxlflash_global global;
+
 /*
  * Terminology: use afu (and not adapter) to refer to the HW.
  * Adapter is the entire slot and includes PSL out of which
