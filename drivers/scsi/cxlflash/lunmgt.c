@@ -175,7 +175,7 @@ out:
 }
 
 /**
- * cxlflash_term_local_luns() - Delete all entries from local lun list, free.
+ * cxlflash_term_local_luns() - Delete all entries from local LUN list, free.
  * @cfg:	Internal structure associated with the host.
  */
 void cxlflash_term_local_luns(struct cxlflash_cfg *cfg)
@@ -217,7 +217,7 @@ void cxlflash_term_global_luns(void)
 }
 
 /**
- * cxlflash_manage_lun() - handles lun management activities
+ * cxlflash_manage_lun() - handles LUN management activities
  * @sdev:	SCSI device associated with LUN.
  * @manage:	Manage ioctl data structure.
  *
