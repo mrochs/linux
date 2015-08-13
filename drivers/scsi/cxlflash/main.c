@@ -2391,7 +2391,7 @@ static pci_ers_result_t cxlflash_pci_error_detected(struct pci_dev *pdev,
 	struct cxlflash_cfg *cfg = pci_get_drvdata(pdev);
 	struct device *dev = &cfg->dev->dev;
 
-	pr_debug("%s: pdev=%p state=%u\n", __func__, pdev, state);
+	dev_dbg(dev, "%s: pdev=%p state=%u\n", __func__, pdev, state);
 
 	switch (state) {
 	case pci_channel_io_frozen:
@@ -2433,7 +2433,7 @@ static pci_ers_result_t cxlflash_pci_slot_reset(struct pci_dev *pdev)
 	struct cxlflash_cfg *cfg = pci_get_drvdata(pdev);
 	struct device *dev = &cfg->dev->dev;
 
-	pr_debug("%s: pdev=%p\n", __func__, pdev);
+	dev_dbg(dev, "%s: pdev=%p\n", __func__, pdev);
 
 	rc = init_afu(cfg);
 	if (unlikely(rc)) {
@@ -2451,8 +2451,9 @@ static pci_ers_result_t cxlflash_pci_slot_reset(struct pci_dev *pdev)
 static void cxlflash_pci_resume(struct pci_dev *pdev)
 {
 	struct cxlflash_cfg *cfg = pci_get_drvdata(pdev);
+	struct device *dev = &cfg->dev->dev;
 
-	pr_debug("%s: pdev=%p\n", __func__, pdev);
+	dev_dbg(dev, "%s: pdev=%p\n", __func__, pdev);
 
 	cfg->state = STATE_NORMAL;
 	wake_up_all(&cfg->limbo_waitq);
