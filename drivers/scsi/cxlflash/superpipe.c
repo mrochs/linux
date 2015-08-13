@@ -745,7 +745,7 @@ static struct ctx_info *create_context(struct cxlflash_cfg *cfg,
 	ws = kzalloc((MAX_RHT_PER_CONTEXT * sizeof(*ws)), GFP_KERNEL);
 	if (unlikely(!ctxi || !lli || !ws)) {
 		dev_err(dev, "%s: Unable to allocate context!\n", __func__);
-		goto out;
+		goto err;
 	}
 
 	rhte = (struct sisl_rht_entry *)get_zeroed_page(GFP_KERNEL);
