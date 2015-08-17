@@ -2015,7 +2015,7 @@ static ssize_t cxlflash_show_port_status(u32 port, struct afu *afu, char *buf)
 	u64 status;
 	u64 *fc_regs;
 
-	if (port > NUM_FC_PORTS)
+	if (port >= NUM_FC_PORTS)
 		return 0;
 
 	fc_regs = &afu->afu_map->global.fc_regs[port][0];
