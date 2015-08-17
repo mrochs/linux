@@ -2436,17 +2436,14 @@ static pci_ers_result_t cxlflash_pci_error_detected(struct pci_dev *pdev,
 	switch (state) {
 	case pci_channel_io_frozen:
 		cfg->state = STATE_LIMBO;
-		drain_ioctls(cfg);
-
-		/* Turn off legacy I/O */
 		scsi_block_requests(cfg->host);
+		drain_ioctls(cfg);
 		rc = cxlflash_mark_contexts_error(cfg);
 		if (unlikely(rc))
 			dev_err(dev, "%s: Failed to mark user contexts!(%d)\n",
 				__func__, rc);
 		term_mc(cfg, UNDO_START);
 		stop_afu(cfg);
-
 		return PCI_ERS_RESULT_NEED_RESET;
 	case pci_channel_io_perm_failure:
 		cfg->state = STATE_FAILTERM;
