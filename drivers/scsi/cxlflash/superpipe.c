@@ -1429,6 +1429,7 @@ out:
 	return rc;
 
 err4:
+	check_state(cfg);
 	cxl_stop_context(ctx);
 err3:
 	put_context(ctxi);
