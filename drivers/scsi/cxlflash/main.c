@@ -1957,7 +1957,6 @@ static int cxlflash_eh_host_reset_handler(struct scsi_cmnd *scp)
 	switch (cfg->state) {
 	case STATE_NORMAL:
 		cfg->state = STATE_LIMBO;
-		scsi_block_requests(cfg->host);
 		cxlflash_mark_contexts_error(cfg);
 		rcr = afu_reset(cfg);
 		if (rcr) {
@@ -1966,7 +1965,6 @@ static int cxlflash_eh_host_reset_handler(struct scsi_cmnd *scp)
 		} else
 			cfg->state = STATE_NORMAL;
 		wake_up_all(&cfg->limbo_waitq);
-		scsi_unblock_requests(cfg->host);
 		break;
 	case STATE_LIMBO:
 		wait_event(cfg->limbo_waitq, cfg->state != STATE_LIMBO);
