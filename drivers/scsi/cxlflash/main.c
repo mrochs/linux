@@ -2350,6 +2350,7 @@ static int cxlflash_probe(struct pci_dev *pdev,
 	cfg->lr_port = -1;
 	mutex_init(&cfg->ctx_tbl_list_mutex);
 	mutex_init(&cfg->ctx_recovery_mutex);
+	init_rwsem(&cfg->ioctl_rwsem);
 	INIT_LIST_HEAD(&cfg->ctx_err_recovery);
 	INIT_LIST_HEAD(&cfg->lluns);
 
@@ -2404,6 +2405,19 @@ out_remove:
 }
 
 /**
+ * drain_ioctls() - wait until all currently executing ioctls have completed
+ * @cfg:	Internal structure associated with the host.
+ *
+ * Obtain write access to read/write semaphore that wraps ioctl
+ * handling to 'drain' ioctls currently executing.
+ */
+static void drain_ioctls(struct cxlflash_cfg *cfg)
+{
+	down_write(&cfg->ioctl_rwsem);
+	up_write(&cfg->ioctl_rwsem);
+}
+
+/**
  * cxlflash_pci_error_detected() - called when a PCI error is detected
  * @pdev:	PCI device struct.
  * @state:	PCI channel state.
@@ -2422,6 +2436,7 @@ static pci_ers_result_t cxlflash_pci_error_detected(struct pci_dev *pdev,
 	switch (state) {
 	case pci_channel_io_frozen:
 		cfg->state = STATE_LIMBO;
+		drain_ioctls(cfg);
 
 		/* Turn off legacy I/O */
 		scsi_block_requests(cfg->host);

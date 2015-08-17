@@ -2065,7 +2065,9 @@ int cxlflash_ioctl(struct scsi_device *sdev, int cmd, void __user *arg)
 		goto cxlflash_ioctl_exit;
 	}
 
+	down_read(&cfg->ioctl_rwsem);
 	rc = do_ioctl(sdev, (void *)&buf);
+	up_read(&cfg->ioctl_rwsem);
 	if (likely(!rc))
 		if (unlikely(copy_to_user(arg, &buf, size))) {
 			dev_err(dev, "%s: copy_to_user() fail! "
