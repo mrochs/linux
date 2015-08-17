@@ -1373,12 +1373,6 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 		goto err2;
 	}
 
-	rc = check_state(cfg);
-	if (unlikely(rc)) {
-		pr_debug("%s: Gone to failed state rc=%d\n", __func__, rc);
-		goto err3;
-	}
-
 	work = &ctxi->work;
 	work->num_interrupts = attach->num_interrupts;
 	work->flags = CXL_START_WORK_NUM_IRQS;
@@ -1429,7 +1423,6 @@ out:
 	return rc;
 
 err4:
-	check_state(cfg);
 	cxl_stop_context(ctx);
 err3:
 	put_context(ctxi);
