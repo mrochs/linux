@@ -100,7 +100,7 @@ void cxlflash_stop_term_user_contexts(struct cxlflash_cfg *cfg)
 
 		dev_dbg(dev, "%s: Wait for user contexts to quiesce...\n",
 			__func__);
-		wake_up_all(&cfg->limbo_waitq);
+		wake_up_all(&cfg->reset_waitq);
 		ssleep(1);
 	}
 }
@@ -1215,7 +1215,7 @@ static const struct file_operations null_fops = {
  * @cfg:	Internal structure associated with the host.
  *
  * This routine can block and should only be used on process context.
- * Note that when waking up from waiting in limbo, the state is unknown
+ * Note that when waking up from waiting in reset, the state is unknown
  * and must be checked again before proceeding.
  *
  * Return: 0 on success, -errno on failure
@@ -1227,10 +1227,10 @@ static int check_state(struct cxlflash_cfg *cfg)
 
 retry:
 	switch (cfg->state) {
-	case STATE_LIMBO:
-		dev_dbg(dev, "%s: Limbo, going to wait...\n", __func__);
-		rc = wait_event_interruptible(cfg->limbo_waitq,
-					      cfg->state != STATE_LIMBO);
+	case STATE_RESET:
+		dev_dbg(dev, "%s: Reset state, going to wait...\n", __func__);
+		rc = wait_event_interruptible(cfg->reset_waitq,
+					      cfg->state != STATE_RESET);
 		if (unlikely(rc))
 			break;
 		goto retry;
@@ -1568,10 +1568,10 @@ err1:
  * quite possible for this routine to act as the kernel's EEH detection
  * source (MMIO read of mbox_r). Because of this, there is a window of
  * time where an EEH might have been detected but not yet 'serviced'
- * (callback invoked, causing the device to enter limbo state). To avoid
+ * (callback invoked, causing the device to enter reset state). To avoid
  * looping in this routine during that window, a 1 second sleep is in place
  * between the time the MMIO failure is detected and the time a wait on the
- * limbo wait queue is attempted via check_state().
+ * reset wait queue is attempted via check_state().
  *
  * Return: 0 on success, -errno on failure
  */

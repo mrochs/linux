@@ -526,8 +526,8 @@ static int cxlflash_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *scp)
 	spin_unlock_irqrestore(&cfg->tmf_slock, lock_flags);
 
 	switch (cfg->state) {
-	case STATE_LIMBO:
-		dev_dbg_ratelimited(dev, "%s: device in limbo!\n", __func__);
+	case STATE_RESET:
+		dev_dbg_ratelimited(dev, "%s: device is in reset!\n", __func__);
 		rc = SCSI_MLQUEUE_HOST_BUSY;
 		goto out;
 	case STATE_FAILTERM:
@@ -600,7 +600,7 @@ static void cxlflash_wait_for_pci_err_recovery(struct cxlflash_cfg *cfg)
 	struct pci_dev *pdev = cfg->dev;
 
 	if (pci_channel_offline(pdev))
-		wait_event_timeout(cfg->limbo_waitq,
+		wait_event_timeout(cfg->reset_waitq,
 				   !pci_channel_offline(pdev),
 				   CXLFLASH_PCI_ERROR_RECOVERY_TIMEOUT);
 }
@@ -1917,8 +1917,8 @@ retry:
 		if (unlikely(rcr))
 			rc = FAILED;
 		break;
-	case STATE_LIMBO:
-		wait_event(cfg->limbo_waitq, cfg->state != STATE_LIMBO);
+	case STATE_RESET:
+		wait_event(cfg->reset_waitq, cfg->state != STATE_RESET);
 		goto retry;
 	default:
 		rc = FAILED;
@@ -1955,7 +1955,7 @@ static int cxlflash_eh_host_reset_handler(struct scsi_cmnd *scp)
 
 	switch (cfg->state) {
 	case STATE_NORMAL:
-		cfg->state = STATE_LIMBO;
+		cfg->state = STATE_RESET;
 		cxlflash_mark_contexts_error(cfg);
 		rcr = afu_reset(cfg);
 		if (rcr) {
@@ -1963,10 +1963,10 @@ static int cxlflash_eh_host_reset_handler(struct scsi_cmnd *scp)
 			cfg->state = STATE_FAILTERM;
 		} else
 			cfg->state = STATE_NORMAL;
-		wake_up_all(&cfg->limbo_waitq);
+		wake_up_all(&cfg->reset_waitq);
 		break;
-	case STATE_LIMBO:
-		wait_event(cfg->limbo_waitq, cfg->state != STATE_LIMBO);
+	case STATE_RESET:
+		wait_event(cfg->reset_waitq, cfg->state != STATE_RESET);
 		if (cfg->state == STATE_NORMAL)
 			break;
 		/* fall through */
@@ -2342,7 +2342,7 @@ static int cxlflash_probe(struct pci_dev *pdev,
 	cfg->dev_id = (struct pci_device_id *)dev_id;
 
 	init_waitqueue_head(&cfg->tmf_waitq);
-	init_waitqueue_head(&cfg->limbo_waitq);
+	init_waitqueue_head(&cfg->reset_waitq);
 
 	INIT_WORK(&cfg->work_q, cxlflash_worker_thread);
 	cfg->lr_state = LINK_RESET_INVALID;
@@ -2434,7 +2434,7 @@ static pci_ers_result_t cxlflash_pci_error_detected(struct pci_dev *pdev,
 
 	switch (state) {
 	case pci_channel_io_frozen:
-		cfg->state = STATE_LIMBO;
+		cfg->state = STATE_RESET;
 		scsi_block_requests(cfg->host);
 		drain_ioctls(cfg);
 		rc = cxlflash_mark_contexts_error(cfg);
@@ -2446,7 +2446,7 @@ static pci_ers_result_t cxlflash_pci_error_detected(struct pci_dev *pdev,
 		return PCI_ERS_RESULT_NEED_RESET;
 	case pci_channel_io_perm_failure:
 		cfg->state = STATE_FAILTERM;
-		wake_up_all(&cfg->limbo_waitq);
+		wake_up_all(&cfg->reset_waitq);
 		scsi_unblock_requests(cfg->host);
 		return PCI_ERS_RESULT_DISCONNECT;
 	default:
@@ -2493,7 +2493,7 @@ static void cxlflash_pci_resume(struct pci_dev *pdev)
 	dev_dbg(dev, "%s: pdev=%p\n", __func__, pdev);
 
 	cfg->state = STATE_NORMAL;
-	wake_up_all(&cfg->limbo_waitq);
+	wake_up_all(&cfg->reset_waitq);
 	scsi_unblock_requests(cfg->host);
 }
 
