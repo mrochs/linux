@@ -1199,8 +1199,12 @@ static void afu_err_intr_init(struct afu *afu)
 static irqreturn_t cxlflash_sync_err_irq(int irq, void *data)
 {
 	struct afu *afu = (struct afu *)data;
+	struct cxlflash_cfg *cfg = afu->parent;
 	u64 reg;
 	u64 reg_unmasked;
+
+	if (cfg->state != STATE_NORMAL)
+		goto out;
 
 	reg = readq_be(&afu->host_map->intr_status);
 	reg_unmasked = (reg & SISL_ISTATUS_UNMASK);
@@ -1208,7 +1212,7 @@ static irqreturn_t cxlflash_sync_err_irq(int irq, void *data)
 	if (reg_unmasked == 0UL) {
 		pr_err("%s: %llX: spurious interrupt, intr_status %016llX\n",
 		       __func__, (u64)afu, reg);
-		goto cxlflash_sync_err_irq_exit;
+		goto out;
 	}
 
 	pr_err("%s: %llX: unexpected interrupt, intr_status %016llX\n",
@@ -1216,7 +1220,7 @@ static irqreturn_t cxlflash_sync_err_irq(int irq, void *data)
 
 	writeq_be(reg_unmasked, &afu->host_map->intr_clear);
 
-cxlflash_sync_err_irq_exit:
+out:
 	pr_debug("%s: returning rc=%d\n", __func__, IRQ_HANDLED);
 	return IRQ_HANDLED;
 }
@@ -1231,12 +1235,16 @@ cxlflash_sync_err_irq_exit:
 static irqreturn_t cxlflash_rrq_irq(int irq, void *data)
 {
 	struct afu *afu = (struct afu *)data;
+	struct cxlflash_cfg *cfg = afu->parent;
 	struct afu_cmd *cmd;
 	bool toggle = afu->toggle;
 	u64 entry,
 	    *hrrq_start = afu->hrrq_start,
 	    *hrrq_end = afu->hrrq_end,
 	    *hrrq_curr = afu->hrrq_curr;
+
+	if (cfg->state != STATE_NORMAL)
+		return IRQ_HANDLED;
 
 	/* Process however many RRQ entries that are ready */
 	while (true) {
@@ -1281,6 +1289,9 @@ static irqreturn_t cxlflash_async_err_irq(int irq, void *data)
 	u64 reg;
 	u8 port;
 	int i;
+
+	if (cfg->state != STATE_NORMAL)
+		goto out;
 
 	reg = readq_be(&global->regs.aintr_status);
 	reg_unmasked = (reg & SISL_ASTATUS_UNMASK);
