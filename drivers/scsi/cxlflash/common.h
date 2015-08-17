@@ -103,6 +103,8 @@ struct cxlflash_cfg {
 	enum cxlflash_lr_state lr_state;
 	int lr_port;
 
+	atomic_t remove_active;
+
 	struct cxl_afu *cxl_afu;
 
 	struct pci_pool *cxlflash_cmd_pool;
