@@ -723,6 +723,7 @@ static void cxlflash_remove(struct pci_dev *pdev)
 	spin_unlock_irqrestore(&cfg->tmf_slock, lock_flags);
 
 	cfg->state = STATE_FAILTERM;
+	atomic_inc(&cfg->remove_active);
 	cxlflash_stop_term_user_contexts(cfg);
 
 	switch (cfg->init_state) {
@@ -1203,7 +1204,7 @@ static irqreturn_t cxlflash_sync_err_irq(int irq, void *data)
 	u64 reg;
 	u64 reg_unmasked;
 
-	if (cfg->state != STATE_NORMAL)
+	if (atomic_read(&cfg->remove_active))
 		goto out;
 
 	reg = readq_be(&afu->host_map->intr_status);
@@ -1243,13 +1244,12 @@ static irqreturn_t cxlflash_rrq_irq(int irq, void *data)
 	    *hrrq_end = afu->hrrq_end,
 	    *hrrq_curr = afu->hrrq_curr;
 
-	if (cfg->state != STATE_NORMAL)
-		return IRQ_HANDLED;
-
 	/* Process however many RRQ entries that are ready */
 	while (true) {
-		entry = *hrrq_curr;
+		if (atomic_read(&cfg->remove_active))
+			goto out;
 
+		entry = *hrrq_curr;
 		if ((entry & SISL_RESP_HANDLE_T_BIT) != toggle)
 			break;
 
@@ -1267,7 +1267,7 @@ static irqreturn_t cxlflash_rrq_irq(int irq, void *data)
 
 	afu->hrrq_curr = hrrq_curr;
 	afu->toggle = toggle;
-
+out:
 	return IRQ_HANDLED;
 }
 
@@ -1290,7 +1290,7 @@ static irqreturn_t cxlflash_async_err_irq(int irq, void *data)
 	u8 port;
 	int i;
 
-	if (cfg->state != STATE_NORMAL)
+	if (atomic_read(&cfg->remove_active))
 		goto out;
 
 	reg = readq_be(&global->regs.aintr_status);
