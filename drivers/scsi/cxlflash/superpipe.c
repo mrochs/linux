@@ -1634,12 +1634,30 @@ retry_recover:
 	/* Test if in error state */
 	reg = readq_be(&afu->ctrl_map->mbox_r);
 	if (reg == -1) {
-		dev_dbg(dev, "%s: MMIO read fail! Wait for recovery...\n",
-			__func__);
-		mutex_unlock(&ctxi->mutex);
+		dev_dbg(dev, "%s: MMIO fail, wait for recovery.\n", __func__);
+
+		/*
+		 * Before checking the state we need to take care of a few
+		 * items because the call to check_state() will likely
+		 * result in a wait. First, we need to put back the context
+		 * we obtained with get_context() as we no longer need it. The
+		 * reference is cleared so that in the event that check_state()
+		 * indicates a failure, we won't try to put back the context
+		 * again. Next, we need to sleep for a short period of time. See
+		 * the notes in the prolog for this function for details. Lastly
+		 * we need to release the ioctl semaphore and then reacquire it
+		 * after the call to check_state(). This is also required due to
+		 * the possibility of check_state() performing a wait, which
+		 * would prohibit the ioctls from being able to drain properly.
+		 * Note that we're safe to do this here as the event we would
+		 * wait on is a reset.
+		 */
+		put_context(ctxi);
 		ctxi = NULL;
 		ssleep(1);
+		up_read(&cfg->ioctl_rwsem);
 		rc = check_state(cfg);
+		down_read(&cfg->ioctl_rwsem);
 		if (unlikely(rc))
 			goto out;
 		goto retry;
