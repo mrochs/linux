@@ -354,11 +354,9 @@ int cxl_afu_reset(struct cxl_context *ctx)
 }
 EXPORT_SYMBOL_GPL(cxl_afu_reset);
 
-#ifdef CONFIG_CXL_EEH
 void cxl_perst_reloads_same_image(struct cxl_afu *afu,
 				  bool perst_reloads_same_image)
 {
 	afu->adapter->perst_same_image = perst_reloads_same_image;
 }
 EXPORT_SYMBOL_GPL(cxl_perst_reloads_same_image);
-#endif

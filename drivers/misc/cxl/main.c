@@ -32,19 +32,6 @@ uint cxl_verbose;
 module_param_named(verbose, cxl_verbose, uint, 0600);
 MODULE_PARM_DESC(verbose, "Enable verbose dmesg output");
 
-/* TODO: Use module_param_cb and turn these ints into strings */
-static int mode = -1;
-module_param(mode, int, 0600);
-MODULE_PARM_DESC(mode, "Default mode to set AFUs. -1=auto (default), 0=disabled, 1=dedicated process, 2=afu directed");
-
-int cxl_def_perst_image = -1;
-module_param_named(load_image_on_perst, cxl_def_perst_image, int, 0600);
-MODULE_PARM_DESC(load_image_on_perst, "Default image to reload in the event that the adapter is reset via PERST (NOT the initial image!). -1=loaded (default), 0=none, 1=user, 2=factory");
-
-int cxl_perst_same_image = 0;
-module_param_named(perst_reloads_same_image, cxl_perst_same_image, int, 0600);
-MODULE_PARM_DESC(perst_reloads_same_image, "Trust that when an image is reloaded via PERST, it will not have changed. 0=don't trust, the image may be different (default) 1=trust that the image will not change.");
-
 static inline void _cxl_slbia(struct cxl_context *ctx, struct mm_struct *mm)
 {
 	struct task_struct *task;
@@ -189,27 +176,6 @@ void cxl_remove_adapter_nr(struct cxl *adapter)
 
 int cxl_afu_select_best_mode(struct cxl_afu *afu)
 {
-	switch (mode) {
-	case -1:
-		break;
-	case 0:
-		return 0;
-	case 1:
-		if (afu->modes_supported & CXL_MODE_DEDICATED)
-			return cxl_afu_activate_mode(afu, CXL_MODE_DEDICATED);
-		dev_warn(&afu->dev, "Mode %i unsupported\n", mode);
-		return -ENODEV;
-	case 2:
-		if (afu->modes_supported & CXL_MODE_DIRECTED)
-			return cxl_afu_activate_mode(afu, CXL_MODE_DIRECTED);
-		dev_warn(&afu->dev, "Mode %i unsupported\n", mode);
-		return -ENODEV;
-	default:
-		dev_warn(&afu->dev, "Unknown mode %i requested by module parameter\n", mode);
-		return -EINVAL;
-	}
-
-
 	if (afu->modes_supported & CXL_MODE_DIRECTED)
 		return cxl_afu_activate_mode(afu, CXL_MODE_DIRECTED);
 
@@ -256,6 +222,7 @@ static void exit_cxl(void)
 	cxl_debugfs_exit();
 	cxl_file_exit();
 	unregister_cxl_calls(&cxl_calls);
+	idr_destroy(&cxl_adapter_idr);
 }
 
 module_init(init_cxl);

@@ -112,7 +112,6 @@ static ssize_t load_image_on_perst_store(struct device *device,
 	return count;
 }
 
-#ifdef CONFIG_CXL_EEH
 static ssize_t perst_reloads_same_image_show(struct device *device,
 				 struct device_attribute *attr,
 				 char *buf)
@@ -137,7 +136,6 @@ static ssize_t perst_reloads_same_image_store(struct device *device,
 	adapter->perst_same_image = (val == 1 ? true : false);
 	return count;
 }
-#endif /* CONFIG_CXL_EEH */
 
 static struct device_attribute adapter_attrs[] = {
 	__ATTR_RO(caia_version),
@@ -145,9 +143,7 @@ static struct device_attribute adapter_attrs[] = {
 	__ATTR_RO(base_image),
 	__ATTR_RO(image_loaded),
 	__ATTR_RW(load_image_on_perst),
-#ifdef CONFIG_CXL_EEH
 	__ATTR_RW(perst_reloads_same_image),
-#endif
 	__ATTR(reset, S_IWUSR, NULL, reset_adapter_store),
 };
 

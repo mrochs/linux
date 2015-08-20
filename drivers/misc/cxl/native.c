@@ -20,12 +20,6 @@
 #include "cxl.h"
 #include "trace.h"
 
-static inline bool adapter_link_ok(struct cxl *adapter)
-{
-	return (to_pci_dev(adapter->dev.parent)->error_state ==
-		pci_channel_io_normal);
-}
-
 static int afu_control(struct cxl_afu *afu, u64 command,
 		       u64 result, u64 mask, bool enabled)
 {
@@ -38,13 +32,6 @@ static int afu_control(struct cxl_afu *afu, u64 command,
 
 	trace_cxl_afu_ctrl(afu, command);
 
-	if (!adapter_link_ok(afu->adapter)) {
-		dev_warn(&afu->dev, "WARNING: Device link is down, not trying AFU control!\n");
-		afu->enabled = enabled;
-		rc = -EIO;
-		goto out;
-	}
-
 	cxl_p2n_write(afu, CXL_AFU_Cntl_An, AFU_Cntl | command);
 
 	AFU_Cntl = cxl_p2n_read(afu, CXL_AFU_Cntl_An);
@@ -54,13 +41,14 @@ static int afu_control(struct cxl_afu *afu, u64 command,
 			rc = -EBUSY;
 			goto out;
 		}
+
 		if (!cxl_adapter_link_ok(afu->adapter)) {
 			afu->enabled = enabled;
 			rc = -EIO;
 			goto out;
 		}
 
-		pr_devel_ratelimited("AFU control... (0x%.16llx)\n",
+		pr_devel_ratelimited("AFU control... (0x%016llx)\n",
 				     AFU_Cntl | command);
 		cpu_relax();
 		AFU_Cntl = cxl_p2n_read(afu, CXL_AFU_Cntl_An);
@@ -154,13 +142,13 @@ int cxl_psl_purge(struct cxl_afu *afu)
 		}
 
 		dsisr = cxl_p2n_read(afu, CXL_PSL_DSISR_An);
-		pr_devel_ratelimited("PSL purging... PSL_CNTL: 0x%.16llx  PSL_DSISR: 0x%.16llx\n", PSL_CNTL, dsisr);
+		pr_devel_ratelimited("PSL purging... PSL_CNTL: 0x%016llx  PSL_DSISR: 0x%016llx\n", PSL_CNTL, dsisr);
 		if (dsisr & CXL_PSL_DSISR_TRANS) {
 			dar = cxl_p2n_read(afu, CXL_PSL_DAR_An);
-			dev_notice(&afu->dev, "PSL purge terminating pending translation, DSISR: 0x%.16llx, DAR: 0x%.16llx\n", dsisr, dar);
+			dev_notice(&afu->dev, "PSL purge terminating pending translation, DSISR: 0x%016llx, DAR: 0x%016llx\n", dsisr, dar);
 			cxl_p2n_write(afu, CXL_PSL_TFC_An, CXL_PSL_TFC_An_AE);
 		} else if (dsisr) {
-			dev_notice(&afu->dev, "PSL purge acknowledging pending non-translation fault, DSISR: 0x%.16llx\n", dsisr);
+			dev_notice(&afu->dev, "PSL purge acknowledging pending non-translation fault, DSISR: 0x%016llx\n", dsisr);
 			cxl_p2n_write(afu, CXL_PSL_TFC_An, CXL_PSL_TFC_An_A);
 		} else {
 			cpu_relax();
@@ -239,7 +227,10 @@ static inline void detach_spa(struct cxl_afu *afu)
 
 void cxl_release_spa(struct cxl_afu *afu)
 {
-	free_pages((unsigned long) afu->spa, afu->spa_order);
+	if (afu->spa) {
+		free_pages((unsigned long) afu->spa, afu->spa_order);
+		afu->spa = NULL;
+	}
 }
 
 int cxl_tlb_slb_invalidate(struct cxl *adapter)
@@ -247,12 +238,6 @@ int cxl_tlb_slb_invalidate(struct cxl *adapter)
 	unsigned long timeout = jiffies + (HZ * CXL_TIMEOUT);
 
 	pr_devel("CXL adapter wide TLBIA & SLBIA\n");
-
-	if (!adapter_link_ok(adapter)) {
-		dev_warn(&adapter->dev, "WARNING: Device link is down, not trying %s!\n",
-			 __func__);
-		return -EIO;
-	}
 
 	cxl_p1_write(adapter, CXL_PSL_AFUSEL, CXL_PSL_AFUSEL_A);
 
@@ -284,13 +269,6 @@ int cxl_afu_slbia(struct cxl_afu *afu)
 {
 	unsigned long timeout = jiffies + (HZ * CXL_TIMEOUT);
 
-	if (!adapter_link_ok(afu->adapter)) {
-		dev_warn(&afu->adapter->dev,
-			 "WARNING: Device link is down, not trying %s!\n",
-			 __func__);
-		return -EIO;
-	}
-
 	pr_devel("cxl_afu_slbia issuing SLBIA command\n");
 	cxl_p2n_write(afu, CXL_SLBIA_An, CXL_TLB_SLB_IQ_ALL);
 	while (cxl_p2n_read(afu, CXL_SLBIA_An) & CXL_TLB_SLB_P) {
@@ -311,13 +289,6 @@ int cxl_afu_slbia(struct cxl_afu *afu)
 static int cxl_write_sstp(struct cxl_afu *afu, u64 sstp0, u64 sstp1)
 {
 	int rc;
-
-	if (!adapter_link_ok(afu->adapter)) {
-		dev_warn(&afu->adapter->dev,
-			 "WARNING: Device link is down, not trying %s!\n",
-			 __func__);
-		return -EIO;
-	}
 
 	/* 1. Disable SSTP by writing 0 to SSTP1[V] */
 	cxl_p2n_write(afu, CXL_SSTP1_An, 0);
@@ -340,9 +311,6 @@ static void slb_invalid(struct cxl_context *ctx)
 {
 	struct cxl *adapter = ctx->afu->adapter;
 	u64 slbia;
-
-	if (!adapter_link_ok(adapter))
-		return;
 
 	WARN_ON(!mutex_is_locked(&ctx->afu->spa_mutex));
 
@@ -369,12 +337,6 @@ static int do_process_element_cmd(struct cxl_context *ctx,
 	int rc = 0;
 
 	trace_cxl_llcmd(ctx, cmd);
-
-	if (!adapter_link_ok(ctx->afu->adapter)) {
-		dev_warn(&ctx->afu->dev, "WARNING: Device link is down, ignoring Process Element Command!\n");
-		rc = -EIO;
-		goto out;
-	}
 
 	WARN_ON(!ctx->afu->enabled);
 
@@ -439,19 +401,9 @@ static int terminate_process_element(struct cxl_context *ctx)
 	if (!(ctx->elem->software_state & cpu_to_be32(CXL_PE_SOFTWARE_STATE_V)))
 		return rc;
 
-	/* If the hardware has gone down, we know that the slot will be reset.
-	 * It's therefore safe to say that it's already terminated.
-	 */
-	if (!adapter_link_ok(ctx->afu->adapter)) {
-		mutex_lock(&ctx->afu->spa_mutex);
-		ctx->elem->software_state = 0;	/* Remove Valid bit */
-		mutex_unlock(&ctx->afu->spa_mutex);
-		return rc;
-	}
-
 	mutex_lock(&ctx->afu->spa_mutex);
 	pr_devel("%s Terminate pe: %i started\n", __func__, ctx->pe);
-	/* We could be asked to terminate when the hw is down.  That
+	/* We could be asked to terminate when the hw is down. That
 	 * should always succeed: it's not running if the hw has gone
 	 * away and is being reset.
 	 */
@@ -468,15 +420,10 @@ static int remove_process_element(struct cxl_context *ctx)
 {
 	int rc = 0;
 
-	if (!adapter_link_ok(ctx->afu->adapter)) {
-		ctx->pe_inserted = false;
-		return rc;
-	}
-
 	mutex_lock(&ctx->afu->spa_mutex);
 	pr_devel("%s Remove pe: %i started\n", __func__, ctx->pe);
 
-	/* We could be asked to remove when the hw is down.  Again, if
+	/* We could be asked to remove when the hw is down. Again, if
 	 * the hw is down, the PE is gone, so we succeed.
 	 */
 	if (cxl_adapter_link_ok(ctx->afu->adapter))
@@ -632,13 +579,6 @@ static int activate_dedicated_process(struct cxl_afu *afu)
 {
 	dev_info(&afu->dev, "Activating dedicated process mode\n");
 
-	if (!adapter_link_ok(afu->adapter)) {
-		dev_warn(&afu->adapter->dev,
-			 "WARNING: Device link is down, not trying %s!\n",
-			 __func__);
-		return -EIO;
-	}
-
 	cxl_p1n_write(afu, CXL_PSL_SCNTL_An, CXL_PSL_SCNTL_An_PM_Process);
 
 	cxl_p1n_write(afu, CXL_PSL_CtxTime_An, 0); /* disable */
@@ -663,13 +603,6 @@ static int attach_dedicated(struct cxl_context *ctx, u64 wed, u64 amr)
 	struct cxl_afu *afu = ctx->afu;
 	u64 pid;
 	int rc;
-
-	if (!adapter_link_ok(ctx->afu->adapter)) {
-		dev_warn(&ctx->afu->adapter->dev,
-			 "WARNING: Device link is down, not trying %s!\n",
-			 __func__);
-		return -EIO;
-	}
 
 	pid = (u64)current->pid << 32;
 	if (ctx->kernel)
@@ -826,14 +759,7 @@ static void recover_psl_err(struct cxl_afu *afu, u64 errstat)
 {
 	u64 dsisr;
 
-	pr_devel("RECOVERING FROM PSL ERROR... (0x%.16llx)\n", errstat);
-
-	if (!adapter_link_ok(afu->adapter)) {
-		dev_warn(&afu->adapter->dev,
-			 "WARNING: Device link is down, not trying %s!\n",
-			 __func__);
-		return;
-	}
+	pr_devel("RECOVERING FROM PSL ERROR... (0x%016llx)\n", errstat);
 
 	/* Clear PSL_DSISR[PE] */
 	dsisr = cxl_p2n_read(afu, CXL_PSL_DSISR_An);
@@ -846,14 +772,6 @@ static void recover_psl_err(struct cxl_afu *afu, u64 errstat)
 int cxl_ack_irq(struct cxl_context *ctx, u64 tfc, u64 psl_reset_mask)
 {
 	trace_cxl_psl_irq_ack(ctx, tfc);
-
-	if (!adapter_link_ok(ctx->afu->adapter)) {
-		dev_warn(&ctx->afu->adapter->dev,
-			 "WARNING: Device link is down, not trying %s!\n",
-			 __func__);
-		return -EIO;
-	}
-
 	if (tfc)
 		cxl_p2n_write(ctx->afu, CXL_PSL_TFC_An, tfc);
 	if (psl_reset_mask)
@@ -864,8 +782,5 @@ int cxl_ack_irq(struct cxl_context *ctx, u64 tfc, u64 psl_reset_mask)
 
 int cxl_check_error(struct cxl_afu *afu)
 {
-	if (!adapter_link_ok(afu->adapter))
-		return 1;
-
 	return (cxl_p1n_read(afu, CXL_PSL_SCNTL_An) == ~0ULL);
 }

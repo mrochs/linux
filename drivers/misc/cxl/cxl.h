@@ -27,8 +27,6 @@
 #include <uapi/misc/cxl.h>
 
 extern uint cxl_verbose;
-extern int cxl_def_perst_image;
-extern int cxl_perst_same_image;
 
 #define CXL_TIMEOUT 5
 
@@ -496,9 +494,7 @@ struct cxl {
 	bool user_image_loaded;
 	bool perst_loads_image;
 	bool perst_select_user;
-#ifdef CONFIG_CXL_EEH
 	bool perst_same_image;
-#endif
 };
 
 int cxl_alloc_one_irq(struct cxl *adapter);
@@ -542,7 +538,7 @@ static inline bool cxl_adapter_link_ok(struct cxl *cxl)
 	struct pci_dev *pdev;
 
 	pdev = to_pci_dev(cxl->dev.parent);
-	return (pdev->error_state == pci_channel_io_normal);
+	return !pci_channel_offline(pdev);
 }
 
 static inline void __iomem *_cxl_p1_addr(struct cxl *cxl, cxl_p1_reg_t reg)
@@ -551,12 +547,19 @@ static inline void __iomem *_cxl_p1_addr(struct cxl *cxl, cxl_p1_reg_t reg)
 	return cxl->p1_mmio + cxl_reg_off(reg);
 }
 
-#define cxl_p1_write(cxl, reg, val) \
-	if (cxl_adapter_link_ok(cxl)) \
-		out_be64(_cxl_p1_addr(cxl, reg), val)
-#define cxl_p1_read(cxl, reg) \
-	(cxl_adapter_link_ok(cxl) ? in_be64(_cxl_p1_addr(cxl, reg)) \
-	 : (~0ULL))
+static inline void cxl_p1_write(struct cxl *cxl, cxl_p1_reg_t reg, u64 val)
+{
+	if (likely(cxl_adapter_link_ok(cxl)))
+		out_be64(_cxl_p1_addr(cxl, reg), val);
+}
+
+static inline u64 cxl_p1_read(struct cxl *cxl, cxl_p1_reg_t reg)
+{
+	if (likely(cxl_adapter_link_ok(cxl)))
+		return in_be64(_cxl_p1_addr(cxl, reg));
+	else
+		return ~0ULL;
+}
 
 static inline void __iomem *_cxl_p1n_addr(struct cxl_afu *afu, cxl_p1n_reg_t reg)
 {
@@ -564,34 +567,56 @@ static inline void __iomem *_cxl_p1n_addr(struct cxl_afu *afu, cxl_p1n_reg_t reg
 	return afu->p1n_mmio + cxl_reg_off(reg);
 }
 
-#define cxl_p1n_write(afu, reg, val) \
-	if (cxl_adapter_link_ok(afu->adapter)) \
-		out_be64(_cxl_p1n_addr(afu, reg), val)
-#define cxl_p1n_read(afu, reg) \
-	(cxl_adapter_link_ok(afu->adapter) ? in_be64(_cxl_p1n_addr(afu, reg)) \
-	 : (~0ULL))
+static inline void cxl_p1n_write(struct cxl_afu *afu, cxl_p1n_reg_t reg, u64 val)
+{
+	if (likely(cxl_adapter_link_ok(afu->adapter)))
+		out_be64(_cxl_p1n_addr(afu, reg), val);
+}
+
+static inline u64 cxl_p1n_read(struct cxl_afu *afu, cxl_p1n_reg_t reg)
+{
+	if (likely(cxl_adapter_link_ok(afu->adapter)))
+		return in_be64(_cxl_p1n_addr(afu, reg));
+	else
+		return ~0ULL;
+}
 
 static inline void __iomem *_cxl_p2n_addr(struct cxl_afu *afu, cxl_p2n_reg_t reg)
 {
 	return afu->p2n_mmio + cxl_reg_off(reg);
 }
 
-#define cxl_p2n_write(afu, reg, val) \
-	if (cxl_adapter_link_ok(afu->adapter)) \
-		out_be64(_cxl_p2n_addr(afu, reg), val)
-#define cxl_p2n_read(afu, reg) \
-	(cxl_adapter_link_ok(afu->adapter) ? in_be64(_cxl_p2n_addr(afu, reg)) \
-	 : (~0ULL))
+static inline void cxl_p2n_write(struct cxl_afu *afu, cxl_p2n_reg_t reg, u64 val)
+{
+	if (likely(cxl_adapter_link_ok(afu->adapter)))
+		out_be64(_cxl_p2n_addr(afu, reg), val);
+}
 
+static inline u64 cxl_p2n_read(struct cxl_afu *afu, cxl_p2n_reg_t reg)
+{
+	if (likely(cxl_adapter_link_ok(afu->adapter)))
+		return in_be64(_cxl_p2n_addr(afu, reg));
+	else
+		return ~0ULL;
+}
 
-#define cxl_afu_cr_read64(afu, cr, off) \
-	(cxl_adapter_link_ok(afu->adapter) ? \
-	 in_le64((afu)->afu_desc_mmio + (afu)->crs_offset + ((cr) * (afu)->crs_len) + (off)) : \
-	 (~0ULL))
-#define cxl_afu_cr_read32(afu, cr, off) \
-	(cxl_adapter_link_ok(afu->adapter) ? \
-	 in_le32((afu)->afu_desc_mmio + (afu)->crs_offset + ((cr) * (afu)->crs_len) + (off)) : \
-	 0xffffffff)
+static inline u64 cxl_afu_cr_read64(struct cxl_afu *afu, int cr, u64 off)
+{
+	if (likely(cxl_adapter_link_ok(afu->adapter)))
+		return in_le64((afu)->afu_desc_mmio + (afu)->crs_offset +
+			       ((cr) * (afu)->crs_len) + (off));
+	else
+		return ~0ULL;
+}
+
+static inline u32 cxl_afu_cr_read32(struct cxl_afu *afu, int cr, u64 off)
+{
+	if (likely(cxl_adapter_link_ok(afu->adapter)))
+		return in_le32((afu)->afu_desc_mmio + (afu)->crs_offset +
+			       ((cr) * (afu)->crs_len) + (off));
+	else
+		return 0xffffffff;
+}
 u16 cxl_afu_cr_read16(struct cxl_afu *afu, int cr, u64 off);
 u8 cxl_afu_cr_read8(struct cxl_afu *afu, int cr, u64 off);
 
