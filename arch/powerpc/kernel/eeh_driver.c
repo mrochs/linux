@@ -635,6 +635,7 @@ static void eeh_handle_normal_event(struct eeh_pe *pe)
 	struct pci_bus *frozen_bus;
 	int rc = 0;
 	enum pci_ers_result result = PCI_ERS_RESULT_NONE;
+	int reset_count = 0;
 
 	frozen_bus = eeh_pe_bus_get(pe);
 	if (!frozen_bus) {
@@ -731,7 +732,9 @@ static void eeh_handle_normal_event(struct eeh_pe *pe)
 	}
 
 	/* If any device called out for a reset, then reset the slot */
+reset_device:
 	if (result == PCI_ERS_RESULT_NEED_RESET) {
+		reset_count++;
 		pr_info("EEH: Reset without hotplug activity\n");
 		rc = eeh_reset_device(pe, NULL);
 		if (rc) {
@@ -747,6 +750,9 @@ static void eeh_handle_normal_event(struct eeh_pe *pe)
 	}
 
 	/* All devices should claim they have recovered by now. */
+	if (result == PCI_ERS_RESULT_NEED_RESET && reset_count < 3)
+		goto reset_device;
+	
 	if ((result != PCI_ERS_RESULT_RECOVERED) &&
 	    (result != PCI_ERS_RESULT_NONE)) {
 		pr_warn("EEH: Not recovered\n");

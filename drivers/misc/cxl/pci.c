@@ -1490,6 +1490,9 @@ static pci_ers_result_t cxl_pci_slot_reset(struct pci_dev *pdev)
 				result = PCI_ERS_RESULT_DISCONNECT;
 		}
 	}
+
+	if (result == PCI_ERS_RESULT_DISCONNECT)
+		result = PCI_ERS_RESULT_NEED_RESET;
 	return result;
 
 err:
@@ -1498,7 +1501,7 @@ err:
 	 * of unconfigured and reconfigured resources.
 	 */
 	dev_err(&pdev->dev, "EEH recovery failed. Asking to be disconnected.\n");
-	return PCI_ERS_RESULT_DISCONNECT;
+	return PCI_ERS_RESULT_NEED_RESET;
 }
 
 static void cxl_pci_resume(struct pci_dev *pdev)
