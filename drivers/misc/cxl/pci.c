@@ -1426,6 +1426,10 @@ static pci_ers_result_t cxl_pci_error_detected(struct pci_dev *pdev,
 	}
 	cxl_deconfigure_adapter(adapter);
 
+	/* Give everything some time to quiesce */
+	printk("Waiting 10 seconds for everything to stabilise.\n");
+	ssleep(10);
+	
 	return result;
 }
 
