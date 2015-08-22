@@ -1213,14 +1213,17 @@ static const struct file_operations null_fops = {
 /**
  * check_state() - checks and responds to the current adapter state
  * @cfg:	Internal structure associated with the host.
+ * @ioctl:	Indicates if on an ioctl thread.
  *
  * This routine can block and should only be used on process context.
- * Note that when waking up from waiting in reset, the state is unknown
- * and must be checked again before proceeding.
+ * When blocking on an ioctl thread, the ioctl read semaphore should be
+ * let up to allow for draining actively running ioctls. Also note that
+ * when waking up from waiting in reset, the state is unknown and must
+ * be checked again before proceeding.
  *
  * Return: 0 on success, -errno on failure
  */
-static int check_state(struct cxlflash_cfg *cfg)
+static int check_state(struct cxlflash_cfg *cfg, bool ioctl)
 {
 	struct device *dev = &cfg->dev->dev;
 	int rc = 0;
@@ -1229,8 +1232,12 @@ retry:
 	switch (cfg->state) {
 	case STATE_RESET:
 		dev_dbg(dev, "%s: Reset state, going to wait...\n", __func__);
+		if (ioctl)
+			up_read(&cfg->ioctl_rwsem);
 		rc = wait_event_interruptible(cfg->reset_waitq,
 					      cfg->state != STATE_RESET);
+		if (ioctl)
+			down_read(&cfg->ioctl_rwsem);
 		if (unlikely(rc))
 			break;
 		goto retry;
@@ -1637,27 +1644,14 @@ retry_recover:
 		dev_dbg(dev, "%s: MMIO fail, wait for recovery.\n", __func__);
 
 		/*
-		 * Before checking the state we need to take care of a few
-		 * items because the call to check_state() will likely
-		 * result in a wait. First, we need to put back the context
-		 * we obtained with get_context() as we no longer need it. The
-		 * reference is cleared so that in the event that check_state()
-		 * indicates a failure, we won't try to put back the context
-		 * again. Next, we need to sleep for a short period of time. See
-		 * the notes in the prolog for this function for details. Lastly
-		 * we need to release the ioctl semaphore and then reacquire it
-		 * after the call to check_state(). This is also required due to
-		 * the possibility of check_state() performing a wait, which
-		 * would prohibit the ioctls from being able to drain properly.
-		 * Note that we're safe to do this here as the event we would
-		 * wait on is a reset.
+		 * Before checking the state, put back the context obtained with
+		 * get_context() as it is no longer needed and sleep for a short
+		 * period of time (see prolog notes).
 		 */
 		put_context(ctxi);
 		ctxi = NULL;
 		ssleep(1);
-		up_read(&cfg->ioctl_rwsem);
-		rc = check_state(cfg);
-		down_read(&cfg->ioctl_rwsem);
+		rc = check_state(cfg, true);
 		if (unlikely(rc))
 			goto out;
 		goto retry;
@@ -1951,7 +1945,7 @@ static int ioctl_common(struct scsi_device *sdev, int cmd)
 		goto out;
 	}
 
-	rc = check_state(cfg);
+	rc = check_state(cfg, true);
 	if (unlikely(rc) && (cfg->state == STATE_FAILTERM)) {
 		switch (cmd) {
 		case DK_CXLFLASH_VLUN_RESIZE:
@@ -1972,6 +1966,14 @@ out:
  * @sdev:	SCSI device associated with LUN.
  * @cmd:	IOCTL command.
  * @arg:	Userspace ioctl data structure.
+ *
+ * A read/write semaphore is used to implement a 'drain' of currently
+ * running ioctls. The read semaphore is taken at the beginning of each
+ * ioctl thread and released upon concluding execution. Additionally the
+ * semaphore should be released and then reacquired in any ioctl execution
+ * path which will wait for an event to occur that is outside the scope of
+ * the ioctl (i.e. an adapter reset). To drain the ioctls currently running,
+ * a thread simply needs to acquire the write semaphore.
  *
  * Return: 0 on success, -errno on failure
  */
@@ -2006,6 +2008,9 @@ int cxlflash_ioctl(struct scsi_device *sdev, int cmd, void __user *arg)
 	{sizeof(struct dk_cxlflash_resize), (sioctl)cxlflash_vlun_resize},
 	{sizeof(struct dk_cxlflash_clone), (sioctl)cxlflash_disk_clone},
 	};
+
+	/* Hold read semaphore so we can drain if needed */
+	down_read(&cfg->ioctl_rwsem);
 
 	/* Restrict command set to physical support only for internal LUN */
 	if (afu->internal_lun)
@@ -2076,9 +2081,7 @@ int cxlflash_ioctl(struct scsi_device *sdev, int cmd, void __user *arg)
 		goto cxlflash_ioctl_exit;
 	}
 
-	down_read(&cfg->ioctl_rwsem);
 	rc = do_ioctl(sdev, (void *)&buf);
-	up_read(&cfg->ioctl_rwsem);
 	if (likely(!rc))
 		if (unlikely(copy_to_user(arg, &buf, size))) {
 			dev_err(dev, "%s: copy_to_user() fail! "
@@ -2090,6 +2093,7 @@ int cxlflash_ioctl(struct scsi_device *sdev, int cmd, void __user *arg)
 	/* fall through to exit */
 
 cxlflash_ioctl_exit:
+	up_read(&cfg->ioctl_rwsem);
 	if (unlikely(rc && known_ioctl))
 		dev_err(dev, "%s: ioctl %s (%08X) on dev(%d/%d/%d/%llu) "
 			"returned rc %d\n", __func__,
