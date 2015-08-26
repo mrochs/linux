@@ -163,9 +163,9 @@ struct afu {
 
 	/* AFU HW */
 	struct cxl_ioctl_start_work work;
-	struct cxlflash_afu_map *afu_map;	/* entire MMIO map */
-	struct sisl_host_map *host_map;		/* MC host map */
-	struct sisl_ctrl_map *ctrl_map;		/* MC control map */
+	struct cxlflash_afu_map __iomem *afu_map;	/* entire MMIO map */
+	struct sisl_host_map __iomem *host_map;		/* MC host map */
+	struct sisl_ctrl_map __iomem *ctrl_map;		/* MC control map */
 
 	ctx_hndl_t ctx_hndl;	/* master's context handle */
 	u64 *hrrq_start;

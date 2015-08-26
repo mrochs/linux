@@ -253,7 +253,7 @@ static int afu_attach(struct cxlflash_cfg *cfg, struct ctx_info *ctxi)
 {
 	struct device *dev = &cfg->dev->dev;
 	struct afu *afu = cfg->afu;
-	struct sisl_ctrl_map *ctrl_map = ctxi->ctrl_map;
+	struct sisl_ctrl_map __iomem *ctrl_map = ctxi->ctrl_map;
 	int rc = 0;
 	u64 val;
 
