@@ -172,4 +172,12 @@ union cxlflash_ioctls {
 #define DK_CXLFLASH_VLUN_CLONE		CXL_IOWR(0x89, dk_cxlflash_clone)
 #define DK_CXLFLASH_CLONE		DK_CXLFLASH_VLUN_CLONE
 
+/* Event notification */
+#define CXLFLASH_EVENT_TYPE_1 1
+struct cxlflash_driver_event {
+	__u32 type;
+	__u32 flags;
+	__u64 info;
+};
+
 #endif /* ifndef _CXLFLASH_IOCTL_H */

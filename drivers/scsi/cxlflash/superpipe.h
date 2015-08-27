@@ -81,7 +81,8 @@ enum ctx_ctrl {
 	CTX_CTRL_ERR		= (1 << 2),
 	CTX_CTRL_ERR_FALLBACK	= (1 << 3),
 	CTX_CTRL_NOPID		= (1 << 4),
-	CTX_CTRL_FILE		= (1 << 5)
+	CTX_CTRL_FILE		= (1 << 5),
+	CTX_CTRL_CTX		= (1 << 6)
 };
 
 #define ENCODE_CTXID(_ctx, _id)	(((((u64)_ctx) & 0xFFFFFFFF0ULL) << 28) | _id)
@@ -100,6 +101,7 @@ struct ctx_info {
 	u64 ctxid;
 	int lfd;
 	pid_t pid;
+	bool pending_event;
 	bool unavail;
 	bool err_recovery_active;
 	struct mutex mutex; /* Context protection */
