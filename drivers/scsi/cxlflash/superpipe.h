@@ -146,4 +146,10 @@ void cxlflash_ba_terminate(struct ba_lun *);
 
 int cxlflash_manage_lun(struct scsi_device *, struct dk_cxlflash_manage_lun *);
 
+#ifndef CONFIG_CXL_AFU_DRIVER_OPS
+#define cxl_get_priv(_a) do { } while (0)
+#define cxl_set_priv(_a, _b) do { } while (0)
+#define cxl_set_driver_ops(_a, _b) do { } while (0)
+#endif
+
 #endif /* ifndef _CXLFLASH_SUPERPIPE_H */

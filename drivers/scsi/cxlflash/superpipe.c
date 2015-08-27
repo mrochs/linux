@@ -1208,6 +1208,7 @@ int cxlflash_mark_contexts_error(struct cxlflash_cfg *cfg)
 	return rc;
 }
 
+#ifdef CONFIG_CXL_AFU_DRIVER_OPS
 /**
  * cxlflash_event_pending() - check if an event is pending for specified context
  * @ctx:	CXL context reference checking for pending event.
@@ -1288,6 +1289,7 @@ static struct cxl_afu_driver_ops cxlflash_driver_ops = {
 	.event_pending = cxlflash_event_pending,
 	.deliver_event = cxlflash_deliver_event,
 };
+#endif /* CONFIG_CXL_AFU_DRIVER_OPS */
 
 /*
  * Dummy NULL fops
