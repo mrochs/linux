@@ -1745,8 +1745,8 @@ static int init_afu(struct cxlflash_cfg *cfg)
 	}
 
 	/* No byte reverse on reading afu_version or string will be backwards */
-	reg = afu->afu_map->global.regs.afu_version;
-	memcpy(afu->version, &reg, 8);
+	reg = readq(&afu->afu_map->global.regs.afu_version);
+	memcpy(afu->version, &reg, sizeof(reg));
 	afu->interface_version =
 	    readq_be(&afu->afu_map->global.regs.interface_version);
 	if ((afu->interface_version + 1) == 0) {
