@@ -174,7 +174,7 @@ struct ctx_info *get_context(struct cxlflash_cfg *cfg, u64 rctxid,
 			if (ctxi)
 				if ((ctx && (ctxi->ctx != ctx)) ||
 				    (file && (ctxi->file != file)) ||
-				    (!file && (ctxi->ctxid != rctxid)))
+				    (!ctx && !file && (ctxi->ctxid != rctxid)))
 					ctxi = NULL;
 
 			if ((ctx_ctrl & CTX_CTRL_ERR) ||
@@ -1221,31 +1221,36 @@ static bool cxlflash_event_pending(struct cxl_context *ctx)
 	struct device *dev = &cfg->dev->dev;
 	struct ctx_info *ctxi = NULL;
 	enum ctx_ctrl ctrl = CTX_CTRL_ERR_FALLBACK | CTX_CTRL_CTX;
+	bool rc = false;
 	int ctxid;
 
 	ctxid = cxl_process_element(ctx);
 	if (unlikely(ctxid < 0)) {
 		dev_err(dev, "%s: Context %p was closed! (%d)\n",
 			__func__, ctx, ctxid);
-		return false;
+		goto out;
 	}
 
 	ctxi = get_context(cfg, ctxid, ctx, ctrl);
 	if (unlikely(!ctxi)) {
-		dev_err(dev, "%s: Bad context! (%d)\n", __func__, ctxid);
-		return false;
+		dev_dbg(dev, "%s: Bad context! (%d)\n", __func__, ctxid);
+		goto out;
 	}
 
 	if (ctxi->pending_event) {
 		dev_dbg(dev, "%s: Pending event! (%d)\n", __func__, ctxid);
-		return true;
+		rc = true;
+		/* fall through */
 	}
 
-	return false;
+out:
+	if (ctxi)
+		put_context(ctxi);
+	return rc;
 }
 
 /**
- * cxlflash_deiver_event() - populate event with data for the user
+ * cxlflash_deliver_event() - populate event with data for the user
  * @event:	Event to be passed to user.
  * @ctx:	CXL context reference owning the pending event.
  * @max_size:	Maximum size of the event.
@@ -1280,6 +1285,9 @@ static void cxlflash_deliver_event(struct cxl_event *event,
 	cde->type = CXLFLASH_EVENT_TYPE_1;
 	cde->flags = 0;
 	cde->info = 0x12345678;
+
+	if (ctxi)
+		put_context(ctxi);
 }
 
 /*
