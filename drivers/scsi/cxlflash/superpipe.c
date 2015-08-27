@@ -1208,6 +1208,12 @@ int cxlflash_mark_contexts_error(struct cxlflash_cfg *cfg)
 	return rc;
 }
 
+/**
+ * cxlflash_event_pending() - check if an event is pending for specified context
+ * @ctx:	CXL context reference checking for pending event.
+ *
+ * Return: true when event pending, false when no events pending or bad context
+ */
 static bool cxlflash_event_pending(struct cxl_context *ctx)
 {
 	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)cxl_get_priv(ctx);
@@ -1237,6 +1243,12 @@ static bool cxlflash_event_pending(struct cxl_context *ctx)
 	return false;
 }
 
+/**
+ * cxlflash_deiver_event() - populate event with data for the user
+ * @event:	Event to be passed to user.
+ * @ctx:	CXL context reference owning the pending event.
+ * @max_size:	Maximum size of the event.
+ */
 static void cxlflash_deliver_event(struct cxl_event *event,
 				   struct cxl_context *ctx, size_t max_size)
 {
@@ -1269,6 +1281,9 @@ static void cxlflash_deliver_event(struct cxl_event *event,
 	cde->info = 0x12345678;
 }
 
+/*
+ * CXL AFU driver ops
+ */
 static struct cxl_afu_driver_ops cxlflash_driver_ops = {
 	.event_pending = cxlflash_event_pending,
 	.deliver_event = cxlflash_deliver_event,
