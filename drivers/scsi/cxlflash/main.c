@@ -2143,6 +2143,69 @@ static ssize_t ioctl_version_show(struct device *dev,
 }
 
 /**
+ * cxlflash_show_port_tbl() - queries and presents the port LUN table
+ * @port:	Desired port for status reporting.
+ * @afu:	AFU owning the specified port.
+ * @buf:	Buffer of length PAGE_SIZE to report back port status in ASCII.
+ *
+ * Return: The size of the ASCII string returned in @buf.
+ */
+static ssize_t cxlflash_show_port_tbl(u32 port, struct afu *afu, char *buf)
+{
+	int i;
+	ssize_t bytes = 0;
+	u64 __iomem *fc_port;
+
+	if (port >= NUM_FC_PORTS)
+		return 0;
+
+	fc_port = &afu->afu_map->global.fc_port[port][0];
+
+	for (i = 0; i < CXLFLASH_NUM_VLUNS; i++, buf += 22)
+		bytes += scnprintf(buf, PAGE_SIZE, "%03d: %016llX\n",
+				   i, readq_be(&fc_port[i]));
+	return bytes;
+}
+
+/**
+ * port0tbl_show() - queries and presents the current LUN table of port 0
+ * @dev:	Generic device associated with the host owning the port.
+ * @attr:	Device attribute representing the port.
+ * @buf:	Buffer of length PAGE_SIZE to report back port status in ASCII.
+ *
+ * Return: The size of the ASCII string returned in @buf.
+ */
+static ssize_t port0tbl_show(struct device *dev,
+			     struct device_attribute *attr,
+			     char *buf)
+{
+	struct Scsi_Host *shost = class_to_shost(dev);
+	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)shost->hostdata;
+	struct afu *afu = cfg->afu;
+
+	return cxlflash_show_port_tbl(0, afu, buf);
+}
+
+/**
+ * port1tbl_show() - queries and presents the current LUN table of port 1
+ * @dev:	Generic device associated with the host owning the port.
+ * @attr:	Device attribute representing the port.
+ * @buf:	Buffer of length PAGE_SIZE to report back port status in ASCII.
+ *
+ * Return: The size of the ASCII string returned in @buf.
+ */
+static ssize_t port1tbl_show(struct device *dev,
+			     struct device_attribute *attr,
+			     char *buf)
+{
+	struct Scsi_Host *shost = class_to_shost(dev);
+	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)shost->hostdata;
+	struct afu *afu = cfg->afu;
+
+	return cxlflash_show_port_tbl(1, afu, buf);
+}
+
+/**
  * mode_show() - presents the current mode of the device
  * @dev:	Generic device associated with the device.
  * @attr:	Device attribute representing the device mode.
@@ -2166,12 +2229,16 @@ static DEVICE_ATTR_RO(port0);
 static DEVICE_ATTR_RO(port1);
 static DEVICE_ATTR_RW(lun_mode);
 static DEVICE_ATTR_RO(ioctl_version);
+static DEVICE_ATTR_RO(port0tbl);
+static DEVICE_ATTR_RO(port1tbl);
 
 static struct device_attribute *cxlflash_host_attrs[] = {
 	&dev_attr_port0,
 	&dev_attr_port1,
 	&dev_attr_lun_mode,
 	&dev_attr_ioctl_version,
+	&dev_attr_port0tbl,
+	&dev_attr_port1tbl,
 	NULL
 };
 
