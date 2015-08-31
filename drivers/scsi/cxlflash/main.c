@@ -2143,14 +2143,16 @@ static ssize_t ioctl_version_show(struct device *dev,
 }
 
 /**
- * cxlflash_show_port_tbl() - queries and presents the port LUN table
+ * cxlflash_show_port_lun_table() - queries and presents the port LUN table
  * @port:	Desired port for status reporting.
  * @afu:	AFU owning the specified port.
  * @buf:	Buffer of length PAGE_SIZE to report back port status in ASCII.
  *
  * Return: The size of the ASCII string returned in @buf.
  */
-static ssize_t cxlflash_show_port_tbl(u32 port, struct afu *afu, char *buf)
+static ssize_t cxlflash_show_port_lun_table(u32 port,
+					    struct afu *afu,
+					    char *buf)
 {
 	int i;
 	ssize_t bytes = 0;
@@ -2168,41 +2170,41 @@ static ssize_t cxlflash_show_port_tbl(u32 port, struct afu *afu, char *buf)
 }
 
 /**
- * port0tbl_show() - queries and presents the current LUN table of port 0
+ * port0_lun_table_show() - presents the current LUN table of port 0
  * @dev:	Generic device associated with the host owning the port.
  * @attr:	Device attribute representing the port.
  * @buf:	Buffer of length PAGE_SIZE to report back port status in ASCII.
  *
  * Return: The size of the ASCII string returned in @buf.
  */
-static ssize_t port0tbl_show(struct device *dev,
-			     struct device_attribute *attr,
-			     char *buf)
+static ssize_t port0_lun_table_show(struct device *dev,
+				    struct device_attribute *attr,
+				    char *buf)
 {
 	struct Scsi_Host *shost = class_to_shost(dev);
 	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)shost->hostdata;
 	struct afu *afu = cfg->afu;
 
-	return cxlflash_show_port_tbl(0, afu, buf);
+	return cxlflash_show_port_lun_table(0, afu, buf);
 }
 
 /**
- * port1tbl_show() - queries and presents the current LUN table of port 1
+ * port1_lun_table_show() - presents the current LUN table of port 1
  * @dev:	Generic device associated with the host owning the port.
  * @attr:	Device attribute representing the port.
  * @buf:	Buffer of length PAGE_SIZE to report back port status in ASCII.
  *
  * Return: The size of the ASCII string returned in @buf.
  */
-static ssize_t port1tbl_show(struct device *dev,
-			     struct device_attribute *attr,
-			     char *buf)
+static ssize_t port1_lun_table_show(struct device *dev,
+				    struct device_attribute *attr,
+				    char *buf)
 {
 	struct Scsi_Host *shost = class_to_shost(dev);
 	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)shost->hostdata;
 	struct afu *afu = cfg->afu;
 
-	return cxlflash_show_port_tbl(1, afu, buf);
+	return cxlflash_show_port_lun_table(1, afu, buf);
 }
 
 /**
@@ -2229,16 +2231,16 @@ static DEVICE_ATTR_RO(port0);
 static DEVICE_ATTR_RO(port1);
 static DEVICE_ATTR_RW(lun_mode);
 static DEVICE_ATTR_RO(ioctl_version);
-static DEVICE_ATTR_RO(port0tbl);
-static DEVICE_ATTR_RO(port1tbl);
+static DEVICE_ATTR_RO(port0_lun_table);
+static DEVICE_ATTR_RO(port1_lun_table);
 
 static struct device_attribute *cxlflash_host_attrs[] = {
 	&dev_attr_port0,
 	&dev_attr_port1,
 	&dev_attr_lun_mode,
 	&dev_attr_ioctl_version,
-	&dev_attr_port0tbl,
-	&dev_attr_port1tbl,
+	&dev_attr_port0_lun_table,
+	&dev_attr_port1_lun_table,
 	NULL
 };
 
