@@ -365,8 +365,8 @@ retry:
 	 * as the buffer is allocated on an aligned boundary.
 	 */
 	mutex_lock(&gli->mutex);
-	gli->max_lba = be64_to_cpu(*((u64 *)&cmd_buf[0]));
-	gli->blk_len = be32_to_cpu(*((u32 *)&cmd_buf[8]));
+	gli->max_lba = be64_to_cpu(*((__be64 *)&cmd_buf[0]));
+	gli->blk_len = be32_to_cpu(*((__be32 *)&cmd_buf[8]));
 	mutex_unlock(&gli->mutex);
 
 out:

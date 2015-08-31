@@ -187,7 +187,7 @@ struct afu {
 
 static inline u64 lun_to_lunid(u64 lun)
 {
-	u64 lun_id;
+	__be64 lun_id;
 
 	int_to_scsilun(lun, (struct scsi_lun *)&lun_id);
 	return be64_to_cpu(lun_id);
