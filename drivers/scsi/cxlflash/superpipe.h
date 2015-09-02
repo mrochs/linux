@@ -31,6 +31,8 @@ extern struct cxlflash_global global;
 #define CMD_TIMEOUT 30  /* 30 secs */
 #define CMD_RETRIES 5   /* 5 retries for scsi_execute */
 
+#define MAX_SECTOR_UNIT  512 /* max_sector is in 512 byte multiples */
+
 #define CHAN2PORT(_x)	((_x) + 1)
 #define PORT2CHAN(_x)	((_x) - 1)
 
