@@ -881,6 +881,9 @@ static int _cxlflash_disk_detach(struct scsi_device *sdev,
 			sys_close(lfd);
 	}
 
+	/* Release the sdev reference that bound this LUN to the context */
+	scsi_device_put(sdev);
+
 out:
 	if (put_ctx)
 		put_context(ctxi);
@@ -1330,11 +1333,18 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 			}
 	}
 
+	rc = scsi_device_get(sdev);
+	if (unlikely(rc)) {
+		dev_err(dev, "%s: Unable to get sdev reference!\n", __func__);
+		goto out;
+	}
+
 	lun_access = kzalloc(sizeof(*lun_access), GFP_KERNEL);
 	if (unlikely(!lun_access)) {
 		dev_err(dev, "%s: Unable to allocate lun_access!\n", __func__);
+		scsi_device_put(sdev);
 		rc = -ENOMEM;
-		goto out;
+		goto err0;
 	}
 
 	lun_access->lli = lli;
@@ -1354,21 +1364,21 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 		dev_err(dev, "%s: Could not initialize context %p\n",
 			__func__, ctx);
 		rc = -ENODEV;
-		goto err0;
+		goto err1;
 	}
 
 	ctxid = cxl_process_element(ctx);
 	if (unlikely((ctxid > MAX_CONTEXT) || (ctxid < 0))) {
 		dev_err(dev, "%s: ctxid (%d) invalid!\n", __func__, ctxid);
 		rc = -EPERM;
-		goto err1;
+		goto err2;
 	}
 
 	file = cxl_get_fd(ctx, &cfg->cxl_fops, &fd);
 	if (unlikely(fd < 0)) {
 		rc = -ENODEV;
 		dev_err(dev, "%s: Could not get file descriptor\n", __func__);
-		goto err1;
+		goto err2;
 	}
 
 	/* Translate read/write O_* flags from fcntl.h to AFU permission bits */
@@ -1378,7 +1388,7 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 	if (unlikely(!ctxi)) {
 		dev_err(dev, "%s: Failed to create context! (%d)\n",
 			__func__, ctxid);
-		goto err2;
+		goto err3;
 	}
 
 	work = &ctxi->work;
@@ -1389,13 +1399,13 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 	if (unlikely(rc)) {
 		dev_dbg(dev, "%s: Could not start context rc=%d\n",
 			__func__, rc);
-		goto err3;
+		goto err4;
 	}
 
 	rc = afu_attach(cfg, ctxi);
 	if (unlikely(rc)) {
 		dev_err(dev, "%s: Could not attach AFU rc %d\n", __func__, rc);
-		goto err4;
+		goto err5;
 	}
 
 	/*
@@ -1431,13 +1441,13 @@ out:
 		__func__, ctxid, fd, attach->block_size, rc, attach->last_lba);
 	return rc;
 
-err4:
+err5:
 	cxl_stop_context(ctx);
-err3:
+err4:
 	put_context(ctxi);
 	destroy_context(cfg, ctxi);
 	ctxi = NULL;
-err2:
+err3:
 	/*
 	 * Here, we're overriding the fops with a dummy all-NULL fops because
 	 * fput() calls the release fop, which will cause us to mistakenly
@@ -1449,10 +1459,12 @@ err2:
 	fput(file);
 	put_unused_fd(fd);
 	fd = -1;
-err1:
+err2:
 	cxl_release_context(ctx);
-err0:
+err1:
 	kfree(lun_access);
+err0:
+	scsi_device_put(sdev);
 	goto out;
 }
 
