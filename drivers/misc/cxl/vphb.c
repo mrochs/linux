@@ -278,12 +278,17 @@ void cxl_pci_vphb_reconfigure(struct cxl_afu *afu)
 void cxl_pci_vphb_remove(struct cxl_afu *afu)
 {
 	struct pci_controller *phb;
+	struct pci_dev *afu_dev;
 
 	/* If there is no configuration record we won't have one of these */
 	if (!afu || !afu->phb)
 		return;
 
 	phb = afu->phb;
+
+	list_for_each_entry(afu_dev, &phb->bus->devices, bus_list) {
+		afu_dev->error_state = pci_channel_io_perm_failure;
+	}
 
 	pci_remove_root_bus(phb->bus);
 }
