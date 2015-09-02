@@ -120,13 +120,16 @@ static struct glun_info *lookup_global(u8 *wwid)
  *
  * The LUN is kept both in a local list (per adapter) and in a global list
  * (across all adapters). Certain attributes of the LUN are local to the
- * adapter (such as index, port selection mask etc.).
+ * adapter (such as index, port selection mask, etc.).
+ *
  * The block allocation map is shared across all adapters (i.e. associated
  * wih the global list). Since different attributes are associated with
  * the per adapter and global entries, allocate two separate structures for each
  * LUN (one local, one global).
  *
  * Keep a pointer back from the local to the global entry.
+ *
+ * This routine assumes the caller holds the global mutex.
  *
  * Return: Found/Allocated local lun_info structure on success, NULL on failure
  */
