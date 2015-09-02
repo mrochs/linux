@@ -30,6 +30,8 @@ extern struct cxlflash_global global;
 
 #define MC_DISCOVERY_TIMEOUT 5  /* 5 secs */
 
+#define MAX_SECTOR_UNIT  512 /* max_sector is in 512 byte multiples */
+
 #define CHAN2PORT(_x)	((_x) + 1)
 #define PORT2CHAN(_x)	((_x) - 1)
 
