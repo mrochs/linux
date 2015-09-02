@@ -45,10 +45,18 @@ static bool cxl_pci_enable_device_hook(struct pci_dev *dev)
 	struct pci_controller *phb;
 	struct cxl_afu *afu;
 	struct cxl_context *ctx;
+	/* NOT FOR UPSTREAM */
+	struct pci_dev *real_pdev;
+	/* END NOT FOR UPSTREAM */
 
 	phb = pci_bus_to_host(dev->bus);
 	afu = (struct cxl_afu *)phb->private_data;
 
+	/* NOT FOR UPSTREAM */
+	real_pdev = to_pci_dev(afu->adapter->dev.parent);
+	WARN_ON(real_pdev->error_state == pci_channel_io_perm_failure);
+	/* END NOT FOR UPSTREAM */
+	
 	if (!cxl_adapter_link_ok(afu->adapter))
 		return false;
 
