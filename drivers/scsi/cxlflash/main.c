@@ -496,6 +496,7 @@ static int cxlflash_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *scp)
 	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)host->hostdata;
 	struct afu *afu = cfg->afu;
 	struct device *dev = &cfg->dev->dev;
+	enum cxlflash_state state;
 	struct afu_cmd *cmd;
 	u32 port_sel = scp->device->channel + 1;
 	int nseg, i, ncount;
@@ -525,7 +526,11 @@ static int cxlflash_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *scp)
 	}
 	spin_unlock_irqrestore(&cfg->tmf_slock, lock_flags);
 
-	switch (cfg->state) {
+	mutex_lock(&cfg->mutex);
+	state = cfg->state;
+	mutex_unlock(&cfg->mutex);
+
+	switch (state) {
 	case STATE_RESET:
 		dev_dbg_ratelimited(dev, "%s: device is in reset!\n", __func__);
 		rc = SCSI_MLQUEUE_HOST_BUSY;
@@ -722,7 +727,9 @@ static void cxlflash_remove(struct pci_dev *pdev)
 						  cfg->tmf_slock);
 	spin_unlock_irqrestore(&cfg->tmf_slock, lock_flags);
 
+	mutex_lock(&cfg->mutex);
 	cfg->state = STATE_FAILTERM;
+	mutex_unlock(&cfg->mutex);
 	atomic_inc(&cfg->remove_active);
 	cxlflash_stop_term_user_contexts(cfg);
 
@@ -1811,12 +1818,13 @@ int cxlflash_afu_sync(struct afu *afu, ctx_hndl_t ctx_hndl_u,
 	int retry_cnt = 0;
 	static DEFINE_MUTEX(sync_active);
 
+	mutex_lock(&sync_active);
+	mutex_lock(&cfg->mutex);
 	if (cfg->state != STATE_NORMAL) {
 		pr_debug("%s: Sync not required! (%u)\n", __func__, cfg->state);
-		return 0;
+		goto out;
 	}
 
-	mutex_lock(&sync_active);
 retry:
 	cmd = cmd_checkout(afu);
 	if (unlikely(!cmd)) {
@@ -1858,6 +1866,7 @@ retry:
 		     (cmd->sa.host_use_b[0] & B_ERROR)))
 		rc = -1;
 out:
+	mutex_unlock(&cfg->mutex);
 	mutex_unlock(&sync_active);
 	if (cmd)
 		cmd_checkin(cmd);
@@ -1900,6 +1909,7 @@ static int cxlflash_eh_device_reset_handler(struct scsi_cmnd *scp)
 	struct Scsi_Host *host = scp->device->host;
 	struct cxlflash_cfg *cfg = (struct cxlflash_cfg *)host->hostdata;
 	struct afu *afu = cfg->afu;
+	enum cxlflash_state state;
 	int rcr = 0;
 
 	pr_debug("%s: (scp=%p) %d/%d/%d/%llu "
@@ -1912,7 +1922,11 @@ static int cxlflash_eh_device_reset_handler(struct scsi_cmnd *scp)
 		 get_unaligned_be32(&((u32 *)scp->cmnd)[3]));
 
 retry:
-	switch (cfg->state) {
+	mutex_lock(&cfg->mutex);
+	state = cfg->state;
+	mutex_unlock(&cfg->mutex);
+
+	switch (state) {
 	case STATE_NORMAL:
 		rcr = send_tmf(afu, scp, TMF_LUN_RESET);
 		if (unlikely(rcr))
@@ -1954,6 +1968,7 @@ static int cxlflash_eh_host_reset_handler(struct scsi_cmnd *scp)
 		 get_unaligned_be32(&((u32 *)scp->cmnd)[2]),
 		 get_unaligned_be32(&((u32 *)scp->cmnd)[3]));
 
+	mutex_lock(&cfg->mutex);
 	switch (cfg->state) {
 	case STATE_NORMAL:
 		cfg->state = STATE_RESET;
@@ -1967,7 +1982,9 @@ static int cxlflash_eh_host_reset_handler(struct scsi_cmnd *scp)
 		wake_up_all(&cfg->reset_waitq);
 		break;
 	case STATE_RESET:
+		mutex_unlock(&cfg->mutex);
 		wait_event(cfg->reset_waitq, cfg->state != STATE_RESET);
+		mutex_lock(&cfg->mutex);
 		if (cfg->state == STATE_NORMAL)
 			break;
 		/* fall through */
@@ -1975,6 +1992,7 @@ static int cxlflash_eh_host_reset_handler(struct scsi_cmnd *scp)
 		rc = FAILED;
 		break;
 	}
+	mutex_unlock(&cfg->mutex);
 
 	pr_debug("%s: returning rc=%d\n", __func__, rc);
 	return rc;
@@ -2312,10 +2330,11 @@ static void cxlflash_worker_thread(struct work_struct *work)
 	int port;
 	ulong lock_flags;
 
-	/* Avoid MMIO if the device has failed */
+	mutex_lock(&cfg->mutex);
 
+	/* Avoid MMIO if the device has failed */
 	if (cfg->state != STATE_NORMAL)
-		return;
+		goto out;
 
 	spin_lock_irqsave(cfg->host->host_lock, lock_flags);
 
@@ -2346,6 +2365,8 @@ static void cxlflash_worker_thread(struct work_struct *work)
 
 	if (atomic_dec_if_positive(&cfg->scan_host_needed) >= 0)
 		scsi_scan_host(cfg->host);
+out:
+	mutex_unlock(&cfg->mutex);
 }
 
 /**
@@ -2416,6 +2437,7 @@ static int cxlflash_probe(struct pci_dev *pdev,
 	INIT_WORK(&cfg->work_q, cxlflash_worker_thread);
 	cfg->lr_state = LINK_RESET_INVALID;
 	cfg->lr_port = -1;
+	mutex_init(&cfg->mutex);
 	mutex_init(&cfg->ctx_tbl_list_mutex);
 	mutex_init(&cfg->ctx_recovery_mutex);
 	init_rwsem(&cfg->ioctl_rwsem);
@@ -2503,7 +2525,9 @@ static pci_ers_result_t cxlflash_pci_error_detected(struct pci_dev *pdev,
 
 	switch (state) {
 	case pci_channel_io_frozen:
+		mutex_lock(&cfg->mutex);
 		cfg->state = STATE_RESET;
+		mutex_unlock(&cfg->mutex);
 		scsi_block_requests(cfg->host);
 		drain_ioctls(cfg);
 		rc = cxlflash_mark_contexts_error(cfg);
@@ -2514,7 +2538,9 @@ static pci_ers_result_t cxlflash_pci_error_detected(struct pci_dev *pdev,
 		stop_afu(cfg);
 		return PCI_ERS_RESULT_NEED_RESET;
 	case pci_channel_io_perm_failure:
+		mutex_lock(&cfg->mutex);
 		cfg->state = STATE_FAILTERM;
+		mutex_unlock(&cfg->mutex);
 		wake_up_all(&cfg->reset_waitq);
 		scsi_unblock_requests(cfg->host);
 		return PCI_ERS_RESULT_DISCONNECT;
@@ -2561,7 +2587,9 @@ static void cxlflash_pci_resume(struct pci_dev *pdev)
 
 	dev_dbg(dev, "%s: pdev=%p\n", __func__, pdev);
 
+	mutex_lock(&cfg->mutex);
 	cfg->state = STATE_NORMAL;
+	mutex_unlock(&cfg->mutex);
 	wake_up_all(&cfg->reset_waitq);
 	scsi_unblock_requests(cfg->host);
 }
