@@ -128,6 +128,7 @@ struct cxlflash_cfg {
 	bool tmf_active;
 	wait_queue_head_t reset_waitq;
 	enum cxlflash_state state;
+	struct mutex mutex;
 };
 
 struct afu_cmd {
