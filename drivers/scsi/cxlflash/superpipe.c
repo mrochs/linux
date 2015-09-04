@@ -1229,10 +1229,15 @@ static const struct file_operations null_fops = {
 static int check_state(struct cxlflash_cfg *cfg, bool ioctl)
 {
 	struct device *dev = &cfg->dev->dev;
+	enum cxlflash_state state;
 	int rc = 0;
 
 retry:
-	switch (cfg->state) {
+	mutex_lock(&cfg->mutex);
+	state = cfg->state;
+	mutex_unlock(&cfg->mutex);
+
+	switch (state) {
 	case STATE_RESET:
 		dev_dbg(dev, "%s: Reset state, going to wait...\n", __func__);
 		if (ioctl)
