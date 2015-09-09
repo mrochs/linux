@@ -997,6 +997,27 @@ static int cxl_read_vsec(struct cxl *adapter, struct pci_dev *dev)
 	return 0;
 }
 
+/*
+ * Fixup an Altera PCIE core defect that can cause malformed TLP errors
+ * to be erroneously reported. Mask this error in the Uncorrectable Error
+ * Mask Register.
+ */
+static void cxl_fixup_altera_malf_tlp(struct pci_dev *dev)
+{
+	int aer;
+	u32 data;
+
+	if (!(aer = pci_find_ext_capability(dev, PCI_EXT_CAP_ID_ERR)))
+		return;
+	pci_read_config_dword(dev, aer + PCI_ERR_UNCOR_MASK, &data);
+	if (data & PCI_ERR_UNC_MALF_TLP)
+		if (data & PCI_ERR_UNC_INTN)
+			return;
+	data |= PCI_ERR_UNC_MALF_TLP;
+	data |= PCI_ERR_UNC_INTN;
+	pci_write_config_dword(dev, aer + PCI_ERR_UNCOR_MASK, data);
+}
+
 static int cxl_vsec_looks_ok(struct cxl *adapter, struct pci_dev *dev)
 {
 	if (adapter->vsec_status & CXL_STATUS_SECOND_PORT)
@@ -1094,6 +1115,10 @@ static int cxl_configure_adapter(struct cxl *adapter, struct pci_dev *dev)
 	rc = cxl_vsec_looks_ok(adapter, dev);
 	if (rc)
 	        return rc;
+
+	if (dev->vendor == PCI_VENDOR_ID_IBM && dev->device == 0x04cf &&
+	    !(adapter->psl_rev & 0xf000))
+		cxl_fixup_altera_malf_tlp(dev);
 
 	rc = setup_cxl_bars(dev);
 	if (rc)
