@@ -102,7 +102,7 @@ struct cxlflash_cfg {
 	enum cxlflash_init_state init_state;
 	enum cxlflash_lr_state lr_state;
 	int lr_port;
-
+	atomic_t scan_host_needed;
 	atomic_t remove_active;
 
 	struct cxl_afu *cxl_afu;
