@@ -106,8 +106,6 @@ struct cxlflash_cfg {
 	atomic_t remove_active;
 
 	struct cxl_afu *cxl_afu;
-
-	struct pci_pool *cxlflash_cmd_pool;
 	struct pci_dev *parent_dev;
 
 	atomic_t recovery_threads;
