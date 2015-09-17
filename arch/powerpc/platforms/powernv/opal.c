@@ -490,6 +490,9 @@ int opal_machine_check(struct pt_regs *regs)
 	 * In any case, let us just fall through. We anyway heading
 	 * down to panic path.
 	 */
+
+	/* Above is not strictly true - we are going to die() which only Oops */
+	panic("PowerNV unrecovered Machine Check.");
 	return 0;
 }
 
