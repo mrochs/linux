@@ -1341,7 +1341,6 @@ static int cxlflash_disk_attach(struct scsi_device *sdev,
 	lun_access = kzalloc(sizeof(*lun_access), GFP_KERNEL);
 	if (unlikely(!lun_access)) {
 		dev_err(dev, "%s: Unable to allocate lun_access!\n", __func__);
-		scsi_device_put(sdev);
 		rc = -ENOMEM;
 		goto err0;
 	}
