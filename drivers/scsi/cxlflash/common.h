@@ -115,8 +115,6 @@ struct cxlflash_cfg {
 	struct list_head ctx_err_recovery; /* contexts w/ recovery pending */
 	struct file_operations cxl_fops;
 
-	atomic_t num_user_contexts;
-
 	/* Parameters that are LUN table related */
 	int last_lun_index[CXLFLASH_NUM_FC_PORTS];
 	int promote_lun_index;
