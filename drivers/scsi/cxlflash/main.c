@@ -2163,9 +2163,9 @@ static ssize_t cxlflash_show_port_lun_table(u32 port,
 
 	fc_port = &afu->afu_map->global.fc_port[port][0];
 
-	for (i = 0; i < CXLFLASH_NUM_VLUNS; i++, buf += 22)
-		bytes += scnprintf(buf, PAGE_SIZE, "%03d: %016llX\n",
-				   i, readq_be(&fc_port[i]));
+	for (i = 0; i < CXLFLASH_NUM_VLUNS; i++)
+		bytes += scnprintf(buf + bytes, PAGE_SIZE - bytes,
+				   "%03d: %016llX\n", i, readq_be(&fc_port[i]));
 	return bytes;
 }
 
