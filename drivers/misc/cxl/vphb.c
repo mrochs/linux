@@ -48,6 +48,12 @@ static bool cxl_pci_enable_device_hook(struct pci_dev *dev)
 
 	phb = pci_bus_to_host(dev->bus);
 	afu = (struct cxl_afu *)phb->private_data;
+
+	pr_info("%s: attempting to attach context\n", __func__);
+	dev_info(&dev->dev, "%s: this is the vPHB device\n", __func__);
+	dev_info(&afu->dev, "%s: this is the AFU device\n", __func__);
+	dev_info(&afu->adapter->dev.parent, "%s: this is the underlying CXL PCI device\n");
+
 	set_dma_ops(&dev->dev, &dma_direct_ops);
 	set_dma_offset(&dev->dev, PAGE_OFFSET);
 
