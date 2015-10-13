@@ -1728,6 +1728,8 @@ static int init_afu(struct cxlflash_cfg *cfg)
 
 	cxl_perst_reloads_same_image(cfg->cxl_afu, true);
 
+	down_read(&cfg->ops_rwsem);
+
 	rc = init_mc(cfg);
 	if (rc) {
 		dev_err(dev, "%s: call to init_mc failed, rc=%d!\n",
@@ -1772,6 +1774,7 @@ static int init_afu(struct cxlflash_cfg *cfg)
 	/* Restore the LUN mappings */
 	cxlflash_restore_luntable(cfg);
 out:
+	up_read(&cfg->ops_rwsem);
 	pr_debug("%s: returning rc=%d\n", __func__, rc);
 	return rc;
 
@@ -2322,6 +2325,7 @@ static void cxlflash_worker_thread(struct work_struct *work)
 		return;
 
 	spin_lock_irqsave(cfg->host->host_lock, lock_flags);
+	down_read(&cfg->ops_rwsem);
 
 	if (cfg->lr_state == LINK_RESET_REQUIRED) {
 		port = cfg->lr_port;
@@ -2346,6 +2350,7 @@ static void cxlflash_worker_thread(struct work_struct *work)
 		afu->read_room = false;
 	}
 
+	up_read(&cfg->ops_rwsem);
 	spin_unlock_irqrestore(cfg->host->host_lock, lock_flags);
 
 	if (atomic_dec_if_positive(&cfg->scan_host_needed) >= 0)
@@ -2422,7 +2427,7 @@ static int cxlflash_probe(struct pci_dev *pdev,
 	cfg->lr_port = -1;
 	mutex_init(&cfg->ctx_tbl_list_mutex);
 	mutex_init(&cfg->ctx_recovery_mutex);
-	init_rwsem(&cfg->ioctl_rwsem);
+	init_rwsem(&cfg->ops_rwsem);
 	INIT_LIST_HEAD(&cfg->ctx_err_recovery);
 	INIT_LIST_HEAD(&cfg->lluns);
 
@@ -2483,10 +2488,10 @@ out_remove:
  * Obtain write access to read/write semaphore that wraps ioctl
  * handling to 'drain' ioctls currently executing.
  */
-static void drain_ioctls(struct cxlflash_cfg *cfg)
+static void drain_ops(struct cxlflash_cfg *cfg)
 {
-	down_write(&cfg->ioctl_rwsem);
-	up_write(&cfg->ioctl_rwsem);
+	down_write(&cfg->ops_rwsem);
+	up_write(&cfg->ops_rwsem);
 }
 
 /**
@@ -2509,7 +2514,7 @@ static pci_ers_result_t cxlflash_pci_error_detected(struct pci_dev *pdev,
 	case pci_channel_io_frozen:
 		cfg->state = STATE_RESET;
 		scsi_block_requests(cfg->host);
-		drain_ioctls(cfg);
+		drain_ops(cfg);
 		rc = cxlflash_mark_contexts_error(cfg);
 		if (unlikely(rc))
 			dev_err(dev, "%s: Failed to mark user contexts!(%d)\n",

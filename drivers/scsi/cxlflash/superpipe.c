@@ -333,10 +333,10 @@ retry:
 		retry_cnt ? "re" : "", scsi_cmd[0]);
 
 	/* Drop the ioctl read semahpore across lengthy call */
-	up_read(&cfg->ioctl_rwsem);
+	up_read(&cfg->ops_rwsem);
 	result = scsi_execute(sdev, scsi_cmd, DMA_FROM_DEVICE, cmd_buf,
 			      CMD_BUFSIZE, sense_buf, to, CMD_RETRIES, 0, NULL);
-	down_read(&cfg->ioctl_rwsem);
+	down_read(&cfg->ops_rwsem);
 	rc = check_state(cfg, true);
 	if (rc) {
 		dev_err(dev, "%s: Failed state! result=0x08%X\n",
@@ -1262,11 +1262,11 @@ retry:
 	case STATE_RESET:
 		dev_dbg(dev, "%s: Reset state, going to wait...\n", __func__);
 		if (ioctl)
-			up_read(&cfg->ioctl_rwsem);
+			up_read(&cfg->ops_rwsem);
 		rc = wait_event_interruptible(cfg->reset_waitq,
 					      cfg->state != STATE_RESET);
 		if (ioctl)
-			down_read(&cfg->ioctl_rwsem);
+			down_read(&cfg->ops_rwsem);
 		if (unlikely(rc))
 			break;
 		goto retry;
@@ -2057,7 +2057,7 @@ int cxlflash_ioctl(struct scsi_device *sdev, int cmd, void __user *arg)
 	};
 
 	/* Hold read semaphore so we can drain if needed */
-	down_read(&cfg->ioctl_rwsem);
+	down_read(&cfg->ops_rwsem);
 
 	/* Restrict command set to physical support only for internal LUN */
 	if (afu->internal_lun)
@@ -2140,7 +2140,7 @@ int cxlflash_ioctl(struct scsi_device *sdev, int cmd, void __user *arg)
 	/* fall through to exit */
 
 cxlflash_ioctl_exit:
-	up_read(&cfg->ioctl_rwsem);
+	up_read(&cfg->ops_rwsem);
 	if (unlikely(rc && known_ioctl))
 		dev_err(dev, "%s: ioctl %s (%08X) on dev(%d/%d/%d/%llu) "
 			"returned rc %d\n", __func__,
