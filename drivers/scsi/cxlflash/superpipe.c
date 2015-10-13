@@ -83,8 +83,9 @@ void cxlflash_stop_term_user_contexts(struct cxlflash_cfg *cfg)
 {
 	struct device *dev = &cfg->dev->dev;
 	int i, found;
-
+pr_err("%s: calling mark_contexts()\n", __func__);
 	cxlflash_mark_contexts_error(cfg);
+pr_err("%s: done mark_contexts()\n", __func__);
 
 	while (true) {
 		found = false;
@@ -98,7 +99,7 @@ void cxlflash_stop_term_user_contexts(struct cxlflash_cfg *cfg)
 		if (!found && list_empty(&cfg->ctx_err_recovery))
 			return;
 
-		dev_dbg(dev, "%s: Wait for user contexts to quiesce...\n",
+		dev_err(dev, "%s: Wait for user contexts to quiesce...\n",
 			__func__);
 		wake_up_all(&cfg->reset_waitq);
 		ssleep(1);
@@ -1219,6 +1220,10 @@ int cxlflash_mark_contexts_error(struct cxlflash_cfg *cfg)
 		ctxi = cfg->ctx_tbl[i];
 		if (ctxi) {
 			mutex_lock(&ctxi->mutex);
+
+			pr_err("%s: ctxi=%p ctxid=%016llX\n", __func__, ctxi,
+			       ctxi->ctxid);
+
 			cfg->ctx_tbl[i] = NULL;
 			list_add(&ctxi->list, &cfg->ctx_err_recovery);
 			ctxi->err_recovery_active = true;

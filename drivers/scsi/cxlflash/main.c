@@ -712,6 +712,7 @@ static void cxlflash_remove(struct pci_dev *pdev)
 	struct cxlflash_cfg *cfg = pci_get_drvdata(pdev);
 	ulong lock_flags;
 
+pr_info("%s: ENTER\n", __func__);
 	/* If a Task Management Function is active, wait for it to complete
 	 * before continuing with remove.
 	 */
@@ -724,7 +725,9 @@ static void cxlflash_remove(struct pci_dev *pdev)
 
 	cfg->state = STATE_FAILTERM;
 	atomic_inc(&cfg->remove_active);
+pr_info("%s: calling stop_term()\n", __func__);
 	cxlflash_stop_term_user_contexts(cfg);
+pr_info("%s: done stop_term()\n", __func__);
 
 	switch (cfg->init_state) {
 	case INIT_STATE_SCSI:
@@ -744,6 +747,13 @@ static void cxlflash_remove(struct pci_dev *pdev)
 	}
 
 	pr_debug("%s: returning\n", __func__);
+}
+
+static void cxlflash_shutdown(struct pci_dev *pdev)
+{
+	struct cxlflash_cfg *cfg = pci_get_drvdata(pdev);
+
+pr_info("%s: ENTER - cfg = %p, state = %u\n", __func__, cfg, cfg->state);
 }
 
 /**
@@ -2585,6 +2595,7 @@ static struct pci_driver cxlflash_driver = {
 	.id_table = cxlflash_pci_table,
 	.probe = cxlflash_probe,
 	.remove = cxlflash_remove,
+	.shutdown = cxlflash_shutdown,
 	.err_handler = &cxlflash_err_handler,
 };
 
