@@ -66,14 +66,14 @@ static int ba_init(struct ba_lun *ba_lun)
 	int last_word_underflow = 0;
 	u64 *lam;
 
-	pr_debug("%s: Initializing LUN: lun_id = %llX, "
+	pr_err("%s: Initializing LUN: lun_id = %llX, "
 		 "ba_lun->lsize = %lX, ba_lun->au_size = %lX\n",
 		__func__, ba_lun->lun_id, ba_lun->lsize, ba_lun->au_size);
 
 	/* Calculate bit map size */
 	lun_size_au = ba_lun->lsize / ba_lun->au_size;
 	if (lun_size_au == 0) {
-		pr_debug("%s: Requested LUN size of 0!\n", __func__);
+		pr_err("%s: Requested LUN size of 0!\n", __func__);
 		return -EINVAL;
 	}
 
@@ -135,7 +135,7 @@ static int ba_init(struct ba_lun *ba_lun)
 	/* Pass the allocated LUN info as a handle to the user */
 	ba_lun->ba_lun_handle = bali;
 
-	pr_debug("%s: Successfully initialized the LUN: "
+	pr_err("%s: Successfully initialized the LUN: "
 		 "lun_id = %llX, bitmap size = %X, free_aun_cnt = %llX\n",
 		__func__, ba_lun->lun_id, bali->lun_bmap_size,
 		bali->free_aun_cnt);
@@ -165,7 +165,7 @@ static int find_free_range(u32 low,
 			num_bits = (sizeof(*lam) * BITS_PER_BYTE);
 			bit_pos = find_first_bit(lam, num_bits);
 
-			pr_devel("%s: Found free bit %llX in LUN "
+			pr_err("%s: Found free bit %llX in LUN "
 				 "map entry %llX at bitmap index = %X\n",
 				 __func__, bit_pos, bali->lun_alloc_map[i],
 				 i);
@@ -193,12 +193,12 @@ static u64 ba_alloc(struct ba_lun *ba_lun)
 
 	bali = ba_lun->ba_lun_handle;
 
-	pr_debug("%s: Received block allocation request: "
+	pr_err("%s: Received block allocation request: "
 		 "lun_id = %llX, free_aun_cnt = %llX\n",
 		 __func__, ba_lun->lun_id, bali->free_aun_cnt);
 
 	if (bali->free_aun_cnt == 0) {
-		pr_debug("%s: No space left on LUN: lun_id = %llX\n",
+		pr_err("%s: No space left on LUN: lun_id = %llX\n",
 			 __func__, ba_lun->lun_id);
 		return -1ULL;
 	}
@@ -211,7 +211,7 @@ static u64 ba_alloc(struct ba_lun *ba_lun)
 					  bali->free_curr_idx,
 					  bali, &bit_word);
 		if (bit_pos == -1) {
-			pr_debug("%s: Could not find an allocation unit on LUN:"
+			pr_err("%s: Could not find an allocation unit on LUN:"
 				 " lun_id = %llX\n", __func__, ba_lun->lun_id);
 			return -1ULL;
 		}
@@ -223,7 +223,7 @@ static u64 ba_alloc(struct ba_lun *ba_lun)
 	else
 		bali->free_curr_idx = bit_word;
 
-	pr_debug("%s: Allocating AU number %llX, on lun_id %llX, "
+	pr_err("%s: Allocating AU number %llX, on lun_id %llX, "
 		 "free_aun_cnt = %llX\n", __func__,
 		 ((bit_word * BITS_PER_LONG) + bit_pos), ba_lun->lun_id,
 		 bali->free_aun_cnt);
@@ -266,17 +266,17 @@ static int ba_free(struct ba_lun *ba_lun, u64 to_free)
 	bali = ba_lun->ba_lun_handle;
 
 	if (validate_alloc(bali, to_free)) {
-		pr_debug("%s: The AUN %llX is not allocated on lun_id %llX\n",
+		pr_err("%s: The AUN %llX is not allocated on lun_id %llX\n",
 			 __func__, to_free, ba_lun->lun_id);
 		return -1;
 	}
 
-	pr_debug("%s: Received a request to free AU %llX on lun_id %llX, "
+	pr_err("%s: Received a request to free AU %llX on lun_id %llX, "
 		 "free_aun_cnt = %llX\n", __func__, to_free, ba_lun->lun_id,
 		 bali->free_aun_cnt);
 
 	if (bali->aun_clone_map[to_free] > 0) {
-		pr_debug("%s: AUN %llX on lun_id %llX has been cloned. Clone "
+		pr_err("%s: AUN %llX on lun_id %llX has been cloned. Clone "
 			 "count = %X\n", __func__, to_free, ba_lun->lun_id,
 			 bali->aun_clone_map[to_free]);
 		bali->aun_clone_map[to_free]--;
@@ -294,7 +294,7 @@ static int ba_free(struct ba_lun *ba_lun, u64 to_free)
 	else if (idx > bali->free_high_idx)
 		bali->free_high_idx = idx;
 
-	pr_debug("%s: Successfully freed AU at bit_pos %X, bit map index %X on "
+	pr_err("%s: Successfully freed AU at bit_pos %X, bit map index %X on "
 		 "lun_id %llX, free_aun_cnt = %llX\n", __func__, bit_pos, idx,
 		 ba_lun->lun_id, bali->free_aun_cnt);
 
@@ -313,16 +313,16 @@ static int ba_clone(struct ba_lun *ba_lun, u64 to_clone)
 	struct ba_lun_info *bali = ba_lun->ba_lun_handle;
 
 	if (validate_alloc(bali, to_clone)) {
-		pr_debug("%s: AUN %llX is not allocated on lun_id %llX\n",
+		pr_err("%s: AUN %llX is not allocated on lun_id %llX\n",
 			 __func__, to_clone, ba_lun->lun_id);
 		return -1;
 	}
 
-	pr_debug("%s: Received a request to clone AUN %llX on lun_id %llX\n",
+	pr_err("%s: Received a request to clone AUN %llX on lun_id %llX\n",
 		 __func__, to_clone, ba_lun->lun_id);
 
 	if (bali->aun_clone_map[to_clone] == MAX_AUN_CLONE_CNT) {
-		pr_debug("%s: AUN %llX on lun_id %llX hit max clones already\n",
+		pr_err("%s: AUN %llX on lun_id %llX hit max clones already\n",
 			 __func__, to_clone, ba_lun->lun_id);
 		return -1;
 	}
@@ -388,9 +388,9 @@ static int init_vlun(struct llun_info *lli)
 
 	rc = ba_init(&blka->ba_lun);
 	if (unlikely(rc))
-		pr_debug("%s: cannot init block_alloc, rc=%d\n", __func__, rc);
+		pr_err("%s: cannot init block_alloc, rc=%d\n", __func__, rc);
 
-	pr_debug("%s: returning rc=%d lli=%p\n", __func__, rc, lli);
+	pr_err("%s: returning rc=%d lli=%p\n", __func__, rc, lli);
 	return rc;
 }
 
@@ -480,7 +480,7 @@ out:
 	kfree(cmd_buf);
 	kfree(scsi_cmd);
 	kfree(sense_buf);
-	pr_debug("%s: returning rc=%d\n", __func__, rc);
+	pr_err("%s: returning rc=%d\n", __func__, rc);
 	return rc;
 }
 
@@ -527,7 +527,7 @@ static int grow_lxt(struct afu *afu,
 	mutex_lock(&blka->mutex);
 	av_size = ba_space(&blka->ba_lun);
 	if (unlikely(av_size <= 0)) {
-		pr_debug("%s: ba_space error: av_size %d\n", __func__, av_size);
+		pr_err("%s: ba_space error: av_size %d\n", __func__, av_size);
 		mutex_unlock(&blka->mutex);
 		rc = -ENOSPC;
 		goto out;
@@ -568,7 +568,7 @@ static int grow_lxt(struct afu *afu,
 		 */
 		aun = ba_alloc(&blka->ba_lun);
 		if ((aun == -1ULL) || (aun >= blka->nchunk))
-			pr_debug("%s: ba_alloc error: allocated chunk# %llX, "
+			pr_err("%s: ba_alloc error: allocated chunk# %llX, "
 				 "max %llX\n", __func__, aun, blka->nchunk - 1);
 
 		/* select both ports, use r/w perms from RHT */
@@ -599,7 +599,7 @@ static int grow_lxt(struct afu *afu,
 		kfree(lxt_old);
 	*new_size = my_new_size;
 out:
-	pr_debug("%s: returning rc=%d\n", __func__, rc);
+	pr_err("%s: returning rc=%d\n", __func__, rc);
 	return rc;
 }
 
@@ -706,7 +706,7 @@ static int shrink_lxt(struct afu *afu,
 		kfree(lxt_old);
 	*new_size = my_new_size;
 out:
-	pr_debug("%s: returning rc=%d\n", __func__, rc);
+	pr_err("%s: returning rc=%d\n", __func__, rc);
 	return rc;
 }
 
@@ -751,12 +751,12 @@ int _cxlflash_vlun_resize(struct scsi_device *sdev,
 	nsectors = (resize->req_size * CXLFLASH_BLOCK_SIZE) / gli->blk_len;
 	new_size = DIV_ROUND_UP(nsectors, MC_CHUNK_SIZE);
 
-	pr_debug("%s: ctxid=%llu rhndl=0x%llx, req_size=0x%llx,"
+	pr_err("%s: ctxid=%llu rhndl=0x%llx, req_size=0x%llx,"
 		 "new_size=%llx\n", __func__, ctxid, resize->rsrc_handle,
 		 resize->req_size, new_size);
 
 	if (unlikely(gli->mode != MODE_VIRTUAL)) {
-		pr_debug("%s: LUN mode does not support resize! (%d)\n",
+		pr_err("%s: LUN mode does not support resize! (%d)\n",
 			 __func__, gli->mode);
 		rc = -EINVAL;
 		goto out;
@@ -766,7 +766,7 @@ int _cxlflash_vlun_resize(struct scsi_device *sdev,
 	if (!ctxi) {
 		ctxi = get_context(cfg, rctxid, lli, CTX_CTRL_ERR_FALLBACK);
 		if (unlikely(!ctxi)) {
-			pr_debug("%s: Bad context! (%llu)\n", __func__, ctxid);
+			pr_err("%s: Bad context! (%llu)\n", __func__, ctxid);
 			rc = -EINVAL;
 			goto out;
 		}
@@ -776,7 +776,7 @@ int _cxlflash_vlun_resize(struct scsi_device *sdev,
 
 	rhte = get_rhte(ctxi, rhndl, lli);
 	if (unlikely(!rhte)) {
-		pr_debug("%s: Bad resource handle! (%u)\n", __func__, rhndl);
+		pr_err("%s: Bad resource handle! (%u)\n", __func__, rhndl);
 		rc = -EINVAL;
 		goto out;
 	}
@@ -794,7 +794,7 @@ int _cxlflash_vlun_resize(struct scsi_device *sdev,
 out:
 	if (put_ctx)
 		put_context(ctxi);
-	pr_debug("%s: resized to %lld returning rc=%d\n",
+	pr_err("%s: resized to %lld returning rc=%d\n",
 		 __func__, resize->last_lba, rc);
 	return rc;
 }
@@ -828,13 +828,13 @@ void cxlflash_restore_luntable(struct cxlflash_cfg *cfg)
 		if (lli->port_sel == BOTH_PORTS) {
 			writeq_be(lli->lun_id[0], &agm->fc_port[0][lind]);
 			writeq_be(lli->lun_id[1], &agm->fc_port[1][lind]);
-			pr_debug("%s: Virtual LUN on slot %d  id0=%llx, "
+			pr_err("%s: Virtual LUN on slot %d  id0=%llx, "
 				 "id1=%llx\n", __func__, lind,
 				 lli->lun_id[0], lli->lun_id[1]);
 		} else {
 			chan = PORT2CHAN(lli->port_sel);
 			writeq_be(lli->lun_id[chan], &agm->fc_port[chan][lind]);
-			pr_debug("%s: Virtual LUN on slot %d chan=%d, "
+			pr_err("%s: Virtual LUN on slot %d chan=%d, "
 				 "id=%llx\n", __func__, lind, chan,
 				 lli->lun_id[chan]);
 		}
@@ -882,7 +882,7 @@ static int init_luntable(struct cxlflash_cfg *cfg, struct llun_info *lli)
 		writeq_be(lli->lun_id[0], &agm->fc_port[0][lind]);
 		writeq_be(lli->lun_id[1], &agm->fc_port[1][lind]);
 		cfg->promote_lun_index++;
-		pr_debug("%s: Virtual LUN on slot %d  id0=%llx, id1=%llx\n",
+		pr_err("%s: Virtual LUN on slot %d  id0=%llx, id1=%llx\n",
 			 __func__, lind, lli->lun_id[0], lli->lun_id[1]);
 	} else {
 		/*
@@ -898,14 +898,14 @@ static int init_luntable(struct cxlflash_cfg *cfg, struct llun_info *lli)
 		lind = lli->lun_index = cfg->last_lun_index[chan];
 		writeq_be(lli->lun_id[chan], &agm->fc_port[chan][lind]);
 		cfg->last_lun_index[chan]--;
-		pr_debug("%s: Virtual LUN on slot %d  chan=%d, id=%llx\n",
+		pr_err("%s: Virtual LUN on slot %d  chan=%d, id=%llx\n",
 			 __func__, lind, chan, lli->lun_id[chan]);
 	}
 
 	lli->in_table = true;
 out:
 	mutex_unlock(&global.mutex);
-	pr_debug("%s: returning rc=%d\n", __func__, rc);
+	pr_err("%s: returning rc=%d\n", __func__, rc);
 	return rc;
 }
 
@@ -942,7 +942,7 @@ int cxlflash_disk_virtual_open(struct scsi_device *sdev, void *arg)
 	struct ctx_info *ctxi = NULL;
 	struct sisl_rht_entry *rhte = NULL;
 
-	pr_debug("%s: ctxid=%llu ls=0x%llx\n", __func__, ctxid, lun_size);
+	pr_err("%s: ctxid=%llu ls=0x%llx\n", __func__, ctxid, lun_size);
 
 	/* Setup the LUNs block allocator on first call */
 	mutex_lock(&gli->mutex);
@@ -1011,7 +1011,7 @@ int cxlflash_disk_virtual_open(struct scsi_device *sdev, void *arg)
 out:
 	if (likely(ctxi))
 		put_context(ctxi);
-	pr_debug("%s: returning handle 0x%llx rc=%d llba %lld\n",
+	pr_err("%s: returning handle 0x%llx rc=%d llba %lld\n",
 		 __func__, rsrc_handle, rc, last_lba);
 	return rc;
 
@@ -1099,7 +1099,7 @@ static int clone_lxt(struct afu *afu,
 
 	cxlflash_afu_sync(afu, ctxid, rhndl, AFU_LW_SYNC);
 
-	pr_debug("%s: returning\n", __func__);
+	pr_err("%s: returning\n", __func__);
 	return 0;
 }
 
@@ -1139,7 +1139,7 @@ int cxlflash_disk_clone(struct scsi_device *sdev,
 	bool found;
 	LIST_HEAD(sidecar);
 
-	pr_debug("%s: ctxid_src=%llu ctxid_dst=%llu adap_fd_src=%d\n",
+	pr_err("%s: ctxid_src=%llu ctxid_dst=%llu adap_fd_src=%d\n",
 		 __func__, ctxid_src, ctxid_dst, adap_fd_src);
 
 	/* Do not clone yourself */
@@ -1150,7 +1150,7 @@ int cxlflash_disk_clone(struct scsi_device *sdev,
 
 	if (unlikely(gli->mode != MODE_VIRTUAL)) {
 		rc = -EINVAL;
-		pr_debug("%s: Clone not supported on physical LUNs! (%d)\n",
+		pr_err("%s: Clone not supported on physical LUNs! (%d)\n",
 			 __func__, gli->mode);
 		goto out;
 	}
@@ -1158,14 +1158,14 @@ int cxlflash_disk_clone(struct scsi_device *sdev,
 	ctxi_src = get_context(cfg, rctxid_src, lli, CTX_CTRL_CLONE);
 	ctxi_dst = get_context(cfg, rctxid_dst, lli, 0);
 	if (unlikely(!ctxi_src || !ctxi_dst)) {
-		pr_debug("%s: Bad context! (%llu,%llu)\n", __func__,
+		pr_err("%s: Bad context! (%llu,%llu)\n", __func__,
 			 ctxid_src, ctxid_dst);
 		rc = -EINVAL;
 		goto out;
 	}
 
 	if (unlikely(adap_fd_src != ctxi_src->lfd)) {
-		pr_debug("%s: Invalid source adapter fd! (%d)\n",
+		pr_err("%s: Invalid source adapter fd! (%d)\n",
 			 __func__, adap_fd_src);
 		rc = -EINVAL;
 		goto out;
@@ -1203,7 +1203,7 @@ int cxlflash_disk_clone(struct scsi_device *sdev,
 	}
 
 	if (unlikely(!ctxi_src->rht_out)) {
-		pr_debug("%s: Nothing to clone!\n", __func__);
+		pr_err("%s: Nothing to clone!\n", __func__);
 		goto out_success;
 	}
 
@@ -1263,7 +1263,7 @@ out:
 		put_context(ctxi_src);
 	if (ctxi_dst)
 		put_context(ctxi_dst);
-	pr_debug("%s: returning rc=%d\n", __func__, rc);
+	pr_err("%s: returning rc=%d\n", __func__, rc);
 	return rc;
 
 err:

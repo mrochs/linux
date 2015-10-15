@@ -165,7 +165,7 @@ static struct llun_info *find_and_create_lun(struct scsi_device *sdev, u8 *wwid)
 	list_add(&gli->list, &global.gluns);
 
 out:
-	pr_debug("%s: returning %p\n", __func__, lli);
+	pr_err("%s: returning %p\n", __func__, lli);
 	return lli;
 }
 
@@ -232,7 +232,7 @@ int cxlflash_manage_lun(struct scsi_device *sdev,
 
 	mutex_lock(&global.mutex);
 	lli = find_and_create_lun(sdev, manage->wwid);
-	pr_debug("%s: ENTER: WWID = %016llX%016llX, flags = %016llX li = %p\n",
+	pr_err("%s: ENTER: WWID = %016llX%016llX, flags = %016llX li = %p\n",
 		 __func__, get_unaligned_be64(&manage->wwid[0]),
 		 get_unaligned_be64(&manage->wwid[8]),
 		 manage->hdr.flags, lli);
@@ -259,11 +259,11 @@ int cxlflash_manage_lun(struct scsi_device *sdev,
 		}
 	}
 
-	pr_debug("%s: port_sel = %08X chan = %u lun_id = %016llX\n", __func__,
+	pr_err("%s: port_sel = %08X chan = %u lun_id = %016llX\n", __func__,
 		 lli->port_sel, chan, lli->lun_id[chan]);
 
 out:
 	mutex_unlock(&global.mutex);
-	pr_debug("%s: returning rc=%d\n", __func__, rc);
+	pr_err("%s: returning rc=%d\n", __func__, rc);
 	return rc;
 }
