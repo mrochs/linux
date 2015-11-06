@@ -34,6 +34,16 @@ MODULE_AUTHOR("Manoj N. Kumar <manoj@linux.vnet.ibm.com>");
 MODULE_AUTHOR("Matthew R. Ochs <mrochs@linux.vnet.ibm.com>");
 MODULE_LICENSE("GPL");
 
+
+static int foo(char *var)
+{
+	if (!var)
+		return -EINVAL;
+
+	pr_info("var = %s\n", var);
+	return 0;
+}
+
 /**
  * cmd_checkout() - checks out an AFU command
  * @afu:	AFU to checkout from.
