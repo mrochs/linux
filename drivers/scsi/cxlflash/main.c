@@ -35,7 +35,7 @@ MODULE_AUTHOR("Matthew R. Ochs <mrochs@linux.vnet.ibm.com>");
 MODULE_LICENSE("GPL");
 
 
-static int foo(char *var, int len)
+static int foo(char *var, int len, bool again)
 {
 	if (!var)
 		return -EINVAL;
